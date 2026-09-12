@@ -57,6 +57,8 @@ object KodikHtmlParser {
     private val atobRegex = Regex("""atob\(["']([^"']*)["']\)""")
     private val tokenRegex = Regex("""token\s*=\s*"([a-z0-9]+)"""")
     private val entityRegex = Regex("&(#[xX][0-9a-fA-F]+|#[0-9]+|[a-zA-Z][a-zA-Z0-9]*);")
+    /** Serial and movie players wrap the same `<option>` shape in differently named divs. */
+    private val TRANSLATION_BOX_CLASSES = listOf("serial-translations-box", "movie-translations-box")
     private val namedEntities = mapOf(
         "amp" to "&",
         "lt" to "<",
@@ -78,11 +80,15 @@ object KodikHtmlParser {
         val currentHash = require(html, Regex("""vInfo\.hash\s*=\s*'([^']*)'"""), "vInfo.hash")
         val currentId = require(html, Regex("""vInfo\.id\s*=\s*'([^']*)'"""), "vInfo.id")
 
+        // A movie page (vInfo.type != "seria") has neither an episode list nor a
+        // serial translations box; a serial page missing either of them is broken.
+        val isSerial = currentType == "seria"
+
         val translations = parseTranslations(html)
-        if (translations.isEmpty()) throw KodikError.ParserBroken("translations")
+        if (translations.isEmpty() && isSerial) throw KodikError.ParserBroken("translations")
 
         val episodes = parseEpisodes(html)
-        if (episodes.isEmpty()) throw KodikError.ParserBroken("episodes")
+        if (episodes.isEmpty() && isSerial) throw KodikError.ParserBroken("episodes")
 
         return KodikPlayerPage(
             domain = domain,
@@ -155,7 +161,8 @@ object KodikHtmlParser {
         attrRegex.findAll(tag).associate { it.groupValues[1] to it.groupValues[2] }
 
     private fun parseTranslations(html: String): List<KodikTranslationOption> {
-        val content = boxSelectContent(html, "serial-translations-box") ?: return emptyList()
+        val content = TRANSLATION_BOX_CLASSES.firstNotNullOfOrNull { boxSelectContent(html, it) }
+            ?: return emptyList()
         return optionRegex.findAll(content).mapNotNull { match ->
             val attrs = attributesOf(match.groupValues[1])
             val text = match.groupValues[2].trim()

@@ -7,6 +7,7 @@ import app.kaeru.domain.error.HttpError
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.error.SourceFormatChanged
 import app.kaeru.domain.error.SourceUnavailable
+import app.kaeru.domain.error.SourceUnavailableReason
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -47,9 +48,24 @@ class ErrorMessagesTest {
     fun `a source without a usable key names kodik and the key`() {
         assertEquals(
             "Kodik недоступен: не удалось получить ключ",
-            SourceUnavailable(IllegalStateException("no token")).toUserMessage(),
+            SourceUnavailable(SourceUnavailableReason.NO_KEY, IllegalStateException("no token")).toUserMessage(),
         )
-        assertEquals("Kodik недоступен: не удалось получить ключ", SourceUnavailable().toUserMessage())
+        assertEquals(
+            "Kodik недоступен: не удалось получить ключ",
+            SourceUnavailable(SourceUnavailableReason.NO_KEY).toUserMessage(),
+        )
+    }
+
+    @Test
+    fun `a source that turned us away asks to retry instead of blaming the key`() {
+        assertEquals(
+            "Kodik временно недоступен, попробуйте позже",
+            SourceUnavailable(SourceUnavailableReason.REJECTED).toUserMessage(),
+        )
+        assertEquals(
+            "Kodik временно недоступен, попробуйте позже",
+            SourceUnavailable(SourceUnavailableReason.REJECTED, IllegalStateException("503")).toUserMessage(),
+        )
     }
 
     @Test

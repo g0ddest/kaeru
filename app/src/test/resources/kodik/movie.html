@@ -1,0 +1,964 @@
+<!doctype html>
+<html>
+<head>
+  <title>Фрирен [ТВ-1]</title>
+  <link rel="shortcut icon" href="/assets/images/favicon.png" />
+  <link rel="stylesheet"  href="/assets/css/app.player.fdde01c2ebdd5cd677e6ba8f4748a8893666154f57417ecb3c18df03e374fb6a.css" />
+  <script>
+    var serialId = Number(53973);
+    var serialHash = "8ea8930aaf747fd9364e99b03393b655";
+    var urlParams = '{"d":"kodikplayer.com","d_sign":"7af8577bd2663bbd586a90cccaf740b83784ee5a37334b1b56363ea06d7755a8:2609140747","pd":"kodikplayer.com","pd_sign":"7af8577bd2663bbd586a90cccaf740b83784ee5a37334b1b56363ea06d7755a8:2609140747","ref":"https%3A%2F%2Fkodikplayer.com%2F","ref_sign":"6137eaa1d4c94e3b6a15aaf56eb92ada806bda5bbec4784915459162b3ed622b:2609140747","advert_debug":true,"min_age":18,"first_url":false}';
+    var playerDomain = "kodikplayer.com";
+    var autoResume = false;
+    var saveChosenEpisode = false;
+    var saveCurrentEpisode = false;
+    var translationEpisodeCount = true;
+    var fullscreenLockOrientation = true;
+    var assetHost = '';
+
+    var translationId = 923;
+    var translationTitle = "AnimeVost";
+    var cdnCheckLink = "https://cloud.solodcdn.com/test/5099bb72f7f4c01272c00427146ea38f:2026090920/g";
+  </script>
+  <script type="text/javascript"  src="/assets/js/app.serial.999589df13d5ff96e02b9d0ee019729e8aa29a7e3e130b7c0929eb087034162f.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body class="serial  ">
+  <div class="main-box">
+    <style>
+  .resume-button { color: rgba(255, 255, 255, 0.75); }
+  .resume-button:hover { background-color: #171717; }
+  .resume-button { border-radius: 3px; }
+  .active-player .resume-button { border-radius: 3px; }
+
+
+  .resume-button {
+    background-color: rgba(23, 23, 23, 0.8);
+  }
+
+
+
+  .resume-info {
+    bottom: 50px;
+    padding: 5px 10px;
+    background-color: rgba(23, 23, 23, 0.9);
+    border-radius: 3px;
+  }
+
+  .resume-button:hover .resume-info { bottom: 40px; }
+
+  .resume-info::after {
+    position: absolute;
+    content: "";
+    width: 0;
+    height: 0;
+    display: block;
+    border-left: 7px solid transparent;
+    border-right: 7px solid transparent;
+    border-top: 7px solid rgba(23, 23, 23, 0.9);
+    bottom: -7px;
+    left: calc(50% - 7px);
+  }
+
+</style>
+
+<style>
+  .serial-panel, .serial-panel select, .serial-panel .serial-next-button { color: #fff; }
+
+  .serial-panel .select-button, .serial-panel select,
+  .serial-seasons-box.mobile:hover select, .serial-series-box.mobile:hover select,
+  .serial-translations-box.mobile:hover select, .serial-seasons-box.mobile:hover .select-button,
+  .serial-series-box.mobile:hover .select-button, .serial-translations-box.mobile:hover .select-button,
+  .serial-panel .serial-next-button
+  { background-color: #171717; }
+  .serial-panel .select-button svg .fill { fill: #fff; }
+  .serial-seasons-box:hover select, .serial-series-box:hover select, .serial-seasons-box:hover .select-button,
+  .serial-series-box:hover .select-button, .serial-seasons-box.active select, .serial-series-box.active select,
+  .serial-seasons-box.active .select-button, .serial-series-box.active .select-button,
+  .serial-seasons-box .dropdown-content .item, .serial-series-box .dropdown-content .item,
+  .serial-seasons-box.mobile:active select, .serial-series-box.mobile:active select,
+  .serial-seasons-box.mobile:active .select-button, .serial-series-box.mobile:active .select-button,
+  .serial-translations-box:hover select, .serial-translations-box:hover .select-button,
+  .serial-translations-box.active select, .serial-translations-box.active .select-button,
+  .serial-translations-box .dropdown-content .item, .serial-translations-box.mobile:active select,
+  .serial-translations-box.mobile:active .select-button, .serial-panel .search-block,
+  .serial-panel .serial-next-button:hover
+  { background-color: #242424; }
+
+  .serial-panel .dropdown-content .item:hover { background-color: #303030; }
+  .mobile .dropdown-content .item:hover { background-color: #242424; }
+  .mobile .dropdown-content .item:active { background-color: #303030; }
+
+  .dropdown-content .item.selected { color: rgba(255, 255, 255, 0.5); }
+  .dropdown-content .item.selected:hover, .dropdown-content .item.selected:active { background-color: #242424; }
+
+  .serial-panel .dropdown-content::-webkit-scrollbar { background-color: #292929 }
+  .serial-panel .dropdown-content::-webkit-scrollbar-thumb { background-color: #424242 }
+  .serial-panel .dropdown-content::-webkit-scrollbar-thumb:hover { background-color: #969696 }
+
+  .serial-panel .serial-next-button svg .fill { fill: rgba(255, 255, 255, 0.4); }
+  .serial-panel .serial-next-button.disabled, .serial-panel .serial-next-button.disabled:hover {
+    background-color: #0f0f0f;
+    color: rgba(255, 255, 255, 0.4);
+  }
+
+  .select-button .subtitle-icon, .dropdown-content .subtitle-icon { background-color: #4a4a4a }
+
+  .dropdown { border-radius: 0 0 3px 3px; }
+  .serial-translations-box .select-button, .serial-translations-box select { border-radius: 3px; }
+  .serial-translations-box.active .select-button, .serial-translations-box.active select { border-radius: 3px 3px 0 0; }
+  .serial-next-button { border-radius: 0 3px 3px 0; }
+
+  .serial-panel div:first-child select, .serial-panel div:first-child .select-button, .serial-panel.hidden-seasons .serial-series-box select, .serial-panel.hidden-seasons .serial-series-box .select-button { border-radius: 3px 0 0 3px; }
+  .serial-panel .active:first-child select, .serial-panel .active:first-child .select-button, .serial-panel.hidden-seasons .active.serial-series-box select, .serial-panel.hidden-seasons .active.serial-series-box .select-button { border-radius: 3px 0 0 0; }
+
+  .active-player .serial-panel, .active-player .serial-panel select, .active-player .serial-panel .serial-next-button
+  { color: #fff; }
+
+  .active-player .serial-panel .select-button, .active-player .serial-panel select,
+  .active-player .serial-seasons-box.mobile:hover select, .active-player .serial-series-box.mobile:hover select,
+  .active-player .serial-translations-box.mobile:hover select, .active-player .serial-seasons-box.mobile:hover .select-button,
+  .active-player .serial-series-box.mobile:hover .select-button, .active-player .serial-translations-box.mobile:hover .select-button,
+  .active-player .serial-panel .serial-next-button
+  { background-color: #161616; }
+  .active-player .serial-panel .select-button svg .fill { fill: #fff; }
+  .active-player .serial-seasons-box:hover select, .active-player .serial-series-box:hover select,
+  .active-player .serial-seasons-box:hover .select-button, .active-player .serial-series-box:hover .select-button,
+  .active-player .serial-seasons-box.active select, .active-player .serial-series-box.active select,
+  .active-player .serial-seasons-box.active .select-button, .active-player .serial-series-box.active .select-button,
+  .active-player .serial-seasons-box .dropdown-content .item, .active-player .serial-series-box .dropdown-content .item,
+  .active-player .serial-seasons-box.mobile:active select, .active-player .serial-series-box.mobile:active select,
+  .active-player .serial-seasons-box.mobile:active .select-button, .active-player .serial-series-box.mobile:active .select-button,
+  .active-player .serial-translations-box:hover select, .active-player .serial-translations-box:hover .select-button,
+  .active-player .serial-translations-box.active select, .active-player .serial-translations-box.active .select-button,
+  .active-player .serial-translations-box .dropdown-content .item, .active-player .serial-translations-box.mobile:active select,
+  .active-player .serial-translations-box.mobile:active .select-button, .active-player .serial-panel .search-block,
+  .active-player .serial-panel .serial-next-button:hover
+  { background-color: #232323; }
+
+  .active-player .serial-panel .dropdown-content .item:hover { background-color: #2f2f2f; }
+  .active-player.mobile .dropdown-content .item:hover { background-color: #232323; }
+  .active-player.mobile .dropdown-content .item:active { background-color: #2f2f2f; }
+
+  .active-player .dropdown-content .item.selected { color: rgba(255, 255, 255, 0.5); }
+  .active-player .dropdown-content .item.selected:hover, .active-player .dropdown-content .item.selected:active { background-color: #232323; }
+
+  .active-player .serial-panel .dropdown-content::-webkit-scrollbar { background-color: #282828 }
+  .active-player .serial-panel .dropdown-content::-webkit-scrollbar-thumb { background-color: #414141 }
+  .active-player .serial-panel .dropdown-content::-webkit-scrollbar-thumb:hover { background-color: #959595 }
+
+  .active-player .serial-panel .serial-next-button svg .fill { fill: rgba(255, 255, 255, 0.4); }
+  .active-player .serial-panel .serial-next-button.disabled, .active-player .serial-panel .serial-next-button.disabled:hover {
+    background-color: #0e0e0e;
+    color: rgba(255, 255, 255, 0.4);
+  }
+
+  .active-player .select-button .subtitle-icon, .active-player .dropdown-content .subtitle-icon { background-color: #494949 }
+
+  .serial-panel div:first-child select, .serial-panel div:first-child .select-button, .serial-panel.hidden-seasons .serial-series-box select, .serial-panel.hidden-seasons .serial-series-box .select-button { border-radius: 3px 0 0 3px; }
+  .serial-panel .active:first-child select, .serial-panel .active:first-child .select-button, .serial-panel.hidden-seasons .active.serial-series-box select, .serial-panel.hidden-seasons .active.serial-series-box .select-button { border-radius: 3px 0 0 0; }
+
+
+  .active-player .dropdown { border-radius: 0 0 3px 3px; }
+  .active-player .serial-translations-box .select-button, .active-player .serial-translations-box select { border-radius: 3px; }
+  .active-player .serial-translations-box.active .select-button, .active-player .serial-translations-box.active select
+  { border-radius: 3px 3px 0 0; }
+
+  .active-player .serial-next-button { border-radius: 0 3px 3px 0; }
+
+  .active-player .serial-panel div:first-child select, .active-player .serial-panel div:first-child .select-button, .active-player .serial-panel.hidden-seasons .serial-series-box select, .active-player .serial-panel.hidden-seasons .serial-series-box .select-button { border-radius: 3px 0 0 3px; }
+  .active-player .serial-panel .active:first-child select, .active-player .serial-panel .active:first-child .select-button, .active-player .serial-panel.hidden-seasons .active.serial-series-box select, .active-player .serial-panel.hidden-seasons .active.serial-series-box .select-button { border-radius: 3px 0 0 0; }
+</style>
+
+    <!-- MD | XX -->
+
+<style>
+  .player_box { background-color: #000; }
+  .play_button { width: 88px; height: 88px; }
+  .play_button svg .fill { fill: #fefefe; }
+  .play_button svg .stroke { stroke: #fefefe; }
+  .play_button:hover svg .fill { fill: #fefefe; }
+  .play_button:hover svg .stroke { stroke: #fefefe; }
+
+    .play_loading svg .bg { fill: #e4e6e4; }
+    .play_loading svg .animated { fill: #a4a6a4; }
+
+    .play_button_loading {
+      background-color: #fff;
+      border-radius: 3px;
+    }
+
+  .share_button .fill { fill: #fff; }
+  .share_button {
+    background-color: #171717;
+    border-radius: 3px;
+  }
+  .share_button:after, .share_button:hover { background-color: #242424; }
+  .share_button:after {
+    color: #fff;
+    border-radius: 3px;
+  }
+
+  .fp-controls, .fp-timeline-wrapper, .fp-play-icon, .fp-pause-icon, .fp-x-fullscreen { background-color: #161616; }
+  .fp-play-icon .fp-fill, .fp-pause-icon  .fp-fill, .fp-x-fullscreen .fp-fill,
+  .fp-quality svg, .fp-volume-icon svg .fp-fill, .fp-playback-settings .fp-fill, .fp-subtitles span svg, .fp-subtitles-dropdown .button svg,
+  .fp-subtitles-dropdown .settings-content svg .fill, .ps-dropdown .fp-fill, .fp-chromecast.fp-icon .fill, .fp-airplay.fp-icon .fill { fill: #fff }
+  .ps-dropdown .rangeslider__handle, .ps-dropdown .rangeslider__fill { background-color: #fff; }
+  .fp-progress, .fp-volumeslider em.fp-color, .fp-quality.hd span:before, .fp-subtitles.chosen::after, .fp-playback-settings.changed::before { background-color: #00ADEF; }
+  .fp-play-icon:hover, .fp-pause-icon:hover { background-color: #00ADEF; }
+  .fp-timeline { background-color: #282828; }
+  .fp-x-buffer { background-color: #626262; }
+  .fp-volumeslider em { background-color: rgba(0, 173, 239, 0.4); }
+  .fp-elapsed, .fp-duration, .fp-quality, .fp-quality.hd span:before, .fp-subtitles { color: #fff; }
+  .not-mobile .fp-x-fullscreen:hover, .mobile .fp-x-fullscreen:active, .fp-quality-dropdown div, .fp-subtitles-dropdown > div,
+  .active-quality-dropdown .fp-quality, .active-subtitles-dropdown .fp-subtitles, .fp-quality:hover, .fp-playback-settings:hover, .active-ps-dropdown .fp-playback-settings, .fp-quality-dropdown div.current:hover, .fp-subtitles:hover, .fp-subtitles-dropdown .items div.current:hover, .player-tooltip, .ps-dropdown, .ps-dropdown .option.current:hover { background-color: #232323; }
+  .fp-quality-dropdown div.blocked,  .fp-quality-dropdown div.blocked:hover { background-color: #0e0e0e; }
+  .fp-quality-dropdown div.current, .fp-quality-dropdown div.blocked, .fp-subtitles-dropdown .items div.current, .ps-dropdown .option.current { color: rgba(255, 255, 255, 0.5); }
+  .fp-quality-dropdown div:hover, .fp-subtitles-dropdown .items div:hover, .fp-subtitles-dropdown .settings-header:hover,
+  .fp-subtitles-dropdown .settings-header.shown, .ps-dropdown .options:hover, .ps-dropdown .option:hover, .ps-dropdown .slider-button .title:hover, .ps-dropdown .top-title .custom:hover { background-color: #2f2f2f; }
+  .fp-quality-dropdown div.hd:after { color: #00ADEF; }
+  .fp-quality-dropdown, .fp-quality-dropdown div:first-child { border-radius: 3px 3px 0 0; }
+  .player-tooltip { color: rgba(255, 255, 255, 0.8); }
+  .ps-dropdown { color: rgba(255, 255, 255, 0.9); }
+  .ps-dropdown .top-title { border-color: rgba(255, 255, 255, 0.15); }
+  .ps-dropdown .rangeslider--horizontal { background-color: rgba(255, 255, 255, 0.15); }
+  .ps-dropdown, .ps-dropdown > div > div:first-child { border-radius: 3px 3px 0 0; }
+  .ps-dropdown .slider .info .value { border: 1px dashed rgba(255, 255, 255, 0.3); }
+  .ps-dropdown .slider .info .confirm { border: 1px solid rgba(255, 255, 255, 0.2); }
+  .ps-dropdown .slider .info .confirm:hover { background-color: rgba(255, 255, 255, 0.2); }
+
+  .ps-dropdown > div::-webkit-scrollbar { background-color: #282828 }
+  .ps-dropdown > div::-webkit-scrollbar-thumb { background-color: #414141 }
+  .ps-dropdown > div::-webkit-scrollbar-thumb:hover { background-color: #959595 }
+
+  .fp-subtitles-dropdown .subtitles-settings .header { border-bottom-color: #2f2f2f; }
+
+  .fp-share_button .fill { fill: #fff; }
+  .fp-share_button {
+    background-color: #161616;
+    border-radius: 3px;
+  }
+  .fp-share_button:after, .fp-share_button:hover { background-color: #232323; }
+  .fp-share_button:after {
+    color: #fff;
+    border-radius: 3px;
+  }
+
+  .fp-controls { border-radius: 3px 0 0 3px; }
+  .fp-x-fullscreen { border-radius: 0 3px 3px 0; }
+  .fp-play-icon, .fp-pause-icon { border-radius: 3px; }
+</style>
+
+
+
+<script src="/adsbygoogle.js"></script>
+
+<script>
+  
+  var advertDebug = true;
+  
+
+  var domain = "kodikplayer.com";
+  var d_sign = "7af8577bd2663bbd586a90cccaf740b83784ee5a37334b1b56363ea06d7755a8:2609140747";
+  var pd = "kodikplayer.com";
+  var pd_sign = "7af8577bd2663bbd586a90cccaf740b83784ee5a37334b1b56363ea06d7755a8:2609140747";
+  var ref = "https://kodikplayer.com/";
+  var ref_sign = "6137eaa1d4c94e3b6a15aaf56eb92ada806bda5bbec4784915459162b3ed622b:2609140747";
+  var user_ip = "89.187.37.8";
+  var advertScript = null;
+  var mediaGenre = "anime";
+  var translationId = 923;
+  var translationTitle = "AnimeVost";
+  var country = "MD";
+
+  var customization = true;
+  var rate = false;
+
+  var share_button = "<div class=\"share_button\"><svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 57.884 57.884' width='16' height='16'><path d='M46 37c-3 0-5.8 1.3-7.7 3.4l-16.6-8c.4-1 .6-2.2.6-3.5 0-1.3-.2-2.5-.6-3.6l16.6-8c2 2 4.6 3.5 7.7 3.5 5.7 0 10.4-4.8 10.4-10.6C56.4 4.7 51.7 0 46 0c-5.8 0-10.5 4.7-10.5 10.4 0 .6 0 1 .2 1.6L18 20.5c-1.7-1.2-3.8-2-6-2C6 18.5 1.4 23.2 1.4 29S6 39.3 12 39.3c2.2 0 4.3-.8 6-2l17.7 8.4-.2 1.7C35.5 53.2 40.2 58 46 58c5.7 0 10.4-4.8 10.4-10.5C56.4 41.7 51.7 37 46 37z' class='fill'/></svg></div>";
+
+  var share_copy_links = true;
+
+
+  var a_detect = false;
+  var adult = false;
+  var eng_color = "blue";
+  var auto_switch_episode = false;
+  var fullscreenLockOrientation = true
+
+  var minAge = {
+    enabled: true,
+    age: 18
+  };
+</script>
+
+
+
+<script>
+    var playerLink = ["/assets/js/app.player.abed291a63d4f2a5592905082f598e7e63e7847b1d130772ebb1e04a09326c8d.js"];
+
+  playerSettings.block_c = { manifest: false, other: false };
+
+  playerSettings.p2p_trackers = ["wss://wt.kodik.biz:8433"];
+  playerSettings.forceAdvertCount = true;
+  playerSettings.country = "MD";
+
+  var parsedStartFrom = {};
+  playerSettings.startfrom = parsedStartFrom.startfrom;
+  playerSettings.skip = parsedStartFrom.skipObject;
+
+  playerSettings.skipButton = parseSkipButton("00-01:30,24:20-25:59", "anime");
+
+
+  playerSettings.onlyAdvert = false;
+
+
+  var vInfo = {};
+  
+   vInfo.type = 'video'; 
+   vInfo.hash = 'aa11bb22cc33dd44ee55ff6677889900'; 
+   vInfo.id = '990011'; 
+  
+  
+</script>
+
+  <div class="share_button"><svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 57.884 57.884' width='16' height='16'><path d='M46 37c-3 0-5.8 1.3-7.7 3.4l-16.6-8c.4-1 .6-2.2.6-3.5 0-1.3-.2-2.5-.6-3.6l16.6-8c2 2 4.6 3.5 7.7 3.5 5.7 0 10.4-4.8 10.4-10.6C56.4 4.7 51.7 0 46 0c-5.8 0-10.5 4.7-10.5 10.4 0 .6 0 1 .2 1.6L18 20.5c-1.7-1.2-3.8-2-6-2C6 18.5 1.4 23.2 1.4 29S6 39.3 12 39.3c2.2 0 4.3-.8 6-2l17.7 8.4-.2 1.7C35.5 53.2 40.2 58 46 58c5.7 0 10.4-4.8 10.4-10.5C56.4 41.7 51.7 37 46 37z' class='fill'/></svg></div>
+
+<div class="preview-icons">
+    <div class="preview-min-age-icon">
+      18+
+    </div>
+
+</div>
+
+  <div class="resume-button"></div>
+
+<div class="player_box">
+  <div id='get_code_window'>
+    <input id="for-copy" />
+    <div class='close_get_code_window'>
+      <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 212.982 212.982' width='100%' height='100%'><path d='M131.8 106.5l76-76c7-7 7-18.3 0-25.3s-18.4-7-25.4 0l-76 76-75.8-76c-7-7-18.4-7-25.4 0s-7 18.4 0 25.4l76 76-76 75.8c-7 7-7 18.3 0 25.3s18.4 7 25.4 0l76-76 75.8 76c7 7 18.3 7 25.3 0s7-18.3 0-25.3l-76-76z' fill='#FFF' fill-rule='evenodd' clip-rule='evenodd'/></svg>
+    </div>
+    <div class='get_code_main'>
+      <div class='get_code_paddings'>
+        <table>
+            <tr class="get_code_1">
+              <td style='width: 80px;'></td>
+              <td class='get_code_heading'>Получить код</td>
+              <td style='width: 113px;'></td>
+            </tr>
+            <tr class="get_code_1">
+              <td class='get_code_left_info'>Код</td>
+              <td><input value='&lt;iframe src=&quot;https://kodikplayer.com/serial/53973/8ea8930aaf747fd9364e99b03393b655/720p&quot; width=&quot;607&quot; height=&quot;360&quot; frameborder=&quot;0&quot; AllowFullScreen allow=&quot;autoplay *; fullscreen *&quot;&gt;&lt;/iframe&gt;' readonly class='get_code_copy_input'/></td>
+              <td><div class='get_code_copy' data-code='&lt;iframe src=&quot;https://kodikplayer.com/serial/53973/8ea8930aaf747fd9364e99b03393b655/720p&quot; width=&quot;607&quot; height=&quot;360&quot; frameborder=&quot;0&quot; AllowFullScreen allow=&quot;autoplay *; fullscreen *&quot;&gt;&lt;/iframe&gt;'>копировать</div></td>
+            </tr>
+            <tr class="get_code_1">
+              <td class='get_code_left_info'>Ссылка</td>
+              <td><input value='https://kodikplayer.com/serial/53973/8ea8930aaf747fd9364e99b03393b655/720p' readonly class='get_code_copy_input'/></td>
+              <td><div class='get_code_copy' data-code='https://kodikplayer.com/serial/53973/8ea8930aaf747fd9364e99b03393b655/720p'>копировать</div></td>
+            </tr>
+          <tr>
+            <td></td>
+            <td class='get_code_heading' colspan="2">Получить доступ к базе</td>
+          </tr>
+          <tr>
+            <td></td>
+            <td class='get_code_info' colspan="2">Подключение к базе бесплатное. Если хотите получить доступ к нашей постоянно обновляющейся базе с множеством фильмов и сериалов, напишите письмо на <span>support@kodikres.com</span>, в котором укажите ваш сайт.</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="play_background">
+  <a class="play_button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 88 88"><g class="normal fill"><path d="M85.5 2a.51.51 0 0 1 .5.5v83a.51.51 0 0 1-.5.5h-83a.51.51 0 0 1-.5-.5v-83a.51.51 0 0 1 .5-.5h83m0-2h-83A2.51 2.51 0 0 0 0 2.5v83A2.51 2.51 0 0 0 2.5 88h83a2.5 2.5 0 0 0 2.5-2.5v-83A2.51 2.51 0 0 0 85.5 0z"></path><path d="M61 43.82L33.66 28.6a.79.79 0 0 0-.82-.06.84.84 0 0 0-.34.75v30.34a.81.81 0 0 0 .34.74.75.75 0 0 0 .82-.06L61 45.1a.76.76 0 0 0 .48-.65c0-.23-.16-.44-.48-.62z"></path></g><path d="M85.5 0h-83A2.5 2.5 0 0 0 0 2.5v83A2.5 2.5 0 0 0 2.5 88h83a2.5 2.5 0 0 0 2.5-2.5v-83A2.5 2.5 0 0 0 85.5 0zM61 45.1L33.66 60.31a.75.75 0 0 1-.82.06.81.81 0 0 1-.34-.74V29.29a.84.84 0 0 1 .34-.75.79.79 0 0 1 .82.06L61 43.82c.32.18.48.39.48.62a.76.76 0 0 1-.48.66z" class="hover fill"></path></svg></a>
+</div>
+
+<script>
+  $(function () {
+    if (!isIframe() && location.hostname !== "localhost" && location.hostname !== "bs-local.com") {
+      $(".player_box, .share_button, .play_background, .serial-panel, .movie-panel").hide();
+      $("body").append('<div style="height: 100%;" class="promo-error"><table><tr><td><div class="promo-error-box"><div class="message">Извините, но данной страницы не существует</div></div></td></tr></table></div>');
+    }
+  });
+
+
+      var thumbnails = ["//cloud.solodcdn.com/95335766efc513a327fcf9c3c271bf8b:2026091307/useruploads/bb79d6a0-5c7a-408a-a4bd-336ed86e3363/thumb001.jpg", "//cloud.solodcdn.com/03670ea2854ea176e83f794ba36babad:2026091307/useruploads/bb79d6a0-5c7a-408a-a4bd-336ed86e3363/thumb003.jpg", "//cloud.solodcdn.com/2610f16dc5b37f992b306cd77c52ad15:2026091307/useruploads/bb79d6a0-5c7a-408a-a4bd-336ed86e3363/thumb004.jpg", "//cloud.solodcdn.com/541029139b3d264b91ed3971a856c668:2026091307/useruploads/bb79d6a0-5c7a-408a-a4bd-336ed86e3363/thumb002.jpg", "//cloud.solodcdn.com/ea72f2e88210756ffea5d9494c1d1e36:2026091307/useruploads/bb79d6a0-5c7a-408a-a4bd-336ed86e3363/thumb005.jpg"];
+      if (thumbnails) var playerThumbnails = new PlayerThumbnails(thumbnails, 5000);
+</script>
+<p></p>
+    
+
+
+    <div class="serial-panel hidden-seasons" >
+      
+
+      
+
+      <div class="series-options">
+          <div class="season-1">
+              <option
+                value="1"
+                data-id="1211482"
+                data-hash="cf62e729fdb71a0b7fb148ba6fc48ad6"
+                data-title="1 серия"
+                data-other-translation="false"
+              >1 серия</option>
+              <option
+                value="2"
+                data-id="1211528"
+                data-hash="bc9be41bf9fdf1c487f6c66aa1e52465"
+                data-title="2 серия"
+                data-other-translation="false"
+              >2 серия</option>
+              <option
+                value="3"
+                data-id="1211576"
+                data-hash="8c0dee34508be41d335f58a553448b2e"
+                data-title="3 серия"
+                data-other-translation="false"
+              >3 серия</option>
+              <option
+                value="4"
+                data-id="1211577"
+                data-hash="8421acd0e9c17e06ab897a432a921762"
+                data-title="4 серия"
+                data-other-translation="false"
+              >4 серия</option>
+              <option
+                value="5"
+                data-id="1214788"
+                data-hash="7b4cf5e7e9f2d2165b4ade965b19641b"
+                data-title="5 серия"
+                data-other-translation="false"
+              >5 серия</option>
+              <option
+                value="6"
+                data-id="1218919"
+                data-hash="6634753b3f95fdffa903bce387f45a8d"
+                data-title="6 серия"
+                data-other-translation="false"
+              >6 серия</option>
+              <option
+                value="7"
+                data-id="1221930"
+                data-hash="d4e2992bf2b18540d6754eeb53c2c8a3"
+                data-title="7 серия"
+                data-other-translation="false"
+              >7 серия</option>
+              <option
+                value="8"
+                data-id="1226073"
+                data-hash="f2fdd22d194c256f390b51a4ad08bfd9"
+                data-title="8 серия"
+                data-other-translation="false"
+              >8 серия</option>
+              <option
+                value="9"
+                data-id="1229766"
+                data-hash="1c146986e6c235ea6e5fadc388a493cc"
+                data-title="9 серия"
+                data-other-translation="false"
+              >9 серия</option>
+              <option
+                value="10"
+                data-id="1232505"
+                data-hash="5a1197b8614ee94495706fdbf0248749"
+                data-title="10 серия"
+                data-other-translation="false"
+              >10 серия</option>
+              <option
+                value="11"
+                data-id="1235590"
+                data-hash="36652ad51ad5254d6c82585731f6199a"
+                data-title="11 серия"
+                data-other-translation="false"
+              >11 серия</option>
+              <option
+                value="12"
+                data-id="1239045"
+                data-hash="2e6c60417af261d6c435c04fbc4fe710"
+                data-title="12 серия"
+                data-other-translation="false"
+              >12 серия</option>
+              <option
+                value="13"
+                data-id="1242706"
+                data-hash="34925366c803c6b16658ab5b016fb0f3"
+                data-title="13 серия"
+                data-other-translation="false"
+              >13 серия</option>
+              <option
+                value="14"
+                data-id="1245427"
+                data-hash="02c9799cb61008620ba9ea430ccd6dbf"
+                data-title="14 серия"
+                data-other-translation="false"
+              >14 серия</option>
+              <option
+                value="15"
+                data-id="1248691"
+                data-hash="07a58c9dd6be89745054bed19f50de7c"
+                data-title="15 серия"
+                data-other-translation="false"
+              >15 серия</option>
+              <option
+                value="16"
+                data-id="1251342"
+                data-hash="36f3a27c08c987b13de993d527fa2036"
+                data-title="16 серия"
+                data-other-translation="false"
+              >16 серия</option>
+              <option
+                value="17"
+                data-id="1255977"
+                data-hash="b3fa8c0c6a8f038310f6444c519d350a"
+                data-title="17 серия"
+                data-other-translation="false"
+              >17 серия</option>
+              <option
+                value="18"
+                data-id="1258672"
+                data-hash="044145b68fcfb4a4ebcea8b113bad4b5"
+                data-title="18 серия"
+                data-other-translation="false"
+              >18 серия</option>
+              <option
+                value="19"
+                data-id="1261252"
+                data-hash="2c1acda7c6b42111101d63a113cfda44"
+                data-title="19 серия"
+                data-other-translation="false"
+              >19 серия</option>
+              <option
+                value="20"
+                data-id="1264243"
+                data-hash="0f2df46453a059b324aa0af63ee4d6ea"
+                data-title="20 серия"
+                data-other-translation="false"
+              >20 серия</option>
+              <option
+                value="21"
+                data-id="1267120"
+                data-hash="3d6d6aefcf5687497e6ed3a24d46b9e4"
+                data-title="21 серия"
+                data-other-translation="false"
+              >21 серия</option>
+              <option
+                value="22"
+                data-id="1270261"
+                data-hash="3045ef40ce7b7228d14d2d3aee109c09"
+                data-title="22 серия"
+                data-other-translation="false"
+              >22 серия</option>
+              <option
+                value="23"
+                data-id="1273019"
+                data-hash="38f19f180f1a3d5d633b74db0cda5983"
+                data-title="23 серия"
+                data-other-translation="false"
+              >23 серия</option>
+              <option
+                value="24"
+                data-id="1276403"
+                data-hash="24ff64978b56f24adc847d0ea909c619"
+                data-title="24 серия"
+                data-other-translation="false"
+              >24 серия</option>
+              <option
+                value="25"
+                data-id="1279251"
+                data-hash="a5667f26a5d415bf01b4067162eb9e22"
+                data-title="25 серия"
+                data-other-translation="false"
+              >25 серия</option>
+              <option
+                value="26"
+                data-id="1281799"
+                data-hash="b906740e2c4e26e583865390b2a6cca9"
+                data-title="26 серия"
+                data-other-translation="false"
+              >26 серия</option>
+              <option
+                value="27"
+                data-id="1284593"
+                data-hash="75f0dfe5cdf50f01c3142aeec6251990"
+                data-title="27 серия"
+                data-other-translation="false"
+              >27 серия</option>
+              <option
+                value="28"
+                data-id="1287326"
+                data-hash="9a46ced1e6fd8c1c9939b351b88464b4"
+                data-title="28 серия"
+                  selected="selected"
+                data-other-translation="false"
+              >28 серия</option>
+          </div>
+      </div>
+
+      <div class="serial-next-button disabled">Дальше <svg xmlns="http://www.w3.org/2000/svg" id="Chevron_right" viewBox="0 0 20 20"><path class="fill" d="M9.2 4.5l4.5 4.7c.2.2.3.5.3.8s0 .6-.3.8l-4.5 4.7c-.5.4-1.2.4-1.7 0-.4-.5-.4-1 0-1.6l3.8-4-3.8-4c-.4-.4-.4-1 0-1.5.5-.4 1.2-.4 1.7 0z"/><script id="wappalyzerEnvDetection"/></svg></div>
+
+        <div class="movie-translations-box">
+          <select>
+              <option
+                value="3560"
+                data-id="3560"
+                data-translation-type="voice"
+                data-media-id="55917"
+                data-media-hash="d1d44d5cd59af5af897ce899a776dacf"
+                data-media-type="serial"
+                data-title="#студияБУБНЯЖА"
+                data-episode-count="28"
+              >#студияБУБНЯЖА (28 эп.)</option>
+              <option
+                value="2821"
+                data-id="2821"
+                data-translation-type="voice"
+                data-media-id="54529"
+                data-media-hash="f272a02ca5d052241d80a883a886a048"
+                data-media-type="serial"
+                data-title="AEROChannelEkat &amp; Risha"
+                data-episode-count="28"
+              >AEROChannelEkat & Risha (28 эп.)</option>
+              <option
+                value="963"
+                data-id="963"
+                data-translation-type="voice"
+                data-media-id="54132"
+                data-media-hash="0fbd1840c0cb02a5b3f2c9f0bc149ebe"
+                data-media-type="serial"
+                data-title="Amazing Dubbing"
+                data-episode-count="28"
+              >Amazing Dubbing (28 эп.)</option>
+              <option
+                value="2822"
+                data-id="2822"
+                data-translation-type="voice"
+                data-media-id="53993"
+                data-media-hash="5b4fe0ef6c69c08a3a9ecb54bfeeba97"
+                data-media-type="serial"
+                data-title="AniBaza"
+                data-episode-count="28"
+              >AniBaza (28 эп.)</option>
+              <option
+                value="609"
+                data-id="609"
+                data-translation-type="voice"
+                data-media-id="54025"
+                data-media-hash="05d5fd4731cc21947948187e34335d55"
+                data-media-type="serial"
+                data-title="AniDUB"
+                data-episode-count="28"
+              >AniDUB (28 эп.)</option>
+              <option
+                value="2674"
+                data-id="2674"
+                data-translation-type="voice"
+                data-media-id="54163"
+                data-media-hash="ec61d3291f3f12f593d17f68806f7b4e"
+                data-media-type="serial"
+                data-title="AniDub Online"
+                data-episode-count="28"
+              >AniDub Online (28 эп.)</option>
+              <option
+                value="1781"
+                data-id="1781"
+                data-translation-type="voice"
+                data-media-id="54527"
+                data-media-hash="125585fcf19bc8b810dd8fbc0ad8d687"
+                data-media-type="serial"
+                data-title="AniFame"
+                data-episode-count="28"
+              >AniFame (28 эп.)</option>
+              <option
+                value="610"
+                data-id="610"
+                data-translation-type="voice"
+                data-media-id="54001"
+                data-media-hash="4430312186765754f248dc8c4f8c9313"
+                data-media-type="serial"
+                data-title="AniLibria.TV"
+                data-episode-count="28"
+              >AniLibria.TV (28 эп.)</option>
+              <option
+                value="3142"
+                data-id="3142"
+                data-translation-type="voice"
+                data-media-id="73518"
+                data-media-hash="6ebbf15fdcfa0da1340cafa4f5ed8357"
+                data-media-type="serial"
+                data-title="AniLot"
+                data-episode-count="28"
+              >AniLot (28 эп.)</option>
+              <option
+                value="873"
+                data-id="873"
+                data-translation-type="voice"
+                data-media-id="54596"
+                data-media-hash="6926cf0072fe60c0aa200dcb1ad59966"
+                data-media-type="serial"
+                data-title="AniPLague"
+                data-episode-count="28"
+              >AniPLague (28 эп.)</option>
+              <option
+                value="958"
+                data-id="958"
+                data-translation-type="voice"
+                data-media-id="54299"
+                data-media-hash="8071f8ba18e7f41d7880030b9b394847"
+                data-media-type="serial"
+                data-title="AniRise"
+                data-episode-count="28"
+              >AniRise (28 эп.)</option>
+              <option
+                value="910"
+                data-id="910"
+                data-translation-type="voice"
+                data-media-id="53974"
+                data-media-hash="f183401f30ea62d88043d054c3ec61c4"
+                data-media-type="serial"
+                data-title="AniStar"
+                data-episode-count="28"
+              >AniStar (28 эп.)</option>
+              <option
+                value="923"
+                data-id="923"
+                data-translation-type="voice"
+                data-media-id="53973"
+                data-media-hash="8ea8930aaf747fd9364e99b03393b655"
+                data-media-type="serial"
+                data-title="AnimeVost"
+                data-episode-count="28"
+                  selected="selected"
+              >AnimeVost (28 эп.)</option>
+              <option
+                value="1978"
+                data-id="1978"
+                data-translation-type="voice"
+                data-media-id="53985"
+                data-media-hash="ebfc82645921e64a1eb670435defef97"
+                data-media-type="serial"
+                data-title="Dream Cast"
+                data-episode-count="28"
+              >Dream Cast (28 эп.)</option>
+              <option
+                value="1711"
+                data-id="1711"
+                data-translation-type="voice"
+                data-media-id="54035"
+                data-media-hash="77b29ef9ff5a62fe5a151b078c64282c"
+                data-media-type="serial"
+                data-title="DubClub"
+                data-episode-count="28"
+              >DubClub (28 эп.)</option>
+              <option
+                value="2228"
+                data-id="2228"
+                data-translation-type="voice"
+                data-media-id="54128"
+                data-media-hash="208bb766fd2f80e3ccbfa95e61707b13"
+                data-media-type="serial"
+                data-title="Freedub Studio"
+                data-episode-count="28"
+              >Freedub Studio (28 эп.)</option>
+              <option
+                value="2491"
+                data-id="2491"
+                data-translation-type="voice"
+                data-media-id="54181"
+                data-media-hash="e11c8bd9260efc87046dd77c7120bb8a"
+                data-media-type="serial"
+                data-title="Kazoku Project"
+                data-episode-count="28"
+              >Kazoku Project (28 эп.)</option>
+              <option
+                value="3470"
+                data-id="3470"
+                data-translation-type="voice"
+                data-media-id="71229"
+                data-media-hash="aa29cdb10b996b61bec3cf0c1eabb3d9"
+                data-media-type="serial"
+                data-title="Kitsune Studio"
+                data-episode-count="28"
+              >Kitsune Studio (28 эп.)</option>
+              <option
+                value="1720"
+                data-id="1720"
+                data-translation-type="voice"
+                data-media-id="56942"
+                data-media-hash="f75277615ae831aad0a812a290a914ad"
+                data-media-type="serial"
+                data-title="LampStudio"
+                data-episode-count="28"
+              >LampStudio (28 эп.)</option>
+              <option
+                value="3141"
+                data-id="3141"
+                data-translation-type="voice"
+                data-media-id="54139"
+                data-media-hash="e0e7d410c52a5afd14c0a546a8ddafa3"
+                data-media-type="serial"
+                data-title="MoonWalkers"
+                data-episode-count="28"
+              >MoonWalkers (28 эп.)</option>
+              <option
+                value="1811"
+                data-id="1811"
+                data-translation-type="voice"
+                data-media-id="53976"
+                data-media-hash="fdf1a21daff2efe56456d42a43125210"
+                data-media-type="serial"
+                data-title="OnWave"
+                data-episode-count="28"
+              >OnWave (28 эп.)</option>
+              <option
+                value="767"
+                data-id="767"
+                data-translation-type="voice"
+                data-media-id="54200"
+                data-media-hash="40b377cbf33a0e4ac3c11c3eb2013cf9"
+                data-media-type="serial"
+                data-title="SHIZA Project"
+                data-episode-count="28"
+              >SHIZA Project (28 эп.)</option>
+              <option
+                value="1780"
+                data-id="1780"
+                data-translation-type="voice"
+                data-media-id="54165"
+                data-media-hash="4b2446d3f8431c403691a6f2d1d52094"
+                data-media-type="serial"
+                data-title="Shiroi Kitsune"
+                data-episode-count="28"
+              >Shiroi Kitsune (28 эп.)</option>
+              <option
+                value="643"
+                data-id="643"
+                data-translation-type="voice"
+                data-media-id="54171"
+                data-media-hash="5b1fc5ed18628bdf0e18ec7d939db743"
+                data-media-type="serial"
+                data-title="Studio Band"
+                data-episode-count="28"
+              >Studio Band (28 эп.)</option>
+              <option
+                value="3150"
+                data-id="3150"
+                data-translation-type="voice"
+                data-media-id="77320"
+                data-media-hash="76e929ef885f84a0247bbffd62cb301d"
+                data-media-type="serial"
+                data-title="WinMedia"
+                data-episode-count="28"
+              >WinMedia (28 эп.)</option>
+              <option
+                value="1863"
+                data-id="1863"
+                data-translation-type="voice"
+                data-media-id="53975"
+                data-media-hash="755cb428d1ce8c6be699f19aa08a3d41"
+                data-media-type="serial"
+                data-title="КОМНАТА ДИДИ"
+                data-episode-count="28"
+              >КОМНАТА ДИДИ (28 эп.)</option>
+              <option
+                value="2677"
+                data-id="2677"
+                data-translation-type="voice"
+                data-media-id="53994"
+                data-media-hash="bd1c11d35e15f45cddf19f20eb8ff3b9"
+                data-media-type="serial"
+                data-title="Кладбище топовых релизов"
+                data-episode-count="28"
+              >Кладбище топовых релизов (28 эп.)</option>
+              <option
+                value="2609"
+                data-id="2609"
+                data-translation-type="voice"
+                data-media-id="54368"
+                data-media-hash="b66f0670c0f8edc193b6ef42f5b47095"
+                data-media-type="serial"
+                data-title="Невинный Кружок"
+                data-episode-count="28"
+              >Невинный Кружок (28 эп.)</option>
+              <option
+                value="2570"
+                data-id="2570"
+                data-translation-type="voice"
+                data-media-id="53999"
+                data-media-hash="8d741c041c639daef5eb8f8f438c1a2e"
+                data-media-type="serial"
+                data-title="Оканэ"
+                data-episode-count="28"
+              >Оканэ (28 эп.)</option>
+              <option
+                value="3084"
+                data-id="3084"
+                data-translation-type="voice"
+                data-media-id="54782"
+                data-media-hash="0fdeb012f09b1cbe07851b1b831c4e2a"
+                data-media-type="serial"
+                data-title="ТО Дубляжная"
+                data-episode-count="28"
+              >ТО Дубляжная (28 эп.)</option>
+              <option
+                value="1071"
+                data-id="1071"
+                data-translation-type="subtitles"
+                data-media-id="53978"
+                data-media-hash="609d7f62e6245bbda0b94ca7285616ba"
+                data-media-type="serial"
+                data-title="AniRise.Subtitles"
+                data-episode-count="28"
+              >AniRise.Subtitles (28 эп.)</option>
+              <option
+                value="1291"
+                data-id="1291"
+                data-translation-type="subtitles"
+                data-media-id="53972"
+                data-media-hash="9c1a2c8867f9b32acddbfdad4f075041"
+                data-media-type="serial"
+                data-title="Crunchyroll.Subtitles"
+                data-episode-count="28"
+              >Crunchyroll.Subtitles (28 эп.)</option>
+              <option
+                value="3603"
+                data-id="3603"
+                data-translation-type="voice"
+                data-media-id="55377"
+                data-media-hash="8a0074bdcdf99b733b8358644c8a6f0a"
+                data-media-type="serial"
+                data-title="SamuraiDUB"
+                data-episode-count="11"
+              >SamuraiDUB (11 эп.)</option>
+          </select>
+        </div>
+    </div>
+
+      <div class="resume-button"></div>
+
+    <script>
+  var yaParams = {};
+
+  if (typeof isIframe === "function") yaParams.iframe = isIframe();
+  
+  yaParams.a = true;
+  yaParams.adult = false;
+  yaParams.double_a = false;
+  yaParams.partnership = true;
+  yaParams.share_link = true;
+  yaParams.c_a = "on";
+  yaParams.c_a_bool = true;
+  yaParams.b_a = "on";
+  yaParams.b_a_bool = true;
+  yaParams.y_a = "on";
+  yaParams.y_a_bool = true;
+  yaParams.domain = "kodikplayer.com";
+</script>
+
+<!-- Yandex.Metrika counter --> <script type="text/javascript" > (function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)}; m[i].l=1*new Date();k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)}) (window, document, "script", "https://cdn.jsdelivr.net/npm/yandex-metrica-watch/tag.js", "ym"); ym(58424476, "init", { clickmap:true, trackLinks:true, accurateTrackBounce:true, params:yaParams }); </script> <noscript><div><img src="https://mc.yandex.ru/watch/58424476" style="position:absolute; left:-9999px;" alt="" /></div></noscript> <!-- /Yandex.Metrika counter -->
+
+  </div>
+</body>
+</html>

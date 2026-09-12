@@ -120,11 +120,7 @@ class KodikLinkExtractor @Inject constructor(
     private suspend fun execute(request: Request): String = withContext(Dispatchers.IO) {
         try {
             client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    throw KodikError.Network(
-                        IOException("${request.url.encodedPath} answered HTTP ${response.code}"),
-                    )
-                }
+                if (!response.isSuccessful) throw KodikError.Rejected(response.code)
                 response.body.string()
             }
         } catch (e: IOException) {

@@ -7,6 +7,7 @@ import app.kaeru.domain.error.HttpError
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.error.SourceFormatChanged
 import app.kaeru.domain.error.SourceUnavailable
+import app.kaeru.domain.error.SourceUnavailableReason
 
 private const val OFFLINE = "Нет соединения. Проверьте интернет"
 private const val SIGNED_OUT = "Сессия истекла, войдите снова"
@@ -15,6 +16,7 @@ private const val SHIKIMORI_DOWN = "Shikimori недоступен, попроб
 private const val SESSION_CHANGED = "Сессия изменилась, обновите экран"
 private const val CALLBACK_REJECTED = "Не удалось подтвердить вход. Войдите заново"
 private const val SOURCE_NO_KEY = "Kodik недоступен: не удалось получить ключ"
+private const val SOURCE_REJECTED = "Kodik временно недоступен, попробуйте позже"
 private const val EPISODE_MISSING = "Серия ещё не появилась в Kodik"
 private const val SOURCE_CHANGED = "Источник обновился, ждите обновления приложения"
 private const val UNKNOWN = "Что-то пошло не так. Повторите попытку"
@@ -29,7 +31,8 @@ fun Throwable.toUserMessage(): String = when {
     this is HttpError && code == 429 -> THROTTLED
     this is HttpError && code in 500..599 -> SHIKIMORI_DOWN
     this is AuthCallbackRejected -> CALLBACK_REJECTED
-    this is SourceUnavailable -> SOURCE_NO_KEY
+    this is SourceUnavailable && reason == SourceUnavailableReason.NO_KEY -> SOURCE_NO_KEY
+    this is SourceUnavailable -> SOURCE_REJECTED
     this is EpisodeNotAvailable -> EPISODE_MISSING
     this is SourceFormatChanged -> SOURCE_CHANGED
     this is AccountSessionChanged -> SESSION_CHANGED

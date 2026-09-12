@@ -17,8 +17,18 @@ class AccountSessionChanged(message: String) : IllegalStateException(message)
 /** An OAuth redirect callback did not match an authorization this app started. */
 class AuthCallbackRejected(message: String) : Exception(message)
 
-/** The video source is reachable but will not serve us: no usable key, or it turned us away. */
-class SourceUnavailable(cause: Throwable? = null) : Exception("Video source unavailable", cause)
+/** Why the source would not serve us. The two read very differently to a user, so they get separate copy. */
+enum class SourceUnavailableReason {
+    /** No token could be obtained, so we never got to ask. */
+    NO_KEY,
+
+    /** The source answered and turned us away: a non-2xx, or a failure we cannot classify. */
+    REJECTED,
+}
+
+/** The video source is reachable but will not serve us. */
+class SourceUnavailable(val reason: SourceUnavailableReason, cause: Throwable? = null) :
+    Exception("Video source unavailable: $reason", cause)
 
 /** The source has nothing to play: no entry for this anime at all, or not this episode yet. */
 class EpisodeNotAvailable(val animeId: Int, val episode: Int? = null) :

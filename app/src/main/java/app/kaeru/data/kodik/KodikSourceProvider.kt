@@ -4,6 +4,7 @@ import app.kaeru.domain.error.EpisodeNotAvailable
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.error.SourceFormatChanged
 import app.kaeru.domain.error.SourceUnavailable
+import app.kaeru.domain.error.SourceUnavailableReason
 import app.kaeru.domain.model.EpisodeStream
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
@@ -68,6 +69,8 @@ class KodikSourceProvider @Inject constructor(
         // one (WatchState.kodikSeason) outranks the default of 1.
         val season = translation?.season ?: catalogue.translations[index].season
         val chosen = catalogue.translations[index].copy(season = season)
+        // A movie has no season or episode to select, and Kodik serves it from /video.
+        val isSerial = catalogue.page.currentType == SERIAL_TYPE
 
         // Every translation is a separate Kodik entry with its own episode list
         // and its own freshly signed parameters, so the page is always refetched.
@@ -76,8 +79,8 @@ class KodikSourceProvider @Inject constructor(
             mediaId = option.mediaId,
             mediaHash = option.mediaHash,
             type = catalogue.page.currentType,
-            season = season,
-            episode = episode,
+            season = season.takeIf { isSerial },
+            episode = episode.takeIf { isSerial },
         )
         val wanted = page.episodes.firstOrNull { it.number == episode }
         if (wanted == null && page.episodes.isNotEmpty()) throw KodikError.NotFound(shikimoriId)
@@ -87,14 +90,15 @@ class KodikSourceProvider @Inject constructor(
             page = page,
             mediaId = wanted?.mediaId ?: page.currentId,
             mediaHash = wanted?.mediaHash ?: page.currentHash,
-            type = if (wanted != null) "seria" else page.currentType,
+            type = if (wanted != null) SERIAL_TYPE else page.currentType,
         )
         val urls = links.mapNotNull { (height, url) -> Quality.ofHeight(height)?.let { it to url } }.toMap()
         if (urls.isEmpty()) throw KodikError.ParserBroken("links")
 
         EpisodeStream(
             animeId = shikimoriId,
-            episode = episode,
+            // A movie is its own single episode however the caller numbered it.
+            episode = if (page.episodes.isEmpty()) 1 else episode,
             translation = chosen,
             urls = urls,
             resolvedAt = clock.instant(),
@@ -151,15 +155,18 @@ class KodikSourceProvider @Inject constructor(
 
     /** `ui.*` only knows `domain.error`, so no Kodik, OkHttp or Retrofit type may leave this class. */
     private fun Throwable.toDomainFailure(episode: Int?): Throwable = when (this) {
-        is KodikError.NoToken -> SourceUnavailable(this)
+        is KodikError.NoToken -> SourceUnavailable(SourceUnavailableReason.NO_KEY, this)
         is KodikError.NotFound -> EpisodeNotAvailable(shikimoriId, episode)
         is KodikError.ParserBroken -> SourceFormatChanged(step, this)
         is KodikError.Network -> NetworkUnavailable(this)
+        is KodikError.Rejected -> SourceUnavailable(SourceUnavailableReason.REJECTED, this)
         is SerializationException -> SourceFormatChanged("get-player", this)
         // Not HttpError: its copy names Shikimori, and nothing here talks to Shikimori.
-        is HttpException -> SourceUnavailable(this)
+        is HttpException -> SourceUnavailable(SourceUnavailableReason.REJECTED, this)
         is IOException -> NetworkUnavailable(this)
-        else -> this
+        // Nothing reaches the UI unclassified: an unmapped exception would otherwise
+        // land on the generic "что-то пошло не так" and hide which source failed.
+        else -> SourceUnavailable(SourceUnavailableReason.REJECTED, this)
     }
 
     private fun KodikTranslationOption.toDomain() = Translation(
@@ -175,5 +182,6 @@ class KodikSourceProvider @Inject constructor(
     private companion object {
         val CACHE_TTL: Duration = Duration.ofHours(6)
         const val HTTP_UNAUTHORIZED = 401
+        const val SERIAL_TYPE = "seria"
     }
 }

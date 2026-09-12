@@ -154,12 +154,12 @@ class KodikTokenProviderTest {
     }
 
     @Test
-    fun `a non-2xx script response fails with Network`() = runTest {
+    fun `a non-2xx script response fails with NoToken, not as a connectivity failure`() = runTest {
         server.enqueue(MockResponse().setResponseCode(503).setBody("nope"))
 
         val error = runCatching { provider().token() }.exceptionOrNull()
 
-        assertTrue("expected Network, got $error", error is KodikError.Network)
+        assertTrue("expected NoToken, got $error", error is KodikError.NoToken)
     }
 
     @Test

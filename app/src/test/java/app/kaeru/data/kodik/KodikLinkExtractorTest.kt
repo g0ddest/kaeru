@@ -209,19 +209,30 @@ class KodikLinkExtractorTest {
     }
 
     @Test
-    fun `a non-2xx player page fails with Network`() = runTest {
+    fun `a non-2xx player page is a rejection, not a connectivity failure`() = runTest {
         server.enqueue(MockResponse().setResponseCode(500).setBody("boom"))
 
         val error = runCatching { extractor.loadPage("//kodikplayer.com/serial/1/h/720p") }.exceptionOrNull()
 
-        assertTrue("expected Network, got $error", error is KodikError.Network)
+        assertTrue("expected Rejected, got $error", error is KodikError.Rejected)
+        assertEquals(500, (error as KodikError.Rejected).code)
     }
 
     @Test
-    fun `a non-2xx ftor response fails with Network`() = runTest {
+    fun `a non-2xx ftor response is a rejection, not a connectivity failure`() = runTest {
         server.enqueue(MockResponse().setResponseCode(403).setBody("denied"))
 
         val error = runCatching { extractor.resolveLinks(parsedPage()) }.exceptionOrNull()
+
+        assertTrue("expected Rejected, got $error", error is KodikError.Rejected)
+        assertEquals(403, (error as KodikError.Rejected).code)
+    }
+
+    @Test
+    fun `an unreachable player host still fails with Network`() = runTest {
+        server.shutdown()
+
+        val error = runCatching { extractor.loadPage("//kodikplayer.com/serial/1/h/720p") }.exceptionOrNull()
 
         assertTrue("expected Network, got $error", error is KodikError.Network)
     }

@@ -129,33 +129,94 @@ class KodikHtmlParserTest {
         assertEquals("&#99999999999;", KodikHtmlParser.decodeHtmlEntities("&#99999999999;"))
     }
 
-    private fun minimalHtml(seriesBoxClass: String): String = """
-        <html><body>
-        <script>
-          var domain = "kodikplayer.com";
-          var d_sign = "sign1";
-          var pd = "kodikplayer.com";
-          var pd_sign = "sign2";
-          var ref = "https://kodikplayer.com/";
-          var ref_sign = "sign3";
-        </script>
-        <script>
-           vInfo.type = 'seria';
-           vInfo.hash = 'hash1';
-           vInfo.id = '1';
-        </script>
-        <div class="serial-translations-box">
-          <select>
-            <option value="1" data-id="1" data-translation-type="voice" data-media-id="10" data-media-hash="h10" data-title="Test">Test (1 эп.)</option>
-          </select>
-        </div>
-        <div class="$seriesBoxClass">
-          <select>
-            <option value="1" data-id="1" data-hash="hash1" data-title="1 серия">1 серия</option>
-          </select>
-        </div>
-        </body></html>
-    """.trimIndent()
+    private fun minimalPage(
+        type: String = "seria",
+        translationsBoxClass: String? = "serial-translations-box",
+        seriesBoxClass: String? = "serial-series-box",
+    ): String {
+        val translationsBox = translationsBoxClass?.let {
+            """
+            <div class="$it">
+              <select>
+                <option value="1" data-id="1" data-translation-type="voice" data-media-id="10" data-media-hash="h10" data-title="Test">Test (1 эп.)</option>
+              </select>
+            </div>
+            """
+        }.orEmpty()
+        val seriesBox = seriesBoxClass?.let {
+            """
+            <div class="$it">
+              <select>
+                <option value="1" data-id="1" data-hash="hash1" data-title="1 серия">1 серия</option>
+              </select>
+            </div>
+            """
+        }.orEmpty()
+        return """
+            <html><body>
+            <script>
+              var domain = "kodikplayer.com";
+              var d_sign = "sign1";
+              var pd = "kodikplayer.com";
+              var pd_sign = "sign2";
+              var ref = "https://kodikplayer.com/";
+              var ref_sign = "sign3";
+            </script>
+            <script>
+               vInfo.type = '$type';
+               vInfo.hash = 'hash1';
+               vInfo.id = '1';
+            </script>
+            $translationsBox
+            $seriesBox
+            </body></html>
+        """.trimIndent()
+    }
+
+    private fun minimalHtml(seriesBoxClass: String): String = minimalPage(seriesBoxClass = seriesBoxClass)
+
+    @Test
+    fun `parse accepts a movie page that has no episode list`() {
+        val page = KodikHtmlParser.parse(fixture("movie.html"))
+
+        assertEquals("video", page.currentType)
+        assertEquals("990011", page.currentId)
+        assertEquals("aa11bb22cc33dd44ee55ff6677889900", page.currentHash)
+        assertTrue("a movie has no episodes to list", page.episodes.isEmpty())
+    }
+
+    @Test
+    fun `parse reads translations out of a movie translations box`() {
+        val page = KodikHtmlParser.parse(fixture("movie.html"))
+
+        assertEquals(33, page.translations.size)
+        assertEquals(3560, page.translations.first().id)
+        assertEquals("55917", page.translations.first().mediaId)
+    }
+
+    @Test
+    fun `a movie page without any translations box parses with an empty track list`() {
+        val page = KodikHtmlParser.parse(minimalPage(type = "video", translationsBoxClass = null, seriesBoxClass = null))
+
+        assertTrue(page.translations.isEmpty())
+        assertTrue(page.episodes.isEmpty())
+    }
+
+    @Test
+    fun `a serial page without a translations box still throws`() {
+        val error = assertThrows(KodikError.ParserBroken::class.java) {
+            KodikHtmlParser.parse(minimalPage(translationsBoxClass = null))
+        }
+        assertEquals("translations", error.step)
+    }
+
+    @Test
+    fun `a serial page without an episode list still throws`() {
+        val error = assertThrows(KodikError.ParserBroken::class.java) {
+            KodikHtmlParser.parse(minimalPage(seriesBoxClass = null))
+        }
+        assertEquals("episodes", error.step)
+    }
 
     @Test
     fun `parse does not treat a div whose class merely starts with the box name as the series box`() {

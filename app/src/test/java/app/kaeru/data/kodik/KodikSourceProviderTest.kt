@@ -4,6 +4,7 @@ import app.kaeru.domain.error.EpisodeNotAvailable
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.error.SourceFormatChanged
 import app.kaeru.domain.error.SourceUnavailable
+import app.kaeru.domain.error.SourceUnavailableReason
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
@@ -232,6 +233,43 @@ class KodikSourceProviderTest {
     }
 
     @Test
+    fun `resolve on a movie posts the vInfo id and hash under the movie type`() = runTest {
+        routes.playerPageBody = fixture("movie.html")
+
+        val stream = provider.resolve(SHIKIMORI_ID, episode = 1).getOrThrow()
+
+        val body = routes.lastFtorBody!!
+        assertTrue("expected type=video in $body", body.contains("&type=video"))
+        assertTrue("expected the vInfo id in $body", body.contains("&id=990011"))
+        assertTrue("expected the vInfo hash in $body", body.contains("&hash=aa11bb22cc33dd44ee55ff6677889900"))
+        assertEquals(setOf(Quality.P360, Quality.P480, Quality.P720), stream.urls.keys)
+    }
+
+    @Test
+    fun `a movie translation page is opened under video, with no season or episode`() = runTest {
+        routes.playerPageBody = fixture("movie.html")
+        provider.translations(SHIKIMORI_ID).getOrThrow()
+        server.takeRequest()
+        server.takeRequest()
+
+        provider.resolve(SHIKIMORI_ID, episode = 1).getOrThrow()
+
+        val url = server.takeRequest().requestUrl!!
+        assertTrue("unexpected path ${url.encodedPath}", url.encodedPath.startsWith("/video/"))
+        assertNull(url.queryParameter("season"))
+        assertNull(url.queryParameter("episode"))
+    }
+
+    @Test
+    fun `a movie always answers as episode 1, whatever episode was asked for`() = runTest {
+        routes.playerPageBody = fixture("movie.html")
+
+        val stream = provider.resolve(SHIKIMORI_ID, episode = 5).getOrThrow()
+
+        assertEquals(1, stream.episode)
+    }
+
+    @Test
     fun `resolve returns every decoded quality and remembers when it resolved`() = runTest {
         val stream = provider.resolve(SHIKIMORI_ID, episode = 1).getOrThrow()
 
@@ -279,12 +317,13 @@ class KodikSourceProviderTest {
     }
 
     @Test
-    fun `a token that cannot be obtained fails with SourceUnavailable`() = runTest {
+    fun `a token that cannot be obtained blames the key, not the source`() = runTest {
         tokens.failure = KodikError.NoToken()
 
         val error = provider.translations(SHIKIMORI_ID).exceptionOrNull()
 
         assertTrue("expected SourceUnavailable, got $error", error is SourceUnavailable)
+        assertEquals(SourceUnavailableReason.NO_KEY, (error as SourceUnavailable).reason)
     }
 
     @Test
@@ -295,6 +334,26 @@ class KodikSourceProviderTest {
 
         assertTrue("expected SourceUnavailable, got $error", error is SourceUnavailable)
         assertEquals(1, routes.getPlayerCalls)
+    }
+
+    @Test
+    fun `a player host that turns us away asks to retry, not to check the internet`() = runTest {
+        routes.playerPageResponse = MockResponse().setResponseCode(403).setBody("denied")
+
+        val error = provider.translations(SHIKIMORI_ID).exceptionOrNull()
+
+        assertTrue("expected SourceUnavailable, got $error", error is SourceUnavailable)
+        assertEquals(SourceUnavailableReason.REJECTED, (error as SourceUnavailable).reason)
+    }
+
+    @Test
+    fun `an unexpected failure is never handed to the ui raw`() = runTest {
+        tokens.failure = IllegalStateException("boom")
+
+        val error = provider.translations(SHIKIMORI_ID).exceptionOrNull()
+
+        assertTrue("expected SourceUnavailable, got $error", error is SourceUnavailable)
+        assertEquals(SourceUnavailableReason.REJECTED, (error as SourceUnavailable).reason)
     }
 
     @Test
@@ -328,6 +387,7 @@ class KodikSourceProviderTest {
     ) : Dispatcher() {
         var getPlayerCalls = 0
         var playerPageBody: String? = null
+        var playerPageResponse: MockResponse? = null
         var lastFtorBody: String? = null
 
         /** Consumed in order; once empty every call answers with a found player. */
@@ -343,7 +403,7 @@ class KodikSourceProviderTest {
                     lastFtorBody = request.body.copy().readUtf8()
                     json(links)
                 }
-                else -> MockResponse()
+                else -> playerPageResponse ?: MockResponse()
                     .setHeader("Content-Type", "text/html; charset=utf-8")
                     .setBody(playerPageBody ?: playerPage)
             }

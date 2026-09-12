@@ -96,8 +96,10 @@ class DefaultKodikTokenProvider @Inject constructor(
             .build()
         try {
             client.newCall(request).execute().use { response ->
+                // A non-2xx here means no key, not a dead connection: say so, so the
+                // user is not told to check an internet connection that works.
                 if (!response.isSuccessful) {
-                    throw KodikError.Network(IOException("add-players.min.js answered HTTP ${response.code}"))
+                    throw KodikError.NoToken(IOException("add-players.min.js answered HTTP ${response.code}"))
                 }
                 response.body.string()
             }
