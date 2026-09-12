@@ -10,3 +10,6 @@
 .cxx
 /.worktrees/
 /.superpowers/
+/tools/.venv/
+/tools/__pycache__/
+*.pyc
