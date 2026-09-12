@@ -49,9 +49,10 @@ import coil3.compose.AsyncImage
 @Composable
 fun TvHomeScreen(state: HomeUiState, onRefresh: () -> Unit, onAnime: (LibraryEntry) -> Unit) {
     val rows = remember(state.feed) { tvHomeRows(state.feed) }
-    val initialItem = rows.firstOrNull()?.items?.firstOrNull()
+    val initialItem = remember(state.feed) { initialTvItem(state.feed, rows) }
     var focused by remember(initialItem) { mutableStateOf(initialItem) }
     val firstFocus = remember { FocusRequester() }
+    var hasRequestedInitialFocus by remember { mutableStateOf(false) }
 
     if (state.isLoading) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Загружаем библиотеку…") }
@@ -94,7 +95,15 @@ fun TvHomeScreen(state: HomeUiState, onRefresh: () -> Unit, onAnime: (LibraryEnt
             }
         }
     }
-    LaunchedEffect(initialItem) { if (initialItem != null) firstFocus.requestFocus() }
+    // Requests initial D-pad focus exactly once per screen entry: a later background refresh
+    // (e.g. a Room emission changing `state.feed`) must never re-grab focus from wherever the
+    // user has navigated to, and the target row/card may no longer be composed by then.
+    LaunchedEffect(Unit) {
+        if (!hasRequestedInitialFocus && initialItem != null) {
+            hasRequestedInitialFocus = true
+            runCatching { firstFocus.requestFocus() }
+        }
+    }
 }
 
 @Composable

@@ -41,4 +41,27 @@ class TvHomeRowsTest {
         val rows = tvHomeRows(HomeFeed(next, emptyList(), emptyList(), listOf(next), emptyList(), listOf(planned)))
         assertEquals(listOf("Следующая серия", "В планах"), rows.map { it.title })
     }
+
+    @Test
+    fun `initial item prefers feed top over the first row's item`() {
+        val top = item(5, FeedKind.NEXT_UP)
+        val continueItem = item(6, FeedKind.CONTINUE)
+        val feed = HomeFeed(top, listOf(continueItem), emptyList(), listOf(top), emptyList(), emptyList())
+        val rows = tvHomeRows(feed)
+        assertEquals(continueItem, rows.first().items.first())
+        assertEquals(top, initialTvItem(feed, rows))
+    }
+
+    @Test
+    fun `initial item falls back to the first non-empty row when feed top is null`() {
+        val planned = item(7, FeedKind.PLANNED)
+        val feed = HomeFeed(null, emptyList(), emptyList(), emptyList(), emptyList(), listOf(planned))
+        val rows = tvHomeRows(feed)
+        assertEquals(planned, initialTvItem(feed, rows))
+    }
+
+    @Test
+    fun `initial item is null when feed and rows are empty`() {
+        assertEquals(null, initialTvItem(HomeFeed.EMPTY, emptyList()))
+    }
 }
