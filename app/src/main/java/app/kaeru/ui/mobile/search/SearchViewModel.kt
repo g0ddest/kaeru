@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.repository.LibraryRepository
+import app.kaeru.ui.common.errorMessageOrNull
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -40,7 +41,7 @@ class SearchViewModel @Inject constructor(private val repository: LibraryReposit
                     results = result.getOrDefault(emptyList()),
                     recentQueries = (listOf(query) + state.recentQueries.filterNot { it == query }).take(5),
                     searching = false,
-                    errorMessage = result.exceptionOrNull()?.message,
+                    errorMessage = result.errorMessageOrNull(),
                 )
             }
         }
@@ -50,7 +51,7 @@ class SearchViewModel @Inject constructor(private val repository: LibraryReposit
         viewModelScope.launch {
             mutable.update { it.copy(addingAnimeId = animeId, errorMessage = null) }
             val result = repository.setStatus(animeId, ListStatus.PLANNED)
-            mutable.update { it.copy(addingAnimeId = null, errorMessage = result.exceptionOrNull()?.message) }
+            mutable.update { it.copy(addingAnimeId = null, errorMessage = result.errorMessageOrNull()) }
         }
     }
 }

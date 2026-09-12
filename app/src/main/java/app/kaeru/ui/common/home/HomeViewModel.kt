@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import app.kaeru.domain.feed.HomeFeedBuilder
 import app.kaeru.domain.model.HomeFeed
 import app.kaeru.domain.repository.LibraryRepository
+import app.kaeru.ui.common.errorMessageOrNull
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,10 +51,7 @@ class HomeViewModel @Inject constructor(
         refreshJob = viewModelScope.launch {
             refreshState.value = RefreshState(active = true)
             val result = repository.refresh()
-            refreshState.value = RefreshState(
-                active = false,
-                error = result.exceptionOrNull()?.message ?: result.exceptionOrNull()?.let { "Не удалось обновить данные" },
-            )
+            refreshState.value = RefreshState(active = false, error = result.errorMessageOrNull())
         }
     }
 }

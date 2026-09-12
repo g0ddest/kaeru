@@ -10,6 +10,7 @@ import app.kaeru.data.shikimori.ShikimoriApi
 import app.kaeru.data.shikimori.UserRatePayload
 import app.kaeru.data.shikimori.UserRateRequest
 import app.kaeru.data.shikimori.toDomain
+import app.kaeru.data.shikimori.toDomainFailure
 import app.kaeru.di.IoDispatcher
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
@@ -158,7 +159,7 @@ class ShikimoriLibraryRepository @Inject constructor(
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (error: Exception) {
-        Result.failure(error)
+        Result.failure(error.toDomainFailure())
     }
 
     private suspend fun <T> onIo(block: suspend () -> T): Result<T> = withContext(io) {
@@ -167,7 +168,7 @@ class ShikimoriLibraryRepository @Inject constructor(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            Result.failure(error)
+            Result.failure(error.toDomainFailure())
         }
     }
 }

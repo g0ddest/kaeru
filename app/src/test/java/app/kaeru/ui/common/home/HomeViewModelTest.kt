@@ -1,5 +1,7 @@
 package app.kaeru.ui.common.home
 
+import app.kaeru.domain.error.HttpError
+import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.feed.HomeFeedBuilder
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
@@ -18,6 +20,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import java.net.UnknownHostException
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -61,21 +64,21 @@ class HomeViewModelTest {
     fun `failed refresh keeps cached feed and exposes retryable error`() = runTest(main.dispatcher) {
         val repo = FakeLibraryRepository().also {
             it.entries.value = listOf(entry())
-            it.refreshResult = Result.failure(IllegalStateException("offline"))
+            it.refreshResult = Result.failure(NetworkUnavailable(UnknownHostException("shikimori.one")))
         }
         val vm = HomeViewModel(repo, HomeFeedBuilder(), Clock.fixed(now, ZoneOffset.UTC))
         advanceUntilIdle()
         assertEquals(7, vm.uiState.value.feed.top?.entry?.anime?.id)
-        assertEquals("offline", vm.uiState.value.errorMessage)
+        assertEquals("Нет соединения. Проверьте интернет", vm.uiState.value.errorMessage)
         assertFalse(vm.uiState.value.isRefreshing)
     }
 
     @Test
     fun `manual refresh clears previous error`() = runTest(main.dispatcher) {
-        val repo = FakeLibraryRepository().also { it.refreshResult = Result.failure(Exception("first")) }
+        val repo = FakeLibraryRepository().also { it.refreshResult = Result.failure(HttpError(500)) }
         val vm = HomeViewModel(repo, HomeFeedBuilder(), Clock.fixed(now, ZoneOffset.UTC))
         advanceUntilIdle()
-        assertEquals("first", vm.uiState.value.errorMessage)
+        assertEquals("Shikimori недоступен, попробуйте позже", vm.uiState.value.errorMessage)
         repo.refreshResult = Result.success(Unit)
         vm.refresh()
         advanceUntilIdle()

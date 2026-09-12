@@ -2,6 +2,7 @@ package app.kaeru.data.auth
 
 import app.kaeru.data.library.AppPreferences
 import app.kaeru.data.local.KaeruDatabase
+import app.kaeru.domain.error.AccountSessionChanged
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -47,9 +48,9 @@ class AccountSession @Inject constructor(
     suspend fun <T> withAccount(block: suspend (Long) -> T): T {
         val started = generation.value
         return lock.withLock {
-            check(started == generation.value) { "Account session changed" }
-            val id = checkNotNull(store.get()?.userId) { "No verified account session" }
-            check(id == prefs.userId()) { "Account identity is not prepared" }
+            if (started != generation.value) throw AccountSessionChanged("Account session changed")
+            val id = store.get()?.userId ?: throw AccountSessionChanged("No verified account session")
+            if (id != prefs.userId()) throw AccountSessionChanged("Account identity is not prepared")
             block(id)
         }
     }

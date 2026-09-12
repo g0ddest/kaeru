@@ -1,0 +1,31 @@
+package app.kaeru.ui.common
+
+import app.kaeru.domain.error.AccountSessionChanged
+import app.kaeru.domain.error.AuthCallbackRejected
+import app.kaeru.domain.error.HttpError
+import app.kaeru.domain.error.NetworkUnavailable
+
+private const val OFFLINE = "Нет соединения. Проверьте интернет"
+private const val SIGNED_OUT = "Сессия истекла, войдите снова"
+private const val THROTTLED = "Слишком много запросов, попробуйте позже"
+private const val SHIKIMORI_DOWN = "Shikimori недоступен, попробуйте позже"
+private const val SESSION_CHANGED = "Сессия изменилась, обновите экран"
+private const val CALLBACK_REJECTED = "Не удалось подтвердить вход. Войдите заново"
+private const val UNKNOWN = "Что-то пошло не так. Повторите попытку"
+
+/**
+ * The single place where a failure becomes user-facing copy. Exception text is never shown:
+ * it is English, often a stack-trace fragment, and sometimes carries request details.
+ */
+fun Throwable.toUserMessage(): String = when {
+    this is NetworkUnavailable -> OFFLINE
+    this is HttpError && (code == 401 || code == 403) -> SIGNED_OUT
+    this is HttpError && code == 429 -> THROTTLED
+    this is HttpError && code in 500..599 -> SHIKIMORI_DOWN
+    this is AuthCallbackRejected -> CALLBACK_REJECTED
+    this is AccountSessionChanged -> SESSION_CHANGED
+    else -> UNKNOWN
+}
+
+/** Null when the result succeeded; the mapped message otherwise. */
+fun Result<*>.errorMessageOrNull(): String? = exceptionOrNull()?.toUserMessage()

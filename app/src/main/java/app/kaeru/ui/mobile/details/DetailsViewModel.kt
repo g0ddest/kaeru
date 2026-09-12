@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.repository.LibraryRepository
+import app.kaeru.ui.common.errorMessageOrNull
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -39,7 +40,7 @@ class DetailsViewModel @Inject constructor(
         viewModelScope.launch {
             work.value = work.value.copy(refreshing = true, errorMessage = null)
             val result = repository.refreshAnime(animeId)
-            work.value = work.value.copy(refreshing = false, errorMessage = result.exceptionOrNull()?.message)
+            work.value = work.value.copy(refreshing = false, errorMessage = result.errorMessageOrNull())
         }
     }
 
@@ -47,7 +48,7 @@ class DetailsViewModel @Inject constructor(
         viewModelScope.launch {
             work.value = work.value.copy(updatingStatus = true, errorMessage = null)
             val result = repository.setStatus(animeId, status)
-            work.value = work.value.copy(updatingStatus = false, errorMessage = result.exceptionOrNull()?.message)
+            work.value = work.value.copy(updatingStatus = false, errorMessage = result.errorMessageOrNull())
         }
     }
 }
