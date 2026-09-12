@@ -1,0 +1,95 @@
+package app.kaeru.data.kodik
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class KodikHtmlParserTest {
+
+    private fun fixture(name: String): String =
+        javaClass.classLoader!!.getResourceAsStream("kodik/$name")!!.bufferedReader().readText()
+
+    @Test
+    fun `parse extracts signing params from real player page`() {
+        val page = KodikHtmlParser.parse(fixture("player.html"))
+
+        assertEquals("kodikplayer.com", page.domain)
+        assertEquals("7af8577bd2663bbd586a90cccaf740b83784ee5a37334b1b56363ea06d7755a8:2609140747", page.dSign)
+        assertEquals("kodikplayer.com", page.pd)
+        assertEquals("7af8577bd2663bbd586a90cccaf740b83784ee5a37334b1b56363ea06d7755a8:2609140747", page.pdSign)
+        assertEquals("https://kodikplayer.com/", page.ref)
+        assertEquals("6137eaa1d4c94e3b6a15aaf56eb92ada806bda5bbec4784915459162b3ed622b:2609140747", page.refSign)
+    }
+
+    @Test
+    fun `parse extracts current video info`() {
+        val page = KodikHtmlParser.parse(fixture("player.html"))
+
+        assertEquals("seria", page.currentType)
+        assertEquals("cf62e729fdb71a0b7fb148ba6fc48ad6", page.currentHash)
+        assertEquals("1211482", page.currentId)
+    }
+
+    @Test
+    fun `parse extracts all translations with first being studiya bubnyazha`() {
+        val page = KodikHtmlParser.parse(fixture("player.html"))
+
+        assertEquals(33, page.translations.size)
+        val first = page.translations.first()
+        assertTrue(first.title.startsWith("#студияБУБНЯЖА"))
+        assertEquals(28, first.episodesCount)
+        assertEquals(TranslationType.VOICE, first.type)
+        assertEquals(3560, first.id)
+        assertEquals("55917", first.mediaId)
+        assertEquals("d1d44d5cd59af5af897ce899a776dacf", first.mediaHash)
+    }
+
+    @Test
+    fun `parse extracts subtitle translations`() {
+        val page = KodikHtmlParser.parse(fixture("player.html"))
+
+        val subtitleTranslations = page.translations.filter { it.type == TranslationType.SUBTITLES }
+        assertTrue(subtitleTranslations.isNotEmpty())
+        assertTrue(subtitleTranslations.any { it.title == "AniRise.Subtitles" })
+    }
+
+    @Test
+    fun `parse extracts all 28 episodes numbered 1 through 28`() {
+        val page = KodikHtmlParser.parse(fixture("player.html"))
+
+        assertEquals(28, page.episodes.size)
+        assertEquals((1..28).toList(), page.episodes.map { it.number })
+        val firstEpisode = page.episodes.first { it.number == 1 }
+        assertEquals("1211482", firstEpisode.mediaId)
+        assertEquals("cf62e729fdb71a0b7fb148ba6fc48ad6", firstEpisode.mediaHash)
+    }
+
+    @Test
+    fun `parse defaults ftorPath to slash ftor when no atob override present`() {
+        val page = KodikHtmlParser.parse(fixture("player.html"))
+
+        assertEquals("/ftor", page.ftorPath)
+    }
+
+    @Test
+    fun `parse throws ParserBroken naming the missing step when html is garbage`() {
+        val error = assertThrows(KodikError.ParserBroken::class.java) {
+            KodikHtmlParser.parse("<html><body>nothing here</body></html>")
+        }
+        assertTrue(error.step.isNotBlank())
+    }
+
+    @Test
+    fun `extractPublicToken finds token in add-players fragment`() {
+        val token = KodikHtmlParser.extractPublicToken(fixture("add-players.js"))
+        assertEquals("0000000000000000000000000000abcd", token)
+    }
+
+    @Test
+    fun `extractPublicToken returns null when no token present`() {
+        val token = KodikHtmlParser.extractPublicToken("var x = 1;")
+        assertNull(token)
+    }
+}
