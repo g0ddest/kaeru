@@ -13,10 +13,15 @@ import androidx.compose.foundation.lazy.items as rowItems
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -25,9 +30,24 @@ import app.kaeru.ui.common.Poster
 import app.kaeru.ui.common.ProgressStrip
 
 @Composable
-fun LibraryScreen(state: LibraryUiState, onStatus: (ListStatus) -> Unit, onSort: (LibrarySort) -> Unit, onAnime: (Int) -> Unit) {
+fun LibraryScreen(
+    state: LibraryUiState,
+    onStatus: (ListStatus) -> Unit,
+    onSort: (LibrarySort) -> Unit,
+    onLogout: () -> Unit,
+    onAnime: (Int) -> Unit,
+) {
     Column(Modifier.fillMaxSize()) {
-        Text("Мой список", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(16.dp))
+        Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 16.dp, bottom = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Мой список", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+            // Temporary home for sign-out until plan 3 introduces a Settings screen.
+            IconButton(onClick = onLogout) {
+                Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Выйти")
+            }
+        }
         LazyRow(contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             rowItems(listOf(
                 ListStatus.WATCHING to "Смотрю",

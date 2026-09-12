@@ -23,7 +23,7 @@ fun MobileApp(
         when (auth.loggedIn) {
             null -> androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize())
             false -> LoginScreen(authViewModel.mobileAuthorizeUrl, auth)
-            true -> MobileShell()
+            true -> MobileShell(onLogout = authViewModel::logout)
         }
     }
 }

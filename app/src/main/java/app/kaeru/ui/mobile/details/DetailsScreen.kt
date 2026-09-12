@@ -22,10 +22,28 @@ import app.kaeru.ui.common.Poster
 import app.kaeru.ui.common.Skeleton
 
 @Composable
-fun DetailsScreen(state: DetailsUiState, onBack: () -> Unit, onStatus: (ListStatus) -> Unit) {
+fun DetailsScreen(
+    state: DetailsUiState,
+    onBack: () -> Unit,
+    onRetry: () -> Unit,
+    onStatus: (ListStatus) -> Unit,
+) {
     val entry = state.entry
     if (entry == null) {
-        Column(Modifier.fillMaxSize().padding(24.dp)) { Skeleton(Modifier.fillMaxWidth().height(300.dp)) }
+        // Nothing cached for this anime: show progress only while a load is actually running,
+        // then the failure and a retry. The back button is always there so this is never a dead end.
+        Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            Button(onClick = onBack) { Text("Назад") }
+            if (state.refreshing) {
+                Skeleton(Modifier.fillMaxWidth().height(300.dp))
+            } else {
+                Text(
+                    state.errorMessage ?: "Не удалось загрузить аниме",
+                    color = MaterialTheme.colorScheme.error,
+                )
+                Button(onClick = onRetry) { Text("Повторить") }
+            }
+        }
         return
     }
     val anime = entry.anime
