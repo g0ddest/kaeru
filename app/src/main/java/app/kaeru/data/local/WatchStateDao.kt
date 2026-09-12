@@ -14,6 +14,9 @@ interface WatchStateDao {
     fun observeAll(): Flow<List<WatchStateEntity>>
 
     @Query("SELECT * FROM watch_state WHERE animeId = :animeId")
+    fun observeByAnimeId(animeId: Int): Flow<WatchStateEntity?>
+
+    @Query("SELECT * FROM watch_state WHERE animeId = :animeId")
     suspend fun getByAnimeId(animeId: Int): WatchStateEntity?
 
     @Query("DELETE FROM watch_state WHERE animeId = :animeId")
