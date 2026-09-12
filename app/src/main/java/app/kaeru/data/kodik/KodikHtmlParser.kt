@@ -103,8 +103,20 @@ object KodikHtmlParser {
 
     private fun boxSelectContent(html: String, boxClass: String): String? {
         val escaped = Regex.escape(boxClass)
-        val boxRegex = Regex("<div\\s+class=\"[^\"]*\\b$escaped\\b[^\"]*\"[^>]*>[\\s\\S]*?<select>([\\s\\S]*?)</select>")
-        return boxRegex.find(html)?.groupValues?.get(1)
+        // Match boxClass as a whole class-attribute token (delimited by the
+        // attribute's edges or whitespace), not merely as a substring — a div
+        // with class "serial-series-box-extra" must NOT match "serial-series-box".
+        val classTokenRegex = Regex("(?:^|\\s)$escaped(?:\\s|$)")
+        val divOpenRegex = Regex("<div\\s+class=\"([^\"]*)\"[^>]*>")
+        val selectRegex = Regex("<select>([\\s\\S]*?)</select>")
+
+        for (divMatch in divOpenRegex.findAll(html)) {
+            if (!classTokenRegex.containsMatchIn(divMatch.groupValues[1])) continue
+            val afterDiv = html.substring(divMatch.range.last + 1)
+            val selectMatch = selectRegex.find(afterDiv) ?: continue
+            return selectMatch.groupValues[1]
+        }
+        return null
     }
 
     /**
@@ -118,12 +130,19 @@ object KodikHtmlParser {
             val body = match.groupValues[1]
             when {
                 body.startsWith("#x", ignoreCase = true) ->
-                    body.substring(2).toIntOrNull(16)?.let { String(Character.toChars(it)) } ?: match.value
+                    body.substring(2).toIntOrNull(16)?.let { codePointOrNull(it) } ?: match.value
                 body.startsWith("#") ->
-                    body.substring(1).toIntOrNull()?.let { String(Character.toChars(it)) } ?: match.value
+                    body.substring(1).toIntOrNull()?.let { codePointOrNull(it) } ?: match.value
                 else -> namedEntities[body.lowercase()] ?: match.value
             }
         }
+    }
+
+    /** Null for anything Character.toChars() can't safely turn into text: out-of-range or a lone surrogate. */
+    private fun codePointOrNull(codePoint: Int): String? {
+        if (!Character.isValidCodePoint(codePoint)) return null
+        if (codePoint in Character.MIN_SURROGATE.code..Character.MAX_SURROGATE.code) return null
+        return String(Character.toChars(codePoint))
     }
 
     private fun attributesOf(tag: String): Map<String, String> =

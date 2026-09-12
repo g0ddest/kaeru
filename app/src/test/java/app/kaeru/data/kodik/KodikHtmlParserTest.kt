@@ -122,4 +122,52 @@ class KodikHtmlParserTest {
         assertEquals("plain text", KodikHtmlParser.decodeHtmlEntities("plain text"))
         assertEquals("&notareal;", KodikHtmlParser.decodeHtmlEntities("&notareal;"))
     }
+
+    @Test
+    fun `decodeHtmlEntities passes through numeric entities outside the valid code point range without throwing`() {
+        assertEquals("&#x110000;", KodikHtmlParser.decodeHtmlEntities("&#x110000;"))
+        assertEquals("&#99999999999;", KodikHtmlParser.decodeHtmlEntities("&#99999999999;"))
+    }
+
+    private fun minimalHtml(seriesBoxClass: String): String = """
+        <html><body>
+        <script>
+          var domain = "kodikplayer.com";
+          var d_sign = "sign1";
+          var pd = "kodikplayer.com";
+          var pd_sign = "sign2";
+          var ref = "https://kodikplayer.com/";
+          var ref_sign = "sign3";
+        </script>
+        <script>
+           vInfo.type = 'seria';
+           vInfo.hash = 'hash1';
+           vInfo.id = '1';
+        </script>
+        <div class="serial-translations-box">
+          <select>
+            <option value="1" data-id="1" data-translation-type="voice" data-media-id="10" data-media-hash="h10" data-title="Test">Test (1 эп.)</option>
+          </select>
+        </div>
+        <div class="$seriesBoxClass">
+          <select>
+            <option value="1" data-id="1" data-hash="hash1" data-title="1 серия">1 серия</option>
+          </select>
+        </div>
+        </body></html>
+    """.trimIndent()
+
+    @Test
+    fun `parse does not treat a div whose class merely starts with the box name as the series box`() {
+        val error = assertThrows(KodikError.ParserBroken::class.java) {
+            KodikHtmlParser.parse(minimalHtml("serial-series-box-extra"))
+        }
+        assertEquals("episodes", error.step)
+    }
+
+    @Test
+    fun `parse finds the series box when it carries additional class tokens`() {
+        val page = KodikHtmlParser.parse(minimalHtml("serial-series-box active"))
+        assertEquals(1, page.episodes.size)
+    }
 }
