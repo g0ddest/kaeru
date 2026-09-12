@@ -17,7 +17,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -30,6 +32,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.kaeru.domain.model.FeedItem
+import app.kaeru.domain.model.FeedKind
 import app.kaeru.ui.common.Poster
 import app.kaeru.ui.common.ProgressStrip
 import app.kaeru.ui.common.Skeleton
@@ -38,13 +41,18 @@ import coil3.compose.AsyncImage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(state: HomeUiState, onRefresh: () -> Unit, onAnime: (Int) -> Unit) {
+fun HomeScreen(
+    state: HomeUiState,
+    onRefresh: () -> Unit,
+    onPlay: (animeId: Int, episode: Int) -> Unit,
+    onAnime: (Int) -> Unit,
+) {
     PullToRefreshBox(isRefreshing = state.isRefreshing, onRefresh = onRefresh) {
         when {
             state.isLoading -> HomeSkeleton()
             state.feed.isEmpty -> EmptyHome(onRefresh)
             else -> LazyColumn(Modifier.fillMaxSize()) {
-                state.feed.top?.let { top -> item(key = "hero") { Hero(top, onAnime) } }
+                state.feed.top?.let { top -> item(key = "hero") { Hero(top, onPlay, onAnime) } }
                 state.errorMessage?.let { message ->
                     item(key = "error") {
                         Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -65,7 +73,7 @@ fun HomeScreen(state: HomeUiState, onRefresh: () -> Unit, onAnime: (Int) -> Unit
 }
 
 @Composable
-private fun Hero(item: FeedItem, onAnime: (Int) -> Unit) {
+private fun Hero(item: FeedItem, onPlay: (Int, Int) -> Unit, onAnime: (Int) -> Unit) {
     val anime = item.entry.anime
     Box(Modifier.fillMaxWidth().height(420.dp)) {
         AsyncImage(
@@ -78,10 +86,23 @@ private fun Hero(item: FeedItem, onAnime: (Int) -> Unit) {
         Column(Modifier.align(Alignment.BottomStart).padding(24.dp)) {
             Text(anime.title, style = MaterialTheme.typography.headlineMedium, maxLines = 2)
             Text("${item.episode} серия", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 8.dp))
-            Button(onClick = { onAnime(anime.id) }) { Text("Подробнее") }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { onPlay(anime.id, item.episode) },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                ) { Text(watchLabel(item)) }
+                TextButton(onClick = { onAnime(anime.id) }) { Text("Подробнее") }
+            }
         }
     }
 }
+
+/** Continuing says "продолжить"; everything else, including a new episode, is a fresh watch. */
+private fun watchLabel(item: FeedItem): String =
+    if (item.kind == FeedKind.CONTINUE) "Продолжить ${item.episode} серию" else "Смотреть ${item.episode} серию"
 
 @Composable
 private fun FeedRow(title: String, feed: List<FeedItem>, onAnime: (Int) -> Unit) {

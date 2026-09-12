@@ -3,6 +3,7 @@ package app.kaeru.ui.mobile.details
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.kaeru.data.library.AppPreferences
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
@@ -24,19 +25,22 @@ data class DetailsUiState(
     val refreshing: Boolean = true,
     val updatingStatus: Boolean = false,
     val errorMessage: String? = null,
+    /** How much of an episode counts as watched; decides which episode the main button offers. */
+    val watchedThreshold: Float = 0.9f,
 )
 
 @HiltViewModel
 class DetailsViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repository: LibraryRepository,
+    prefs: AppPreferences,
 ) : ViewModel() {
     private val animeId: Int = checkNotNull(savedStateHandle["animeId"])
     private val work = MutableStateFlow(DetailsUiState())
     val uiState: StateFlow<DetailsUiState> = combine(
-        repository.observeAnime(animeId), repository.observeAnimeDetails(animeId), work,
-    ) { entry, details, state ->
-        state.copy(entry = entry, anime = entry?.anime ?: details)
+        repository.observeAnime(animeId), repository.observeAnimeDetails(animeId), work, prefs.watchedThreshold,
+    ) { entry, details, state, threshold ->
+        state.copy(entry = entry, anime = entry?.anime ?: details, watchedThreshold = threshold)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, DetailsUiState())
 
     init { refresh() }

@@ -2,6 +2,7 @@ package app.kaeru.player
 
 import androidx.media3.common.Player
 import app.kaeru.data.library.AppPreferences
+import app.kaeru.di.IoDispatcher
 import app.kaeru.di.PlaybackScope
 import app.kaeru.domain.error.EpisodeNotAvailable
 import app.kaeru.domain.model.PlaybackTarget
@@ -10,6 +11,7 @@ import app.kaeru.domain.model.Translation
 import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.playback.WatchProgress
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -21,6 +23,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.abs
@@ -94,6 +97,7 @@ class DefaultPlaybackController @Inject constructor(
     private val prefs: AppPreferences,
     private val headers: StreamHeaders,
     @param:PlaybackScope private val scope: CoroutineScope,
+    @param:IoDispatcher private val io: CoroutineDispatcher,
 ) : PlaybackController {
 
     /** Settings are read once per episode: changing them mid-episode should not move the goalposts. */
@@ -221,9 +225,10 @@ class DefaultPlaybackController @Inject constructor(
         preferQuality: Quality? = null,
     ): Result<Unit> {
         settings = readSettings()
-        val stream = resolve(target.animeId, target.episode, target.translation).getOrElse {
-            return Result.failure(it)
-        }
+        // Resolving reads a player page and picks it apart. That is not main-thread work, and
+        // everything after it is: the state, the player and its surface all live there.
+        val stream = withContext(io) { resolve(target.animeId, target.episode, target.translation) }
+            .getOrElse { return Result.failure(it) }
         val quality = preferQuality?.takeIf { stream.urls.containsKey(it) }
             ?: EpisodeQueue.startQuality(stream.urls.keys, settings.quality)
             ?: stream.urls.keys.first()

@@ -96,6 +96,7 @@ class PlaybackControllerTest {
             prefs = prefs,
             headers = headers,
             scope = scope,
+            io = dispatcher,
         )
     }
 

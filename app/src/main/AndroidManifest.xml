@@ -40,6 +40,23 @@
         </activity>
 
         <activity
+            android:name=".ui.mobile.player.PlayerActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:theme="@style/Theme.Kaeru" />
+
+        <service
+            android:name=".player.KaeruPlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+
+        <activity
             android:name=".TvActivity"
             android:exported="true"
             android:launchMode="singleTask"

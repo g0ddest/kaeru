@@ -1,5 +1,6 @@
 package app.kaeru.di
 
+import androidx.media3.common.util.UnstableApi
 import app.kaeru.data.kodik.KodikConstants
 import app.kaeru.data.library.AppPreferences
 import app.kaeru.data.playback.RoomWatchStateRepository
@@ -86,6 +87,7 @@ object PlaybackModule {
     ): MarkEpisodeWatched = MarkEpisodeWatched(library, watchStates, clock)
 }
 
+@UnstableApi
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class PlaybackBindings {
