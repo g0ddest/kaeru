@@ -8,6 +8,7 @@ import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.test.MainDispatcherRule
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -21,6 +22,7 @@ import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class HomeViewModelTest {
     @get:Rule val main = MainDispatcherRule()
     private val now = Instant.parse("2026-09-12T12:00:00Z")
