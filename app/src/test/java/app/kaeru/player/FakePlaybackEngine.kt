@@ -13,7 +13,12 @@ import kotlinx.coroutines.flow.update
  * emits those snapshots exercises the controller's whole state machine without a device.
  */
 class FakePlaybackEngine : PlaybackEngine {
-    data class Prepared(val url: String, val headers: StreamHeaders, val startPositionMs: Long)
+    data class Prepared(
+        val url: String,
+        val headers: StreamHeaders,
+        val startPositionMs: Long,
+        val metadata: StreamMetadata?,
+    )
 
     private val _state = MutableStateFlow(EngineState())
     override val state: StateFlow<EngineState> = _state.asStateFlow()
@@ -24,8 +29,8 @@ class FakePlaybackEngine : PlaybackEngine {
     var releases = 0
         private set
 
-    override fun prepare(url: String, headers: StreamHeaders, startPositionMs: Long) {
-        prepared += Prepared(url, headers, startPositionMs)
+    override fun prepare(url: String, headers: StreamHeaders, startPositionMs: Long, metadata: StreamMetadata?) {
+        prepared += Prepared(url, headers, startPositionMs, metadata)
         _state.value = EngineState(isBuffering = true, positionMs = startPositionMs)
     }
 

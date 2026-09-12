@@ -59,7 +59,7 @@ private const val PULSE_MS = 450L
  * The phone player: video edge to edge, everything else floating over it and getting out of
  * the way after three seconds.
  */
-@OptIn(UnstableApi::class)
+@UnstableApi
 @Composable
 fun PlayerScreen(
     state: PlayerUiState,

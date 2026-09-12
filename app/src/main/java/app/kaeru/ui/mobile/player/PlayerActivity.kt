@@ -41,6 +41,9 @@ class PlayerActivity : ComponentActivity() {
         enableEdgeToEdge()
         goImmersive()
         target = read(intent)
+        // Before anything plays, so the session sees playback start and can raise its
+        // notification; a session created mid-playback may never hear a transition.
+        startPlaybackService()
         setContent {
             KaeruTheme {
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -49,10 +52,7 @@ class PlayerActivity : ComponentActivity() {
                 val (animeId, episode) = target
 
                 LaunchedEffect(animeId, episode) { if (animeId > 0) viewModel.start(animeId, episode) }
-                LaunchedEffect(state.isPlaying) {
-                    view.keepScreenOn = state.isPlaying
-                    if (state.isPlaying) startPlaybackService()
-                }
+                LaunchedEffect(state.isPlaying) { view.keepScreenOn = state.isPlaying }
 
                 PlayerScreen(
                     state = state,

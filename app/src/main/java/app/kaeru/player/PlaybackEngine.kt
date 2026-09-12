@@ -33,8 +33,13 @@ interface PlaybackEngine {
     /** The Media3 player to attach a surface to, or null for an engine that renders nothing. */
     val videoPlayer: Player?
 
-    /** Points the engine at one manifest and seeks to [startPositionMs] before the first frame. */
-    fun prepare(url: String, headers: StreamHeaders, startPositionMs: Long)
+    /**
+     * Points the engine at one manifest and seeks to [startPositionMs] before the first frame.
+     *
+     * @param metadata what a notification or a lock screen should say this is; null while
+     *   nothing outside the app is showing it.
+     */
+    fun prepare(url: String, headers: StreamHeaders, startPositionMs: Long, metadata: StreamMetadata? = null)
 
     fun play()
 

@@ -4,18 +4,11 @@ import android.content.Context
 import android.os.Looper
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
-import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.common.util.Util
-import androidx.media3.datasource.DataSource
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.hls.HlsMediaSource
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.exoplayer.source.MediaSource
 import app.kaeru.di.PlaybackScope
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.error.SourceUnavailable
@@ -80,8 +73,8 @@ class ExoPlaybackEngine @Inject constructor(
 
     private var poll: Job? = null
 
-    override fun prepare(url: String, headers: StreamHeaders, startPositionMs: Long) {
-        player.setMediaSource(mediaSource(url, headers))
+    override fun prepare(url: String, headers: StreamHeaders, startPositionMs: Long, metadata: StreamMetadata?) {
+        player.setMediaSource(MediaItemFactory.mediaSource(MediaItemFactory.mediaItem(url, metadata), headers))
         player.seekTo(startPositionMs)
         player.prepare()
         // Stated rather than read back: until the manifest is parsed the player reports
@@ -116,25 +109,6 @@ class ExoPlaybackEngine @Inject constructor(
         player.removeListener(listener)
         player.release()
         _state.value = EngineState()
-    }
-
-    /**
-     * Kodik hands out one signed manifest per height, so there is no adaptive master playlist
-     * to switch inside: a quality change is a new source at the same position. Both the manifest
-     * and every segment have to carry the browser headers, hence the shared data source factory.
-     */
-    private fun mediaSource(url: String, headers: StreamHeaders): MediaSource {
-        val http: DataSource.Factory = DefaultHttpDataSource.Factory()
-            .setUserAgent(headers.userAgent)
-            .setDefaultRequestProperties(headers.requestProperties)
-            .setAllowCrossProtocolRedirects(true)
-        val item = MediaItem.fromUri(url)
-        val uri = item.localConfiguration?.uri
-        return if (uri != null && Util.inferContentType(uri) == C.CONTENT_TYPE_HLS) {
-            HlsMediaSource.Factory(http).createMediaSource(item)
-        } else {
-            DefaultMediaSourceFactory(http).createMediaSource(item)
-        }
     }
 
     /** Position is the one thing Media3 does not announce; four reads a second is smooth enough. */

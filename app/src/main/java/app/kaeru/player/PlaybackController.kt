@@ -5,12 +5,14 @@ import app.kaeru.data.library.AppPreferences
 import app.kaeru.di.IoDispatcher
 import app.kaeru.di.PlaybackScope
 import app.kaeru.domain.error.EpisodeNotAvailable
+import app.kaeru.domain.model.EpisodeStream
 import app.kaeru.domain.model.PlaybackTarget
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.playback.WatchProgress
+import app.kaeru.domain.repository.LibraryRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -94,6 +96,7 @@ class DefaultPlaybackController @Inject constructor(
     private val resolve: ResolveEpisodeStream,
     private val progress: WatchProgress,
     private val markWatched: MarkEpisodeWatched,
+    private val library: LibraryRepository,
     private val prefs: AppPreferences,
     private val headers: StreamHeaders,
     @param:PlaybackScope private val scope: CoroutineScope,
@@ -174,6 +177,8 @@ class DefaultPlaybackController @Inject constructor(
         val at = current.positionMs
         lastReportedMs = at
         _state.value = current.copy(quality = quality, isBuffering = true, error = null)
+        // No metadata: the session is already showing this episode, and a quality swap is
+        // not a new thing to announce.
         engine.prepare(url, headers, at)
         engine.play()
     }
@@ -248,7 +253,7 @@ class DefaultPlaybackController @Inject constructor(
             // A track swap keeps the length it already knows, so the timeline does not flash empty.
             durationMs = if (freshEpisode) 0 else _state.value.durationMs,
         )
-        engine.prepare(stream.urls.getValue(quality), headers, target.startPositionMs)
+        engine.prepare(stream.urls.getValue(quality), headers, target.startPositionMs, describe(target, stream))
         engine.play()
         // Everything the engine said while this transition ran was ignored on purpose. Take its
         // word now, or a player that reports nothing further would leave the screen mid-swap.
@@ -272,6 +277,22 @@ class DefaultPlaybackController @Inject constructor(
                 fail(failure)
             }
         }
+    }
+
+    /**
+     * What the notification says. The anime is read from the local cache — the card is already
+     * there, because nothing reaches the player without passing a screen that showed it.
+     */
+    private suspend fun describe(target: PlaybackTarget, stream: EpisodeStream): StreamMetadata {
+        val anime = withContext(io) { library.observeAnimeDetails(target.animeId).first() }
+        return StreamMetadata(
+            title = anime?.title ?: "${target.episode} серия",
+            subtitle = listOfNotNull(
+                anime?.let { "${target.episode} серия" },
+                stream.translation.title,
+            ).joinToString("   "),
+            artworkUrl = anime?.posterUrl,
+        )
     }
 
     private suspend fun readSettings() = Settings(

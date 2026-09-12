@@ -93,6 +93,7 @@ class PlaybackControllerTest {
             resolve = ResolveEpisodeStream(source, watchStates, prefs, clock),
             progress = WatchProgress(watchStates, clock),
             markWatched = MarkEpisodeWatched(library, watchStates, clock),
+            library = library,
             prefs = prefs,
             headers = headers,
             scope = scope,
@@ -127,6 +128,16 @@ class PlaybackControllerTest {
         assertTrue(engine.state.value.isPlaying)
         assertEquals(Quality.P720, controller.state.value.quality)
         assertEquals(4, controller.state.value.target?.episode)
+    }
+
+    @Test
+    fun `what plays is announced with the anime, the episode and the track`() = runTest(dispatcher) {
+        controller.play(target(episode = 4))
+        advanceUntilIdle()
+
+        val announced = engine.prepared.single().metadata
+        assertEquals("Фрирен", announced?.title)
+        assertEquals("4 серия   AniLibria.TV", announced?.subtitle)
     }
 
     @Test
