@@ -6,7 +6,7 @@
 
 **Architecture:** Один Gradle-модуль `app`, пакеты `domain` (чистый Kotlin, без Android), `data` (Retrofit + Room + DataStore), `ui.common` / `ui.mobile` / `ui.tv` (Compose), две activity в манифесте. Данные текут `Shikimori API → Room → Flow → ViewModel → Compose`; главная всегда рендерится из Room, сеть только обновляет Room.
 
-**Tech Stack:** Kotlin 2.3.21, AGP 8.13.2, Gradle 8.13, JDK 21, Compose BOM 2025.11.01, tv-material 1.1.0, Hilt 2.60.1 + AndroidX Hilt 1.3.0 (KSP 2.3.12), Room 2.8.5, DataStore 1.2.1, Retrofit 3.0.0 + kotlinx-serialization 1.11.0, OkHttp 5.5.0, Coil 3.6.2, navigation-compose 2.9.8, browser 1.10.0 (Custom Tabs), zxing 3.5.3, JUnit 4, MockK 1.14.11, Turbine 1.2.1, Robolectric 4.17, MockWebServer 5.5.0.
+**Tech Stack:** Kotlin 2.3.21, AGP 8.13.2, Gradle 8.13, JDK 21, Compose BOM 2025.08.01, tv-material 1.1.0, Hilt 2.58 + AndroidX Hilt 1.3.0 (KSP 2.3.12), Room 2.8.5, DataStore 1.2.1, Retrofit 3.0.0 + kotlinx-serialization 1.11.0, OkHttp 5.3.0, Coil 3.3.0, navigation-compose 2.9.8, browser 1.10.0 (Custom Tabs), zxing 3.5.3, JUnit 4, MockK 1.14.11, Turbine 1.2.1, Robolectric 4.17, MockWebServer 5.3.0.
 
 **Spec:** `docs/superpowers/specs/2026-09-12-kaeru-design.md`
 
@@ -15,7 +15,7 @@
 ## Global Constraints
 
 - `applicationId` и корневой пакет: `app.kaeru`. `minSdk = 26`, `compileSdk = 36`, `targetSdk = 36`.
-- Не повышать Compose BOM выше `2025.11.01`, Lifecycle выше `2.10.0` и Navigation выше `2.9.8` в плане 1: более новые Compose-артефакты собраны с API 37 и требуют AGP не ниже 9.2, тогда как этот план закрепляет AGP 8.13.2.
+- Не повышать Compose BOM выше `2025.08.01`, Lifecycle выше `2.10.0` и Navigation выше `2.9.8` в плане 1: Compose 1.12-артефакты собраны с API 37 и требуют AGP не ниже 9.1, тогда как этот план закрепляет AGP 8.13.2.
 - Только тёмная тема. Цвета из спеки: фон `#0B0C10`, поверхность `#15171E`, приподнятая `#1E212B`, текст `#F2F3F5`, вторичный `#9AA0AA`, акцент `#F5A524`. Шрифт Manrope (variable TTF в `res/font`). Сетка 8dp, скругление карточек 12dp.
 - Shikimori: базовый URL `https://shikimori.one/`, обязательный заголовок `User-Agent: Kaeru/<versionName>`, не более 5 запросов в секунду и 90 в минуту.
 - Секреты только в `local.properties` → `BuildConfig`: `SHIKIMORI_CLIENT_ID`, `SHIKIMORI_CLIENT_SECRET`, `KODIK_TOKEN` (пустая строка по умолчанию). В git попадает только `local.properties.example`.
@@ -413,14 +413,14 @@ kotlin.code.style=official
 agp = "8.13.2"
 kotlin = "2.3.21"
 ksp = "2.3.12"
-hilt = "2.60.1"
+hilt = "2.58"
 androidxHilt = "1.3.0"
-composeBom = "2025.11.01"
+composeBom = "2025.08.01"
 tvMaterial = "1.1.0"
 activityCompose = "1.13.0"
 lifecycle = "2.10.0"
 navigation = "2.9.8"
-coreKtx = "1.19.0"
+coreKtx = "1.17.0"
 splashscreen = "1.2.0"
 browser = "1.10.0"
 room = "2.8.5"
@@ -429,10 +429,10 @@ media3 = "1.11.0"
 castFramework = "22.3.1"
 mediarouter = "1.8.1"
 retrofit = "3.0.0"
-okhttp = "5.5.0"
+okhttp = "5.3.0"
 serialization = "1.11.0"
 coroutines = "1.11.0"
-coil = "3.6.2"
+coil = "3.3.0"
 zxing = "3.5.3"
 junit = "4.13.2"
 mockk = "1.14.11"

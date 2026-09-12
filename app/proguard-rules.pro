@@ -1,0 +1,5 @@
+-keepattributes *Annotation*, InnerClasses
+-dontnote kotlinx.serialization.**
+-keep,includedescriptorclasses class app.kaeru.**$$serializer { *; }
+-keepclassmembers class app.kaeru.** { *** Companion; }
+-keepclasseswithmembers class app.kaeru.** { kotlinx.serialization.KSerializer serializer(...); }
