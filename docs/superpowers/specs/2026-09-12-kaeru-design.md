@@ -280,6 +280,18 @@ interface EpisodeSourceProvider {
 воспроизведение и каст не проверялись. Риск Default Media Receiver остаётся
 незакрытым.
 
+Дополнение от 2026-09-12 (вечер): публичный токен из `add-players.min.js`
+работает с методом `POST kodik-api.com/get-player` (параметры `shikimoriID`,
+`types=anime,anime-serial`, опционально `translations`), который сам скрипт
+Kodik и использует, и отклоняется только методом `search`. `get-player`
+возвращает `found`, `quality`, `translation` и `link` на страницу плеера.
+Страница плеера (`kodikplayer.com/serial/<id>/<hash>/720p?season=N&episode=M`)
+содержит `urlParams`, полный список озвучек с числом серий (`<option data-id
+data-translation-type>`) и список серий с `data-id`/`data-hash` на каждую
+серию. Следовательно, поиск по `shikimori_id` без частного токена возможен:
+`get-player` → страница плеера → выбор озвучки/серии → POST за HLS. План 2
+должен строиться на `get-player`, а не на `search`.
+
 ## 9. Интерфейс
 
 ### Визуальный язык
