@@ -34,5 +34,5 @@ fun KaeruTheme(content: @Composable () -> Unit) {
 
 @Composable
 fun KaeruTvTheme(content: @Composable () -> Unit) {
-    KaeruTheme { TvMaterialTheme(colorScheme = TvColors, content = content) }
+    KaeruTheme { TvMaterialTheme(colorScheme = TvColors, typography = KaeruTvTypography, content = content) }
 }
