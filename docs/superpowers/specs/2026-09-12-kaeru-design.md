@@ -292,6 +292,26 @@ data-translation-type>`) и список серий с `data-id`/`data-hash` н�
 `get-player` → страница плеера → выбор озвучки/серии → POST за HLS. План 2
 должен строиться на `get-player`, а не на `search`.
 
+Результат дорезки spike (2026-09-12, поздно вечером): цепочка доведена до HLS
+без частного токена. Страница плеера содержит `vInfo.type='seria'`,
+`vInfo.hash`, `vInfo.id` для текущей серии и переменные `domain`, `d_sign`,
+`pd`, `pd_sign`, `ref`, `ref_sign`. `POST kodikplayer.com/ftor` (путь берётся
+из `atob("L2Z0b3I=")` в `app.serial.*.js`) с полями `d, d_sign, pd, pd_sign,
+ref (декодированный), ref_sign, type=seria, hash, id, bad_user=false,
+cdn_is_working=true` и заголовками `Referer`/`Origin`/`X-Requested-With`
+возвращает JSON `links` с качествами 360/480/720; `src` расшифровывается
+перебором ROT 0–25 + base64. Ссылка вида
+`https://cloud.solodcdn.com/useruploads/<uuid>/<sig>:<YYYYMMDDHH>/720.mp4:hls:manifest.m3u8`
+делает 302 на `harmony.cloud.solodcdn.com`, манифест — VOD HLS v3 с
+`.ts`-сегментами по 6 с. CORS: `Access-Control-Allow-Origin: *` на редиректе
+и на сегментах. Подпись содержит час истечения (~несколько часов), ответ
+`/ftor` содержит поле `ip` — ссылки, вероятно, привязаны к IP клиента:
+резолвить надо на устройстве, которое будет играть, либо в одной сети с
+Chromecast. Не проверено: воспроизведение на Chromecast (нет устройства) и
+кодеки через ffprobe (сеть песочницы). Фикстуры для парсера сохранены в
+`tools/fixtures/kodik_player.html` и `tools/fixtures/kodik_links.json`
+(поле `ip` обезличено).
+
 ## 9. Интерфейс
 
 ### Визуальный язык
