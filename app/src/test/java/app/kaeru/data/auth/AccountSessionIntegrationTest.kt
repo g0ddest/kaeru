@@ -20,6 +20,7 @@ import app.kaeru.data.shikimori.ImageDto
 import app.kaeru.data.shikimori.TokenResponseDto
 import app.kaeru.data.shikimori.toDomain
 import app.kaeru.domain.model.ListStatus
+import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.repository.MOBILE_REDIRECT
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -27,6 +28,10 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -472,5 +477,147 @@ class AccountSessionIntegrationTest {
         auth.logout()
         assertAccountRowsEmpty()
         assertNull(prefs.userId())
+    }
+
+    @Test
+    fun `slow collector cannot receive queued A snapshot after logout and B login`() = scope.runTest {
+        assertSlowCollectorSwitch(logoutFirst = true)
+    }
+
+    @Test
+    fun `slow collector cannot receive queued A snapshot after direct active account switch`() = scope.runTest {
+        assertSlowCollectorSwitch(logoutFirst = false)
+    }
+
+    @Test
+    fun `delayed identity flows cannot deliver queued A snapshot after B is active`() = scope.runTest {
+        val identityUpdates = CompletableDeferred<Unit>()
+        val delayedTokens = object : TokenStore by tokens {
+            override val tokens = this@AccountSessionIntegrationTest.tokens.tokens.delayUpdates(identityUpdates)
+        }
+        val delayedPrefs = AppPreferences(object : DataStore<Preferences> by prefsStore {
+            override val data = prefsStore.data.delayUpdates(identityUpdates)
+        })
+        session = AccountSession(delayedTokens, delayedPrefs, db)
+        auth = ShikimoriAuthRepository(oauth, api, session, "cid", "secret", clock)
+        library = ShikimoriLibraryRepository(api, db.animeDao(), db.userRateDao(), db.watchStateDao(), delayedPrefs, session, dispatcher, clock)
+        assertSlowCollectorSwitch(logoutFirst = false, releaseIdentity = identityUpdates)
+    }
+
+    @Test
+    fun `delivery validation suspended across A B A rejects the old generation`() = scope.runTest {
+        seedA()
+        val validationStarted = CompletableDeferred<Unit>()
+        val releaseValidation = CompletableDeferred<Unit>()
+        var delayNextRead = false
+        val delayedReadStore = object : TokenStore by tokens {
+            override suspend fun get(): AuthTokens? {
+                val read = this@AccountSessionIntegrationTest.tokens.get()
+                if (delayNextRead) {
+                    delayNextRead = false
+                    validationStarted.complete(Unit)
+                    releaseValidation.await()
+                }
+                return read
+            }
+        }
+        session = AccountSession(delayedReadStore, prefs, db)
+        auth = ShikimoriAuthRepository(oauth, api, session, "cid", "secret", clock)
+        library = ShikimoriLibraryRepository(api, db.animeDao(), db.userRateDao(), db.watchStateDao(), prefs, session, dispatcher, clock)
+        val delivered = mutableListOf<List<LibraryEntry>>()
+        val first = CompletableDeferred<Unit>()
+        val collector = backgroundScope.launch {
+            library.observeLibrary().collect { delivered += it; first.complete(Unit) }
+        }
+        first.await()
+        delayNextRead = true
+        val oldRate = db.userRateDao().getByAnimeId(100)!!
+        db.userRateDao().upsertAll(listOf(oldRate.copy(episodes = 4)))
+        runCurrent()
+        assertTrue("Each pending delivery must validate the current session", validationStarted.isCompleted)
+
+        api.userId = 84
+        auth.exchangeCode("code-b", MOBILE_REDIRECT).getOrThrow()
+        api.userId = 42
+        auth.exchangeCode("new-code-a", MOBILE_REDIRECT).getOrThrow()
+        api.rates.clear()
+        library.setStatus(100, ListStatus.PLANNED).getOrThrow()
+        val deliveredBeforeRelease = delivered.size
+        releaseValidation.complete(Unit)
+        runCurrent()
+        assertTrue("Matching account IDs do not validate an earlier session generation",
+            delivered.drop(deliveredBeforeRelease).flatten().none { it.rate.episodes == 4 })
+        assertEquals(0, delivered.last().single().rate.episodes)
+        collector.cancelAndJoin()
+    }
+
+    @Test
+    fun `library observation recovers after failed same account transition`() = scope.runTest {
+        seedA()
+        val delivered = mutableListOf<List<LibraryEntry>>()
+        val first = CompletableDeferred<Unit>()
+        val collector = backgroundScope.launch {
+            library.observeLibrary().collect { delivered += it; first.complete(Unit) }
+        }
+        first.await()
+        exchange = { throw IOException("bad code") }
+        assertTrue(auth.exchangeCode("bad-code", MOBILE_REDIRECT).isFailure)
+        library.setEpisodes(100, 7).getOrThrow()
+        runCurrent()
+        assertEquals(7, delivered.last().single().rate.episodes)
+        collector.cancelAndJoin()
+    }
+
+    private suspend fun TestScope.assertSlowCollectorSwitch(
+        logoutFirst: Boolean,
+        releaseIdentity: CompletableDeferred<Unit>? = null,
+    ) {
+        seedA()
+        val firstDelivered = CompletableDeferred<Unit>()
+        val releaseCollector = CompletableDeferred<Unit>()
+        val delivered = mutableListOf<List<LibraryEntry>>()
+        val collector = backgroundScope.launch {
+            library.observeLibrary().collect { entries ->
+                delivered += entries
+                if (delivered.size == 1) {
+                    firstDelivered.complete(Unit)
+                    releaseCollector.await()
+                }
+            }
+        }
+        firstDelivered.await()
+        assertEquals(listOf(100), delivered.single().map { it.anime.id })
+        library.setEpisodes(100, 4).getOrThrow()
+        runCurrent() // Drain Room/Flow producers while the consumer remains suspended.
+        assertEquals(1, delivered.size)
+
+        if (logoutFirst) auth.logout()
+        api.userId = 84
+        auth.exchangeCode("code-b", MOBILE_REDIRECT).getOrThrow()
+        assertEquals(84L, tokens.get()!!.userId)
+        assertEquals(84L, prefs.userId())
+        api.rates.clear()
+        api.animes[200] = api.short(200)
+        library.setStatus(200, ListStatus.PLANNED).getOrThrow()
+        runCurrent()
+        releaseCollector.complete(Unit)
+        runCurrent()
+        assertTrue("No queued A value may be delivered after B activation: $delivered",
+            delivered.drop(1).flatten().none { it.anime.id == 100 })
+
+        releaseIdentity?.complete(Unit)
+        runCurrent()
+        assertTrue("The live subscription must recover and deliver B", delivered.last().any { it.anime.id == 200 })
+        collector.cancelAndJoin()
+    }
+
+    /** Delay notifications only; get/first and persisted writes still see the real current value. */
+    private fun <T> Flow<T>.delayUpdates(release: CompletableDeferred<Unit>): Flow<T> = flow {
+        var initial = true
+        collect { value ->
+            if (!initial) release.await()
+            initial = false
+            emit(value)
+        }
     }
 }

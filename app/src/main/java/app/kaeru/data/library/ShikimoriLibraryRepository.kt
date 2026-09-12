@@ -21,10 +21,12 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.withContext
 import java.time.Clock
 import java.time.Duration
@@ -46,9 +48,14 @@ class ShikimoriLibraryRepository @Inject constructor(
     private val detailsTtl = Duration.ofHours(6)
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    override fun observeLibrary(): Flow<List<LibraryEntry>> = session.userId.flatMapLatest { id ->
-        // Restart Room subscriptions on identity changes; a new account never reuses old snapshots.
-        if (id == null) flowOf(emptyList()) else observeAccountLibrary()
+    override fun observeLibrary(): Flow<List<LibraryEntry>> = session.observations.flatMapLatest { observation ->
+        val entries = if (observation.userId == null) flowOf(emptyList()) else observeAccountLibrary()
+        entries.map { observation to it }
+    }.buffer(0).transform { (observation, entries) ->
+        // The rendezvous channel precedes this check: even a received value may be stale when
+        // identity notifications lag. Keep validation in the downstream coroutine, without an
+        // output buffer or a suspension between successful validation and emission to the caller.
+        if (session.isCurrent(observation)) emit(entries)
     }
 
     private fun observeAccountLibrary(): Flow<List<LibraryEntry>> = combine(
