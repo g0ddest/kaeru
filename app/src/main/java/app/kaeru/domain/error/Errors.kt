@@ -14,6 +14,9 @@ class HttpError(val code: Int, cause: Throwable? = null) : Exception("HTTP $code
 /** The account changed, or was never prepared, while an account-scoped operation was running. */
 class AccountSessionChanged(message: String) : IllegalStateException(message)
 
+/** The device's own storage refused a write: a failed statement, a locked or corrupt database. */
+class StorageFailure(cause: Throwable) : Exception(cause.message, cause)
+
 /** An OAuth redirect callback did not match an authorization this app started. */
 class AuthCallbackRejected(message: String) : Exception(message)
 

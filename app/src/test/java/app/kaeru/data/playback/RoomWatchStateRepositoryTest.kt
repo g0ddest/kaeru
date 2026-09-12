@@ -13,6 +13,7 @@ import app.kaeru.data.auth.InMemoryTokenStore
 import app.kaeru.data.library.AppPreferences
 import app.kaeru.data.local.KaeruDatabase
 import app.kaeru.domain.error.AccountSessionChanged
+import app.kaeru.domain.error.StorageFailure
 import app.kaeru.domain.model.WatchState
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -204,7 +205,7 @@ class RoomWatchStateRepositoryTest {
     }
 
     @Test
-    fun `a database failure is not swallowed`() = scope.runTest {
+    fun `a database failure crosses the boundary as a storage failure`() = scope.runTest {
         db.openHelper.writableDatabase.execSQL(
             """
             CREATE TRIGGER abort_watch_state_insert
@@ -218,7 +219,9 @@ class RoomWatchStateRepositoryTest {
         try {
             repo.save(state())
             fail("Expected the aborted insert to surface")
-        } catch (expected: SQLiteException) {
+        } catch (expected: StorageFailure) {
+            // Nothing above the data layer knows SQLite, so the cause is wrapped, not raised raw.
+            assertTrue(expected.cause is SQLiteException)
             assertNull(db.watchStateDao().getByAnimeId(100))
         }
     }

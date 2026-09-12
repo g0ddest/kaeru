@@ -8,6 +8,7 @@ import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.error.SourceFormatChanged
 import app.kaeru.domain.error.SourceUnavailable
 import app.kaeru.domain.error.SourceUnavailableReason
+import app.kaeru.domain.error.StorageFailure
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -79,6 +80,14 @@ class ErrorMessagesTest {
         assertEquals(
             "Источник обновился, ждите обновления приложения",
             SourceFormatChanged("translations").toUserMessage(),
+        )
+    }
+
+    @Test
+    fun `a local write that failed names the progress that was not saved`() {
+        assertEquals(
+            "Не удалось сохранить прогресс просмотра",
+            StorageFailure(IllegalStateException("disk I/O error")).toUserMessage(),
         )
     }
 

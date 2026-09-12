@@ -136,6 +136,29 @@ class WatchProgressTest {
     }
 
     @Test
+    fun `a sample queued behind a cancelled owner is still written`() = runTest {
+        watchStates.block()
+        val owner = launch { progress.report(100, 4, 5_000, 1_400_000, 7) }
+        runCurrent()
+        launch { progress.report(100, 4, 12_000, 1_400_000, 7, kodikSeason = 2) }
+        runCurrent()
+
+        owner.cancel()
+        runCurrent()
+        watchStates.release()
+        advanceUntilIdle()
+
+        assertEquals(
+            WatchState(100, 4, 12_000, 1_400_000, translationId = 7, kodikSeason = 2, updatedAt = now),
+            watchStates.saved.single(),
+        )
+
+        progress.report(100, 4, 20_000, 1_400_000, 7)
+
+        assertEquals(listOf(12_000L, 20_000L), watchStates.saved.map { it.positionMs })
+    }
+
+    @Test
     fun `cancelling the reporter that owns the queue leaves it usable`() = runTest {
         watchStates.block()
         val owner = launch { progress.report(100, 4, 5_000, 1_400_000, 7) }

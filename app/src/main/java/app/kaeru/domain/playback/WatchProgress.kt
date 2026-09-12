@@ -63,27 +63,37 @@ class WatchProgress(
         if (mine) drain()
     }
 
+    /** Next queued sample, or null having handed the queue back to whoever reports next. */
+    private suspend fun takeNext(): Sample? = lock.withLock {
+        val animeId = pending.keys.firstOrNull()
+        if (animeId == null) {
+            // Released inside the same critical section that found the queue empty, so a sample
+            // arriving now becomes the next owner's work, not an orphan.
+            draining = false
+            null
+        } else {
+            pending.remove(animeId)
+        }
+    }
+
     private suspend fun drain() {
         var owned = true
         try {
-            while (true) {
-                val next = lock.withLock {
-                    val animeId = pending.keys.firstOrNull()
-                    if (animeId == null) {
-                        // Released inside the same critical section that found the queue empty,
-                        // so a sample arriving now becomes the next owner's work, not an orphan.
-                        draining = false
-                        owned = false
-                        null
-                    } else {
-                        pending.remove(animeId)
-                    }
-                } ?: break
-                persist(next)
-            }
+            drainQueue()
+            owned = false
         } finally {
-            // A cancelled or failed owner must hand the queue back, or nothing is ever saved again.
-            if (owned) withContext(NonCancellable) { lock.withLock { draining = false } }
+            // Cancelling the owner must not abandon what is queued behind it: that sample is
+            // typically the final position of the screen whose scope just went away. It is one
+            // write per anime and then the queue is empty, so this cannot run on and on.
+            if (owned) withContext(NonCancellable) { drainQueue() }
+        }
+    }
+
+    /** Writes queued samples until the queue runs dry and is handed back. */
+    private suspend fun drainQueue() {
+        while (true) {
+            val next = takeNext() ?: return
+            persist(next)
         }
     }
 

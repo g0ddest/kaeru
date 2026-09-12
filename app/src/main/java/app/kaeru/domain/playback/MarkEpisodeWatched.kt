@@ -5,6 +5,7 @@ import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.repository.WatchStateRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
+import java.time.Clock
 
 /**
  * What marking an episode did, so the screen can react without asking again.
@@ -31,6 +32,7 @@ data class WatchedOutcome(
 class MarkEpisodeWatched(
     private val library: LibraryRepository,
     private val watchStates: WatchStateRepository,
+    private val clock: Clock,
 ) {
     suspend operator fun invoke(animeId: Int, episode: Int): Result<WatchedOutcome> {
         val known = library.observeAnime(animeId).first()
@@ -44,7 +46,7 @@ class MarkEpisodeWatched(
         val alreadyCounted = (entry?.rate?.episodes ?: 0) >= episode
         if (!alreadyCounted) {
             library.setEpisodes(animeId, episode).getOrElse { return Result.failure(it) }
-            forgetOvertakenPosition(animeId, episode)
+            rewindOvertakenPosition(animeId, episode)
         }
 
         val announced = entry?.anime?.episodes ?: 0
@@ -59,19 +61,21 @@ class MarkEpisodeWatched(
     }
 
     /**
-     * A position inside an episode Shikimori has now passed is spent: it would only
-     * offer to resume something already watched. The episode just marked keeps its row,
-     * because the player is still playing it.
+     * A position inside an episode Shikimori has now passed is spent: it would only offer to
+     * resume something already watched. The row is rewound rather than deleted, because it also
+     * carries which track and Kodik season this anime plays in, and losing that would re-pick a
+     * voice mid-show. The episode just marked keeps its position, because the player is still
+     * playing it.
      */
-    private suspend fun forgetOvertakenPosition(animeId: Int, markedEpisode: Int) {
+    private suspend fun rewindOvertakenPosition(animeId: Int, markedEpisode: Int) {
         val watch = watchStates.observe(animeId).first() ?: return
         if (watch.episode >= markedEpisode) return
         try {
-            watchStates.clear(animeId)
+            watchStates.save(watch.copy(positionMs = 0, durationMs = 0, updatedAt = clock.instant()))
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            // The episode is marked either way; a leftover row costs nothing but a stale card.
+            // The episode is marked either way; a stale position costs nothing but a stale card.
         }
     }
 }

@@ -8,6 +8,7 @@ import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.error.SourceFormatChanged
 import app.kaeru.domain.error.SourceUnavailable
 import app.kaeru.domain.error.SourceUnavailableReason
+import app.kaeru.domain.error.StorageFailure
 
 private const val OFFLINE = "Нет соединения. Проверьте интернет"
 private const val SIGNED_OUT = "Сессия истекла, войдите снова"
@@ -19,6 +20,7 @@ private const val SOURCE_NO_KEY = "Kodik недоступен: не удалос
 private const val SOURCE_REJECTED = "Kodik временно недоступен, попробуйте позже"
 private const val EPISODE_MISSING = "Серия ещё не появилась в Kodik"
 private const val SOURCE_CHANGED = "Источник обновился, ждите обновления приложения"
+private const val STORAGE_FAILED = "Не удалось сохранить прогресс просмотра"
 private const val UNKNOWN = "Что-то пошло не так. Повторите попытку"
 
 /**
@@ -36,6 +38,7 @@ fun Throwable.toUserMessage(): String = when {
     this is EpisodeNotAvailable -> EPISODE_MISSING
     this is SourceFormatChanged -> SOURCE_CHANGED
     this is AccountSessionChanged -> SESSION_CHANGED
+    this is StorageFailure -> STORAGE_FAILED
     else -> UNKNOWN
 }
 

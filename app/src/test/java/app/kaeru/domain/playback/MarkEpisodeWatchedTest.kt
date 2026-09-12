@@ -1,5 +1,6 @@
 package app.kaeru.domain.playback
 
+import app.kaeru.domain.error.AccountSessionChanged
 import app.kaeru.domain.error.HttpError
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
@@ -8,6 +9,7 @@ import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.model.WatchState
 import app.kaeru.domain.repository.LibraryRepository
+import app.kaeru.test.MutableClock
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -18,13 +20,15 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.Duration
 import java.time.Instant
 
 class MarkEpisodeWatchedTest {
     private val now = Instant.parse("2026-09-13T10:00:00Z")
+    private val clock = MutableClock(now)
     private val library = FakeLibraryRepository()
     private val watchStates = FakeWatchStateRepository()
-    private val mark = MarkEpisodeWatched(library, watchStates)
+    private val mark = MarkEpisodeWatched(library, watchStates, clock)
 
     private fun anime(id: Int = 100, episodes: Int = 12, status: AnimeStatus = AnimeStatus.RELEASED) = Anime(
         id = id, nameRu = "Имя", nameRomaji = "Name", posterUrl = null, screenshotUrls = emptyList(),
@@ -236,14 +240,19 @@ class MarkEpisodeWatchedTest {
     }
 
     @Test
-    fun `a position left in an earlier episode is forgotten once shikimori is past it`() = runTest {
-        val stale = WatchState(100, 3, 600_000, 1_400_000, 7, 1, now)
+    fun `a position left in an earlier episode is rewound but its track is remembered`() = runTest {
+        val stale = WatchState(100, 3, 600_000, 1_400_000, translationId = 7, kodikSeason = 2, updatedAt = now)
         seed(episodes = 4, watch = stale)
         watchStates.seed(stale)
+        clock.advance(Duration.ofMinutes(5))
 
         mark(animeId = 100, episode = 5).getOrThrow()
 
-        assertEquals(listOf(100), watchStates.cleared)
+        assertEquals(
+            WatchState(100, 3, 0, 0, translationId = 7, kodikSeason = 2, updatedAt = clock.now),
+            watchStates.saved.single(),
+        )
+        assertEquals(emptyList<Int>(), watchStates.cleared)
     }
 
     @Test
@@ -254,6 +263,20 @@ class MarkEpisodeWatchedTest {
 
         mark(animeId = 100, episode = 5).getOrThrow()
 
+        assertEquals(emptyList<WatchState>(), watchStates.started)
         assertEquals(emptyList<Int>(), watchStates.cleared)
+    }
+
+    @Test
+    fun `a rewind that cannot be written does not undo the marking`() = runTest {
+        val stale = WatchState(100, 3, 600_000, 1_400_000, 7, 2, now)
+        seed(episodes = 4, watch = stale)
+        watchStates.seed(stale)
+        watchStates.failSaveWith = AccountSessionChanged("signed out")
+
+        val outcome = mark(animeId = 100, episode = 5).getOrThrow()
+
+        assertEquals(5, outcome.markedEpisode)
+        assertEquals(listOf("episodes:100:5"), library.calls)
     }
 }

@@ -3,8 +3,9 @@ package app.kaeru.data.playback
 import app.kaeru.data.auth.AccountSession
 import app.kaeru.data.local.WatchStateDao
 import app.kaeru.data.local.toEntity
-import app.kaeru.data.shikimori.toDomainFailure
 import app.kaeru.di.IoDispatcher
+import app.kaeru.domain.error.AccountSessionChanged
+import app.kaeru.domain.error.StorageFailure
 import app.kaeru.domain.model.WatchState
 import app.kaeru.domain.repository.WatchStateRepository
 import kotlinx.coroutines.CancellationException
@@ -45,8 +46,12 @@ class RoomWatchStateRepository @Inject constructor(
         session.withAccount { withContext(io) { block() } }
     } catch (cancelled: CancellationException) {
         throw cancelled
+    } catch (rejected: AccountSessionChanged) {
+        // The account guard already speaks the domain's language.
+        throw rejected
     } catch (error: Exception) {
-        // Nothing above the data layer knows OkHttp or Retrofit types, here as anywhere else.
-        throw error.toDomainFailure()
+        // Nothing above the data layer knows SQLite, and the copy for a failed disk write is
+        // not the copy for a failed request, so Room's exceptions are wrapped, never passed on.
+        throw StorageFailure(error)
     }
 }

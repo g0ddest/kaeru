@@ -47,13 +47,15 @@ object PlaybackModule {
     fun markEpisodeWatched(
         library: LibraryRepository,
         watchStates: WatchStateRepository,
-    ): MarkEpisodeWatched = MarkEpisodeWatched(library, watchStates)
+        clock: Clock,
+    ): MarkEpisodeWatched = MarkEpisodeWatched(library, watchStates, clock)
 }
 
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class PlaybackBindings {
+    // Unscoped on purpose: the implementation is already a @Singleton, so this binding hands
+    // out that one instance.
     @Binds
-    @Singleton
     abstract fun watchStateRepository(impl: RoomWatchStateRepository): WatchStateRepository
 }
