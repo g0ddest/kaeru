@@ -33,6 +33,12 @@ data class KodikPlayerPage(
     val translations: List<KodikTranslationOption>,
     val episodes: List<KodikEpisodeOption>,
     val ftorPath: String = "/ftor",
+    /**
+     * The URL this page was fetched from, filled in by [KodikLinkExtractor] and
+     * null for a page parsed straight from a string. Kodik checks `Referer` on
+     * the `/ftor` call, and it has to be the page the call came from.
+     */
+    val sourceUrl: String? = null,
 )
 
 /**

@@ -2,8 +2,11 @@ package app.kaeru.ui.common
 
 import app.kaeru.domain.error.AccountSessionChanged
 import app.kaeru.domain.error.AuthCallbackRejected
+import app.kaeru.domain.error.EpisodeNotAvailable
 import app.kaeru.domain.error.HttpError
 import app.kaeru.domain.error.NetworkUnavailable
+import app.kaeru.domain.error.SourceFormatChanged
+import app.kaeru.domain.error.SourceUnavailable
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -38,6 +41,29 @@ class ErrorMessagesTest {
     @Test
     fun `a rejected oauth callback asks the user to sign in again`() {
         assertEquals("Не удалось подтвердить вход. Войдите заново", AuthCallbackRejected("state mismatch").toUserMessage())
+    }
+
+    @Test
+    fun `a source without a usable key names kodik and the key`() {
+        assertEquals(
+            "Kodik недоступен: не удалось получить ключ",
+            SourceUnavailable(IllegalStateException("no token")).toUserMessage(),
+        )
+        assertEquals("Kodik недоступен: не удалось получить ключ", SourceUnavailable().toUserMessage())
+    }
+
+    @Test
+    fun `a missing episode reads as one kodik does not have yet`() {
+        assertEquals("Серия ещё не появилась в Kodik", EpisodeNotAvailable(52991, 28).toUserMessage())
+        assertEquals("Серия ещё не появилась в Kodik", EpisodeNotAvailable(52991).toUserMessage())
+    }
+
+    @Test
+    fun `a changed source format tells the user to wait for an app update`() {
+        assertEquals(
+            "Источник обновился, ждите обновления приложения",
+            SourceFormatChanged("translations").toUserMessage(),
+        )
     }
 
     @Test
