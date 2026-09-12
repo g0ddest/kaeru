@@ -6,6 +6,8 @@ data class AuthTokens(
     val accessToken: String,
     val refreshToken: String,
     val expiresAtEpochSec: Long,
+    // Persisted with credentials so a restored token cannot inherit an unrelated cached identity.
+    val userId: Long? = null,
 )
 
 /** Revision changes on every write, including logout and login with identical credentials. */

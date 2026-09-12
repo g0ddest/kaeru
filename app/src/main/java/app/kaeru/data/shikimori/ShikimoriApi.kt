@@ -2,6 +2,7 @@ package app.kaeru.data.shikimori
 
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.Path
@@ -9,7 +10,7 @@ import retrofit2.http.Query
 
 interface ShikimoriApi {
     @GET("api/users/whoami")
-    suspend fun whoami(): UserDto
+    suspend fun whoami(@Header("Authorization") authorization: String? = null): UserDto
 
     @GET("api/v2/user_rates?target_type=Anime")
     suspend fun userRates(

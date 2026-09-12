@@ -18,4 +18,7 @@ interface WatchStateDao {
 
     @Query("DELETE FROM watch_state WHERE animeId = :animeId")
     suspend fun deleteByAnimeId(animeId: Int)
+
+    @Query("DELETE FROM watch_state")
+    suspend fun deleteAll()
 }

@@ -8,6 +8,9 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import app.cash.turbine.test
+import app.kaeru.data.auth.AccountSession
+import app.kaeru.data.auth.AuthTokens
+import app.kaeru.data.auth.InMemoryTokenStore
 import app.kaeru.data.local.KaeruDatabase
 import app.kaeru.data.local.WatchStateEntity
 import app.kaeru.data.shikimori.AnimeDetailsDto
@@ -51,6 +54,7 @@ class ShikimoriLibraryRepositoryTest {
     private lateinit var prefs: AppPreferences
     private val api = FakeShikimoriApi()
     private lateinit var repo: ShikimoriLibraryRepository
+    private lateinit var session: AccountSession
     private val now = Instant.parse("2026-09-12T12:00:00Z")
 
     @Before
@@ -59,11 +63,13 @@ class ShikimoriLibraryRepositoryTest {
             .allowMainThreadQueries().setQueryCoroutineContext(dispatcher).build()
         prefsStore = PreferenceDataStoreFactory.create(scope = storeScope) { File(tmp.root, "prefs.preferences_pb") }
         prefs = AppPreferences(prefsStore)
+        runTest(dispatcher) { prefs.setUserId(42) }
+        session = AccountSession(InMemoryTokenStore(AuthTokens("access", "refresh", 9999999999, 42)), prefs, db)
         repo = repositoryAt(now)
     }
 
     private fun repositoryAt(at: Instant) = ShikimoriLibraryRepository(
-        api, db.animeDao(), db.userRateDao(), db.watchStateDao(), prefs,
+        api, db.animeDao(), db.userRateDao(), db.watchStateDao(), prefs, session,
         dispatcher, Clock.fixed(at, ZoneOffset.UTC),
     )
 
@@ -138,7 +144,7 @@ class ShikimoriLibraryRepositoryTest {
         assertEquals(now, cached.detailsFetchedAt)
         assertEquals(1, api.calls.count { it == "anime:100" })
         assertEquals(1, api.calls.count { it == "screenshots:100" })
-        assertEquals(1, api.calls.count { it == "whoami" })
+        assertEquals(0, api.calls.count { it == "whoami" })
     }
 
     @Test
@@ -389,7 +395,7 @@ class ShikimoriLibraryRepositoryTest {
 
     @Test
     fun `preferences persist identity sync timestamp and watched threshold with clear defaults`() = scope.runTest {
-        assertNull(prefs.userId())
+        assertEquals(42L, prefs.userId())
         assertNull(prefs.lastFullSync())
         assertEquals(0.9f, prefs.watchedThreshold.first())
         prefs.setUserId(42)

@@ -21,6 +21,7 @@ class DataStoreTokenStore @Inject constructor(
     private val refresh = stringPreferencesKey("refresh_token")
     private val expires = longPreferencesKey("expires_at")
     private val revision = longPreferencesKey("token_revision")
+    private val userId = longPreferencesKey("token_user_id")
 
     override val tokens: Flow<AuthTokens?> = dataStore.data.map { it.read() }
 
@@ -50,10 +51,12 @@ class DataStoreTokenStore @Inject constructor(
             remove(access)
             remove(refresh)
             remove(expires)
+            remove(userId)
         } else {
             this[access] = tokens.accessToken
             this[refresh] = tokens.refreshToken
             this[expires] = tokens.expiresAtEpochSec
+            if (tokens.userId == null) remove(userId) else this[userId] = tokens.userId
         }
     }
 
@@ -62,6 +65,6 @@ class DataStoreTokenStore @Inject constructor(
     private fun Preferences.read(): AuthTokens? {
         val accessToken = this[access] ?: return null
         val refreshToken = this[refresh] ?: return null
-        return AuthTokens(accessToken, refreshToken, this[expires] ?: 0L)
+        return AuthTokens(accessToken, refreshToken, this[expires] ?: 0L, this[userId])
     }
 }

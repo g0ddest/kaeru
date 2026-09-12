@@ -21,6 +21,9 @@ class FakeShikimoriApi : ShikimoriApi {
     val creates = mutableListOf<UserRateRequest>()
     var beforeCall: suspend (String) -> Unit = {}
     var nextId = 1000L
+    var userId = 42L
+    val requestedUserIds = mutableListOf<Long>()
+    val identityBearers = mutableListOf<String?>()
 
     fun short(id: Int, status: String = "released", episodes: Int = 12, aired: Int = episodes) =
         AnimeShortDto(id, "Name $id", "Имя $id", ImageDto("/o$id.jpg", "/p$id.jpg"), "7.0", status, episodes, aired, "2026-01-01")
@@ -33,13 +36,15 @@ class FakeShikimoriApi : ShikimoriApi {
         beforeCall(call)
     }
 
-    override suspend fun whoami(): UserDto {
+    override suspend fun whoami(authorization: String?): UserDto {
+        identityBearers += authorization
         record("whoami")
-        return UserDto(42, "vitaliy")
+        return UserDto(userId, "user-$userId")
     }
 
     override suspend fun userRates(userId: Long, status: String, page: Int, limit: Int): List<UserRateDto> {
-        require(userId == 42L && page >= 1 && limit in 1..1000)
+        require(userId == this.userId && page >= 1 && limit in 1..1000)
+        requestedUserIds += userId
         record("rates:$status")
         ratePages += status to page
         return rates[status].orEmpty().drop((page - 1) * limit).take(limit)
@@ -72,7 +77,7 @@ class FakeShikimoriApi : ShikimoriApi {
         record("create")
         creates += body
         val payload = body.userRate
-        require(payload.userId == 42L && payload.targetType == "Anime")
+        require(payload.userId == userId && payload.targetType == "Anime")
         return rate(nextId++, requireNotNull(payload.targetId), payload.status ?: "planned", payload.episodes ?: 0)
             .also { rates.getOrPut(it.status) { mutableListOf() }.add(it) }
     }

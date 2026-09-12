@@ -129,6 +129,35 @@ class TokenAuthenticatorTest {
     private fun request() = Request.Builder().url(server.url("/api/users/whoami")).build()
 
     @Test
+    fun `explicit bearer identity request is not overwritten by active session`() {
+        server.enqueue(MockResponse().setBody("{}"))
+        client.newCall(request().newBuilder().header("Authorization", "Bearer candidate").build())
+            .execute().use { assertEquals(200, it.code) }
+        assertEquals("Bearer candidate", server.takeRequest().getHeader("Authorization"))
+        assertEquals("old", runBlocking { store.get() }?.accessToken)
+    }
+
+    @Test
+    fun `rejected explicit identity bearer never falls back to current account or refresh`() {
+        server.enqueue(MockResponse().setResponseCode(401))
+        server.enqueue(MockResponse().setResponseCode(400))
+        client.newCall(request().newBuilder().header("Authorization", "Bearer candidate").build())
+            .execute().use { assertEquals(401, it.code) }
+        assertEquals(1, server.requestCount)
+        assertEquals("old", runBlocking { store.get() }?.accessToken)
+    }
+
+    @Test
+    fun `refresh retains verified account binding`() {
+        runBlocking { store.set(AuthTokens("old", "refresh-1", 0, 42)) }
+        server.enqueue(MockResponse().setResponseCode(401))
+        enqueueTokens()
+        server.enqueue(MockResponse().setBody("{}"))
+        client.newCall(request()).execute().use { assertEquals(200, it.code) }
+        assertEquals(AuthTokens("new", "refresh-2", 87400, 42), runBlocking { store.get() })
+    }
+
+    @Test
     fun `successful in flight refresh cannot undo logout`() = assertRefreshCannotOverwrite(null, succeeds = true)
 
     @Test

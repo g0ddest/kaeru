@@ -21,6 +21,8 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
 
     suspend fun userId(): Long? = dataStore.data.first()[userIdKey]
 
+    val userId: Flow<Long?> = dataStore.data.map { it[userIdKey] }
+
     suspend fun setUserId(id: Long) {
         dataStore.edit { it[userIdKey] = id }
     }
@@ -35,5 +37,12 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
 
     suspend fun clear() {
         dataStore.edit { it.clear() }
+    }
+
+    suspend fun clearAccount() {
+        dataStore.edit {
+            it.remove(userIdKey)
+            it.remove(lastFullSyncKey)
+        }
     }
 }

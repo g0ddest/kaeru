@@ -22,6 +22,7 @@ class TokenAuthenticator(
 
     override fun authenticate(route: Route?, response: Response): Request? {
         if (response.request.url.encodedPath.startsWith("/oauth/")) return null
+        if (response.request.tag(ExplicitAuthorization::class.java) != null) return null
         if (response.priorResponse != null) return null
         val failedToken = response.request.header("Authorization")?.removePrefix("Bearer ")
         val fresh = synchronized(lock) {
@@ -43,7 +44,7 @@ class TokenAuthenticator(
                 clientSecret = clientSecret,
                 refreshToken = current.refreshToken,
             )
-        }.map { AuthTokens(it.accessToken, it.refreshToken, clock.instant().epochSecond + it.expiresIn) }
+        }.map { AuthTokens(it.accessToken, it.refreshToken, clock.instant().epochSecond + it.expiresIn, current.userId) }
             .getOrNull()
         // A stale success must not restore an old session; a stale failure must not clear a new one.
         if (store.compareAndSet(snapshot, refreshed)) refreshed else null

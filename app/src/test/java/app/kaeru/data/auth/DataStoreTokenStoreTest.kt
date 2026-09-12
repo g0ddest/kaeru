@@ -46,6 +46,20 @@ class DataStoreTokenStoreTest {
     }
 
     @Test
+    fun `verified identity persists with token snapshots and is removed with credentials`() = runTest {
+        val store = DataStoreTokenStore(dataStore)
+        store.set(AuthTokens("a", "r", 1234, 42))
+        val restored = DataStoreTokenStore(dataStore)
+        val snapshot = restored.snapshot()
+        assertEquals(AuthTokens("a", "r", 1234, 42), snapshot.tokens)
+        assertTrue(restored.compareAndSet(snapshot, AuthTokens("b", "r2", 2345, 42)))
+        assertEquals(42L, store.get()!!.userId)
+        store.set(null)
+        store.set(AuthTokens("unbound", "unbound-refresh", 3456))
+        assertNull(restored.get()!!.userId)
+    }
+
+    @Test
     fun `partial credentials are anonymous and missing expiry defaults to expired`() = runTest {
         dataStore.edit { it[stringPreferencesKey("access_token")] = "access" }
         val store = DataStoreTokenStore(dataStore)
