@@ -1,5 +1,6 @@
 package app.kaeru.data.local
 
+import android.database.sqlite.SQLiteException
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import app.cash.turbine.test
@@ -8,10 +9,12 @@ import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.model.WatchState
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -50,6 +53,15 @@ class KaeruDatabaseTest {
         detailsFetchedAt = Instant.ofEpochMilli(200_456),
     )
 
+    private suspend fun assertSqlFailure(block: suspend () -> Unit) {
+        try {
+            block()
+            fail("Expected SQLite operation to fail")
+        } catch (_: SQLiteException) {
+            // Expected: callers assert the database state left behind by the failed statement.
+        }
+    }
+
     @Test
     fun `anime database round trip preserves lists enums and millisecond instants`() = runTest {
         db.animeDao().upsertAll(listOf(anime(1)))
@@ -61,6 +73,37 @@ class KaeruDatabaseTest {
         assertEquals(Instant.ofEpochMilli(100_123), loaded.nextEpisodeAt)
         assertEquals(Instant.ofEpochMilli(200_456), loaded.detailsFetchedAt)
         assertEquals(anime(1), loaded)
+    }
+
+    @Test
+    fun `anime observeAll re-emits after inserts and updates`() = runTest {
+        val dao = db.animeDao()
+
+        dao.observeAll().test {
+            assertEquals(emptyList<AnimeEntity>(), awaitItem())
+
+            dao.upsertAll(listOf(anime(1)))
+            assertEquals(listOf(anime(1)), awaitItem())
+
+            val updated = anime(1).copy(episodesAired = 4)
+            dao.upsertAll(listOf(updated))
+            assertEquals(listOf(updated), awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `anime observeById and getByIds return requested rows`() = runTest {
+        val dao = db.animeDao()
+
+        dao.observeById(2).test {
+            assertNull(awaitItem())
+
+            dao.upsertAll(listOf(anime(1), anime(2), anime(3)))
+            assertEquals(anime(2), awaitItem())
+            assertEquals(setOf(anime(1), anime(3)), dao.getByIds(listOf(3, 1)).toSet())
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 
     @Test
@@ -233,18 +276,114 @@ class KaeruDatabaseTest {
     }
 
     @Test
-    fun `watch state upsert overwrites by anime id`() = runTest {
-        val dao = db.watchStateDao()
-        dao.upsert(WatchStateEntity(5, 1, 1_000, 100_000, null, null, Instant.EPOCH))
-        dao.upsert(WatchStateEntity(5, 2, 500, 100_000, 7, 1, Instant.ofEpochSecond(9)))
+    fun `replaceAll rolls back deletion when the upsert phase fails`() = runTest {
+        val dao = db.userRateDao()
+        val existing = listOf(
+            UserRateEntity(1, 10, ListStatus.WATCHING, 2, Instant.ofEpochMilli(100)),
+            UserRateEntity(2, 20, ListStatus.PLANNED, 0, Instant.ofEpochMilli(200)),
+        )
+        dao.upsertAll(existing)
+        db.openHelper.writableDatabase.execSQL(
+            """
+            CREATE TRIGGER abort_user_rate_insert
+            BEFORE INSERT ON user_rate
+            BEGIN
+                SELECT RAISE(ABORT, 'forced upsert failure');
+            END
+            """.trimIndent(),
+        )
 
-        val state = dao.getByAnimeId(5)!!
+        assertSqlFailure {
+            dao.replaceAll(listOf(UserRateEntity(3, 30, ListStatus.COMPLETED, 12, Instant.EPOCH)))
+        }
 
-        assertEquals(2, state.episode)
-        assertEquals(7, state.translationId)
+        assertEquals(existing[0], dao.getByAnimeId(10))
+        assertEquals(existing[1], dao.getByAnimeId(20))
+        assertNull(dao.getByAnimeId(30))
+    }
+
+    @Test
+    fun `user rate observeAll re-emits after insert update and delete`() = runTest {
+        val dao = db.userRateDao()
+        val inserted = UserRateEntity(1, 10, ListStatus.PLANNED, 0, Instant.ofEpochMilli(100))
+        val updated = inserted.copy(status = ListStatus.WATCHING, episodes = 3)
+
         dao.observeAll().test {
-            assertEquals(1, awaitItem().size)
+            assertEquals(emptyList<UserRateEntity>(), awaitItem())
+
+            dao.upsertAll(listOf(inserted))
+            assertEquals(listOf(inserted), awaitItem())
+
+            dao.upsertAll(listOf(updated))
+            assertEquals(listOf(updated), awaitItem())
+
+            dao.deleteByAnimeId(10)
+            assertEquals(emptyList<UserRateEntity>(), awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
+        assertNull(dao.getByAnimeId(10))
+    }
+
+    @Test
+    fun `user rate unique anime id rejects a second primary key`() = runTest {
+        val dao = db.userRateDao()
+        val original = UserRateEntity(1, 10, ListStatus.WATCHING, 2, Instant.ofEpochMilli(100))
+        dao.upsertAll(listOf(original))
+
+        dao.upsertAll(listOf(UserRateEntity(2, 10, ListStatus.COMPLETED, 12, Instant.ofEpochMilli(200))))
+
+        assertEquals(original, dao.getByAnimeId(10))
+        assertEquals(listOf(original), dao.observeAll().first())
+    }
+
+    @Test
+    fun `user rate persists every ListStatus through SQL`() = runTest {
+        val dao = db.userRateDao()
+        val rates = ListStatus.entries.mapIndexed { index, status ->
+            UserRateEntity(
+                id = index.toLong() + 1,
+                animeId = index + 100,
+                status = status,
+                episodes = index,
+                updatedAt = Instant.ofEpochMilli(index.toLong()),
+            )
+        }
+
+        dao.upsertAll(rates)
+
+        val loadedStatuses = dao.observeAll().first().sortedBy(UserRateEntity::id).map(UserRateEntity::status)
+        assertEquals(
+            listOf(
+                ListStatus.WATCHING,
+                ListStatus.PLANNED,
+                ListStatus.COMPLETED,
+                ListStatus.ON_HOLD,
+                ListStatus.DROPPED,
+                ListStatus.REWATCHING,
+            ),
+            loadedStatuses,
+        )
+    }
+
+    @Test
+    fun `watch state upsert overwrites by anime id`() = runTest {
+        val dao = db.watchStateDao()
+        val inserted = WatchStateEntity(5, 1, 1_000, 100_000, null, null, Instant.EPOCH)
+        val updated = WatchStateEntity(5, 2, 500, 100_000, 7, 1, Instant.ofEpochSecond(9))
+
+        dao.observeAll().test {
+            assertEquals(emptyList<WatchStateEntity>(), awaitItem())
+
+            dao.upsert(inserted)
+            assertEquals(listOf(inserted), awaitItem())
+
+            dao.upsert(updated)
+            assertEquals(listOf(updated), awaitItem())
+
+            dao.deleteByAnimeId(5)
+            assertEquals(emptyList<WatchStateEntity>(), awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertNull(dao.getByAnimeId(5))
     }
 }
