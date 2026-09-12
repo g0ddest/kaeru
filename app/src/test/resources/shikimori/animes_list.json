@@ -1,0 +1,30 @@
+[
+  {
+    "id": 52991,
+    "name": "Sousou no Frieren",
+    "russian": "Провожающая в последний путь Фрирен",
+    "image": {"original": "/system/animes/original/52991.jpg", "preview": "/system/animes/preview/52991.jpg", "x96": "/system/animes/x96/52991.jpg", "x48": "/system/animes/x48/52991.jpg"},
+    "url": "/animes/52991-sousou-no-frieren",
+    "kind": "tv",
+    "score": "9.3",
+    "status": "released",
+    "episodes": 28,
+    "episodes_aired": 28,
+    "aired_on": "2023-09-29",
+    "released_on": "2024-03-22"
+  },
+  {
+    "id": 60000,
+    "name": "Ongoing Show",
+    "russian": "",
+    "image": {"original": "/system/animes/original/60000.jpg", "preview": "/system/animes/preview/60000.jpg", "x96": "/system/animes/x96/60000.jpg", "x48": "/system/animes/x48/60000.jpg"},
+    "url": "/animes/60000-ongoing-show",
+    "kind": "tv",
+    "score": "0.0",
+    "status": "ongoing",
+    "episodes": 0,
+    "episodes_aired": 7,
+    "aired_on": "2026-07-05",
+    "released_on": null
+  }
+]
