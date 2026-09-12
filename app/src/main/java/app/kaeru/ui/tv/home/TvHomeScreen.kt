@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,15 +45,22 @@ import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.ui.common.Poster
 import app.kaeru.ui.common.home.HomeUiState
 import app.kaeru.ui.common.theme.KaeruAccent
+import app.kaeru.ui.tv.requestFocusOrLog
 import coil3.compose.AsyncImage
 
 @Composable
-fun TvHomeScreen(state: HomeUiState, onRefresh: () -> Unit, onAnime: (LibraryEntry) -> Unit) {
+fun TvHomeScreen(
+    state: HomeUiState,
+    onRefresh: () -> Unit,
+    onLogout: () -> Unit,
+    onAnime: (LibraryEntry) -> Unit,
+) {
     val rows = remember(state.feed) { tvHomeRows(state.feed) }
     val initialItem = remember(state.feed) { initialTvItem(state.feed, rows) }
     var focused by remember(initialItem) { mutableStateOf(initialItem) }
-    val firstFocus = remember { FocusRequester() }
-    var hasRequestedInitialFocus by remember { mutableStateOf(false) }
+    // Once per screen entry: a later background refresh (a Room emission changing `state.feed`)
+    // must never re-grab focus from wherever the user has navigated to.
+    val requestedInitialFocus = remember { mutableStateOf(false) }
 
     if (state.isLoading) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Загружаем библиотеку…") }
@@ -61,7 +69,10 @@ fun TvHomeScreen(state: HomeUiState, onRefresh: () -> Unit, onAnime: (LibraryEnt
     if (rows.isEmpty()) {
         Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) {
             Text("В списке «Смотрю» пока пусто", style = MaterialTheme.typography.headlineLarge)
-            Button(onClick = onRefresh, modifier = Modifier.padding(top = 20.dp)) { Text("Обновить") }
+            Row(Modifier.padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Button(onClick = onRefresh) { Text("Обновить") }
+                Button(onClick = onLogout) { Text("Выйти") }
+            }
         }
         return
     }
@@ -77,10 +88,10 @@ fun TvHomeScreen(state: HomeUiState, onRefresh: () -> Unit, onAnime: (LibraryEnt
                     Text(row.title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = 52.dp, vertical = 10.dp))
                     LazyRow(contentPadding = PaddingValues(horizontal = 52.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                         items(row.items, key = { "${it.kind}-${it.entry.anime.id}" }) { item ->
-                            val isFirst = item == initialItem
                             TvPosterCard(
                                 item = item,
-                                modifier = if (isFirst) Modifier.focusRequester(firstFocus) else Modifier,
+                                isInitialFocusTarget = item == initialItem,
+                                requestedInitialFocus = requestedInitialFocus,
                                 onFocused = { focused = item },
                                 onClick = { onAnime(item.entry) },
                             )
@@ -89,19 +100,23 @@ fun TvHomeScreen(state: HomeUiState, onRefresh: () -> Unit, onAnime: (LibraryEnt
                 }
             }
         }
-        state.errorMessage?.let {
-            Row(Modifier.align(Alignment.TopEnd).padding(32.dp).background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(12.dp)).padding(16.dp)) {
-                Text(it); Button(onClick = onRefresh, modifier = Modifier.padding(start = 12.dp)) { Text("Повторить") }
+        // One header strip above the rows so both actions are reachable with D-pad up.
+        Row(
+            Modifier.align(Alignment.TopEnd).padding(32.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            state.errorMessage?.let {
+                Row(
+                    Modifier.background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(12.dp)).padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(it)
+                    Button(onClick = onRefresh, modifier = Modifier.padding(start = 12.dp)) { Text("Повторить") }
+                }
             }
-        }
-    }
-    // Requests initial D-pad focus exactly once per screen entry: a later background refresh
-    // (e.g. a Room emission changing `state.feed`) must never re-grab focus from wherever the
-    // user has navigated to, and the target row/card may no longer be composed by then.
-    LaunchedEffect(Unit) {
-        if (!hasRequestedInitialFocus && initialItem != null) {
-            hasRequestedInitialFocus = true
-            runCatching { firstFocus.requestFocus() }
+            // Temporary entry point until plan 3 introduces a Settings screen.
+            Button(onClick = onLogout) { Text("Выйти") }
         }
     }
 }
@@ -126,12 +141,28 @@ private fun HeroBackground(item: FeedItem) {
 }
 
 @Composable
-private fun TvPosterCard(item: FeedItem, modifier: Modifier, onFocused: () -> Unit, onClick: () -> Unit) {
+private fun TvPosterCard(
+    item: FeedItem,
+    isInitialFocusTarget: Boolean,
+    requestedInitialFocus: MutableState<Boolean>,
+    onFocused: () -> Unit,
+    onClick: () -> Unit,
+) {
     var hasFocus by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
     val scale by animateFloatAsState(if (hasFocus) 1.08f else 1f, label = "tvCardScale")
+    // The card claims initial focus itself: asking from the screen can run before the LazyRow has
+    // composed this card, and that request then fails for good.
+    LaunchedEffect(isInitialFocusTarget) {
+        if (isInitialFocusTarget && !requestedInitialFocus.value) {
+            requestedInitialFocus.value = true
+            focusRequester.requestFocusOrLog("first card of the home feed")
+        }
+    }
     Card(
         onClick = onClick,
-        modifier = modifier
+        modifier = Modifier
+            .focusRequester(focusRequester)
             .size(width = 154.dp, height = 252.dp)
             .scale(scale)
             .onFocusChanged { hasFocus = it.isFocused; if (it.isFocused) onFocused() }
