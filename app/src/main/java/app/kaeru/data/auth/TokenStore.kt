@@ -14,6 +14,8 @@ data class AuthTokens(
 data class TokenSnapshot(val tokens: AuthTokens?, val revision: Long)
 
 interface TokenStore {
+    /** All wrappers share this fence; set/CAS must fence the entire durable mutation lifetime. */
+    val fence: SessionFence
     val tokens: Flow<AuthTokens?>
     suspend fun get(): AuthTokens?
     suspend fun set(tokens: AuthTokens?)

@@ -6,9 +6,13 @@ import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
@@ -16,6 +20,7 @@ import javax.inject.Singleton
 @Singleton
 class DataStoreTokenStore @Inject constructor(
     @param:Named("auth") private val dataStore: DataStore<Preferences>,
+    override val fence: SessionFence,
 ) : TokenStore {
     private val access = stringPreferencesKey("access_token")
     private val refresh = stringPreferencesKey("refresh_token")
@@ -28,12 +33,12 @@ class DataStoreTokenStore @Inject constructor(
     override suspend fun get(): AuthTokens? = dataStore.data.first().read()
 
     override suspend fun set(tokens: AuthTokens?) {
-        dataStore.edit { it.write(tokens) }
+        mutate { dataStore.edit { it.write(tokens) } }
     }
 
     override suspend fun snapshot(): TokenSnapshot = dataStore.data.first().snapshot()
 
-    override suspend fun compareAndSet(expected: TokenSnapshot, tokens: AuthTokens?): Boolean {
+    override suspend fun compareAndSet(expected: TokenSnapshot, tokens: AuthTokens?): Boolean = mutate {
         var applied = false
         // DataStore serializes the comparison and mutation, including across store wrappers.
         dataStore.edit {
@@ -42,7 +47,18 @@ class DataStoreTokenStore @Inject constructor(
                 applied = true
             }
         }
-        return applied
+        applied
+    }
+
+    private suspend fun <T> mutate(block: suspend () -> T): T {
+        currentCoroutineContext().ensureActive()
+        return fence.change {
+            // DataStore's actor can commit after updateData's caller is cancelled. Join the durable
+            // edit before reopening delivery; do not extend NonCancellable to network/session work.
+            val result = withContext(NonCancellable) { block() }
+            currentCoroutineContext().ensureActive()
+            result
+        }
     }
 
     private fun MutablePreferences.write(tokens: AuthTokens?) {

@@ -62,6 +62,7 @@ class AccountSessionIntegrationTest {
     private lateinit var authStore: DataStore<Preferences>
     private lateinit var prefs: AppPreferences
     private lateinit var tokens: DataStoreTokenStore
+    private val fence = SessionFence()
     private lateinit var auth: ShikimoriAuthRepository
     private lateinit var library: ShikimoriLibraryRepository
     private lateinit var session: AccountSession
@@ -85,7 +86,7 @@ class AccountSessionIntegrationTest {
 
     private fun restartWrappers() {
         prefs = AppPreferences(prefsStore)
-        tokens = DataStoreTokenStore(authStore)
+        tokens = DataStoreTokenStore(authStore, fence)
         session = AccountSession(tokens, prefs, db)
         auth = ShikimoriAuthRepository(oauth, api, session, "cid", "secret", clock)
         library = ShikimoriLibraryRepository(api, db.animeDao(), db.userRateDao(), db.watchStateDao(), prefs, session, dispatcher, clock)
@@ -565,6 +566,59 @@ class AccountSessionIntegrationTest {
         library.setEpisodes(100, 7).getOrThrow()
         runCurrent()
         assertEquals(7, delivered.last().single().rate.episodes)
+        collector.cancelAndJoin()
+    }
+
+    @Test
+    fun `authenticator CAS clear during preference validation cannot deliver the captured account`() = scope.runTest {
+        assertTokenClearDuringValidation(conditional = true)
+    }
+
+    @Test
+    fun `unconditional token clear during preference validation cannot deliver the captured account`() = scope.runTest {
+        assertTokenClearDuringValidation(conditional = false)
+    }
+
+    private suspend fun TestScope.assertTokenClearDuringValidation(conditional: Boolean) {
+        seedA()
+        val validating = CompletableDeferred<Unit>()
+        val releaseValidation = CompletableDeferred<Unit>()
+        var delayNextRead = false
+        val delayedPrefs = AppPreferences(object : DataStore<Preferences> by prefsStore {
+            override val data: Flow<Preferences> = flow {
+                val read = prefsStore.data.first()
+                if (delayNextRead) {
+                    delayNextRead = false
+                    validating.complete(Unit)
+                    releaseValidation.await()
+                }
+                emit(read)
+            }
+        })
+        session = AccountSession(tokens, delayedPrefs, db)
+        auth = ShikimoriAuthRepository(oauth, api, session, "cid", "secret", clock)
+        library = ShikimoriLibraryRepository(api, db.animeDao(), db.userRateDao(), db.watchStateDao(), delayedPrefs, session, dispatcher, clock)
+        val delivered = mutableListOf<List<LibraryEntry>>()
+        val first = CompletableDeferred<Unit>()
+        val collector = backgroundScope.launch {
+            library.observeLibrary().collect { delivered += it; first.complete(Unit) }
+        }
+        first.await()
+        delayNextRead = true
+        val oldRate = db.userRateDao().getByAnimeId(100)!!
+        db.userRateDao().upsertAll(listOf(oldRate.copy(episodes = 4)))
+        validating.await()
+        // This is the exact TokenStore mutation performed by a failed TokenAuthenticator refresh.
+        val refreshSnapshot = tokens.snapshot()
+        if (conditional) assertTrue(tokens.compareAndSet(refreshSnapshot, null)) else tokens.set(null)
+        assertFalse(auth.isLoggedIn.first())
+        val beforeRelease = delivered.size
+        releaseValidation.complete(Unit)
+        runCurrent()
+        assertTrue("A validation that captured tokens before token clear must not deliver A",
+            delivered.drop(beforeRelease).flatten().none { it.anime.id == 100 })
+        assertTrue(delivered.last().isEmpty())
+        assertEquals(4, db.userRateDao().getByAnimeId(100)!!.episodes)
         collector.cancelAndJoin()
     }
 

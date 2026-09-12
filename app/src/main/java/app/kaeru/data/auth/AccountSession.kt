@@ -11,7 +11,7 @@ import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
-internal data class SessionObservation(val generation: Long, val userId: Long?)
+internal data class SessionObservation(val revision: Long, val userId: Long?)
 
 /** Serializes account transitions and the entire lifetime of account-owned repository writes. */
 @Singleton
@@ -28,16 +28,20 @@ class AccountSession @Inject constructor(
         tokens?.userId?.takeIf { it == cachedId }
     }.distinctUntilChanged()
 
-    internal val observations: Flow<SessionObservation> = combine(generation, userId) { epoch, id ->
+    internal val observations: Flow<SessionObservation> = combine(store.fence.revision, userId) { epoch, id ->
         SessionObservation(epoch, id)
     }
 
-    /** Validate at delivery, independently of delayed identity notifications and suspended reads. */
+    /** Identity preflight only; [emitIfCurrent] performs the atomic final handoff. */
     internal suspend fun isCurrent(observation: SessionObservation): Boolean {
-        if (observation.generation != generation.value || observation.generation % 2L != 0L) return false
+        if (observation.revision != store.fence.revision.value) return false
         val currentId = store.get()?.userId?.takeIf { it == prefs.userId() }
-        // A transition may complete while either DataStore read is suspended, even A -> B -> A.
-        return observation.userId == currentId && observation.generation == generation.value
+        // Includes token set/CAS, even when no account transition acquires the write mutex.
+        return observation.userId == currentId && observation.revision == store.fence.revision.value
+    }
+
+    internal suspend fun emitIfCurrent(observation: SessionObservation, emit: suspend () -> Unit) {
+        if (isCurrent(observation)) store.fence.deliver(observation.revision, emit)
     }
 
     suspend fun <T> withAccount(block: suspend (Long) -> T): T {
@@ -73,12 +77,14 @@ class AccountSession @Inject constructor(
     }
 
     private suspend fun <T> transition(block: suspend () -> T): T = lock.withLock {
-        generation.value += 1
-        try {
-            block()
-        } finally {
-            // Reject writes queued during the transition, including a cancelled/failed transition.
+        store.fence.change {
             generation.value += 1
+            try {
+                block()
+            } finally {
+                // Reject writes queued during the transition, including a cancelled/failed transition.
+                generation.value += 1
+            }
         }
     }
 }

@@ -52,10 +52,10 @@ class ShikimoriLibraryRepository @Inject constructor(
         val entries = if (observation.userId == null) flowOf(emptyList()) else observeAccountLibrary()
         entries.map { observation to it }
     }.buffer(0).transform { (observation, entries) ->
-        // The rendezvous channel precedes this check: even a received value may be stale when
-        // identity notifications lag. Keep validation in the downstream coroutine, without an
-        // output buffer or a suspension between successful validation and emission to the caller.
-        if (session.isCurrent(observation)) emit(entries)
+        // Validate after the rendezvous channel and linearize caller entry with all session/token
+        // changes. The monitor is released when caller code first suspends, so slow collectors
+        // do not keep transitions locked while awaiting their next step.
+        session.emitIfCurrent(observation) { emit(entries) }
     }
 
     private fun observeAccountLibrary(): Flow<List<LibraryEntry>> = combine(

@@ -42,7 +42,7 @@ class NetworkModuleTest {
         every { context.applicationContext } returns context
         every { context.filesDir } returns files
         every { context.noBackupFilesDir } returns noBackup
-        val store = DataStoreTokenStore(NetworkModule.authDataStore(context))
+        val store = DataStoreTokenStore(NetworkModule.authDataStore(context), SessionFence())
         store.set(AuthTokens("private-access", "private-refresh", 87_400))
         assertTrue("credentials must reside in noBackupFilesDir", noBackup.resolve("auth.preferences_pb").isFile)
         assertTrue("default backup-eligible token file must not be created", !files.resolve("datastore/auth.preferences_pb").exists())
