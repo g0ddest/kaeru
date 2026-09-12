@@ -44,7 +44,7 @@
             android:exported="false"
             android:launchMode="singleTop"
             android:screenOrientation="sensorLandscape"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:theme="@style/Theme.Kaeru" />
 
         <service

@@ -5,6 +5,7 @@ import app.kaeru.data.kodik.KodikConstants
 import app.kaeru.data.library.AppPreferences
 import app.kaeru.data.playback.RoomWatchStateRepository
 import app.kaeru.domain.playback.MarkEpisodeWatched
+import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.playback.WatchProgress
 import app.kaeru.domain.repository.LibraryRepository
@@ -48,7 +49,7 @@ object PlaybackModule {
     fun resolveEpisodeStream(
         source: EpisodeSourceProvider,
         watchStates: WatchStateRepository,
-        prefs: AppPreferences,
+        prefs: PlaybackPreferences,
         clock: Clock,
     ): ResolveEpisodeStream = ResolveEpisodeStream(source, watchStates, prefs, clock)
 
@@ -95,6 +96,10 @@ abstract class PlaybackBindings {
     // out that one instance.
     @Binds
     abstract fun watchStateRepository(impl: RoomWatchStateRepository): WatchStateRepository
+
+    /** The settings reader every layer above `data` sees. */
+    @Binds
+    abstract fun playbackPreferences(impl: AppPreferences): PlaybackPreferences
 
     @Binds
     abstract fun playbackEngine(impl: ExoPlaybackEngine): PlaybackEngine

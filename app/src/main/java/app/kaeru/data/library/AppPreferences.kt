@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import app.kaeru.domain.model.Quality
+import app.kaeru.domain.playback.PlaybackPreferences
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -18,7 +19,8 @@ import javax.inject.Named
 import javax.inject.Singleton
 
 @Singleton
-class AppPreferences @Inject constructor(@param:Named("prefs") private val dataStore: DataStore<Preferences>) {
+class AppPreferences @Inject constructor(@param:Named("prefs") private val dataStore: DataStore<Preferences>) :
+    PlaybackPreferences {
     private val userIdKey = longPreferencesKey("user_id")
     private val lastFullSyncKey = longPreferencesKey("last_full_sync")
     private val watchedThresholdKey = floatPreferencesKey("watched_threshold")
@@ -40,7 +42,7 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
         dataStore.edit { it[lastFullSyncKey] = at.toEpochMilli() }
     }
 
-    val watchedThreshold: Flow<Float> = dataStore.data.map { it[watchedThresholdKey] ?: 0.9f }
+    override val watchedThreshold: Flow<Float> = dataStore.data.map { it[watchedThresholdKey] ?: 0.9f }
 
     /**
      * Dub studios in the order the viewer wants them offered; a track matches when its title
@@ -48,7 +50,7 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
      * loses the order, and the order is the whole point. An empty list is a deliberate choice and
      * is kept: only an absent key falls back to [DEFAULT_PREFERRED_TRANSLATIONS].
      */
-    val preferredTranslations: Flow<List<String>> = dataStore.data.map { prefs ->
+    override val preferredTranslations: Flow<List<String>> = dataStore.data.map { prefs ->
         prefs[preferredTranslationsKey]
             ?.split('\n')?.map { it.trim() }?.filter { it.isNotEmpty() }
             ?: DEFAULT_PREFERRED_TRANSLATIONS
@@ -59,8 +61,7 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
         dataStore.edit { it[preferredTranslationsKey] = cleaned.joinToString("\n") }
     }
 
-    /** Whether finishing an episode starts the next one by itself. */
-    val autoplayNext: Flow<Boolean> = dataStore.data.map { it[autoplayNextKey] ?: true }
+    override val autoplayNext: Flow<Boolean> = dataStore.data.map { it[autoplayNextKey] ?: true }
 
     suspend fun setAutoplayNext(enabled: Boolean) {
         dataStore.edit { it[autoplayNextKey] = enabled }
@@ -70,7 +71,7 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
      * Quality to start playback at, or null for the best the source offers. Stored as the height,
      * so a rung a future build adds (or drops) degrades to "best available" instead of crashing.
      */
-    val defaultQuality: Flow<Quality?> = dataStore.data.map { prefs ->
+    override val defaultQuality: Flow<Quality?> = dataStore.data.map { prefs ->
         prefs[defaultQualityKey]?.let { Quality.ofHeight(it) }
     }
 

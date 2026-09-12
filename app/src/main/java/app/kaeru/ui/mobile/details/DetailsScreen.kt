@@ -26,10 +26,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.LibraryEntry
@@ -70,7 +74,11 @@ fun DetailsScreen(
         return
     }
     val next = entry?.nextEpisode(state.watchedThreshold) ?: 1
-    val episodes = episodeCount(anime)
+    // Two different numbers: what can be played, and what the season is said to hold. The
+    // difference is drawn, so an episode that has not aired reads as waiting rather than broken.
+    val aired = airedEpisodes(anime)
+    val announced = maxOf(anime.episodes, aired)
+    val rows = remember(announced) { (1..announced).chunked(EPISODES_PER_ROW) }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
         item(key = "head") {
             Column {
@@ -128,11 +136,12 @@ fun DetailsScreen(
                 Text("Серии", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 24.dp, bottom = 8.dp))
             }
         }
-        items((1..episodes).chunked(EPISODES_PER_ROW), key = { it.first() }) { row ->
+        items(rows, key = { it.first() }) { row ->
             Row(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { episode ->
                     EpisodeTile(
                         episode = episode,
+                        aired = episode <= aired,
                         watched = episode <= (entry?.rate?.episodes ?: 0),
                         progress = entry?.takeIf { it.watch?.episode == episode }?.progressFraction(state.watchedThreshold),
                         onClick = { onPlay(anime.id, episode) },
@@ -160,12 +169,13 @@ fun DetailsScreen(
 }
 
 /**
- * One episode. The check is Shikimori's count, the strip is where this device stopped —
- * two different facts, so they are drawn differently.
+ * One episode. The check is Shikimori's count, the strip is where this device stopped, and a
+ * dimmed tile is an episode that has not aired — three different facts, drawn differently.
  */
 @Composable
 private fun EpisodeTile(
     episode: Int,
+    aired: Boolean,
     watched: Boolean,
     progress: Float?,
     onClick: () -> Unit,
@@ -175,18 +185,38 @@ private fun EpisodeTile(
         modifier
             .height(56.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(KaeruElevated)
-            .clickable(onClick = onClick),
+            .background(if (aired) KaeruElevated else KaeruElevated.copy(alpha = 0.45f))
+            .clickable(enabled = aired, onClick = onClick)
+            // One spoken sentence instead of a number and a fragment read separately.
+            .then(
+                if (aired) Modifier
+                else Modifier.clearAndSetSemantics { contentDescription = "$episode серия, ещё не вышла" },
+            ),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Text(
-                episode.toString(),
-                style = MaterialTheme.typography.titleMedium,
-                textAlign = TextAlign.Center,
-                color = if (watched) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    episode.toString(),
+                    style = MaterialTheme.typography.titleMedium,
+                    textAlign = TextAlign.Center,
+                    color = when {
+                        !aired -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        watched -> MaterialTheme.colorScheme.onSurfaceVariant
+                        else -> MaterialTheme.colorScheme.onSurface
+                    },
+                )
+                if (!aired) {
+                    Text(
+                        "не вышла",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
             if (watched) {
                 Icon(
                     Icons.Default.Check,
@@ -205,6 +235,8 @@ private fun watchLabel(entry: LibraryEntry?, next: Int): String {
     return if (started) "Продолжить $next серию" else "Смотреть $next серию"
 }
 
-/** What can actually be played: aired episodes, then the announced count, and at worst the first one. */
-private fun episodeCount(anime: Anime): Int =
-    listOf(anime.availableEpisodes, anime.episodes, 1).first { it > 0 }
+/**
+ * What can actually be played. The first episode stays open even when the catalogue claims
+ * nothing has aired: the main button offers it, and the source often has it.
+ */
+private fun airedEpisodes(anime: Anime): Int = maxOf(anime.availableEpisodes, 1)

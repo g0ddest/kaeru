@@ -10,7 +10,6 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
@@ -47,7 +46,7 @@ class PlayerActivity : ComponentActivity() {
         setContent {
             KaeruTheme {
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
-                val player = remember { viewModel.videoPlayer }
+                val player by viewModel.videoPlayer.collectAsStateWithLifecycle()
                 val view = LocalView.current
                 val (animeId, episode) = target
 

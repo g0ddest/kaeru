@@ -27,12 +27,15 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * The real engine: one [ExoPlayer] for the whole process, shared by the player screen and
- * the media session so a rotation, a trip to the home screen or the notification never
- * restarts the video.
+ * The real engine: one [ExoPlayer] shared by the player screen and the media session, so a
+ * rotation, a trip to the home screen or the notification never restarts the video.
  *
- * The player is pinned to the main looper, so every method here has to be called from the
- * main thread — which is where the controller's scope and every UI callback already run.
+ * The player is built on first use and given back in [shutdownIfIdle] when the media service
+ * that owns it goes away with nothing loaded, rather than holding a playback thread and an
+ * audio-focus registration for the life of the process. Whoever needs it next builds another.
+ *
+ * It is pinned to the main looper, so every method here has to be called from the main thread —
+ * which is where the controller's scope and every UI callback already run.
  */
 @UnstableApi
 @Singleton
@@ -55,7 +58,19 @@ class ExoPlaybackEngine @Inject constructor(
         override fun onPlayerError(error: PlaybackException) = push(translate(error))
     }
 
-    private val player: ExoPlayer = ExoPlayer.Builder(context)
+    private var instance: ExoPlayer? = null
+    private val _videoPlayer = MutableStateFlow<Player?>(null)
+    override val videoPlayer: StateFlow<Player?> = _videoPlayer.asStateFlow()
+
+    private var poll: Job? = null
+
+    /** The player, built if this is the first thing to ask for it. Main thread only. */
+    fun acquirePlayer(): ExoPlayer = instance ?: build().also {
+        instance = it
+        _videoPlayer.value = it
+    }
+
+    private fun build(): ExoPlayer = ExoPlayer.Builder(context)
         // Set explicitly so construction is safe from whichever thread Hilt gets here first.
         .setLooper(Looper.getMainLooper())
         .setAudioAttributes(
@@ -69,11 +84,8 @@ class ExoPlaybackEngine @Inject constructor(
         .build()
         .apply { addListener(listener) }
 
-    override val videoPlayer: Player get() = player
-
-    private var poll: Job? = null
-
     override fun prepare(url: String, headers: StreamHeaders, startPositionMs: Long, metadata: StreamMetadata?) {
+        val player = acquirePlayer()
         player.setMediaSource(MediaItemFactory.mediaSource(MediaItemFactory.mediaItem(url, metadata), headers))
         player.seekTo(startPositionMs)
         player.prepare()
@@ -84,30 +96,42 @@ class ExoPlaybackEngine @Inject constructor(
     }
 
     override fun play() {
-        player.play()
+        instance?.play()
     }
 
     override fun pause() {
-        player.pause()
+        instance?.pause()
     }
 
     override fun seekTo(positionMs: Long) {
-        player.seekTo(positionMs)
+        instance?.seekTo(positionMs)
         push()
     }
 
     override fun release() {
         stopPolling()
-        player.stop()
-        player.clearMediaItems()
+        instance?.stop()
+        instance?.clearMediaItems()
         _state.value = EngineState()
     }
 
-    /** Gives the decoder back for good. Only the service that owns this process calls it. */
-    fun shutdown() {
+    /**
+     * Gives the player itself back, not just its decoders, and only when nothing is loaded in
+     * it — which is exactly what [release] leaves behind when the player screen finishes.
+     * [KaeruPlaybackService] asks on its way out; the next [prepare] builds another player.
+     *
+     * A player that still holds an episode belongs to a screen, whether or not it is playing:
+     * the service can be torn down while a paused video is on screen, and pulling the decoder
+     * out from under it would leave a black rectangle nothing can start again.
+     */
+    fun shutdownIfIdle() {
+        val player = instance ?: return
+        if (player.mediaItemCount > 0) return
         stopPolling()
         player.removeListener(listener)
         player.release()
+        instance = null
+        _videoPlayer.value = null
         _state.value = EngineState()
     }
 
@@ -128,6 +152,7 @@ class ExoPlaybackEngine @Inject constructor(
     }
 
     private fun push(error: Throwable? = _state.value.error) {
+        val player = instance ?: return
         val duration = player.duration
         _state.value = EngineState(
             isPlaying = player.isPlaying,

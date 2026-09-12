@@ -32,8 +32,12 @@ sealed interface PlaybackEvent {
     /** The last announced episode was counted as watched. Whether the show is finished is the viewer's call. */
     data class SuggestCompleted(val animeId: Int) : PlaybackEvent
 
-    /** There is nothing after this episode yet. */
-    data object NextEpisodeMissing : PlaybackEvent
+    /**
+     * The next episode could not be started: it has not aired, or the source would not serve it.
+     * The episode that just finished is still on screen, so this is a passing message rather
+     * than an error state, and [error] carries the copy.
+     */
+    data class NextEpisodeUnavailable(val error: Throwable) : PlaybackEvent
 }
 
 /**

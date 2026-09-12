@@ -3,13 +3,13 @@ package app.kaeru.ui.common.player
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.Player
-import app.kaeru.data.library.AppPreferences
 import app.kaeru.di.IoDispatcher
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.PlaybackTarget
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
+import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.repository.WatchStateRepository
@@ -20,6 +20,7 @@ import app.kaeru.ui.common.toUserMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -33,8 +34,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
-
-private const val NEXT_EPISODE_MISSING = "Следующая серия ещё не вышла"
 
 /**
  * The player screen's brain, shared by the phone and the TV: the screens differ in how they
@@ -51,7 +50,7 @@ class PlayerViewModel @Inject constructor(
     private val resolve: ResolveEpisodeStream,
     private val library: LibraryRepository,
     private val watchStates: WatchStateRepository,
-    private val prefs: AppPreferences,
+    private val prefs: PlaybackPreferences,
     @param:IoDispatcher private val io: CoroutineDispatcher,
 ) : ViewModel() {
 
@@ -67,13 +66,14 @@ class PlayerViewModel @Inject constructor(
     private val animeId = MutableStateFlow<Int?>(null)
     private val screen = MutableStateFlow(ScreenState())
     private var requested: Pair<Int, Int>? = null
+    private var startJob: Job? = null
 
     private val anime: Flow<Anime?> = animeId.flatMapLatest { id ->
         if (id == null) flowOf(null) else library.observeAnimeDetails(id)
     }
 
-    /** The player a video surface attaches to. One instance for the process, so it never changes. */
-    val videoPlayer: Player? get() = controller.videoPlayer
+    /** The player a video surface attaches to, or null while there is none to attach to. */
+    val videoPlayer: StateFlow<Player?> get() = controller.videoPlayer
 
     val uiState: StateFlow<PlayerUiState> = combine(
         controller.state,
@@ -108,7 +108,9 @@ class PlayerViewModel @Inject constructor(
             controller.events.collect { event ->
                 when (event) {
                     is PlaybackEvent.SuggestCompleted -> screen.update { it.copy(completedPrompt = true) }
-                    PlaybackEvent.NextEpisodeMissing -> screen.update { it.copy(toast = NEXT_EPISODE_MISSING) }
+                    // One condition, one sentence: the same copy a failed episode would show.
+                    is PlaybackEvent.NextEpisodeUnavailable ->
+                        screen.update { it.copy(toast = event.error.toUserMessage()) }
                 }
             }
         }
@@ -120,13 +122,16 @@ class PlayerViewModel @Inject constructor(
      * must not rewind anything.
      *
      * A player with nothing loaded is started again even when it is the same episode: a screen
-     * that was released while buried in the back stack would otherwise come back to black.
+     * that was released while buried in the back stack would otherwise come back to black. A
+     * start still on its way counts as loaded, so the two calls a screen makes on the way in —
+     * one from the lifecycle, one from composition — are one playback.
      */
     fun start(animeId: Int, episode: Int) {
-        if (requested == animeId to episode && controller.state.value.target != null) return
+        val same = requested == animeId to episode
+        if (same && (startJob?.isActive == true || controller.state.value.target != null)) return
         requested = animeId to episode
         this.animeId.value = animeId
-        viewModelScope.launch {
+        startJob = viewModelScope.launch {
             controller.play(PlaybackTarget(animeId, episode, resumeFrom(animeId, episode), translation = null))
         }
     }

@@ -7,9 +7,9 @@ import app.kaeru.domain.model.Translation
 import app.kaeru.player.PlaybackController
 import app.kaeru.player.PlaybackEvent
 import app.kaeru.player.PlaybackState
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /** Records what the screen asked for and lets the test say what playback is doing back. */
@@ -18,9 +18,9 @@ class FakePlaybackController : PlaybackController {
     override val state: StateFlow<PlaybackState> = playback
 
     val announced = MutableSharedFlow<PlaybackEvent>(extraBufferCapacity = 8)
-    override val events: SharedFlow<PlaybackEvent> = announced
+    override val events: Flow<PlaybackEvent> = announced
 
-    override val videoPlayer: Player? = null
+    override val videoPlayer: StateFlow<Player?> = MutableStateFlow(null)
 
     val played = mutableListOf<PlaybackTarget>()
     val seeks = mutableListOf<Long>()

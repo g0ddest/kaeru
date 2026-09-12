@@ -1,28 +1,27 @@
 package app.kaeru.player
 
 import androidx.media3.common.Player
-import app.kaeru.data.library.AppPreferences
 import app.kaeru.di.IoDispatcher
 import app.kaeru.di.PlaybackScope
-import app.kaeru.domain.error.EpisodeNotAvailable
 import app.kaeru.domain.model.EpisodeStream
 import app.kaeru.domain.model.PlaybackTarget
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.playback.MarkEpisodeWatched
+import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.playback.WatchProgress
 import app.kaeru.domain.repository.LibraryRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -44,11 +43,14 @@ import kotlin.math.ceil
 interface PlaybackController {
     val state: StateFlow<PlaybackState>
 
-    /** Things that are announced once: see [PlaybackEvent]. */
-    val events: SharedFlow<PlaybackEvent>
+    /**
+     * Things that are announced once: see [PlaybackEvent]. Buffered, so an announcement made
+     * while no screen is listening waits for the next one instead of being dropped.
+     */
+    val events: Flow<PlaybackEvent>
 
-    /** The Media3 player a video surface attaches to. */
-    val videoPlayer: Player?
+    /** The Media3 player a video surface attaches to, while there is one. */
+    val videoPlayer: StateFlow<Player?>
 
     /** Resolves [target], points the engine at it and starts playing. Suspends until playback is under way. */
     suspend fun play(target: PlaybackTarget)
@@ -65,7 +67,10 @@ interface PlaybackController {
     /** Same episode, same position, another rung of the quality ladder. */
     fun changeQuality(quality: Quality)
 
-    /** The episode after this one, in the same track. Announces [PlaybackEvent.NextEpisodeMissing] if there is none. */
+    /**
+     * The episode after this one, in the same track. Announces
+     * [PlaybackEvent.NextEpisodeUnavailable] and stays where it is if it cannot be started.
+     */
     suspend fun playNext()
 
     /** The viewer said no to the countdown; the offer stays, the switch does not happen. */
@@ -97,11 +102,21 @@ class DefaultPlaybackController @Inject constructor(
     private val progress: WatchProgress,
     private val markWatched: MarkEpisodeWatched,
     private val library: LibraryRepository,
-    private val prefs: AppPreferences,
+    private val prefs: PlaybackPreferences,
     private val headers: StreamHeaders,
     @param:PlaybackScope private val scope: CoroutineScope,
     @param:IoDispatcher private val io: CoroutineDispatcher,
 ) : PlaybackController {
+
+    /** One position, ready to be written, taken before whatever is about to change the row. */
+    private data class Sample(
+        val animeId: Int,
+        val episode: Int,
+        val positionMs: Long,
+        val durationMs: Long,
+        val translationId: Int?,
+        val season: Int?,
+    )
 
     /** Settings are read once per episode: changing them mid-episode should not move the goalposts. */
     private data class Settings(
@@ -113,10 +128,10 @@ class DefaultPlaybackController @Inject constructor(
     private val _state = MutableStateFlow(PlaybackState())
     override val state: StateFlow<PlaybackState> = _state.asStateFlow()
 
-    private val _events = MutableSharedFlow<PlaybackEvent>(extraBufferCapacity = 8)
-    override val events: SharedFlow<PlaybackEvent> = _events.asSharedFlow()
+    private val _events = Channel<PlaybackEvent>(Channel.BUFFERED)
+    override val events: Flow<PlaybackEvent> = _events.receiveAsFlow()
 
-    override val videoPlayer: Player? get() = engine.videoPlayer
+    override val videoPlayer: StateFlow<Player?> get() = engine.videoPlayer
 
     private var settings = Settings()
 
@@ -130,13 +145,16 @@ class DefaultPlaybackController @Inject constructor(
     private var lastReportedMs = -1L
     private var wasPlaying = false
 
+    /** The progress write that owns [WatchProgress]'s queue, or the last one that did. */
+    private var writing: Job? = null
+
     init {
         scope.launch { engine.state.collect { onEngineState(it) } }
     }
 
     override suspend fun play(target: PlaybackTarget) {
         transition {
-            flushProgress()
+            flushProgressNow()
             _state.value = PlaybackState(target = target, isBuffering = true, positionMs = target.startPositionMs)
             open(target, freshEpisode = true).onFailure(::fail)
         }.join()
@@ -164,7 +182,7 @@ class DefaultPlaybackController @Inject constructor(
     override suspend fun changeTranslation(translation: Translation) {
         transition {
             val current = _state.value.target ?: return@transition
-            flushProgress()
+            flushProgressNow()
             _state.update { it.copy(isBuffering = true, error = null) }
             val sameEpisode = current.copy(startPositionMs = _state.value.positionMs, translation = translation)
             open(sameEpisode, freshEpisode = false, preferQuality = _state.value.quality).onFailure(::fail)
@@ -174,6 +192,7 @@ class DefaultPlaybackController @Inject constructor(
     override fun changeQuality(quality: Quality) {
         val current = _state.value
         val url = current.stream?.urls?.get(quality) ?: return
+        flushProgress()
         val at = current.positionMs
         lastReportedMs = at
         _state.value = current.copy(quality = quality, isBuffering = true, error = null)
@@ -196,6 +215,7 @@ class DefaultPlaybackController @Inject constructor(
         transition {
             val current = _state.value.target ?: return@transition
             reResolved = false
+            flushProgressNow()
             _state.update { it.copy(isBuffering = true, error = null) }
             open(
                 current.copy(startPositionMs = _state.value.positionMs),
@@ -264,18 +284,19 @@ class DefaultPlaybackController @Inject constructor(
     private suspend fun openNext() {
         val current = _state.value.target ?: return
         val track = _state.value.stream?.translation ?: current.translation
-        flushProgress()
+        // Awaited, not launched: resolving the next episode writes this anime's row itself, and
+        // the position of the episode just finished has to be on disk before that happens.
+        flushProgressNow()
         val next = EpisodeQueue.next(current).copy(translation = track)
         open(next, freshEpisode = true).onFailure { failure ->
-            if (failure is EpisodeNotAvailable) {
-                // Not a playback failure: the show simply has not got there yet. The finished
-                // episode stays on screen, and the countdown does not start over on the next tick.
-                autoplayCancelled = true
-                _state.update { it.copy(autoplayCountdownSec = null) }
-                _events.tryEmit(PlaybackEvent.NextEpisodeMissing)
-            } else {
-                fail(failure)
-            }
+            // Whatever went wrong — an episode that has not aired, a source that would not serve
+            // it, no connection — the countdown must not start over on the next engine report, or
+            // an ended player would keep retrying for as long as it is left alone.
+            autoplayCancelled = true
+            _state.update { it.copy(autoplayCountdownSec = null) }
+            // A passing message, not the error screen: the episode that just finished is still
+            // there and still playable, and «Следующая серия» is the retry.
+            _events.trySend(PlaybackEvent.NextEpisodeUnavailable(failure))
         }
     }
 
@@ -368,7 +389,9 @@ class DefaultPlaybackController @Inject constructor(
     private fun reportIfDue(positionMs: Long, durationMs: Long, paused: Boolean) {
         val moved = lastReportedMs < 0 || abs(positionMs - lastReportedMs) >= EpisodeQueue.PROGRESS_INTERVAL_MS
         if (!paused && !moved) return
-        writeProgress(positionMs, durationMs)
+        val sample = sampleAt(positionMs, durationMs) ?: return
+        lastReportedMs = positionMs
+        launchWrite(sample)
     }
 
     private fun markIfWatched(positionMs: Long, durationMs: Long) {
@@ -377,36 +400,68 @@ class DefaultPlaybackController @Inject constructor(
         markedEpisode = true
         scope.launch {
             markWatched(target.animeId, target.episode).onSuccess { outcome ->
-                if (outcome.suggestCompleted) _events.tryEmit(PlaybackEvent.SuggestCompleted(target.animeId))
+                if (outcome.suggestCompleted) _events.trySend(PlaybackEvent.SuggestCompleted(target.animeId))
             }
         }
     }
 
-    /** The position of whatever is playing right now, written down. Silent when there is nothing to say. */
+    /**
+     * The position of whatever is playing right now, written down without waiting. For callers
+     * that cannot suspend — a screen going away, a release — where nothing is about to overwrite
+     * the same row.
+     *
+     * On the controller's own scope, never a screen's: the last sample of a session is taken
+     * exactly when that screen is going away.
+     */
     private fun flushProgress() {
-        val current = _state.value
-        if (current.durationMs <= 0) return
-        writeProgress(current.positionMs, current.durationMs)
+        val sample = currentSample() ?: return
+        lastReportedMs = sample.positionMs
+        launchWrite(sample)
     }
 
-    private fun writeProgress(positionMs: Long, durationMs: Long) {
-        val current = _state.value
-        val target = current.target ?: return
-        lastReportedMs = positionMs
-        val track = current.stream?.translation
-        // On the controller's own scope, never a screen's: the last sample of a session is
-        // taken exactly when that screen is going away.
-        scope.launch {
-            progress.report(
-                animeId = target.animeId,
-                episode = target.episode,
-                positionMs = positionMs,
-                durationMs = durationMs,
-                translationId = track?.id,
-                kodikSeason = track?.season,
-            )
-        }
+    /**
+     * The same, but on disk before it returns. Every transition that resolves an episode uses
+     * this one, because resolving remembers an episode against the very row this sample is for:
+     * a write still on its way can land after it and put the row back on the episode that just
+     * ended.
+     */
+    private suspend fun flushProgressNow() {
+        val sample = currentSample()?.also { lastReportedMs = it.positionMs }
+        sample?.let { write(it) }
+        // Reporting only queues when another write is already draining, so the sample above may
+        // still be waiting behind it. The drain that owns the queue is what has to finish.
+        writing?.join()
     }
+
+    /**
+     * Hands [sample] to [WatchProgress] without waiting, and remembers the write that owns the
+     * queue. Samples reported while that one is draining are coalesced into it rather than
+     * queued up behind a slow disk, so the owner is the single thing worth joining.
+     */
+    private fun launchWrite(sample: Sample) {
+        val job = scope.launch { write(sample) }
+        if (writing?.isActive != true) writing = job
+    }
+
+    private fun currentSample(): Sample? = _state.value.let { sampleAt(it.positionMs, it.durationMs) }
+
+    /** What to write for the episode on screen, or null while there is nothing worth writing. */
+    private fun sampleAt(positionMs: Long, durationMs: Long): Sample? {
+        val current = _state.value
+        val target = current.target ?: return null
+        if (durationMs <= 0) return null
+        val track = current.stream?.translation
+        return Sample(target.animeId, target.episode, positionMs, durationMs, track?.id, track?.season)
+    }
+
+    private suspend fun write(sample: Sample) = progress.report(
+        animeId = sample.animeId,
+        episode = sample.episode,
+        positionMs = sample.positionMs,
+        durationMs = sample.durationMs,
+        translationId = sample.translationId,
+        kodikSeason = sample.season,
+    )
 
     private fun fail(error: Throwable) {
         _state.update { it.copy(isBuffering = false, isPlaying = false, error = error) }

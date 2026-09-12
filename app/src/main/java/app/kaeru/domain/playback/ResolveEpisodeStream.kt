@@ -1,6 +1,5 @@
 package app.kaeru.domain.playback
 
-import app.kaeru.data.library.AppPreferences
 import app.kaeru.domain.model.EpisodeStream
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.WatchState
@@ -22,7 +21,7 @@ import java.time.Clock
 class ResolveEpisodeStream(
     private val source: EpisodeSourceProvider,
     private val watchStates: WatchStateRepository,
-    private val prefs: AppPreferences,
+    private val prefs: PlaybackPreferences,
     private val clock: Clock,
 ) {
     /**

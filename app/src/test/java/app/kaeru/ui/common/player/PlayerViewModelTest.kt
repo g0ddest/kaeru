@@ -1,9 +1,5 @@
 package app.kaeru.ui.common.player
 
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
-import androidx.datastore.preferences.core.Preferences
-import app.kaeru.data.library.AppPreferences
 import app.kaeru.domain.error.EpisodeNotAvailable
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.model.Anime
@@ -17,6 +13,7 @@ import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.model.WatchState
+import app.kaeru.domain.playback.FakePlaybackPreferences
 import app.kaeru.domain.playback.FakeWatchStateRepository
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.repository.LibraryRepository
@@ -27,15 +24,12 @@ import app.kaeru.player.PlaybackState
 import app.kaeru.test.MainDispatcherRule
 import app.kaeru.test.MutableClock
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -43,22 +37,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import java.io.File
 import java.io.IOException
 import java.time.Instant
 
 @OptIn(ExperimentalCoroutinesApi::class)
-@RunWith(RobolectricTestRunner::class)
 class PlayerViewModelTest {
     @get:Rule val main = MainDispatcherRule()
-    @get:Rule val tmp = TemporaryFolder()
 
     private val now = Instant.parse("2026-09-13T10:00:00Z")
     private val clock = MutableClock(now)
-    private val storeScope by lazy { TestScope(main.dispatcher) }
     private val anilibria = Translation(11, "AniLibria.TV", TranslationKind.VOICE, episodesCount = 12)
     private val studioBanda = Translation(22, "Студийная банда", TranslationKind.VOICE, episodesCount = 12)
 
@@ -66,8 +53,8 @@ class PlayerViewModelTest {
     private val watchStates = FakeWatchStateRepository()
     private val library = FakeLibraryRepository()
     private val source = FakeEpisodeSource()
-    private lateinit var store: DataStore<Preferences>
-    private lateinit var prefs: AppPreferences
+    // AniLibria is on the viewer's list, which is what puts it above the other track.
+    private val prefs = FakePlaybackPreferences(preferred = listOf("AniLibria"))
     private lateinit var viewModel: PlayerViewModel
 
     private val anime = Anime(
@@ -78,8 +65,6 @@ class PlayerViewModelTest {
 
     @Before
     fun setUp() {
-        store = PreferenceDataStoreFactory.create(scope = storeScope) { File(tmp.root, "prefs.preferences_pb") }
-        prefs = AppPreferences(store)
         library.put(LibraryEntry(anime, UserRate(1, 100, ListStatus.WATCHING, 3, now), null))
         viewModel = PlayerViewModel(
             controller = controller,
@@ -90,9 +75,6 @@ class PlayerViewModelTest {
             io = main.dispatcher,
         )
     }
-
-    @After
-    fun tearDown() = storeScope.cancel()
 
     private fun stream(episode: Int = 4, track: Translation = anilibria) = EpisodeStream(
         animeId = 100,
@@ -137,6 +119,16 @@ class PlayerViewModelTest {
     fun `the same episode is not started twice when the screen comes back`() = runTest(main.dispatcher) {
         viewModel.start(100, 4)
         advanceUntilIdle()
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+
+        assertEquals(1, controller.played.size)
+    }
+
+    @Test
+    fun `the two calls a screen makes on its way in are one playback`() = runTest(main.dispatcher) {
+        // The lifecycle asks and composition asks, both before the first resume position is read.
+        viewModel.start(100, 4)
         viewModel.start(100, 4)
         advanceUntilIdle()
 
@@ -296,10 +288,10 @@ class PlayerViewModelTest {
         viewModel.start(100, 12)
         advanceUntilIdle()
 
-        controller.announced.emit(PlaybackEvent.NextEpisodeMissing)
+        controller.announced.emit(PlaybackEvent.NextEpisodeUnavailable(EpisodeNotAvailable(100, 13)))
         advanceUntilIdle()
 
-        assertEquals("Следующая серия ещё не вышла", viewModel.uiState.value.toast)
+        assertEquals("Серия ещё не появилась в Kodik", viewModel.uiState.value.toast)
         assertNull(viewModel.uiState.value.errorMessage)
 
         viewModel.consumeToast()

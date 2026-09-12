@@ -12,21 +12,22 @@ import javax.inject.Inject
  * a notification with transport controls, headphone and Bluetooth buttons, and playback that
  * survives leaving the player screen.
  *
- * It creates no player of its own: the same [PlaybackEngine] the controller drives is the one
- * the session exposes, so there is never a second thing playing.
+ * It creates no player of its own: the same [ExoPlaybackEngine] the controller drives is the one
+ * the session exposes, so there is never a second thing playing. It does own the player's
+ * lifetime, though — when this service goes away with nothing loaded, the player is given back
+ * and the next episode builds a new one.
  */
 @UnstableApi
 @AndroidEntryPoint
 class KaeruPlaybackService : MediaSessionService() {
 
-    @Inject lateinit var engine: PlaybackEngine
+    @Inject lateinit var engine: ExoPlaybackEngine
 
     private var session: MediaSession? = null
 
     override fun onCreate() {
         super.onCreate()
-        val player = engine.videoPlayer ?: return
-        session = MediaSession.Builder(this, player).build()
+        session = MediaSession.Builder(this, engine.acquirePlayer()).build()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
@@ -42,6 +43,10 @@ class KaeruPlaybackService : MediaSessionService() {
     override fun onDestroy() {
         session?.release()
         session = null
+        // The player screen finishing stops the player and clears it before stopping this
+        // service, so by now there is usually nothing loaded and the decoder can go back. When
+        // something is still loaded the engine keeps it: see ExoPlaybackEngine.shutdownIfIdle.
+        engine.shutdownIfIdle()
         super.onDestroy()
     }
 }

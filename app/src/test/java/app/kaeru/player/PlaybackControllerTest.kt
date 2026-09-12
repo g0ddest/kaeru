@@ -1,11 +1,9 @@
 package app.kaeru.player
 
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
-import androidx.datastore.preferences.core.Preferences
-import app.kaeru.data.library.AppPreferences
 import app.kaeru.domain.error.EpisodeNotAvailable
 import app.kaeru.domain.error.NetworkUnavailable
+import app.kaeru.domain.error.SourceUnavailable
+import app.kaeru.domain.error.SourceUnavailableReason
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.EpisodeStream
@@ -16,6 +14,7 @@ import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.model.UserRate
+import app.kaeru.domain.playback.FakePlaybackPreferences
 import app.kaeru.domain.playback.FakeWatchStateRepository
 import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.ResolveEpisodeStream
@@ -33,8 +32,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -42,21 +41,12 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import java.io.File
 import java.time.Instant
 
 @OptIn(ExperimentalCoroutinesApi::class)
-@RunWith(RobolectricTestRunner::class)
 class PlaybackControllerTest {
-    @get:Rule val tmp = TemporaryFolder()
-
     private val dispatcher = StandardTestDispatcher()
-    private val storeScope = TestScope(dispatcher)
     private val scope = CoroutineScope(dispatcher + SupervisorJob())
     private val now = Instant.parse("2026-09-13T10:00:00Z")
     private val clock = MutableClock(now)
@@ -69,14 +59,11 @@ class PlaybackControllerTest {
     private val watchStates = FakeWatchStateRepository()
     private val source = FakeEpisodeSource()
     private val library = FakeLibraryRepository()
-    private lateinit var store: DataStore<Preferences>
-    private lateinit var prefs: AppPreferences
+    private val prefs = FakePlaybackPreferences()
     private lateinit var controller: DefaultPlaybackController
 
     @Before
     fun setUp() {
-        store = PreferenceDataStoreFactory.create(scope = storeScope) { File(tmp.root, "prefs.preferences_pb") }
-        prefs = AppPreferences(store)
         library.put(
             LibraryEntry(
                 Anime(
@@ -102,10 +89,7 @@ class PlaybackControllerTest {
     }
 
     @After
-    fun tearDown() {
-        scope.cancel()
-        storeScope.cancel()
-    }
+    fun tearDown() = scope.cancel()
 
     private fun target(episode: Int = 4, startPositionMs: Long = 0, translation: Translation? = null) =
         PlaybackTarget(animeId = 100, episode = episode, startPositionMs = startPositionMs, translation = translation)
@@ -142,7 +126,7 @@ class PlaybackControllerTest {
 
     @Test
     fun `playback starts on the quality the viewer settled on`() = runTest(dispatcher) {
-        prefs.setDefaultQuality(Quality.P480)
+        prefs.defaultQuality.value = Quality.P480
 
         controller.play(target())
         advanceUntilIdle()
@@ -258,7 +242,7 @@ class PlaybackControllerTest {
 
     @Test
     fun `with autoplay off the next episode is only offered, never started`() = runTest(dispatcher) {
-        prefs.setAutoplayNext(false)
+        prefs.autoplayNext.value = false
         start(durationMs = 1_440_000)
 
         engine.moveTo(1_435_000)
@@ -312,10 +296,101 @@ class PlaybackControllerTest {
         controller.playNext()
         advanceUntilIdle()
 
-        assertEquals(listOf(PlaybackEvent.NextEpisodeMissing), events)
+        assertEquals(1, events.size)
+        val announced = events.single()
+        assertTrue(announced is PlaybackEvent.NextEpisodeUnavailable)
+        assertTrue((announced as PlaybackEvent.NextEpisodeUnavailable).error is EpisodeNotAvailable)
         assertEquals(12, controller.state.value.target?.episode)
         assertNull(controller.state.value.error)
         assertEquals(1, engine.prepared.size)
+    }
+
+    @Test
+    fun `a next episode the source refuses is asked for once and then only by hand`() = runTest(dispatcher) {
+        val events = mutableListOf<PlaybackEvent>()
+        scope.launch { controller.events.collect { events += it } }
+        start(episode = 4, durationMs = 1_000_000)
+        source.rejects = setOf(5)
+
+        engine.moveTo(999_000)
+        advanceUntilIdle()
+        engine.end()
+        advanceUntilIdle()
+        // The player keeps reporting; none of those reports may start another attempt.
+        engine.moveTo(999_500)
+        advanceUntilIdle()
+        engine.moveTo(999_800)
+        advanceUntilIdle()
+
+        assertEquals(1, source.resolves.count { it == 5 })
+        assertEquals(1, events.count { it is PlaybackEvent.NextEpisodeUnavailable })
+        assertEquals(4, controller.state.value.target?.episode)
+        assertTrue(controller.state.value.nextEpisodeAvailable)
+        assertNull(controller.state.value.autoplayCountdownSec)
+        assertNull(controller.state.value.error)
+    }
+
+    @Test
+    fun `the finished episode's position is on disk before the next episode is remembered`() = runTest(dispatcher) {
+        start(episode = 4, durationMs = 1_000_000)
+        engine.moveTo(400_000)
+        advanceUntilIdle()
+        // Two seconds on: too little for a tick to write it, so only the switch's own flush can.
+        engine.moveTo(402_000)
+        advanceUntilIdle()
+        var writesWhenNextResolved: List<Pair<Int, Long>> = emptyList()
+        source.onResolve = { episode ->
+            if (episode == 5) writesWhenNextResolved = watchStates.saved.map { it.episode to it.positionMs }
+        }
+        // A slow disk is the whole point: resolving the next episode writes this same row, so the
+        // switch has to wait for the position of the episode it is leaving.
+        watchStates.block()
+
+        launch { controller.playNext() }
+        runCurrent()
+        watchStates.release()
+        advanceUntilIdle()
+
+        assertEquals(4 to 402_000L, writesWhenNextResolved.last())
+        assertEquals(5, controller.state.value.target?.episode)
+        assertEquals(5, watchStates.saved.last().episode)
+    }
+
+    @Test
+    fun `a tick still being written is not overtaken by the next episode`() = runTest(dispatcher) {
+        start(episode = 4, durationMs = 1_000_000)
+        // The autoplay switch always follows a report on the same engine tick, so the switch has
+        // to wait for a write that is already on its way, not only for one it issues itself.
+        watchStates.block()
+        engine.moveTo(500_000)
+        advanceUntilIdle()
+        var writesWhenNextResolved: List<Pair<Int, Long>> = emptyList()
+        source.onResolve = { episode ->
+            if (episode == 5) writesWhenNextResolved = watchStates.saved.map { it.episode to it.positionMs }
+        }
+
+        launch { controller.playNext() }
+        runCurrent()
+        watchStates.release()
+        advanceUntilIdle()
+
+        assertEquals(4 to 500_000L, writesWhenNextResolved.last())
+        assertEquals(5, watchStates.saved.last().episode)
+        assertEquals(0L, watchStates.saved.last().positionMs)
+    }
+
+    @Test
+    fun `an announcement made with no screen listening waits for the next one`() = runTest(dispatcher) {
+        start(episode = 12, durationMs = 600_000)
+
+        controller.playNext()
+        advanceUntilIdle()
+
+        val events = mutableListOf<PlaybackEvent>()
+        scope.launch { controller.events.collect { events += it } }
+        advanceUntilIdle()
+
+        assertTrue(events.single() is PlaybackEvent.NextEpisodeUnavailable)
     }
 
     @Test
@@ -392,7 +467,7 @@ class PlaybackControllerTest {
     @Test
     fun `seeking stays inside the episode`() = runTest(dispatcher) {
         // Autoplay off, so a seek that lands exactly on the end is not answered by the next episode.
-        prefs.setAutoplayNext(false)
+        prefs.autoplayNext.value = false
         start(durationMs = 600_000)
         engine.moveTo(595_000)
         advanceUntilIdle()
@@ -453,6 +528,15 @@ class PlaybackControllerTest {
         var resolveFailure: Throwable? = null
         var lastAired = 12
 
+        /** Episodes the source will not serve, standing in for a Kodik that is up but unhappy. */
+        var rejects: Set<Int> = emptySet()
+
+        /** Every episode asked for, in order. */
+        val resolves = mutableListOf<Int>()
+
+        /** Runs the moment a resolve starts, so a test can look at what is already on disk. */
+        var onResolve: ((Int) -> Unit)? = null
+
         override suspend fun translations(shikimoriId: Int): Result<List<Translation>> =
             Result.success(listOf(anilibria, studioBanda))
 
@@ -461,6 +545,11 @@ class PlaybackControllerTest {
             episode: Int,
             translation: Translation?,
         ): Result<EpisodeStream> {
+            resolves += episode
+            onResolve?.invoke(episode)
+            if (episode in rejects) {
+                return Result.failure(SourceUnavailable(SourceUnavailableReason.REJECTED))
+            }
             resolveFailure?.let { return Result.failure(it) }
             if (episode > lastAired) return Result.failure(EpisodeNotAvailable(shikimoriId, episode))
             val track = translation ?: anilibria

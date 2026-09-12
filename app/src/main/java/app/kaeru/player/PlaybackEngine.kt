@@ -30,8 +30,12 @@ data class EngineState(
 interface PlaybackEngine {
     val state: StateFlow<EngineState>
 
-    /** The Media3 player to attach a surface to, or null for an engine that renders nothing. */
-    val videoPlayer: Player?
+    /**
+     * The Media3 player to attach a surface to: null before one exists and again after it is
+     * given back, so a screen watching this follows the player rather than caching a dead one.
+     * An engine that renders nothing never publishes one.
+     */
+    val videoPlayer: StateFlow<Player?>
 
     /**
      * Points the engine at one manifest and seeks to [startPositionMs] before the first frame.

@@ -3,10 +3,10 @@ package app.kaeru.ui.mobile.details
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import app.kaeru.data.library.AppPreferences
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
+import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.ui.common.errorMessageOrNull
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -33,7 +33,7 @@ data class DetailsUiState(
 class DetailsViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repository: LibraryRepository,
-    prefs: AppPreferences,
+    prefs: PlaybackPreferences,
 ) : ViewModel() {
     private val animeId: Int = checkNotNull(savedStateHandle["animeId"])
     private val work = MutableStateFlow(DetailsUiState())

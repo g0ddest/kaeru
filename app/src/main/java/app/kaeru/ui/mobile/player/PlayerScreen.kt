@@ -89,8 +89,9 @@ fun PlayerScreen(
 
     // Controls linger for three seconds of uninterrupted playback. Anything that asks for a
     // decision — a failure, a countdown, an open sheet — keeps them up.
-    LaunchedEffect(controlsVisible, state.isPlaying, failed, state.sheet, state.autoplayCountdownSec) {
-        if (controlsVisible && state.isPlaying && !failed && state.sheet == null && state.autoplayCountdownSec == null) {
+    LaunchedEffect(controlsVisible, state.isPlaying, failed, state.sheet, state.autoplayCountdownSec, state.completedPrompt) {
+        val asking = state.sheet != null || state.autoplayCountdownSec != null || state.completedPrompt
+        if (controlsVisible && state.isPlaying && !failed && !asking) {
             delay(CONTROLS_LINGER_MS)
             controlsVisible = false
         }

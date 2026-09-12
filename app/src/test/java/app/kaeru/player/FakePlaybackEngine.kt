@@ -22,7 +22,8 @@ class FakePlaybackEngine : PlaybackEngine {
 
     private val _state = MutableStateFlow(EngineState())
     override val state: StateFlow<EngineState> = _state.asStateFlow()
-    override val videoPlayer: Player? = null
+    /** Nothing to render: this engine never builds a player. */
+    override val videoPlayer: StateFlow<Player?> = MutableStateFlow(null)
 
     /** Every source the controller pointed the engine at, in order. */
     val prepared = mutableListOf<Prepared>()
