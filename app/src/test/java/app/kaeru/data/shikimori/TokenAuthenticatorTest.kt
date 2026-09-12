@@ -14,6 +14,7 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import retrofit2.Retrofit
@@ -22,6 +23,10 @@ import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import okhttp3.mockwebserver.Dispatcher
+import okhttp3.mockwebserver.RecordedRequest
 
 class TokenAuthenticatorTest {
     private val server = MockWebServer()
@@ -122,6 +127,54 @@ class TokenAuthenticatorTest {
     }
 
     private fun request() = Request.Builder().url(server.url("/api/users/whoami")).build()
+
+    @Test
+    fun `successful in flight refresh cannot undo logout`() = assertRefreshCannotOverwrite(null, succeeds = true)
+
+    @Test
+    fun `failed in flight refresh leaves logout intact`() = assertRefreshCannotOverwrite(null, succeeds = false)
+
+    @Test
+    fun `successful in flight refresh cannot replace a newer login`() =
+        assertRefreshCannotOverwrite(AuthTokens("login", "login-refresh", 99_000), succeeds = true)
+
+    @Test
+    fun `failed in flight refresh cannot clear a newer login`() =
+        assertRefreshCannotOverwrite(AuthTokens("login", "login-refresh", 99_000), succeeds = false)
+
+    @Test
+    fun `new session with identical credentials still invalidates in flight refresh`() =
+        assertRefreshCannotOverwrite(AuthTokens("old", "refresh-1", 0), succeeds = true)
+
+    private fun assertRefreshCannotOverwrite(replacement: AuthTokens?, succeeds: Boolean) {
+        val refreshStarted = CountDownLatch(1)
+        val releaseRefresh = CountDownLatch(1)
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                if (request.path != "/oauth/token") return MockResponse().setResponseCode(401)
+                refreshStarted.countDown()
+                check(releaseRefresh.await(5, TimeUnit.SECONDS))
+                return if (succeeds) {
+                    MockResponse().setBody("""{"access_token":"stale-refresh","refresh_token":"stale-refresh-token","expires_in":86400}""")
+                } else {
+                    MockResponse().setResponseCode(400).setBody("""{"error":"invalid_grant"}""")
+                }
+            }
+        }
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val response = executor.submit<Int> { client.newCall(request()).execute().use { it.code } }
+            assertTrue(refreshStarted.await(5, TimeUnit.SECONDS))
+            runBlocking { store.set(replacement) }
+            releaseRefresh.countDown()
+            assertEquals(401, response.get(5, TimeUnit.SECONDS))
+            assertEquals(replacement, runBlocking { store.get() })
+            assertEquals("stale request must not retry into another session", 2, server.requestCount)
+        } finally {
+            releaseRefresh.countDown()
+            executor.shutdownNow()
+        }
+    }
 
     private fun enqueueTokens() {
         server.enqueue(MockResponse().setBody("""{"access_token":"new","token_type":"Bearer","expires_in":86400,"refresh_token":"refresh-2","scope":"user_rates","created_at":1757600000}"""))

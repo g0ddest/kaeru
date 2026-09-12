@@ -2,6 +2,7 @@ package app.kaeru.data.auth
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -19,24 +20,44 @@ class DataStoreTokenStore @Inject constructor(
     private val access = stringPreferencesKey("access_token")
     private val refresh = stringPreferencesKey("refresh_token")
     private val expires = longPreferencesKey("expires_at")
+    private val revision = longPreferencesKey("token_revision")
 
     override val tokens: Flow<AuthTokens?> = dataStore.data.map { it.read() }
 
     override suspend fun get(): AuthTokens? = dataStore.data.first().read()
 
     override suspend fun set(tokens: AuthTokens?) {
-        dataStore.edit { preferences ->
-            if (tokens == null) {
-                preferences.remove(access)
-                preferences.remove(refresh)
-                preferences.remove(expires)
-            } else {
-                preferences[access] = tokens.accessToken
-                preferences[refresh] = tokens.refreshToken
-                preferences[expires] = tokens.expiresAtEpochSec
+        dataStore.edit { it.write(tokens) }
+    }
+
+    override suspend fun snapshot(): TokenSnapshot = dataStore.data.first().snapshot()
+
+    override suspend fun compareAndSet(expected: TokenSnapshot, tokens: AuthTokens?): Boolean {
+        var applied = false
+        // DataStore serializes the comparison and mutation, including across store wrappers.
+        dataStore.edit {
+            if (it.snapshot() == expected) {
+                it.write(tokens)
+                applied = true
             }
         }
+        return applied
     }
+
+    private fun MutablePreferences.write(tokens: AuthTokens?) {
+        this[revision] = (this[revision] ?: 0L) + 1L
+        if (tokens == null) {
+            remove(access)
+            remove(refresh)
+            remove(expires)
+        } else {
+            this[access] = tokens.accessToken
+            this[refresh] = tokens.refreshToken
+            this[expires] = tokens.expiresAtEpochSec
+        }
+    }
+
+    private fun Preferences.snapshot() = TokenSnapshot(read(), this[revision] ?: 0L)
 
     private fun Preferences.read(): AuthTokens? {
         val accessToken = this[access] ?: return null

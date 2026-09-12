@@ -3,6 +3,7 @@ package app.kaeru.di
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.preferencesDataStore
 import app.kaeru.BuildConfig
 import app.kaeru.data.auth.DataStoreTokenStore
@@ -26,6 +27,7 @@ import dagger.hilt.components.SingletonComponent
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
+import okhttp3.Dispatcher
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
@@ -42,7 +44,6 @@ annotation class ShikimoriClient
 @Retention(AnnotationRetention.BINARY)
 annotation class PlainClient
 
-private val Context.authDataStore: DataStore<Preferences> by preferencesDataStore("auth")
 private val Context.prefsDataStore: DataStore<Preferences> by preferencesDataStore("prefs")
 
 @Module
@@ -61,7 +62,11 @@ object NetworkModule {
     @Provides
     @Singleton
     @Named("auth")
-    fun authDataStore(@ApplicationContext ctx: Context): DataStore<Preferences> = ctx.authDataStore
+    fun authDataStore(@ApplicationContext ctx: Context): DataStore<Preferences> =
+        PreferenceDataStoreFactory.create {
+            // Excluded from all Android backup/transfer modes, independently of manifest flags.
+            ctx.noBackupFilesDir.resolve("auth.preferences_pb")
+        }
 
     @Provides
     @Singleton
@@ -109,6 +114,9 @@ object NetworkModule {
         @Named("shikimoriClientSecret") clientSecret: String,
         clock: Clock,
     ): OkHttpClient = plain.newBuilder()
+        // Authenticators block API workers while Retrofit enqueues refresh on the plain client.
+        // Those calls must never compete for the same dispatcher or per-host slots.
+        .dispatcher(Dispatcher())
         .addInterceptor(RateLimitInterceptor())
         .addInterceptor(AuthInterceptor(store))
         .authenticator(TokenAuthenticator(store, oauthApi, clientId, clientSecret, clock))

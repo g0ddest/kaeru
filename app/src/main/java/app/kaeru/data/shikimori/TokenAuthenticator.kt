@@ -1,6 +1,7 @@
 package app.kaeru.data.shikimori
 
 import app.kaeru.data.auth.AuthTokens
+import app.kaeru.data.auth.TokenSnapshot
 import app.kaeru.data.auth.TokenStore
 import kotlinx.coroutines.runBlocking
 import okhttp3.Authenticator
@@ -24,16 +25,18 @@ class TokenAuthenticator(
         if (response.priorResponse != null) return null
         val failedToken = response.request.header("Authorization")?.removePrefix("Bearer ")
         val fresh = synchronized(lock) {
-            val current = runBlocking { store.get() } ?: return null
+            val snapshot = runBlocking { store.snapshot() }
+            val current = snapshot.tokens ?: return null
             // Another request may already have completed the refresh while this one waited.
             if (current.accessToken != failedToken) return@synchronized current
-            refresh(current)
+            refresh(snapshot)
         } ?: return null
         return response.request.newBuilder().header("Authorization", "Bearer ${fresh.accessToken}").build()
     }
 
-    private fun refresh(current: AuthTokens): AuthTokens? = runBlocking {
-        runCatching {
+    private fun refresh(snapshot: TokenSnapshot): AuthTokens? = runBlocking {
+        val current = snapshot.tokens ?: return@runBlocking null
+        val refreshed = runCatching {
             oauthApi.token(
                 grantType = "refresh_token",
                 clientId = clientId,
@@ -41,8 +44,8 @@ class TokenAuthenticator(
                 refreshToken = current.refreshToken,
             )
         }.map { AuthTokens(it.accessToken, it.refreshToken, clock.instant().epochSecond + it.expiresIn) }
-            .onSuccess { store.set(it) }
-            .onFailure { store.set(null) }
             .getOrNull()
+        // A stale success must not restore an old session; a stale failure must not clear a new one.
+        if (store.compareAndSet(snapshot, refreshed)) refreshed else null
     }
 }
