@@ -1,0 +1,170 @@
+package app.kaeru.player
+
+import app.kaeru.domain.model.Anime
+import app.kaeru.domain.model.AnimeStatus
+import app.kaeru.domain.model.LibraryEntry
+import app.kaeru.domain.model.ListStatus
+import app.kaeru.domain.model.PlaybackTarget
+import app.kaeru.domain.model.UserRate
+import app.kaeru.domain.playback.FakePlaybackPreferences
+import app.kaeru.domain.playback.FakeWatchStateRepository
+import app.kaeru.domain.playback.MarkEpisodeWatched
+import app.kaeru.domain.playback.ResolveEpisodeStream
+import app.kaeru.domain.playback.WatchProgress
+import app.kaeru.test.MutableClock
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import java.time.Instant
+
+/**
+ * The one thing that connects the Cast framework to playback: a receiver appears, the episode
+ * goes to it; the receiver goes away, the episode comes back. Everything else about casting is
+ * the controller's, and is tested in [CastPlaybackTest].
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class CastSessionBridgeTest {
+    private val dispatcher = StandardTestDispatcher()
+    private val scope = CoroutineScope(dispatcher + SupervisorJob())
+    private val now = Instant.parse("2026-09-13T10:00:00Z")
+    private val clock = MutableClock(now)
+    private val headers = StreamHeaders("Chrome/128.0", "https://kodikplayer.com/")
+
+    private val phone = FakePlaybackEngine()
+    private val receiver = FakePlaybackEngine()
+    private val watchStates = FakeWatchStateRepository()
+    private val source = FakeEpisodeSource()
+    private val library = FakeLibraryRepository()
+    private val prefs = FakePlaybackPreferences()
+    private lateinit var controller: DefaultPlaybackController
+
+    @Before
+    fun setUp() {
+        library.put(
+            LibraryEntry(
+                Anime(
+                    100, "Фрирен", "Frieren", null, emptyList(), AnimeStatus.RELEASED,
+                    episodes = 12, episodesAired = 12, nextEpisodeAt = null,
+                    score = null, year = null, studio = null, description = null,
+                ),
+                UserRate(1, 100, ListStatus.WATCHING, episodes = 3, updatedAt = now),
+                null,
+            ),
+        )
+        controller = DefaultPlaybackController(
+            localEngine = phone,
+            resolve = ResolveEpisodeStream(source, watchStates, prefs, clock),
+            progress = WatchProgress(watchStates, clock),
+            markWatched = MarkEpisodeWatched(library, watchStates, clock),
+            library = library,
+            prefs = prefs,
+            headers = headers,
+            scope = scope,
+            io = dispatcher,
+        )
+    }
+
+    @After
+    fun tearDown() = scope.cancel()
+
+    private fun bridge(framework: CastFramework) = CastSessionBridge(framework, controller, phone, scope)
+
+    /** Episode 4 playing on the phone, 24 minutes long, five minutes in. */
+    private suspend fun playing() {
+        controller.play(PlaybackTarget(100, 4, startPositionMs = 0, translation = null))
+        phone.ready(1_440_000)
+        phone.moveTo(300_000)
+    }
+
+    @Test
+    fun `a receiver that connects is handed what the phone was playing`() = runTest(dispatcher) {
+        val framework = FakeCastFramework(castEngine = receiver)
+        bridge(framework).start()
+        playing()
+        advanceUntilIdle()
+
+        framework.connect()
+        advanceUntilIdle()
+
+        val handed = receiver.prepared.single()
+        assertEquals("https://cdn/100/4/11/720", handed.url)
+        assertEquals(300_000L, handed.startPositionMs)
+        assertTrue(controller.state.value.isCasting)
+    }
+
+    @Test
+    fun `a receiver that disconnects gives playback back at the position it reached`() = runTest(dispatcher) {
+        val framework = FakeCastFramework(castEngine = receiver)
+        bridge(framework).start()
+        playing()
+        advanceUntilIdle()
+        framework.connect()
+        advanceUntilIdle()
+        // Only now is the receiver the one playing: until the switch runs, anything it says is
+        // about the episode it has not been given yet.
+        receiver.ready(1_440_000)
+        receiver.moveTo(820_000)
+        advanceUntilIdle()
+
+        framework.disconnect()
+        advanceUntilIdle()
+
+        val resumed = phone.prepared.last()
+        assertEquals(820_000L, resumed.startPositionMs)
+        assertEquals("https://cdn/100/4/11/720", resumed.url)
+        assertFalse(controller.state.value.isCasting)
+    }
+
+    @Test
+    fun `a phone that cannot cast never listens and never touches playback`() = runTest(dispatcher) {
+        val framework = FakeCastFramework(isAvailable = false, castEngine = receiver)
+        bridge(framework).start()
+        playing()
+        advanceUntilIdle()
+
+        framework.connect()
+        advanceUntilIdle()
+
+        assertEquals(0, framework.subscriptions)
+        assertTrue(receiver.prepared.isEmpty())
+        assertFalse(controller.state.value.isCasting)
+        assertTrue(phone.state.value.isPlaying)
+    }
+
+    @Test
+    fun `a framework with no engine to offer leaves playback where it is`() = runTest(dispatcher) {
+        val framework = FakeCastFramework(castEngine = null)
+        bridge(framework).start()
+        playing()
+        advanceUntilIdle()
+
+        framework.connect()
+        advanceUntilIdle()
+
+        assertFalse(controller.state.value.isCasting)
+        assertTrue(phone.state.value.isPlaying)
+    }
+
+    @Test
+    fun `starting the bridge from every screen still listens once`() = runTest(dispatcher) {
+        val framework = FakeCastFramework(castEngine = receiver)
+        val bridge = bridge(framework)
+        bridge.start()
+        bridge.start()
+        advanceUntilIdle()
+        bridge.start()
+        advanceUntilIdle()
+
+        assertEquals(1, framework.subscriptions)
+    }
+}

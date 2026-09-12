@@ -21,7 +21,10 @@ data class PlaybackState(
     val nextEpisodeAvailable: Boolean = false,
     val autoplayCountdownSec: Int? = null,
     val error: Throwable? = null,
-    /** Reserved for the Chromecast task; local playback always reports false. */
+    /**
+     * True while the picture is on a Chromecast rather than on this device. The screen turns
+     * into a remote control; everything else about playback is unchanged.
+     */
     val isCasting: Boolean = false,
 ) {
     val episode: Int? get() = target?.episode

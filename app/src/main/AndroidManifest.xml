@@ -21,6 +21,11 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Kaeru">
 
+        <!-- How the Cast framework finds our receiver id; it builds the class itself. -->
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="app.kaeru.player.CastOptionsProvider" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

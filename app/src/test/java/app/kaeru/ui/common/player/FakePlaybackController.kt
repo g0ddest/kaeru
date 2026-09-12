@@ -5,6 +5,7 @@ import app.kaeru.domain.model.PlaybackTarget
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.player.PlaybackController
+import app.kaeru.player.PlaybackEngine
 import app.kaeru.player.PlaybackEvent
 import app.kaeru.player.PlaybackState
 import kotlinx.coroutines.flow.Flow
@@ -26,6 +27,7 @@ class FakePlaybackController : PlaybackController {
     val seeks = mutableListOf<Long>()
     val tracks = mutableListOf<Translation>()
     val qualities = mutableListOf<Quality>()
+    val switches = mutableListOf<Pair<PlaybackEngine, Long>>()
     var toggles = 0
         private set
     var nexts = 0
@@ -64,6 +66,11 @@ class FakePlaybackController : PlaybackController {
 
     override suspend fun playNext() {
         nexts += 1
+    }
+
+    override suspend fun switchEngine(engine: PlaybackEngine, carryPositionMs: Long) {
+        switches += engine to carryPositionMs
+        playback.value = playback.value.copy(positionMs = carryPositionMs)
     }
 
     override fun cancelAutoplay() {

@@ -6,7 +6,6 @@ import app.kaeru.domain.error.SourceUnavailable
 import app.kaeru.domain.error.SourceUnavailableReason
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
-import app.kaeru.domain.model.EpisodeStream
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.PlaybackTarget
@@ -19,17 +18,11 @@ import app.kaeru.domain.playback.FakeWatchStateRepository
 import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.playback.WatchProgress
-import app.kaeru.domain.repository.LibraryRepository
-import app.kaeru.domain.source.EpisodeSourceProvider
 import app.kaeru.test.MutableClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -76,7 +69,7 @@ class PlaybackControllerTest {
             ),
         )
         controller = DefaultPlaybackController(
-            engine = engine,
+            localEngine = engine,
             resolve = ResolveEpisodeStream(source, watchStates, prefs, clock),
             progress = WatchProgress(watchStates, clock),
             markWatched = MarkEpisodeWatched(library, watchStates, clock),
@@ -520,83 +513,5 @@ class PlaybackControllerTest {
         assertEquals(5, last.episode)
         assertEquals(6_000L, last.positionMs)
         assertTrue(watchStates.saved.any { it.episode == 4 && it.positionMs == 950_000L })
-    }
-
-    private class FakeEpisodeSource : EpisodeSourceProvider {
-        val anilibria = Translation(11, "AniLibria.TV", TranslationKind.VOICE, episodesCount = 12)
-        val studioBanda = Translation(22, "Студийная банда", TranslationKind.VOICE, episodesCount = 12)
-        var resolveFailure: Throwable? = null
-        var lastAired = 12
-
-        /** Episodes the source will not serve, standing in for a Kodik that is up but unhappy. */
-        var rejects: Set<Int> = emptySet()
-
-        /** Every episode asked for, in order. */
-        val resolves = mutableListOf<Int>()
-
-        /** Runs the moment a resolve starts, so a test can look at what is already on disk. */
-        var onResolve: ((Int) -> Unit)? = null
-
-        override suspend fun translations(shikimoriId: Int): Result<List<Translation>> =
-            Result.success(listOf(anilibria, studioBanda))
-
-        override suspend fun resolve(
-            shikimoriId: Int,
-            episode: Int,
-            translation: Translation?,
-        ): Result<EpisodeStream> {
-            resolves += episode
-            onResolve?.invoke(episode)
-            if (episode in rejects) {
-                return Result.failure(SourceUnavailable(SourceUnavailableReason.REJECTED))
-            }
-            resolveFailure?.let { return Result.failure(it) }
-            if (episode > lastAired) return Result.failure(EpisodeNotAvailable(shikimoriId, episode))
-            val track = translation ?: anilibria
-            return Result.success(
-                EpisodeStream(
-                    animeId = shikimoriId,
-                    episode = episode,
-                    translation = track,
-                    urls = listOf(Quality.P360, Quality.P480, Quality.P720).associateWith {
-                        "https://cdn/$shikimoriId/$episode/${track.id}/${it.height}"
-                    },
-                    resolvedAt = Instant.parse("2026-09-13T10:00:00Z"),
-                ),
-            )
-        }
-    }
-
-    private class FakeLibraryRepository : LibraryRepository {
-        private val entries = MutableStateFlow<Map<Int, LibraryEntry>>(emptyMap())
-        val episodeWrites = mutableListOf<Pair<Int, Int>>()
-        val statusWrites = mutableListOf<Pair<Int, ListStatus>>()
-
-        fun put(entry: LibraryEntry) = entries.update { it + (entry.anime.id to entry) }
-
-        override fun observeLibrary(): Flow<List<LibraryEntry>> = entries.map { it.values.toList() }
-        override fun observeAnime(id: Int): Flow<LibraryEntry?> = entries.map { it[id] }
-        override fun observeAnimeDetails(id: Int): Flow<Anime?> = entries.map { it[id]?.anime }
-        override suspend fun refresh() = Result.success(Unit)
-        override suspend fun refreshAnime(id: Int) = Result.success(Unit)
-        override suspend fun search(query: String) = Result.success(emptyList<Anime>())
-
-        override suspend fun setStatus(animeId: Int, status: ListStatus): Result<Unit> {
-            statusWrites += animeId to status
-            entries.update { rows ->
-                val row = rows[animeId] ?: return@update rows
-                rows + (animeId to row.copy(rate = row.rate.copy(status = status)))
-            }
-            return Result.success(Unit)
-        }
-
-        override suspend fun setEpisodes(animeId: Int, episodes: Int): Result<Unit> {
-            episodeWrites += animeId to episodes
-            entries.update { rows ->
-                val row = rows[animeId] ?: return@update rows
-                rows + (animeId to row.copy(rate = row.rate.copy(episodes = episodes)))
-            }
-            return Result.success(Unit)
-        }
     }
 }

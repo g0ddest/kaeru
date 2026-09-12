@@ -11,10 +11,12 @@ import app.kaeru.domain.playback.WatchProgress
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.repository.WatchStateRepository
 import app.kaeru.domain.source.EpisodeSourceProvider
+import app.kaeru.player.CastFramework
 import app.kaeru.player.DefaultPlaybackController
 import app.kaeru.player.ExoPlaybackEngine
 import app.kaeru.player.PlaybackController
 import app.kaeru.player.PlaybackEngine
+import app.kaeru.player.PlayServicesCastFramework
 import app.kaeru.player.StreamHeaders
 import dagger.Binds
 import dagger.Module
@@ -35,6 +37,15 @@ import javax.inject.Singleton
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
 annotation class PlaybackScope
+
+/**
+ * The engine that decodes on this device, as opposed to one playing on a Chromecast.
+ * Qualified because there are now two of them, and everything except a live cast session
+ * wants this one.
+ */
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class LocalEngine
 
 /**
  * The playback use-cases. They are domain classes and carry no injection annotations,
@@ -102,7 +113,12 @@ abstract class PlaybackBindings {
     abstract fun playbackPreferences(impl: AppPreferences): PlaybackPreferences
 
     @Binds
+    @LocalEngine
     abstract fun playbackEngine(impl: ExoPlaybackEngine): PlaybackEngine
+
+    /** Google Cast behind its guard: the one thing in the app that touches Play services. */
+    @Binds
+    abstract fun castFramework(impl: PlayServicesCastFramework): CastFramework
 
     @Binds
     abstract fun playbackController(impl: DefaultPlaybackController): PlaybackController

@@ -2,6 +2,7 @@ package app.kaeru.player
 
 import androidx.media3.common.Player
 import app.kaeru.di.IoDispatcher
+import app.kaeru.di.LocalEngine
 import app.kaeru.di.PlaybackScope
 import app.kaeru.domain.model.EpisodeStream
 import app.kaeru.domain.model.PlaybackTarget
@@ -14,7 +15,9 @@ import app.kaeru.domain.playback.WatchProgress
 import app.kaeru.domain.repository.LibraryRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -73,6 +76,19 @@ interface PlaybackController {
      */
     suspend fun playNext()
 
+    /**
+     * Hands playback to another engine: the Chromecast one when a session starts, the local one
+     * when it ends. The episode, the track and the chosen quality all carry across, and so does
+     * everything already decided about them — an episode counted as watched stays counted.
+     *
+     * [carryPositionMs] is where the new engine picks up. The caller reads it from [state]
+     * before the engine that was playing is gone, because a receiver that has already
+     * disconnected no longer has a position to give.
+     *
+     * Switching to the engine that is already playing does nothing.
+     */
+    suspend fun switchEngine(engine: PlaybackEngine, carryPositionMs: Long)
+
     /** The viewer said no to the countdown; the offer stays, the switch does not happen. */
     fun cancelAutoplay()
 
@@ -94,10 +110,14 @@ interface PlaybackController {
  * save interval is five seconds of watched video. A paused player therefore freezes
  * the countdown and stops saving by itself, and every rule can be tested by handing the
  * controller a sequence of positions.
+ *
+ * Which engine reports is the only thing casting changes. [localEngine] is the one that
+ * decodes on this phone; anything else is a receiver somewhere in the room, which is the
+ * whole of what `isCasting` means here.
  */
 @Singleton
 class DefaultPlaybackController @Inject constructor(
-    private val engine: PlaybackEngine,
+    @param:LocalEngine private val localEngine: PlaybackEngine,
     private val resolve: ResolveEpisodeStream,
     private val progress: WatchProgress,
     private val markWatched: MarkEpisodeWatched,
@@ -131,7 +151,17 @@ class DefaultPlaybackController @Inject constructor(
     private val _events = Channel<PlaybackEvent>(Channel.BUFFERED)
     override val events: Flow<PlaybackEvent> = _events.receiveAsFlow()
 
-    override val videoPlayer: StateFlow<Player?> get() = engine.videoPlayer
+    private val _videoPlayer = MutableStateFlow<Player?>(null)
+    override val videoPlayer: StateFlow<Player?> = _videoPlayer.asStateFlow()
+
+    /** Whichever engine is playing right now. The local one until a receiver takes over. */
+    private var engine: PlaybackEngine = localEngine
+
+    /** Following [engine]: its reports and the player a surface can attach to, if it has one. */
+    private var following: Job? = null
+
+    /** Casting is exactly "the engine playing is not this phone's". */
+    private val casting: Boolean get() = engine !== localEngine
 
     private var settings = Settings()
 
@@ -148,14 +178,21 @@ class DefaultPlaybackController @Inject constructor(
     /** The progress write that owns [WatchProgress]'s queue, or the last one that did. */
     private var writing: Job? = null
 
+    // Last, not as a property initializer: following an engine starts reading its reports, and
+    // on the main dispatcher that happens at once — before the fields those reports touch exist.
     init {
-        scope.launch { engine.state.collect { onEngineState(it) } }
+        following = follow(localEngine)
     }
 
     override suspend fun play(target: PlaybackTarget) {
         transition {
             flushProgressNow()
-            _state.value = PlaybackState(target = target, isBuffering = true, positionMs = target.startPositionMs)
+            _state.value = PlaybackState(
+                target = target,
+                isBuffering = true,
+                positionMs = target.startPositionMs,
+                isCasting = casting,
+            )
             open(target, freshEpisode = true).onFailure(::fail)
         }.join()
     }
@@ -206,6 +243,43 @@ class DefaultPlaybackController @Inject constructor(
         transition { openNext() }.join()
     }
 
+    override suspend fun switchEngine(engine: PlaybackEngine, carryPositionMs: Long) {
+        val next = engine
+        if (next === this.engine) return
+        transition {
+            // Awaited: the row this episode owns has to hold the position the old engine
+            // reached before anything the new one reports can overwrite it.
+            flushProgressNow()
+            val previous = this.engine
+            following?.cancelAndJoin()
+            this.engine = next
+            following = follow(next)
+            previous.release()
+            // A new engine gets its own budget for the one silent re-resolve. A cast session
+            // can last hours, and the link that played locally is very likely stale by its end.
+            reResolved = false
+            lastReportedMs = carryPositionMs
+            wasPlaying = false
+            val current = _state.value
+            val target = current.target
+            val stream = current.stream
+            val quality = current.quality
+            _state.value = current.copy(
+                isCasting = casting,
+                isPlaying = false,
+                // Nothing loaded is not "loading": a session that starts before the first
+                // episode only decides where the next one will play.
+                isBuffering = target != null,
+                positionMs = carryPositionMs,
+                error = null,
+            )
+            if (target == null || stream == null || quality == null) return@transition
+            next.prepare(stream.urls.getValue(quality), headers, carryPositionMs, describe(target, stream))
+            next.play()
+            onEngineState(next.state.value, force = true)
+        }.join()
+    }
+
     override fun cancelAutoplay() {
         autoplayCancelled = true
         _state.update { it.copy(autoplayCountdownSec = null) }
@@ -232,7 +306,9 @@ class DefaultPlaybackController @Inject constructor(
         transition = null
         flushProgress()
         engine.release()
-        _state.value = PlaybackState()
+        // The receiver is still the receiver: the session outlives this screen, so the next
+        // episode played from anywhere in the app goes where the viewer put the last one.
+        _state.value = PlaybackState(isCasting = casting)
         markedEpisode = false
         reResolved = false
         autoplayCancelled = false
@@ -272,6 +348,7 @@ class DefaultPlaybackController @Inject constructor(
             positionMs = target.startPositionMs,
             // A track swap keeps the length it already knows, so the timeline does not flash empty.
             durationMs = if (freshEpisode) 0 else _state.value.durationMs,
+            isCasting = casting,
         )
         engine.prepare(stream.urls.getValue(quality), headers, target.startPositionMs, describe(target, stream))
         engine.play()
@@ -467,9 +544,28 @@ class DefaultPlaybackController @Inject constructor(
         _state.update { it.copy(isBuffering = false, isPlaying = false, error = error) }
     }
 
-    /** Runs one resolve-and-prepare, replacing whichever was still running. */
+    /**
+     * Runs one resolve-and-prepare, replacing whichever was still running.
+     *
+     * Started lazily and only once it is on record: on the main dispatcher a launched
+     * coroutine begins before `launch` returns, so assigning the job afterwards would leave
+     * the first half of every transition looking like no transition at all — and engine
+     * reports would be acted on in the middle of a swap.
+     */
     private fun transition(block: suspend () -> Unit): Job {
         transition?.cancel()
-        return scope.launch { block() }.also { transition = it }
+        val job = scope.launch(start = CoroutineStart.LAZY) { block() }
+        transition = job
+        job.start()
+        return job
+    }
+
+    /**
+     * Takes [engine] at its word from now on: what it reports and, if it renders anything, the
+     * player a surface attaches to. One job, so handing over is one cancellation.
+     */
+    private fun follow(engine: PlaybackEngine): Job = scope.launch {
+        launch { engine.state.collect { onEngineState(it) } }
+        launch { engine.videoPlayer.collect { _videoPlayer.value = it } }
     }
 }
