@@ -125,7 +125,8 @@ OAuth2 Authorization Code. `client_id` и `client_secret` — из
   с `redirect_uri=urn:ietf:wg:oauth:2.0:oob`; пользователь вводит показанный
   код с пульта. Если телефон с Kaeru в той же сети — передача сессии через
   локальный QR не делается в первой версии, ввод кода достаточен.
-- Токены в EncryptedSharedPreferences. Refresh — в OkHttp `Authenticator`.
+- Токены в DataStore Preferences в приватной директории приложения;
+  `allowBackup=false`. Refresh — в OkHttp `Authenticator`.
 
 ### Запросы
 
@@ -337,7 +338,8 @@ interface EpisodeSourceProvider {
 
 - Room: `anime`, `user_rate`, `watch_state`, `pending_sync`, `kodik_source_cache`.
 - DataStore: `Preferences`, кэш токена Kodik, время последних синков.
-- EncryptedSharedPreferences: OAuth-токены Shikimori.
+- DataStore Preferences в приватной директории приложения: OAuth-токены
+  Shikimori; резервное копирование приложения отключено.
 - `local.properties`: `SHIKIMORI_CLIENT_ID`, `SHIKIMORI_CLIENT_SECRET`,
   `KODIK_TOKEN` (опционально). Пример в `local.properties.example`.
 - Обновления: проверка последнего релиза GitHub через API, ссылка на APK.
