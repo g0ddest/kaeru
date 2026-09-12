@@ -3,10 +3,10 @@ package app.kaeru.ui.mobile.player
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -15,11 +15,15 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.kaeru.player.CastFramework
+import app.kaeru.player.CastSessionBridge
 import app.kaeru.player.KaeruPlaybackService
 import app.kaeru.ui.common.player.PlayerViewModel
 import app.kaeru.ui.common.theme.KaeruTheme
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 /**
  * Playback gets its own activity: it is landscape, immersive and outlives nothing else in the
@@ -30,7 +34,12 @@ import dagger.hilt.android.AndroidEntryPoint
  * which is what lets audio carry on from the notification.
  */
 @AndroidEntryPoint
-class PlayerActivity : ComponentActivity() {
+class PlayerActivity : FragmentActivity() {
+
+    /** Injected, not asked for from the screen: the route chooser needs a fragment manager. */
+    @Inject lateinit var cast: CastFramework
+
+    @Inject lateinit var castSessions: CastSessionBridge
 
     private val viewModel: PlayerViewModel by viewModels()
     private var target by mutableStateOf(0 to 1)
@@ -43,6 +52,10 @@ class PlayerActivity : ComponentActivity() {
         // Before anything plays, so the session sees playback start and can raise its
         // notification; a session created mid-playback may never hear a transition.
         startPlaybackService()
+        // Idempotent, and armed from every screen that can cast: whichever the viewer reaches
+        // first is the one that starts listening for receivers.
+        castSessions.start()
+        val castAvailable = cast.isAvailable
         setContent {
             KaeruTheme {
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -51,28 +64,34 @@ class PlayerActivity : ComponentActivity() {
                 val (animeId, episode) = target
 
                 LaunchedEffect(animeId, episode) { if (animeId > 0) viewModel.start(animeId, episode) }
-                LaunchedEffect(state.isPlaying) { view.keepScreenOn = state.isPlaying }
+                // A remote control does not need the screen awake for twenty-four minutes.
+                LaunchedEffect(state.isPlaying, state.isCasting) {
+                    view.keepScreenOn = state.isPlaying && !state.isCasting
+                }
 
-                PlayerScreen(
-                    state = state,
-                    player = player,
-                    onBack = { finish() },
-                    onTogglePlayPause = viewModel::togglePlayPause,
-                    onSeekTo = viewModel::seekTo,
-                    onSeekBy = viewModel::seekBy,
-                    onSkipIntro = viewModel::skipIntro,
-                    onNext = viewModel::playNext,
-                    onCancelAutoplay = viewModel::cancelAutoplay,
-                    onOpenTranslations = viewModel::openTranslations,
-                    onOpenQualities = viewModel::openQualities,
-                    onCloseSheet = viewModel::closeSheet,
-                    onPickTranslation = viewModel::pickTranslation,
-                    onPickQuality = viewModel::pickQuality,
-                    onRetry = viewModel::retry,
-                    onConfirmCompleted = viewModel::confirmCompleted,
-                    onDismissCompleted = viewModel::dismissCompleted,
-                    onToastShown = viewModel::consumeToast,
-                )
+                CompositionLocalProvider(LocalCastAvailable provides castAvailable) {
+                    PlayerScreen(
+                        state = state,
+                        player = player,
+                        onBack = { finish() },
+                        onTogglePlayPause = viewModel::togglePlayPause,
+                        onSeekTo = viewModel::seekTo,
+                        onSeekBy = viewModel::seekBy,
+                        onSkipIntro = viewModel::skipIntro,
+                        onNext = viewModel::playNext,
+                        onCancelAutoplay = viewModel::cancelAutoplay,
+                        onOpenTranslations = viewModel::openTranslations,
+                        onOpenQualities = viewModel::openQualities,
+                        onCloseSheet = viewModel::closeSheet,
+                        onPickTranslation = viewModel::pickTranslation,
+                        onPickQuality = viewModel::pickQuality,
+                        onRetry = viewModel::retry,
+                        onStopCasting = viewModel::stopCasting,
+                        onConfirmCompleted = viewModel::confirmCompleted,
+                        onDismissCompleted = viewModel::dismissCompleted,
+                        onToastShown = viewModel::consumeToast,
+                    )
+                }
             }
         }
     }

@@ -13,6 +13,7 @@ import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.repository.WatchStateRepository
+import app.kaeru.player.CastFramework
 import app.kaeru.player.EpisodeQueue
 import app.kaeru.player.PlaybackController
 import app.kaeru.player.PlaybackEvent
@@ -47,6 +48,7 @@ import javax.inject.Inject
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
     private val controller: PlaybackController,
+    private val cast: CastFramework,
     private val resolve: ResolveEpisodeStream,
     private val library: LibraryRepository,
     private val watchStates: WatchStateRepository,
@@ -98,6 +100,7 @@ class PlayerViewModel @Inject constructor(
             nextEpisodeAvailable = playback.nextEpisodeAvailable,
             autoplayCountdownSec = playback.autoplayCountdownSec,
             errorMessage = playback.error?.toUserMessage(),
+            isCasting = playback.isCasting,
             completedPrompt = screen.completedPrompt,
             toast = screen.toast,
         )
@@ -209,6 +212,13 @@ class PlayerViewModel @Inject constructor(
     fun dismissCompleted() = screen.update { it.copy(completedPrompt = false) }
 
     fun consumeToast() = screen.update { it.copy(toast = null) }
+
+    /**
+     * Disconnects from the receiver. Nothing is switched back here: ending the session is
+     * announced by the framework, and the session bridge is the one that answers it, so the
+     * same thing happens whether the viewer used this button or the system output switcher.
+     */
+    fun stopCasting() = cast.endSession()
 
     /** The screen is going away for a moment: save where the viewer is, keep playing. */
     fun reportProgress() = controller.reportProgress()

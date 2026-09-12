@@ -77,6 +77,7 @@ fun PlayerScreen(
     onPickTranslation: (Translation) -> Unit,
     onPickQuality: (Quality) -> Unit,
     onRetry: () -> Unit,
+    onStopCasting: () -> Unit,
     onConfirmCompleted: () -> Unit,
     onDismissCompleted: () -> Unit,
     onToastShown: () -> Unit,
@@ -110,96 +111,115 @@ fun PlayerScreen(
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        if (player != null) ContentFrame(player, Modifier.fillMaxSize())
-
-        Box(
-            Modifier.fillMaxSize().pointerInput(state.durationMs) {
-                detectTapGestures(
-                    onTap = { controlsVisible = !controlsVisible },
-                    onDoubleTap = { offset ->
-                        val third = size.width / 3f
-                        when {
-                            offset.x < third -> {
-                                onSeekBy(-EpisodeQueue.SEEK_STEP_MS)
-                                pulse = SeekPulse(forward = false)
-                                pulseKey += 1
-                            }
-                            offset.x > size.width - third -> {
-                                onSeekBy(EpisodeQueue.SEEK_STEP_MS)
-                                pulse = SeekPulse(forward = true)
-                                pulseKey += 1
-                            }
-                            else -> controlsVisible = !controlsVisible
-                        }
-                    },
-                )
-            },
-        )
-
-        pulse?.let { SeekPulseBadge(it) }
-
-        if (failed) {
-            PlaybackFailure(
-                message = state.errorMessage.orEmpty(),
+        if (state.isCasting) {
+            // Nothing is decoded here while a receiver has the picture, so there is no surface
+            // to attach and nothing worth hiding after three seconds: the screen is a remote.
+            RemoteControlScreen(
+                state = state,
+                onBack = onBack,
+                onTogglePlayPause = onTogglePlayPause,
+                onSeekTo = onSeekTo,
+                onSeekBy = onSeekBy,
+                onNext = onNext,
+                onCancelAutoplay = onCancelAutoplay,
+                onOpenTranslations = onOpenTranslations,
+                onOpenQualities = onOpenQualities,
                 onRetry = onRetry,
-                onChangeTranslation = onOpenTranslations,
+                onStopCasting = onStopCasting,
             )
-        }
+        } else {
+            if (player != null) ContentFrame(player, Modifier.fillMaxSize())
 
-        AnimatedVisibility(visible = controlsVisible, enter = fadeIn(), exit = fadeOut()) {
-            Box(Modifier.fillMaxSize()) {
-                Box(
-                    Modifier.fillMaxWidth().height(140.dp)
-                        .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.72f), Color.Transparent))),
+            Box(
+                Modifier.fillMaxSize().pointerInput(state.durationMs) {
+                    detectTapGestures(
+                        onTap = { controlsVisible = !controlsVisible },
+                        onDoubleTap = { offset ->
+                            val third = size.width / 3f
+                            when {
+                                offset.x < third -> {
+                                    onSeekBy(-EpisodeQueue.SEEK_STEP_MS)
+                                    pulse = SeekPulse(forward = false)
+                                    pulseKey += 1
+                                }
+                                offset.x > size.width - third -> {
+                                    onSeekBy(EpisodeQueue.SEEK_STEP_MS)
+                                    pulse = SeekPulse(forward = true)
+                                    pulseKey += 1
+                                }
+                                else -> controlsVisible = !controlsVisible
+                            }
+                        },
+                    )
+                },
+            )
+
+            pulse?.let { SeekPulseBadge(it) }
+
+            if (failed) {
+                PlaybackFailure(
+                    message = state.errorMessage.orEmpty(),
+                    onRetry = onRetry,
+                    onChangeTranslation = onOpenTranslations,
                 )
-                if (!failed) {
+            }
+
+            AnimatedVisibility(visible = controlsVisible, enter = fadeIn(), exit = fadeOut()) {
+                Box(Modifier.fillMaxSize()) {
                     Box(
-                        Modifier.fillMaxWidth().height(190.dp).align(Alignment.BottomCenter)
-                            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f)))),
+                        Modifier.fillMaxWidth().height(140.dp)
+                            .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.72f), Color.Transparent))),
                     )
-                }
-                Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-                    PlayerTopBar(
-                        title = state.title,
-                        episode = state.episode,
-                        translationTitle = state.translationTitle,
-                        qualityLabel = state.quality?.let { "${it.height}p" },
-                        onBack = onBack,
-                        onTranslations = onOpenTranslations,
-                        onQualities = onOpenQualities,
-                    )
-                    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    if (!failed) {
+                        Box(
+                            Modifier.fillMaxWidth().height(190.dp).align(Alignment.BottomCenter)
+                                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f)))),
+                        )
+                    }
+                    Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+                        PlayerTopBar(
+                            title = state.title,
+                            episode = state.episode,
+                            translationTitle = state.translationTitle,
+                            qualityLabel = state.quality?.let { "${it.height}p" },
+                            onBack = onBack,
+                            onTranslations = onOpenTranslations,
+                            onQualities = onOpenQualities,
+                        )
+                        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            if (!failed) {
+                                PlayerCenterControl(
+                                    isBuffering = state.isBuffering,
+                                    isPlaying = state.isPlaying,
+                                    onToggle = onTogglePlayPause,
+                                )
+                            }
+                        }
                         if (!failed) {
-                            PlayerCenterControl(
-                                isBuffering = state.isBuffering,
-                                isPlaying = state.isPlaying,
-                                onToggle = onTogglePlayPause,
+                            PlayerBottomBar(
+                                positionMs = state.positionMs,
+                                durationMs = state.durationMs,
+                                // While the card is counting down it carries the same action; two
+                                // buttons for one decision is one button too many.
+                                showNext = state.autoplayCountdownSec == null,
+                                onSeekTo = onSeekTo,
+                                onSeekBy = onSeekBy,
+                                onSkipIntro = onSkipIntro,
+                                onNext = onNext,
                             )
                         }
                     }
-                    if (!failed) {
-                        PlayerBottomBar(
-                            positionMs = state.positionMs,
-                            durationMs = state.durationMs,
-                            // While the card is counting down it carries the same action; two
-                            // buttons for one decision is one button too many.
-                            showNext = state.autoplayCountdownSec == null,
-                            onSeekTo = onSeekTo,
-                            onSeekBy = onSeekBy,
-                            onSkipIntro = onSkipIntro,
-                            onNext = onNext,
-                        )
-                    }
                 }
+            }
+
+            // Buffering has to be visible even after the controls have gone.
+            if (!controlsVisible && state.isBuffering && !failed) {
+                PlayerCenterControl(isBuffering = true, isPlaying = false, onToggle = {}, modifier = Modifier.align(Alignment.Center))
             }
         }
 
-        // Buffering has to be visible even after the controls have gone.
-        if (!controlsVisible && state.isBuffering && !failed) {
-            PlayerCenterControl(isBuffering = true, isPlaying = false, onToggle = {}, modifier = Modifier.align(Alignment.Center))
-        }
-
-        state.autoplayCountdownSec?.let { seconds ->
+        // The remote control carries its own countdown, in the row the decision belongs to.
+        state.autoplayCountdownSec?.takeIf { !state.isCasting }?.let { seconds ->
             NextEpisodeCard(
                 episode = state.episode + 1,
                 countdownSec = seconds,

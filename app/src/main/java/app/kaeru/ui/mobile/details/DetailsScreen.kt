@@ -39,6 +39,7 @@ import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.ui.common.Poster
+import app.kaeru.ui.mobile.player.CastButton
 import app.kaeru.ui.common.ProgressStrip
 import app.kaeru.ui.common.Skeleton
 import app.kaeru.ui.common.theme.KaeruAccent
@@ -82,7 +83,11 @@ fun DetailsScreen(
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
         item(key = "head") {
             Column {
-                TextButton(onClick = onBack, modifier = Modifier.padding(top = 12.dp)) { Text("Назад") }
+                Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onBack) { Text("Назад") }
+                    Spacer(Modifier.weight(1f))
+                    CastButton()
+                }
                 Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                     Poster(anime.posterUrl, anime.title, Modifier.width(132.dp).height(198.dp))
                     Column(Modifier.weight(1f)) {

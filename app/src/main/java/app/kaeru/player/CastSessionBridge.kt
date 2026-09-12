@@ -51,7 +51,4 @@ class CastSessionBridge @Inject constructor(
             }
         }
     }
-
-    /** The viewer asked to stop casting. The disconnect comes back as [CastConnection.DISCONNECTED]. */
-    fun disconnect() = framework.endSession()
 }

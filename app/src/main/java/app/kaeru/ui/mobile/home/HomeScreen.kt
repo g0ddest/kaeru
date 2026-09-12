@@ -37,6 +37,8 @@ import app.kaeru.ui.common.Poster
 import app.kaeru.ui.common.ProgressStrip
 import app.kaeru.ui.common.Skeleton
 import app.kaeru.ui.common.home.HomeUiState
+import androidx.compose.ui.zIndex
+import app.kaeru.ui.mobile.player.CastButton
 import coil3.compose.AsyncImage
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -48,6 +50,9 @@ fun HomeScreen(
     onAnime: (Int) -> Unit,
 ) {
     PullToRefreshBox(isRefreshing = state.isRefreshing, onRefresh = onRefresh) {
+        // Over the feed rather than in a bar of its own: the home screen has no top bar, and
+        // the button hides itself whenever there is no receiver on the network.
+        CastButton(Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 12.dp).zIndex(1f))
         when {
             state.isLoading -> HomeSkeleton()
             state.feed.isEmpty -> EmptyHome(onRefresh)

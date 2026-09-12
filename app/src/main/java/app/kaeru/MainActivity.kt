@@ -3,19 +3,30 @@ package app.kaeru
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.fragment.app.FragmentActivity
+import app.kaeru.player.CastFramework
+import app.kaeru.player.CastSessionBridge
 import app.kaeru.ui.mobile.MobileApp
 import app.kaeru.ui.mobile.OAuthCallback
+import app.kaeru.ui.mobile.player.LocalCastAvailable
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 @AndroidEntryPoint
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
+
+    /** A `FragmentActivity` because the Cast route chooser is a dialog fragment. */
+    @Inject lateinit var cast: CastFramework
+
+    @Inject lateinit var castSessions: CastSessionBridge
+
     private var pendingCallback by mutableStateOf<OAuthCallback?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -23,8 +34,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         readAuthCallback(intent)
+        // Listening from here too, so a session that ends while the player is closed still
+        // brings playback back to the phone.
+        castSessions.start()
+        val castAvailable = cast.isAvailable
         setContent {
-            MobileApp(callback = pendingCallback, onCallbackConsumed = { pendingCallback = null })
+            CompositionLocalProvider(LocalCastAvailable provides castAvailable) {
+                MobileApp(callback = pendingCallback, onCallbackConsumed = { pendingCallback = null })
+            }
         }
     }
 

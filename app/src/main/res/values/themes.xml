@@ -1,5 +1,10 @@
 <resources>
-    <style name="Theme.Kaeru" parent="android:Theme.Material.NoActionBar">
+    <!--
+        AppCompat, not the platform theme: the Cast route chooser and controller are
+        AppCompatDialogs, and they read alertDialogTheme and the AppCompat colour attributes
+        from whichever activity opened them. Compose paints everything else.
+    -->
+    <style name="Theme.Kaeru" parent="Theme.AppCompat.NoActionBar">
         <item name="android:windowBackground">@color/kaeru_background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>

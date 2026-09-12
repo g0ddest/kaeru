@@ -28,6 +28,8 @@ data class PlayerUiState(
     val nextEpisodeAvailable: Boolean = false,
     val autoplayCountdownSec: Int? = null,
     val errorMessage: String? = null,
+    /** The picture is on a Chromecast: the screen is a remote control, not a player. */
+    val isCasting: Boolean = false,
     /** The finale was counted as watched and the show is waiting to be closed. */
     val completedPrompt: Boolean = false,
     /** Something worth one line and no decision, shown and then forgotten. */

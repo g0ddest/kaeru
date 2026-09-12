@@ -19,6 +19,7 @@ import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.source.EpisodeSourceProvider
 import app.kaeru.player.EpisodeQueue
+import app.kaeru.player.FakeCastFramework
 import app.kaeru.player.PlaybackEvent
 import app.kaeru.player.PlaybackState
 import app.kaeru.test.MainDispatcherRule
@@ -63,11 +64,14 @@ class PlayerViewModelTest {
         score = 9.1, year = 2023, studio = "Madhouse", description = null,
     )
 
+    private val cast = FakeCastFramework()
+
     @Before
     fun setUp() {
         library.put(LibraryEntry(anime, UserRate(1, 100, ListStatus.WATCHING, 3, now), null))
         viewModel = PlayerViewModel(
             controller = controller,
+            cast = cast,
             resolve = ResolveEpisodeStream(source, watchStates, prefs, clock),
             library = library,
             watchStates = watchStates,
@@ -369,5 +373,29 @@ class PlayerViewModelTest {
             statusWrites += animeId to status
             return Result.success(Unit)
         }
+    }
+
+    @Test
+    fun `a screen casting says so, so it can draw a remote control instead of a player`() = runTest(main.dispatcher) {
+        viewModel.start(animeId = 100, episode = 4)
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.isCasting)
+
+        controller.playback.value = controller.playback.value.copy(isCasting = true)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isCasting)
+    }
+
+    @Test
+    fun `disconnecting ends the session and leaves the switching back to the bridge`() = runTest(main.dispatcher) {
+        viewModel.start(animeId = 100, episode = 4)
+        advanceUntilIdle()
+
+        viewModel.stopCasting()
+        advanceUntilIdle()
+
+        assertEquals(1, cast.endedSessions)
+        assertTrue(controller.switches.isEmpty())
     }
 }

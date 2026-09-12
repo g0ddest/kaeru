@@ -90,6 +90,7 @@ fun PlayerTopBar(
                 )
             }
         }
+        CastButton(Modifier.padding(end = 4.dp))
         // The chips carry the current choice, so the viewer can read their settings without opening anything.
         translationTitle?.let { Chip(text = it, onClick = onTranslations) }
         qualityLabel?.let {
