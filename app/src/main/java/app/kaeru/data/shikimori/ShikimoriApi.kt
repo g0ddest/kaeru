@@ -38,6 +38,9 @@ interface ShikimoriApi {
         @Query("limit") limit: Int = 30,
     ): List<AnimeShortDto>
 
+    @POST("api/graphql")
+    suspend fun graphql(@Body body: GraphqlRequest): GraphqlAnimesResponse
+
     @POST("api/v2/user_rates")
     suspend fun createUserRate(@Body body: UserRateRequest): UserRateDto
 

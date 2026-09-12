@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.Flow
 interface LibraryRepository {
     fun observeLibrary(): Flow<List<LibraryEntry>>
     fun observeAnime(id: Int): Flow<LibraryEntry?>
+    /** Cached anime card regardless of whether it is in the user's list (search → details). */
+    fun observeAnimeDetails(id: Int): Flow<Anime?>
     /** All user rates with their anime; expensive, call at launch and pull-to-refresh. */
     suspend fun refresh(): Result<Unit>
     /** Details for one anime: description, screenshots, and nextEpisodeAt. */

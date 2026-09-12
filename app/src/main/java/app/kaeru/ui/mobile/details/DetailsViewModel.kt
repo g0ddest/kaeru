@@ -3,6 +3,7 @@ package app.kaeru.ui.mobile.details
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.repository.LibraryRepository
@@ -18,6 +19,8 @@ import javax.inject.Inject
 
 data class DetailsUiState(
     val entry: LibraryEntry? = null,
+    /** Card data for anime that is not (yet) in the user's list; equals `entry.anime` otherwise. */
+    val anime: Anime? = null,
     val refreshing: Boolean = true,
     val updatingStatus: Boolean = false,
     val errorMessage: String? = null,
@@ -30,8 +33,10 @@ class DetailsViewModel @Inject constructor(
 ) : ViewModel() {
     private val animeId: Int = checkNotNull(savedStateHandle["animeId"])
     private val work = MutableStateFlow(DetailsUiState())
-    val uiState: StateFlow<DetailsUiState> = combine(repository.observeAnime(animeId), work) { entry, state ->
-        state.copy(entry = entry)
+    val uiState: StateFlow<DetailsUiState> = combine(
+        repository.observeAnime(animeId), repository.observeAnimeDetails(animeId), work,
+    ) { entry, details, state ->
+        state.copy(entry = entry, anime = entry?.anime ?: details)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, DetailsUiState())
 
     init { refresh() }

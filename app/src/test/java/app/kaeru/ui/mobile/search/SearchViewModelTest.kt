@@ -26,6 +26,7 @@ class SearchViewModelTest {
         var status: Pair<Int, ListStatus>? = null
         override fun observeLibrary(): Flow<List<LibraryEntry>> = MutableStateFlow(emptyList())
         override fun observeAnime(id: Int): Flow<LibraryEntry?> = MutableStateFlow(null)
+        override fun observeAnimeDetails(id: Int): Flow<Anime?> = MutableStateFlow(null)
         override suspend fun refresh() = Result.success(Unit)
         override suspend fun refreshAnime(id: Int) = Result.success(Unit)
         override suspend fun search(query: String): Result<List<Anime>> { this.query = query; return Result.success(listOf(result)) }

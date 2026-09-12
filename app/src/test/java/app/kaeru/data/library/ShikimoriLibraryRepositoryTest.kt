@@ -95,6 +95,17 @@ class ShikimoriLibraryRepositoryTest {
     }
 
     @Test
+    fun `posters hidden by REST are replaced from GraphQL`() = scope.runTest {
+        api.rates["watching"] = mutableListOf(api.rate(1, 500, "watching", 1))
+        api.animes[500] = api.short(500).copy(image = ImageDto("/assets/globals/missing_original.jpg", "/assets/globals/missing_preview.jpg"))
+        api.posters[500] = "https://shikimori.io/uploads/poster/animes/500/main-abc.webp"
+        repo.refresh().getOrThrow()
+        val entry = repo.observeLibrary().first().single()
+        assertEquals("https://shikimori.io/uploads/poster/animes/500/main-abc.webp", entry.anime.posterUrl)
+        assertEquals(1, api.graphqlQueries.size)
+    }
+
+    @Test
     fun `refresh loads rates animes and separate details for ongoing watching`() = scope.runTest {
         seedWatching()
         repo.refresh().getOrThrow()

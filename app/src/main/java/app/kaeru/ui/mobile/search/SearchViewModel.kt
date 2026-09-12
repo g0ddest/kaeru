@@ -20,12 +20,20 @@ data class SearchUiState(
     val searching: Boolean = false,
     val errorMessage: String? = null,
     val addingAnimeId: Int? = null,
+    /** Ids already in the user's list, so results can show «В списке» instead of «В планы». */
+    val libraryIds: Set<Int> = emptySet(),
 )
 
 @HiltViewModel
 class SearchViewModel @Inject constructor(private val repository: LibraryRepository) : ViewModel() {
     private val mutable = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = mutable
+
+    init {
+        viewModelScope.launch {
+            repository.observeLibrary().collect { entries -> mutable.update { it.copy(libraryIds = entries.map { e -> e.anime.id }.toSet()) } }
+        }
+    }
 
     fun setQuery(value: String) = mutable.update { it.copy(query = value) }
     fun useRecent(value: String) { setQuery(value); submit() }

@@ -51,7 +51,7 @@ fun MobileShell(onLogout: () -> Unit, nav: NavHostController = rememberNavContro
         NavHost(nav, startDestination = Routes.HOME, modifier = Modifier.padding(padding)) {
             composable(Routes.HOME) { val vm: HomeViewModel = hiltViewModel(); HomeScreen(vm.uiState.collectAsStateWithLifecycle().value, vm::refresh) { nav.navigate(Routes.details(it)) } }
             composable(Routes.LIBRARY) { val vm: LibraryViewModel = hiltViewModel(); LibraryScreen(vm.uiState.collectAsStateWithLifecycle().value, vm::selectStatus, vm::selectSort, onLogout) { nav.navigate(Routes.details(it)) } }
-            composable(Routes.SEARCH) { val vm: SearchViewModel = hiltViewModel(); SearchScreen(vm.uiState.collectAsStateWithLifecycle().value, vm::setQuery, vm::submit, vm::useRecent, vm::addToPlanned) }
+            composable(Routes.SEARCH) { val vm: SearchViewModel = hiltViewModel(); SearchScreen(vm.uiState.collectAsStateWithLifecycle().value, vm::setQuery, vm::submit, vm::useRecent, vm::addToPlanned) { nav.navigate(Routes.details(it)) } }
             composable(Routes.DETAILS, arguments = listOf(navArgument("animeId") { type = NavType.IntType })) { entry ->
                 val vm: DetailsViewModel = hiltViewModel(entry)
                 DetailsScreen(vm.uiState.collectAsStateWithLifecycle().value, { nav.popBackStack() }, vm::refresh, vm::setStatus)

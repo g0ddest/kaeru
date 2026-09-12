@@ -83,6 +83,29 @@ data class UserRatePayload(
     val episodes: Int? = null,
 )
 
+/** Shikimori's REST `image` is a legacy field that returns a placeholder for newer titles; GraphQL has the real poster. */
+@Serializable
+data class GraphqlRequest(val query: String)
+
+@Serializable
+data class GraphqlPosterDto(@SerialName("mainUrl") val mainUrl: String? = null, @SerialName("originalUrl") val originalUrl: String? = null)
+
+@Serializable
+data class GraphqlAnimeDto(val id: String, val poster: GraphqlPosterDto? = null)
+
+@Serializable
+data class GraphqlAnimesData(val animes: List<GraphqlAnimeDto> = emptyList())
+
+@Serializable
+data class GraphqlAnimesResponse(val data: GraphqlAnimesData? = null)
+
+const val MISSING_POSTER_MARKER = "missing_original"
+
+fun isMissingPoster(url: String?): Boolean = url == null || url.contains(MISSING_POSTER_MARKER)
+
+fun postersQuery(ids: List<Int>): GraphqlRequest =
+    GraphqlRequest("{ animes(ids: \"${ids.joinToString(",")}\", limit: 50) { id poster { mainUrl originalUrl } } }")
+
 @Serializable
 data class UserRateRequest(
     @SerialName("user_rate") val userRate: UserRatePayload,

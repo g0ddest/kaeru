@@ -29,7 +29,8 @@ fun DetailsScreen(
     onStatus: (ListStatus) -> Unit,
 ) {
     val entry = state.entry
-    if (entry == null) {
+    val anime = state.anime
+    if (anime == null) {
         // Nothing cached for this anime: show progress only while a load is actually running,
         // then the failure and a retry. The back button is always there so this is never a dead end.
         Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -46,7 +47,6 @@ fun DetailsScreen(
         }
         return
     }
-    val anime = entry.anime
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
         Button(onClick = onBack) { Text("Назад") }
         Row(Modifier.padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -64,10 +64,14 @@ fun DetailsScreen(
         Text("Список", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 24.dp, bottom = 8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(ListStatus.WATCHING to "Смотрю", ListStatus.PLANNED to "В планах", ListStatus.COMPLETED to "Завершено").forEach { (status, label) ->
-                FilterChip(selected = entry.rate.status == status, onClick = { onStatus(status) }, enabled = !state.updatingStatus, label = { Text(label) })
+                FilterChip(selected = entry?.rate?.status == status, onClick = { onStatus(status) }, enabled = !state.updatingStatus, label = { Text(label) })
             }
         }
-        Text("Просмотрено ${entry.rate.episodes} из ${anime.availableEpisodes}", modifier = Modifier.padding(top = 16.dp))
+        if (entry != null) {
+            Text("Просмотрено ${entry.rate.episodes} из ${anime.availableEpisodes}", modifier = Modifier.padding(top = 16.dp))
+        } else {
+            Text("Не в списке. Выберите статус, чтобы добавить", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 16.dp))
+        }
         anime.description?.takeIf { it.isNotBlank() }?.let {
             Text("Описание", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 24.dp, bottom = 8.dp))
             Text(it)

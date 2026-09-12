@@ -28,12 +28,14 @@ class DetailsViewModelTest {
         null,
     )
 
-    private class FakeRepository(initial: LibraryEntry) : LibraryRepository {
+    private class FakeRepository(initial: LibraryEntry?) : LibraryRepository {
         val entry = MutableStateFlow<LibraryEntry?>(initial)
         var refreshed: Int? = null
         var statusChange: Pair<Int, ListStatus>? = null
         override fun observeLibrary(): Flow<List<LibraryEntry>> = MutableStateFlow(listOfNotNull(entry.value))
         override fun observeAnime(id: Int): Flow<LibraryEntry?> = entry
+        val details = MutableStateFlow<Anime?>(null)
+        override fun observeAnimeDetails(id: Int): Flow<Anime?> = details
         override suspend fun refresh() = Result.success(Unit)
         override suspend fun refreshAnime(id: Int): Result<Unit> { refreshed = id; return Result.success(Unit) }
         override suspend fun search(query: String) = Result.success(emptyList<Anime>())
@@ -56,5 +58,15 @@ class DetailsViewModelTest {
         advanceUntilIdle()
         assertEquals(7 to ListStatus.PLANNED, repo.statusChange)
         assertFalse(vm.uiState.value.updatingStatus)
+    }
+
+    @Test
+    fun `anime outside the list is shown from cached details without an entry`() = runTest(main.dispatcher) {
+        val repo = FakeRepository(null)
+        repo.details.value = item.anime
+        val vm = DetailsViewModel(SavedStateHandle(mapOf("animeId" to 7)), repo)
+        advanceUntilIdle()
+        assertEquals(null, vm.uiState.value.entry)
+        assertEquals("Фрирен", vm.uiState.value.anime?.title)
     }
 }

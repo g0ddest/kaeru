@@ -7,6 +7,8 @@ import app.kaeru.data.local.WatchStateDao
 import app.kaeru.data.local.mergeShort
 import app.kaeru.data.local.toEntity
 import app.kaeru.data.shikimori.ShikimoriApi
+import app.kaeru.data.shikimori.isMissingPoster
+import app.kaeru.data.shikimori.postersQuery
 import app.kaeru.data.shikimori.UserRatePayload
 import app.kaeru.data.shikimori.UserRateRequest
 import app.kaeru.data.shikimori.toDomain
@@ -73,6 +75,8 @@ class ShikimoriLibraryRepository @Inject constructor(
     override fun observeAnime(id: Int): Flow<LibraryEntry?> =
         observeLibrary().map { entries -> entries.firstOrNull { it.anime.id == id } }
 
+    override fun observeAnimeDetails(id: Int): Flow<Anime?> = animeDao.observeById(id).map { it?.toDomain() }
+
     /**
      * All statuses are synced until the later WorkManager split. A failed list/card fetch leaves
      * rates untouched. A failed detail enrichment retains the refreshed rates and old details,
@@ -84,7 +88,7 @@ class ShikimoriLibraryRepository @Inject constructor(
         val cached = ids.chunked(50).flatMap { animeDao.getByIds(it) }.associateBy { it.id }
         val fresh = ids.chunked(50).flatMap { batch ->
             api.animesByIds(batch.joinToString(","), limit = 50).map { it.toDomain() }
-        }
+        }.withRealPosters()
         animeDao.upsertAll(fresh.map { anime ->
             cached[anime.id]?.mergeShort(anime) ?: anime.toEntity(detailsFetchedAt = null)
         })
@@ -117,12 +121,31 @@ class ShikimoriLibraryRepository @Inject constructor(
     private suspend fun fetchDetails(id: Int) {
         val dto = api.anime(id)
         // Both requests must succeed before replacing the cached detail row or its freshness.
-        val details = dto.copy(screenshots = api.screenshots(id)).toDomain()
+        val details = listOf(dto.copy(screenshots = api.screenshots(id)).toDomain()).withRealPosters().single()
         animeDao.upsertAll(listOf(details.toEntity(detailsFetchedAt = clock.instant())))
     }
 
     override suspend fun search(query: String): Result<List<Anime>> = onIo {
-        api.search(query).map { it.toDomain() }
+        api.search(query).map { it.toDomain() }.withRealPosters()
+    }
+
+    /**
+     * REST `image` is a legacy field: for titles added after Shikimori's poster migration it returns
+     * `missing_original.jpg`. GraphQL carries the real poster, so fetch it in batches of 50 and prefer
+     * it. Posters are cosmetic: a failed GraphQL call keeps whatever REST returned.
+     */
+    private suspend fun List<Anime>.withRealPosters(): List<Anime> {
+        if (isEmpty()) return this
+        val posters = map { it.id }.chunked(50).flatMap { batch ->
+            runCatching { api.graphql(postersQuery(batch)).data?.animes.orEmpty() }.getOrDefault(emptyList())
+        }.mapNotNull { dto ->
+            val url = dto.poster?.mainUrl ?: dto.poster?.originalUrl ?: return@mapNotNull null
+            dto.id.toIntOrNull()?.let { it to url }
+        }.toMap()
+        return map { anime ->
+            val real = posters[anime.id]
+            if (real != null && (isMissingPoster(anime.posterUrl) || real != anime.posterUrl)) anime.copy(posterUrl = real) else anime
+        }
     }
 
     override suspend fun setStatus(animeId: Int, status: ListStatus): Result<Unit> = accountWrite { userId ->

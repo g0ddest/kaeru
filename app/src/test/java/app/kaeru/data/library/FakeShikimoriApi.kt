@@ -2,6 +2,11 @@ package app.kaeru.data.library
 
 import app.kaeru.data.shikimori.AnimeDetailsDto
 import app.kaeru.data.shikimori.AnimeShortDto
+import app.kaeru.data.shikimori.GraphqlAnimeDto
+import app.kaeru.data.shikimori.GraphqlAnimesData
+import app.kaeru.data.shikimori.GraphqlAnimesResponse
+import app.kaeru.data.shikimori.GraphqlPosterDto
+import app.kaeru.data.shikimori.GraphqlRequest
 import app.kaeru.data.shikimori.ImageDto
 import app.kaeru.data.shikimori.ScreenshotDto
 import app.kaeru.data.shikimori.ShikimoriApi
@@ -71,6 +76,15 @@ class FakeShikimoriApi : ShikimoriApi {
     override suspend fun search(query: String, limit: Int): List<AnimeShortDto> {
         record("search:$query")
         return animes.values.filter { it.name.contains(query, true) }.take(limit)
+    }
+
+    /** GraphQL poster answers keyed by anime id; ids are parsed from the query text. */
+    val posters = mutableMapOf<Int, String>()
+    val graphqlQueries = mutableListOf<String>()
+    override suspend fun graphql(body: GraphqlRequest): GraphqlAnimesResponse {
+        graphqlQueries += body.query
+        val ids = Regex("ids: \\\"([0-9,]+)\\\"").find(body.query)?.groupValues?.get(1)?.split(",")?.mapNotNull { it.toIntOrNull() }.orEmpty()
+        return GraphqlAnimesResponse(GraphqlAnimesData(ids.mapNotNull { id -> posters[id]?.let { GraphqlAnimeDto(id.toString(), GraphqlPosterDto(mainUrl = it)) } }))
     }
 
     override suspend fun createUserRate(body: UserRateRequest): UserRateDto {

@@ -1,5 +1,6 @@
 package app.kaeru.ui.mobile.search
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,7 +26,14 @@ import androidx.compose.ui.unit.dp
 import app.kaeru.ui.common.Poster
 
 @Composable
-fun SearchScreen(state: SearchUiState, onQuery: (String) -> Unit, onSubmit: () -> Unit, onRecent: (String) -> Unit, onPlanned: (Int) -> Unit) {
+fun SearchScreen(
+    state: SearchUiState,
+    onQuery: (String) -> Unit,
+    onSubmit: () -> Unit,
+    onRecent: (String) -> Unit,
+    onPlanned: (Int) -> Unit,
+    onOpen: (Int) -> Unit,
+) {
     val focus = LocalFocusManager.current
     Column(Modifier.fillMaxSize()) {
         Text("Поиск", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(16.dp))
@@ -52,10 +60,14 @@ fun SearchScreen(state: SearchUiState, onQuery: (String) -> Unit, onSubmit: () -
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             items(state.results, key = { it.id }) { anime ->
-                Column {
+                val inLibrary = anime.id in state.libraryIds
+                Column(Modifier.clickable { onOpen(anime.id) }) {
                     Poster(anime.posterUrl, anime.title, Modifier.fillMaxWidth().aspectRatio(2f / 3f))
                     Text(anime.title, maxLines = 2)
-                    Button(onClick = { onPlanned(anime.id) }, enabled = state.addingAnimeId != anime.id) { Text("В планы") }
+                    Button(
+                        onClick = { onPlanned(anime.id) },
+                        enabled = !inLibrary && state.addingAnimeId != anime.id,
+                    ) { Text(if (inLibrary) "В списке ✓" else if (state.addingAnimeId == anime.id) "Добавляем…" else "В планы") }
                 }
             }
         }

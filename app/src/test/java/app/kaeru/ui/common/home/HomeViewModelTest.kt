@@ -35,6 +35,7 @@ class HomeViewModelTest {
         var refreshResult: Result<Unit> = Result.success(Unit)
         var refreshCalls = 0
         override fun observeLibrary(): Flow<List<LibraryEntry>> = entries
+        override fun observeAnimeDetails(id: Int): Flow<Anime?> = MutableStateFlow(null)
         override fun observeAnime(id: Int): Flow<LibraryEntry?> =
             MutableStateFlow(entries.value.firstOrNull { it.anime.id == id })
         override suspend fun refresh(): Result<Unit> { refreshCalls++; return refreshResult }
