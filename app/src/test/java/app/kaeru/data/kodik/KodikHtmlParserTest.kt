@@ -47,6 +47,15 @@ class KodikHtmlParserTest {
     }
 
     @Test
+    fun `parse decodes html entities in translation titles`() {
+        val page = KodikHtmlParser.parse(fixture("player.html"))
+
+        val translation = page.translations.first { it.id == 2821 }
+        assertTrue(translation.title.startsWith("AEROChannelEkat & Risha"))
+        assertTrue(!translation.title.contains("&amp;"))
+    }
+
+    @Test
     fun `parse extracts subtitle translations`() {
         val page = KodikHtmlParser.parse(fixture("player.html"))
 
@@ -91,5 +100,26 @@ class KodikHtmlParserTest {
     fun `extractPublicToken returns null when no token present`() {
         val token = KodikHtmlParser.extractPublicToken("var x = 1;")
         assertNull(token)
+    }
+
+    @Test
+    fun `decodeHtmlEntities decodes named entities`() {
+        assertEquals(
+            "A & B < C > D \" E ' F",
+            KodikHtmlParser.decodeHtmlEntities("A &amp; B &lt; C &gt; D &quot; E &apos; F"),
+        )
+    }
+
+    @Test
+    fun `decodeHtmlEntities decodes decimal and hex numeric entities`() {
+        assertEquals("A", KodikHtmlParser.decodeHtmlEntities("&#65;"))
+        assertEquals("A", KodikHtmlParser.decodeHtmlEntities("&#x41;"))
+        assertEquals("A", KodikHtmlParser.decodeHtmlEntities("&#X41;"))
+    }
+
+    @Test
+    fun `decodeHtmlEntities leaves plain text and unknown entities untouched`() {
+        assertEquals("plain text", KodikHtmlParser.decodeHtmlEntities("plain text"))
+        assertEquals("&notareal;", KodikHtmlParser.decodeHtmlEntities("&notareal;"))
     }
 }

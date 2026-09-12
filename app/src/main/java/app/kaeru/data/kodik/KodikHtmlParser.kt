@@ -48,8 +48,16 @@ object KodikHtmlParser {
     private val attrRegex = Regex("([a-zA-Z][a-zA-Z0-9-]*)\\s*=\\s*\"([^\"]*)\"")
     private val episodeCountInTextRegex = Regex("""\((\d+)\s*эп\.\)""")
     private val trailingEpisodeCountRegex = Regex("""\s*\(\d+\s*эп\.\)\s*$""")
-    private val atobRegex = Regex("""atob\("([^"]*)"\)""")
+    private val atobRegex = Regex("""atob\(["']([^"']*)["']\)""")
     private val tokenRegex = Regex("""token\s*=\s*"([a-z0-9]+)"""")
+    private val entityRegex = Regex("&(#[xX][0-9a-fA-F]+|#[0-9]+|[a-zA-Z][a-zA-Z0-9]*);")
+    private val namedEntities = mapOf(
+        "amp" to "&",
+        "lt" to "<",
+        "gt" to ">",
+        "quot" to "\"",
+        "apos" to "'",
+    )
 
     /** Throws KodikError.ParserBroken(step) naming the first missing piece. */
     fun parse(html: String): KodikPlayerPage {
@@ -94,8 +102,28 @@ object KodikHtmlParser {
         regex.find(html)?.groupValues?.get(1) ?: throw KodikError.ParserBroken(step)
 
     private fun boxSelectContent(html: String, boxClass: String): String? {
-        val boxRegex = Regex("<div\\s+class=\"$boxClass\">[\\s\\S]*?<select>([\\s\\S]*?)</select>")
+        val escaped = Regex.escape(boxClass)
+        val boxRegex = Regex("<div\\s+class=\"[^\"]*\\b$escaped\\b[^\"]*\"[^>]*>[\\s\\S]*?<select>([\\s\\S]*?)</select>")
         return boxRegex.find(html)?.groupValues?.get(1)
+    }
+
+    /**
+     * Decodes the handful of HTML entities that appear in Kodik's option text
+     * and `data-title` attributes (e.g. `&amp;` in translator names): the five
+     * named entities, decimal `&#NNN;`, and hex `&#xHH;`. Pure and Android-free.
+     */
+    internal fun decodeHtmlEntities(text: String): String {
+        if (!text.contains('&')) return text
+        return entityRegex.replace(text) { match ->
+            val body = match.groupValues[1]
+            when {
+                body.startsWith("#x", ignoreCase = true) ->
+                    body.substring(2).toIntOrNull(16)?.let { String(Character.toChars(it)) } ?: match.value
+                body.startsWith("#") ->
+                    body.substring(1).toIntOrNull()?.let { String(Character.toChars(it)) } ?: match.value
+                else -> namedEntities[body.lowercase()] ?: match.value
+            }
+        }
     }
 
     private fun attributesOf(tag: String): Map<String, String> =
@@ -116,7 +144,7 @@ object KodikHtmlParser {
             }
             val episodesCount = attrs["data-episode-count"]?.toIntOrNull()
                 ?: episodeCountInTextRegex.find(text)?.groupValues?.get(1)?.toIntOrNull()
-            val title = attrs["data-title"] ?: text.replace(trailingEpisodeCountRegex, "")
+            val title = decodeHtmlEntities(attrs["data-title"] ?: text.replace(trailingEpisodeCountRegex, ""))
             KodikTranslationOption(id, title, type, episodesCount, mediaId, mediaHash)
         }.toList()
     }
@@ -128,7 +156,7 @@ object KodikHtmlParser {
             val number = attrs["value"]?.toIntOrNull() ?: return@mapNotNull null
             val mediaId = attrs["data-id"] ?: return@mapNotNull null
             val mediaHash = attrs["data-hash"] ?: return@mapNotNull null
-            KodikEpisodeOption(number, mediaId, mediaHash, attrs["data-title"])
+            KodikEpisodeOption(number, mediaId, mediaHash, attrs["data-title"]?.let { decodeHtmlEntities(it) })
         }.toList()
     }
 
