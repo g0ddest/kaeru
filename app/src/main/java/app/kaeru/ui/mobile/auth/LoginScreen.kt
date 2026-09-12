@@ -17,8 +17,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.kaeru.ui.common.auth.AuthUiState
 
+/** [authorizeUrl] arms a fresh OAuth `state`, so it is called per sign-in attempt. */
 @Composable
-fun LoginScreen(authorizeUrl: String, state: AuthUiState) {
+fun LoginScreen(authorizeUrl: () -> String, state: AuthUiState) {
     val context = LocalContext.current
     Column(
         Modifier.fillMaxSize().padding(32.dp),
@@ -32,7 +33,7 @@ fun LoginScreen(authorizeUrl: String, state: AuthUiState) {
             modifier = Modifier.padding(vertical = 24.dp),
         )
         Button(
-            onClick = { CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(authorizeUrl)) },
+            onClick = { CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(authorizeUrl())) },
             enabled = !state.exchanging,
         ) { Text(if (state.exchanging) "Проверяем код…" else "Войти через Shikimori") }
         state.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 16.dp)) }

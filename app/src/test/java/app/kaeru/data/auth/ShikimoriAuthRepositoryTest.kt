@@ -15,6 +15,7 @@ import kotlinx.coroutines.cancel
 import okhttp3.OkHttpClient
 import app.kaeru.data.shikimori.ShikimoriOAuthApi
 import app.kaeru.data.shikimori.shikimoriJson
+import app.kaeru.domain.error.AuthCallbackRejected
 import app.kaeru.domain.repository.MOBILE_REDIRECT
 import app.kaeru.domain.repository.OOB_REDIRECT
 import kotlinx.coroutines.test.runTest
@@ -24,6 +25,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -78,9 +80,81 @@ class ShikimoriAuthRepositoryTest {
 
     @Test
     fun `authorize url contains client id redirect and scope`() {
+        val url = repo.authorizeUrl(MOBILE_REDIRECT).toHttpUrl()
+        assertEquals("https://shikimori.one/oauth/authorize", "${url.scheme}://${url.host}${url.encodedPath}")
+        assertEquals("cid", url.queryParameter("client_id"))
+        assertEquals(MOBILE_REDIRECT, url.queryParameter("redirect_uri"))
+        assertEquals("code", url.queryParameter("response_type"))
+        assertEquals("user_rates", url.queryParameter("scope"))
+    }
+
+    @Test
+    fun `authorize url carries a fresh unguessable state per attempt`() {
+        val first = requireNotNull(repo.authorizeUrl(MOBILE_REDIRECT).toHttpUrl().queryParameter("state"))
+        val second = requireNotNull(repo.authorizeUrl(MOBILE_REDIRECT).toHttpUrl().queryParameter("state"))
+        assertTrue(first.length >= 32)
+        assertNotEquals(first, second)
+    }
+
+    @Test
+    fun `callback with a matching state signs the account in`() = runTest {
+        enqueueTokens()
+        val state = pendingState()
+        assertTrue(repo.exchangeRedirectCode("abc", state).isSuccess)
+        assertEquals(42L, store.get()?.userId)
+    }
+
+    @Test
+    fun `callback with a wrong or missing state never reaches the oauth api`() = runTest {
+        pendingState()
+        assertRejected(repo.exchangeRedirectCode("attacker", "not-the-state"))
+        pendingState()
+        assertRejected(repo.exchangeRedirectCode("attacker", null))
+        assertEquals(0, server.requestCount)
+        assertNull(store.get())
+    }
+
+    @Test
+    fun `callback without an authorization started from this app is rejected`() = runTest {
+        assertRejected(repo.exchangeRedirectCode("attacker", "guessed"))
+        assertEquals(0, server.requestCount)
+        assertNull(store.get())
+    }
+
+    @Test
+    fun `a state is single use so a replayed callback is rejected`() = runTest {
+        enqueueTokens()
+        val state = pendingState()
+        assertTrue(repo.exchangeRedirectCode("abc", state).isSuccess)
+        repo.logout()
+        assertRejected(repo.exchangeRedirectCode("abc", state))
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `callback while an account is signed in cannot switch accounts`() = runTest {
+        enqueueTokens()
+        assertTrue(repo.exchangeRedirectCode("abc", pendingState()).isSuccess)
+        val before = store.get()
+        val replay = pendingState()
+        assertRejected(repo.exchangeRedirectCode("attacker", replay))
+        assertEquals(before, store.get())
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `blank callback code is rejected without an exchange`() = runTest {
+        assertRejected(repo.exchangeRedirectCode("", pendingState()))
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun `typed OOB code is exchanged without a state`() = runTest {
+        enqueueTokens()
+        assertTrue(repo.exchangeTypedCode("  typed-code  ").isSuccess)
         assertEquals(
-            "https://shikimori.one/oauth/authorize?client_id=cid&redirect_uri=kaeru%3A%2F%2Foauth&response_type=code&scope=user_rates",
-            repo.authorizeUrl(MOBILE_REDIRECT),
+            "grant_type=authorization_code&client_id=cid&client_secret=sec&code=typed-code&redirect_uri=urn%3Aietf%3Awg%3Aoauth%3A2.0%3Aoob",
+            server.takeRequest().body.readUtf8(),
         )
     }
 
@@ -147,6 +221,13 @@ class ShikimoriAuthRepositoryTest {
             assertEquals(false, awaitItem())
         }
         assertNull(store.get())
+    }
+
+    private fun pendingState(): String =
+        requireNotNull(repo.authorizeUrl(MOBILE_REDIRECT).toHttpUrl().queryParameter("state"))
+
+    private fun assertRejected(result: Result<Unit>) {
+        assertTrue(result.exceptionOrNull() is AuthCallbackRejected)
     }
 
     private fun enqueueTokens() {

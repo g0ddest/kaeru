@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import app.kaeru.domain.repository.AuthRepository
 import app.kaeru.domain.repository.MOBILE_REDIRECT
 import app.kaeru.domain.repository.OOB_REDIRECT
+import app.kaeru.ui.common.errorMessageOrNull
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -21,11 +22,15 @@ data class AuthUiState(
     val errorMessage: String? = null,
 )
 
+private const val NO_CODE = "Shikimori не вернул код. Попробуйте войти ещё раз"
+private const val ALREADY_SIGNED_IN = "Вход уже выполнен. Запрос авторизации отклонён"
+
 @HiltViewModel
 class AuthViewModel @Inject constructor(private val repository: AuthRepository) : ViewModel() {
     private val exchanging = MutableStateFlow(false)
     private val error = MutableStateFlow<String?>(null)
-    val mobileAuthorizeUrl: String = repository.authorizeUrl(MOBILE_REDIRECT)
+
+    /** The TV code is typed by the user, so one QR for the lifetime of the screen is enough. */
     val tvAuthorizeUrl: String = repository.authorizeUrl(OOB_REDIRECT)
 
     val uiState: StateFlow<AuthUiState> = combine(
@@ -35,17 +40,38 @@ class AuthViewModel @Inject constructor(private val repository: AuthRepository) 
     ) { loggedIn, busy, message -> AuthUiState(loggedIn, busy, message) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, AuthUiState())
 
-    fun exchangeMobileCode(code: String, consumed: () -> Unit) = exchange(code, MOBILE_REDIRECT, consumed)
-    fun exchangeTvCode(code: String) = exchange(code.trim(), OOB_REDIRECT) {}
+    /** Call per sign-in attempt: every call arms a new `state` for the callback to echo. */
+    fun mobileAuthorizeUrl(): String = repository.authorizeUrl(MOBILE_REDIRECT)
 
-    private fun exchange(code: String, redirect: String, consumed: () -> Unit) {
-        if (code.isBlank() || exchanging.value) return
+    /**
+     * Handles one `kaeru://oauth` deep link. Anything can fire that link, so the callback is
+     * always consumed but only exchanged when it plausibly belongs to a sign-in we started; the
+     * repository then has the final say on whether its `state` matches.
+     */
+    fun onMobileCallback(code: String?, state: String?, consumed: () -> Unit) {
+        if (exchanging.value) return
         consumed()
+        if (uiState.value.loggedIn == true) {
+            error.value = ALREADY_SIGNED_IN
+            return
+        }
+        if (code.isNullOrBlank()) {
+            error.value = NO_CODE
+            return
+        }
+        exchange { repository.exchangeRedirectCode(code, state) }
+    }
+
+    fun exchangeTvCode(code: String) {
+        if (code.isBlank() || exchanging.value) return
+        exchange { repository.exchangeTypedCode(code) }
+    }
+
+    private fun exchange(block: suspend () -> Result<Unit>) {
         viewModelScope.launch {
             exchanging.value = true
             error.value = null
-            val result = repository.exchangeCode(code, redirect)
-            error.value = result.exceptionOrNull()?.message ?: result.exceptionOrNull()?.let { "Не удалось войти" }
+            error.value = block().errorMessageOrNull()
             exchanging.value = false
         }
     }

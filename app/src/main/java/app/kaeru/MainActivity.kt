@@ -1,6 +1,7 @@
 package app.kaeru
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -10,31 +11,38 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import app.kaeru.ui.mobile.MobileApp
+import app.kaeru.ui.mobile.OAuthCallback
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-    private var pendingAuthCode by mutableStateOf<String?>(null)
+    private var pendingCallback by mutableStateOf<OAuthCallback?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        readAuthCode(intent)
+        readAuthCallback(intent)
         setContent {
-            MobileApp(pendingAuthCode = pendingAuthCode, onAuthCodeConsumed = { pendingAuthCode = null })
+            MobileApp(callback = pendingCallback, onCallbackConsumed = { pendingCallback = null })
         }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        readAuthCode(intent)
+        readAuthCallback(intent)
     }
 
-    private fun readAuthCode(intent: Intent?) {
-        if (intent?.data?.scheme == "kaeru" && intent.data?.host == "oauth") {
-            pendingAuthCode = intent.data?.getQueryParameter("code")
-        }
+    /**
+     * Reads one `kaeru://oauth` callback and strips it from the intent, so a recreation (rotation,
+     * process restart) cannot replay it. Validation of `state` belongs to the auth layer: this
+     * only carries the parameters across.
+     */
+    private fun readAuthCallback(intent: Intent?) {
+        val data: Uri = intent?.data ?: return
+        if (data.scheme != "kaeru" || data.host != "oauth") return
+        pendingCallback = OAuthCallback(data.getQueryParameter("code"), data.getQueryParameter("state"))
+        intent.data = null
     }
 }
