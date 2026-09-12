@@ -4,7 +4,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-const val SHIKIMORI_BASE_URL = "https://shikimori.one/"
+const val SHIKIMORI_BASE_URL = "https://shikimori.io/"
 
 fun shikimoriJson(): Json = Json {
     ignoreUnknownKeys = true

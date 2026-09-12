@@ -64,7 +64,7 @@ class HomeViewModelTest {
     fun `failed refresh keeps cached feed and exposes retryable error`() = runTest(main.dispatcher) {
         val repo = FakeLibraryRepository().also {
             it.entries.value = listOf(entry())
-            it.refreshResult = Result.failure(NetworkUnavailable(UnknownHostException("shikimori.one")))
+            it.refreshResult = Result.failure(NetworkUnavailable(UnknownHostException("shikimori.io")))
         }
         val vm = HomeViewModel(repo, HomeFeedBuilder(), Clock.fixed(now, ZoneOffset.UTC))
         advanceUntilIdle()

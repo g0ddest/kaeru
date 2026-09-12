@@ -22,7 +22,7 @@ class RateLimitInterceptorTest {
     )
 
     private fun call() {
-        val request = Request.Builder().url("https://shikimori.one/api/x").build()
+        val request = Request.Builder().url("https://shikimori.io/api/x").build()
         val chain = object : Interceptor.Chain {
             override fun request() = request
             override fun proceed(request: Request) =

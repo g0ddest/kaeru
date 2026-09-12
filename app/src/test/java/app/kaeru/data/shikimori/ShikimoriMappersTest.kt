@@ -24,7 +24,7 @@ class ShikimoriMappersTest {
 
         val anime = dto.toDomain()
 
-        assertEquals("https://shikimori.one/system/animes/original/1.jpg", anime.posterUrl)
+        assertEquals("https://shikimori.io/system/animes/original/1.jpg", anime.posterUrl)
         assertEquals(AnimeStatus.ONGOING, anime.status)
         assertEquals(2026, anime.year)
         assertEquals(8.1, anime.score!!, 0.001)
@@ -52,7 +52,7 @@ class ShikimoriMappersTest {
 
         assertEquals(Instant.parse("2026-09-14T14:00:00Z"), anime.nextEpisodeAt)
         assertEquals("MAPPA", anime.studio)
-        assertEquals(listOf("https://shikimori.one/s1.jpg"), anime.screenshotUrls)
+        assertEquals(listOf("https://shikimori.io/s1.jpg"), anime.screenshotUrls)
         assertEquals(null, anime.score)
         assertEquals(AnimeStatus.ANONS, anime.status)
     }
@@ -98,7 +98,7 @@ class ShikimoriMappersTest {
         ).toDomain()
 
         assertEquals("https://cdn.example/poster.jpg", absolutePoster.posterUrl)
-        assertEquals("https://shikimori.one/images/poster.jpg", relativePoster.posterUrl)
+        assertEquals("https://shikimori.io/images/poster.jpg", relativePoster.posterUrl)
     }
 
     @Test

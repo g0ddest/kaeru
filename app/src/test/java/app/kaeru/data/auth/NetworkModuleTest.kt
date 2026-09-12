@@ -83,7 +83,7 @@ class NetworkModuleTest {
             val failures = ConcurrentLinkedQueue<IOException>()
             try {
                 repeat(slots + 1) {
-                    authenticated.newCall(Request.Builder().url("https://shikimori.one/api/users/whoami").build())
+                    authenticated.newCall(Request.Builder().url("https://shikimori.io/api/users/whoami").build())
                         .enqueue(object : Callback {
                             override fun onFailure(call: Call, e: IOException) {
                                 failures.add(e)

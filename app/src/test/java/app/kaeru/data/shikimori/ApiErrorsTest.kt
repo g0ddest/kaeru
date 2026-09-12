@@ -39,7 +39,7 @@ class ApiErrorsTest {
     }
 
     private fun httpException(code: Int): HttpException {
-        val request = Request.Builder().url("https://shikimori.one/api/animes").build()
+        val request = Request.Builder().url("https://shikimori.io/api/animes").build()
         val raw = Response.Builder()
             .request(request).protocol(Protocol.HTTP_1_1).code(code).message("error").build()
         return HttpException(retrofit2.Response.error<Unit>("".toResponseBody("application/json".toMediaType()), raw))

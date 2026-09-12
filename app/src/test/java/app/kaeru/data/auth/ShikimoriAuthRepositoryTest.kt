@@ -81,7 +81,7 @@ class ShikimoriAuthRepositoryTest {
     @Test
     fun `authorize url contains client id redirect and scope`() {
         val url = repo.authorizeUrl(MOBILE_REDIRECT).toHttpUrl()
-        assertEquals("https://shikimori.one/oauth/authorize", "${url.scheme}://${url.host}${url.encodedPath}")
+        assertEquals("https://shikimori.io/oauth/authorize", "${url.scheme}://${url.host}${url.encodedPath}")
         assertEquals("cid", url.queryParameter("client_id"))
         assertEquals(MOBILE_REDIRECT, url.queryParameter("redirect_uri"))
         assertEquals("code", url.queryParameter("response_type"))

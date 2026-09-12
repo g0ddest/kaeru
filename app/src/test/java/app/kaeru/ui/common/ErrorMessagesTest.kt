@@ -13,7 +13,7 @@ import java.net.UnknownHostException
 class ErrorMessagesTest {
     @Test
     fun `network failures read as a connectivity problem`() {
-        assertEquals("Нет соединения. Проверьте интернет", NetworkUnavailable(UnknownHostException("shikimori.one")).toUserMessage())
+        assertEquals("Нет соединения. Проверьте интернет", NetworkUnavailable(UnknownHostException("shikimori.io")).toUserMessage())
         assertEquals("Нет соединения. Проверьте интернет", NetworkUnavailable(SocketTimeoutException("timeout")).toUserMessage())
     }
 

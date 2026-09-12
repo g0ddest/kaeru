@@ -113,7 +113,7 @@ class AuthViewModelTest {
     @Test
     fun `exchange failures are mapped to user copy without logging in`() = runTest(main.dispatcher) {
         val repo = FakeAuthRepository().also {
-            it.exchangeResult = Result.failure(NetworkUnavailable(UnknownHostException("shikimori.one")))
+            it.exchangeResult = Result.failure(NetworkUnavailable(UnknownHostException("shikimori.io")))
         }
         val vm = AuthViewModel(repo)
         val state = vm.mobileAuthorizeUrl().substringAfter("state=")
