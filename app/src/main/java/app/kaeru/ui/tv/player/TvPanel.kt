@@ -94,6 +94,25 @@ internal fun nextWake(atMs: Long?, lastWakeMs: Long): Long? = when {
 }
 
 /**
+ * The panel a key press leaves behind: up, on the rung the press asks for, and its linger timer
+ * restarted if the press is far enough past the last one.
+ *
+ * It takes no list of rungs, and that is the point rather than an omission. What the panel holds is
+ * the rung the *viewer* wants; which rung the D-pad can actually stand on is a separate question,
+ * answered against the content at the moment focus is asked for — see [tvRungOrNearest]. Deciding
+ * it here instead would write an answer about this instant into a value that outlives it: press
+ * anything while the voices are still loading and their strip does not exist yet, so the panel
+ * would settle on the quality row and still be sitting there when the list arrived.
+ *
+ * @param command what the press meant, or null when it meant nothing to the player.
+ * @param atMs the time of the key behind the wake.
+ */
+internal fun tvPanelAfterWake(panel: TvPanel, command: TvPlayerCommand?, atMs: Long): TvPanel {
+    val wanted = (command as? TvPlayerCommand.ShowPanel)?.rung ?: panel.rung
+    return panel.shown(wanted, atMs)
+}
+
+/**
  * Everything the panel draws except the clock.
  *
  * A value, and the whole point of it is what it leaves out. The engine polls the position every

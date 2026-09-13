@@ -83,6 +83,15 @@ internal val LabelColumn = 132.dp
 /** Every chip is the same height, so three rows of different things still read as one column. */
 private val ChipHeight = 58.dp
 
+/**
+ * The margin a strip keeps around its chips, for the six per cent a focused one grows by.
+ *
+ * Named because two places have to agree on it: the loaded row carries it as content padding, and
+ * the row's loading slot carries it as a margin. A strip that used it in one state and not the
+ * other changed the height of the whole panel when the list arrived.
+ */
+private val StripInset = KaeruTokens.Space1
+
 /** Room for a three-digit episode number; a studio name takes as much as it needs up to a cap. */
 private val ChipMinWidth = 72.dp
 private val ChipMaxWidth = 300.dp
@@ -249,7 +258,7 @@ private fun <T : Any> TvStripRow(
             modifier = Modifier.focusGroup(),
             horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space2),
             // The six per cent a focused chip grows by, which the row would otherwise clip.
-            contentPadding = PaddingValues(KaeruTokens.Space1),
+            contentPadding = PaddingValues(StripInset),
         ) {
             items(items, key = key) { item ->
                 chip(
@@ -266,6 +275,11 @@ private fun <T : Any> TvStripRow(
 /**
  * The row's slot while the list is still on its way: a chip-shaped block that holds the row's
  * place in the column, so the panel does not change height under the viewer when it arrives.
+ *
+ * [StripInset] is why this reads as a chip-shaped block with a margin rather than just a chip. A
+ * loaded row is a `LazyRow` carrying that inset as content padding, for the six per cent a focused
+ * chip grows by; without the same inset here the panel stood eight device-independent pixels
+ * shorter while the voices were loading and grew under the viewer when they landed.
  */
 @Composable
 private fun TvStripLoading(label: String, text: String, modifier: Modifier = Modifier) {
@@ -273,6 +287,7 @@ private fun TvStripLoading(label: String, text: String, modifier: Modifier = Mod
         TvStripLabel(label)
         Box(
             Modifier
+                .padding(StripInset)
                 .height(ChipHeight)
                 .clip(KaeruTokens.ButtonShape)
                 .background(KaeruElevated)

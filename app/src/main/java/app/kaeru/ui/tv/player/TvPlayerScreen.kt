@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -37,6 +38,7 @@ import app.kaeru.domain.model.Translation
 import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.design.waitingLabel
 import app.kaeru.ui.common.player.PlayerUiState
+import app.kaeru.ui.tv.claimFocusWhenReady
 import app.kaeru.ui.tv.requestFocusOrLog
 import kotlinx.coroutines.delay
 import java.time.Instant
@@ -86,6 +88,8 @@ fun TvPlayerScreen(
     var tracksAsked by remember { mutableStateOf(false) }
     val rootFocus = remember { FocusRequester() }
     val rungFocus = remember { TvPanelRung.entries.associateWith { FocusRequester() } }
+    /** Whether the player itself holds the D-pad, which is what the claim below waits for. */
+    var rootFocused by remember { mutableStateOf(false) }
 
     // A failure the viewer has answered with «Сменить озвучку»: the message steps aside for the
     // strip — but only once there is a strip to step aside for. [tvShowsFailure] is the rule.
@@ -163,7 +167,12 @@ fun TvPlayerScreen(
                 withFrameNanos { }
                 rungFocus.getValue(tvRungOrNearest(rungs, panel.rung)).requestFocusOrLog("панель плеера")
             }
-            else -> rootFocus.requestFocusOrLog("плеер")
+            // Asked until it lands rather than once. This runs on the frame the panel leaves the
+            // composition, and the chip that had the focus is going down with it — a single ask
+            // can be made before the focus system has finished tidying that up, and then nothing
+            // on screen holds the D-pad and the next press is spent getting it back. That was
+            // back-with-the-strip-up leaving a picture no key seemed to reach.
+            else -> rootFocus.claimFocusWhenReady("плеер") { rootFocused }
         }
     }
     LaunchedEffect(seekAt) {
@@ -221,8 +230,7 @@ fun TvPlayerScreen(
                     repeatCount = event.nativeKeyEvent.repeatCount,
                 )
                 if (action == KeyAction.DOWN && wakesPanel(key, wasVisible)) {
-                    val wanted = (command as? TvPlayerCommand.ShowPanel)?.rung ?: panel.rung
-                    panel = panel.shown(tvRungOrNearest(rungs, wanted), event.nativeKeyEvent.eventTime)
+                    panel = tvPanelAfterWake(panel, command, event.nativeKeyEvent.eventTime)
                     // The jog mark belongs to a clear picture. Press right and then up inside its
                     // second, and it would otherwise sit in the middle of the panel it was
                     // drawn to stand in for.
@@ -242,6 +250,7 @@ fun TvPlayerScreen(
             Modifier.fillMaxSize()
                 .focusRequester(rootFocus)
                 .focusProperties { canFocus = !panelShown && !cardOpen }
+                .onFocusChanged { rootFocused = it.isFocused }
                 .focusable(),
         )
 

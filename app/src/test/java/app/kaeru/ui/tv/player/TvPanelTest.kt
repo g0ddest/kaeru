@@ -250,4 +250,41 @@ class TvPanelTest {
         assertEquals(1_500L, nextWake(atMs = 1_500, lastWakeMs = 1_000))
         assertEquals(4_000L, nextWake(atMs = null, lastWakeMs = 4_000))
     }
+
+    // --- what a key press leaves the panel standing on -----------------------------------------
+
+    @Test
+    fun `a wake that names no rung leaves the panel on the one it was left on`() {
+        val panel = TvPanel(visible = false, rung = TvPanelRung.TRANSLATIONS)
+
+        val woken = tvPanelAfterWake(panel, TvPlayerCommand.SeekBy(10_000), atMs = 1_000)
+
+        assertTrue(woken.visible)
+        assertEquals(TvPanelRung.TRANSLATIONS, woken.rung)
+    }
+
+    @Test
+    fun `a wake that names a rung stands on it`() {
+        val panel = TvPanel(visible = false, rung = TvPanelRung.TRANSPORT)
+
+        val woken = tvPanelAfterWake(panel, TvPlayerCommand.ShowPanel(TvPanelRung.EPISODES), atMs = 1_000)
+
+        assertEquals(TvPanelRung.EPISODES, woken.rung)
+    }
+
+    @Test
+    fun `a wake keeps a rung whose strip has not arrived yet`() {
+        // The fault this guards: «Сменить озвучку» parks the panel on the voices while the list is
+        // still loading, so that strip does not exist. Pressing anything used to resolve the rung
+        // against the strips there were and write the answer back — the D-pad settled on the
+        // quality row and was still there when the voices landed.
+        val asked = TvPanel(visible = true, rung = TvPanelRung.TRANSLATIONS)
+        val withoutVoices = listOf(TvPanelRung.EPISODES, TvPanelRung.QUALITY, TvPanelRung.TRANSPORT)
+
+        val woken = tvPanelAfterWake(asked, command = null, atMs = 1_000)
+
+        assertEquals(TvPanelRung.TRANSLATIONS, woken.rung)
+        // Meanwhile the D-pad stands somewhere it can: the clamp lives at the point of asking.
+        assertEquals(TvPanelRung.QUALITY, tvRungOrNearest(withoutVoices, woken.rung))
+    }
 }
