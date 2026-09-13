@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -15,6 +16,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -27,49 +29,36 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.compose.ContentFrame
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
-import app.kaeru.ui.common.player.PlayerSheet
+import app.kaeru.ui.common.design.KaeruTokens
+import app.kaeru.ui.common.design.waitingLabel
 import app.kaeru.ui.common.player.PlayerUiState
 import app.kaeru.ui.tv.requestFocusOrLog
 import kotlinx.coroutines.delay
-
-/** Four seconds of playing with nothing pressed and the controls get out of the picture. */
-private const val PANEL_LINGER_MS = 4_000L
+import java.time.Instant
 
 /** Long enough to read one line from a sofa. */
 private const val TOAST_MS = 4_000L
 
-/** How often a held key is allowed to restart the linger timer. */
-private const val WAKE_THROTTLE_MS = 500L
-
-/**
- * Where the panel's throttle stands after a wake at [atMs], or null when the wake came too soon
- * after [lastWakeMs] to restart the linger timer. A held button repeats twenty times a second
- * and every restart recomposes the panel, so twice a second is enough.
- *
- * A wake with no key behind it — the autoplay offer — always counts and leaves the reference
- * point where it was. Standing it on a time no press can ever beat is what used to leave every
- * later press reading as "too soon", so a held button stopped keeping the panel up.
- */
-internal fun nextWake(atMs: Long?, lastWakeMs: Long): Long? = when {
-    atMs == null -> lastWakeMs
-    atMs - lastWakeMs >= WAKE_THROTTLE_MS -> atMs
-    else -> null
-}
+/** How long the jog mark stays over the picture after the last press that moved it. */
+private const val SEEK_MARK_MS = 900L
 
 /**
  * The television player: the picture, and over it a panel that appears at the touch of any
  * button and leaves again on its own.
  *
- * Everything the remote can mean lives in [TvPlayerKeyHandler]; this screen turns key events
- * into that vocabulary and commands into calls. The one piece of memory it keeps is where the
- * D-pad is standing, because "left" means scrub over the timeline and "previous button" inside
- * the row.
+ * The panel is two zones with the timeline drawn between them, as the spec asks — what is
+ * playing above it, how it is playing below — and the D-pad walks that one vertical axis. With
+ * the panel down the same D-pad drives the picture instead: left and right jog, and they leave
+ * the panel where it is rather than covering the frames the viewer is hunting for.
+ *
+ * Nothing about what a press means is decided here. [TvPlayerKeyHandler] turns a key into a
+ * command and [TvPanel] holds where the panel stands; this screen turns events into the one and
+ * commands into calls.
  */
 @UnstableApi
 @Composable
@@ -83,9 +72,7 @@ fun TvPlayerScreen(
     onSkipIntro: () -> Unit,
     onNext: () -> Unit,
     onCancelAutoplay: () -> Unit,
-    onOpenTranslations: () -> Unit,
-    onOpenQualities: () -> Unit,
-    onCloseSheet: () -> Unit,
+    onLoadTranslations: () -> Unit,
     onPickTranslation: (Translation) -> Unit,
     onPickQuality: (Quality) -> Unit,
     onRetry: () -> Unit,
@@ -93,73 +80,92 @@ fun TvPlayerScreen(
     onDismissCompleted: () -> Unit,
     onToastShown: () -> Unit,
 ) {
-    var panelVisible by remember { mutableStateOf(true) }
-    var wake by remember { mutableIntStateOf(0) }
-    var panelFocus by remember { mutableStateOf(TvPlayerFocus.PROGRESS) }
+    var panel by remember { mutableStateOf(TvPanel()) }
+    var seek by remember { mutableStateOf<Long?>(null) }
+    var seekAt by remember { mutableIntStateOf(0) }
+    var tracksAsked by remember { mutableStateOf(false) }
     val rootFocus = remember { FocusRequester() }
-    val progressFocus = remember { FocusRequester() }
-    val actionsFocus = remember { FocusRequester() }
+    val rungFocus = remember { TvPanelRung.entries.associateWith { FocusRequester() } }
 
-    val failed = state.errorMessage != null
-    /** A question is on screen and owns both the focus and the remote until it is answered. */
-    val deciding = failed || state.completedPrompt
-    val overlayOpen = deciding || state.sheet != null || state.autoplayCountdownSec != null
-    // Nothing hides while it is being read, chosen from, or waited on.
-    val holdPanel = overlayOpen || state.loadingTranslations
-
-    // A strip is a chooser, and a chooser owns the D-pad whether or not a chip managed to take
-    // focus — an empty list must not leave "back" meaning "leave the player".
-    val focus = when {
-        state.sheet != null -> TvPlayerFocus.STRIP
-        !panelVisible -> TvPlayerFocus.NONE
-        else -> panelFocus
-    }
-
-    // The last key that restarted the linger timer; [nextWake] is the whole rule.
-    val lastWake = remember { longArrayOf(0) }
-
-    /** @param atMs the time of the key behind this wake, or null when no key is behind it. */
-    fun show(atMs: Long? = null) {
-        panelVisible = true
-        lastWake[0] = nextWake(atMs, lastWake[0]) ?: return
-        wake += 1
-    }
+    // A failure the viewer has answered with «Сменить озвучку»: the message steps aside for the
+    // strip, because the strip is where the answer is and the message has already been read.
+    var choosingTrack by remember(state.errorMessage) { mutableStateOf(false) }
+    val failed = state.errorMessage != null && !choosingTrack
+    val countdown = state.autoplayCountdownSec != null && state.nextEpisodeAvailable
+    /** Something on screen is asking a question, and owns both the focus and the remote. */
+    val cardOpen = failed || state.completedPrompt || countdown
+    // A failure and the question about closing the show off both take the screen for themselves;
+    // the autoplay offer stands above the panel, which is the one card that shares it. Nor is
+    // there anything to control before the first frame: the poster is the whole screen until
+    // there is an episode behind it.
+    val panelShown = panel.visible && !failed && !state.completedPrompt && !state.isLoading
+    val rungs = tvPanelRungs(state)
+    // Taken once per episode: the only thing measured against it is which day the next one airs.
+    val now = remember(state.episode) { Instant.now() }
 
     fun perform(command: TvPlayerCommand?): Boolean = when (command) {
         null -> false
-        // The panel is already up by the time this is read; the key belongs to the system.
-        TvPlayerCommand.ShowPanel -> false
-        TvPlayerCommand.HidePanel -> { panelVisible = false; true }
+        // Already dealt with on the way in, where the wake could be timed; a key that only asks
+        // for the panel back is left to the system, so volume and the like still reach it.
+        is TvPlayerCommand.ShowPanel -> command.rung != null
+        // The card that is up is the whole of the D-pad: a press that would walk out of it does
+        // nothing rather than landing on a control the viewer cannot see past the card.
+        TvPlayerCommand.KeepFocus -> true
+        TvPlayerCommand.HidePanel -> { panel = panel.hidden(); true }
+        is TvPlayerCommand.MoveRung -> {
+            panel = panel.copy(rung = tvStepRung(rungs, panel.rung, command.down))
+            true
+        }
         TvPlayerCommand.TogglePlayPause -> { onTogglePlayPause(); true }
-        is TvPlayerCommand.SeekBy -> { onSeekBy(command.deltaMs); true }
-        TvPlayerCommand.OpenEpisodes -> { onOpenTranslations(); true }
-        TvPlayerCommand.OpenQuality -> { onOpenQualities(); true }
-        TvPlayerCommand.CloseStrip -> { onCloseSheet(); true }
-        TvPlayerCommand.FocusProgress -> { progressFocus.requestFocusOrLog("шкалу времени плеера"); true }
-        TvPlayerCommand.FocusActions -> { actionsFocus.requestFocusOrLog("кнопки плеера"); true }
+        is TvPlayerCommand.SeekBy -> {
+            onSeekBy(command.deltaMs)
+            // Only where the panel is not already showing the move on its own line.
+            if (!panel.visible) {
+                seek = command.deltaMs
+                seekAt += 1
+            }
+            true
+        }
         TvPlayerCommand.PlayNext -> { onNext(); true }
         TvPlayerCommand.Exit -> { onExit(); true }
     }
 
-    LaunchedEffect(panelVisible, wake, state.isPlaying, holdPanel) {
-        if (panelVisible && state.isPlaying && !holdPanel) {
+    // The voices cost a request, so they are asked for once — as soon as the view model knows
+    // which anime this is, which is what a title arriving means.
+    LaunchedEffect(state.title) {
+        if (!tracksAsked && state.title.isNotEmpty()) {
+            tracksAsked = true
+            onLoadTranslations()
+        }
+    }
+    LaunchedEffect(panel.visible, panel.wake, state.isPlaying, cardOpen, state.loadingTranslations) {
+        if (panel.hidesItself(playing = state.isPlaying, asking = cardOpen || state.loadingTranslations)) {
             delay(PANEL_LINGER_MS)
-            panelVisible = false
+            panel = panel.hidden()
         }
     }
-    // The offer to move on belongs with the rest of the controls, so the panel comes back for
-    // it — and a chooser standing on the same rung stands down, because a countdown nobody can
-    // see is a countdown nobody can stop.
-    LaunchedEffect(state.autoplayCountdownSec != null) {
-        if (state.autoplayCountdownSec != null) {
-            show()
-            onCloseSheet()
+    // The offer to move on belongs with the controls, so the panel comes back for it.
+    LaunchedEffect(countdown) { if (countdown) panel = panel.shown() }
+    // Whichever rung the D-pad is standing on is the one holding focus — and when nothing at all
+    // wants it, the player itself takes it back so the next press still arrives.
+    LaunchedEffect(panelShown, panel.rung, cardOpen, rungs) {
+        when {
+            cardOpen -> Unit
+            panelShown -> {
+                // One frame of grace: a strip that has just appeared is still scrolling itself
+                // to the episode in play, and asking a chip that has not composed yet for the
+                // focus leaves the panel with none at all.
+                withFrameNanos { }
+                rungFocus.getValue(tvRungOrNearest(rungs, panel.rung)).requestFocusOrLog("панель плеера")
+            }
+            else -> rootFocus.requestFocusOrLog("плеер")
         }
     }
-    // The root is always composed, so this can never miss: whenever nothing else wants the
-    // focus, the player itself takes it back and the remote keeps working.
-    LaunchedEffect(panelVisible, overlayOpen) {
-        if (!panelVisible && !overlayOpen) rootFocus.requestFocusOrLog("плеер")
+    LaunchedEffect(seekAt) {
+        if (seek != null) {
+            delay(SEEK_MARK_MS)
+            seek = null
+        }
     }
     LaunchedEffect(state.toast) {
         if (state.toast != null) {
@@ -177,7 +183,10 @@ fun TvPlayerScreen(
         when {
             state.completedPrompt -> onDismissCompleted()
             failed -> onExit()
-            else -> perform(TvPlayerKeyHandler.onKey(TvKey.BACK, KeyAction.DOWN, panelVisible, 0, focus))
+            countdown -> onCancelAutoplay()
+            else -> perform(
+                TvPlayerKeyHandler.onKey(TvKey.BACK, KeyAction.DOWN, panel.visible, state.isPlaying),
+            )
         }
     }
 
@@ -193,55 +202,91 @@ fun TvPlayerScreen(
                     KeyEventType.KeyUp -> KeyAction.UP
                     else -> return@onPreviewKeyEvent false
                 }
-                val wasVisible = panelVisible
-                if (action == KeyAction.DOWN) show(event.nativeKeyEvent.eventTime)
-                // A question on screen answers the remote itself: the D-pad walks its buttons.
-                if (deciding) return@onPreviewKeyEvent false
-                perform(
-                    TvPlayerKeyHandler.onKey(
-                        key = tvKeyOf(event.key),
-                        action = action,
-                        panelVisible = wasVisible,
-                        repeatCount = event.nativeKeyEvent.repeatCount,
-                        focusedControl = focus,
-                    ),
+                val key = tvKeyOf(event.key)
+                val wasVisible = panel.visible
+                val command = TvPlayerKeyHandler.onKey(
+                    key = key,
+                    action = action,
+                    panelVisible = wasVisible,
+                    isPlaying = state.isPlaying,
+                    cardOpen = cardOpen,
+                    repeatCount = event.nativeKeyEvent.repeatCount,
                 )
+                if (action == KeyAction.DOWN && wakesPanel(key, wasVisible)) {
+                    val wanted = (command as? TvPlayerCommand.ShowPanel)?.rung ?: panel.rung
+                    panel = panel.shown(tvRungOrNearest(rungs, wanted), event.nativeKeyEvent.eventTime)
+                }
+                perform(command)
             },
     ) {
         if (player != null) ContentFrame(player, Modifier.fillMaxSize())
+
+        // Seconds of black with a spinner on it is indistinguishable from a set that has lost
+        // its signal, so the wait for the first frame is the title's own poster instead.
+        if (state.isLoading) TvFirstFrame(state)
 
         // What holds the focus while the controls are away, so the first press still arrives.
         Box(
             Modifier.fillMaxSize()
                 .focusRequester(rootFocus)
-                .focusProperties { canFocus = !panelVisible && !overlayOpen }
+                .focusProperties { canFocus = !panelShown && !cardOpen }
                 .focusable(),
         )
 
-        if (state.isBuffering && !failed) TvBufferingMark(Modifier.align(Alignment.Center))
+        // Both stand in the middle of the picture and a jog is what makes the picture run dry,
+        // so for the second after one the mark that says which way it went is the useful one.
+        if (state.isBuffering && !state.isLoading && !failed && seek == null) {
+            TvBufferingMark(Modifier.align(Alignment.Center))
+        }
+        seek?.let { TvSeekIndicator(it, Modifier.align(Alignment.Center)) }
 
-        if (panelVisible && !deciding) {
-            TvPlayerPanel(
-                state = state,
-                overlayOpen = overlayOpen,
-                progressFocus = progressFocus,
-                actionsFocus = actionsFocus,
-                onFocus = { panelFocus = it },
-                onTogglePlayPause = onTogglePlayPause,
-                onSeekBy = onSeekBy,
-                onSkipIntro = onSkipIntro,
-                onEpisodes = onOpenTranslations,
-                onQualities = onOpenQualities,
-                onNext = onNext,
-            ) {
-                PanelSlot(
+        if (panelShown) TvPlayerHeader(state.title, Modifier.align(Alignment.TopStart))
+
+        Column(Modifier.align(Alignment.BottomStart).fillMaxWidth()) {
+            // Whatever this episode running out means, said above the panel rather than inside
+            // it: the panel is where the viewer chooses, and this is the app doing the asking.
+            val card = Modifier
+                .padding(end = PlayerGutter, bottom = if (panelShown) KaeruTokens.Space4 else KaeruTokens.Space8)
+                .align(Alignment.End)
+            when {
+                failed || state.completedPrompt -> Unit
+                countdown -> TvAutoplayCard(
+                    episode = state.episode + 1,
+                    countdownSec = state.autoplayCountdownSec,
+                    onNow = onNext,
+                    onCancel = onCancelAutoplay,
+                    modifier = card,
+                )
+                // Nothing is said about a show this device has no catalogue entry for: with no
+                // aired count there is no telling «that was the last one» from «we do not know».
+                // Nor about a finished one, where running out of episodes is the end of the story
+                // and the question about closing it off is already the only one worth asking.
+                state.episodeEnding && !state.nextEpisodeAvailable &&
+                    state.availableEpisodes > 0 && state.moreEpisodesComing -> TvWaitingCard(
+                    waiting = waitingLabel(
+                        episode = state.episode + 1,
+                        nextEpisodeAt = state.nextEpisodeAt,
+                        aired = state.availableEpisodes,
+                        now = now,
+                    ),
+                    modifier = card,
+                )
+            }
+
+            if (panelShown) {
+                TvPlayerPanel(
                     state = state,
-                    onPlayEpisode = { onCloseSheet(); onPlayEpisode(it) },
-                    onPickTranslation = onPickTranslation,
+                    rungFocus = rungFocus::getValue,
+                    onPickEpisode = onPlayEpisode,
+                    onPickTranslation = { track ->
+                        choosingTrack = false
+                        onPickTranslation(track)
+                    },
                     onPickQuality = onPickQuality,
+                    onTogglePlayPause = onTogglePlayPause,
+                    onSeekBy = onSeekBy,
+                    onSkipIntro = onSkipIntro,
                     onNext = onNext,
-                    onCancelAutoplay = onCancelAutoplay,
-                    onFocusActions = { panelFocus = TvPlayerFocus.ACTIONS },
                 )
             }
         }
@@ -250,7 +295,14 @@ fun TvPlayerScreen(
             TvPlaybackFailure(
                 message = state.errorMessage.orEmpty(),
                 onRetry = onRetry,
-                onChangeTranslation = onOpenTranslations,
+                onChangeTranslation = {
+                    choosingTrack = true
+                    if (!tracksAsked) {
+                        tracksAsked = true
+                        onLoadTranslations()
+                    }
+                    panel = panel.shown(tvRungOrNearest(rungs, TvPanelRung.TRANSLATIONS))
+                },
             )
         }
 
@@ -258,46 +310,10 @@ fun TvPlayerScreen(
             TvCompletedDialog(state.title, onConfirm = onConfirmCompleted, onDismiss = onDismissCompleted)
         }
 
-        // Clear of the title at the top and of the panel at the bottom, wherever it is.
+        // Clear of the title at one corner and of the panel along the bottom.
         state.toast?.let {
-            TvPlayerToast(
-                it,
-                Modifier.align(Alignment.BottomCenter)
-                    .padding(bottom = if (panelVisible && !deciding) 280.dp else 56.dp),
-            )
+            TvPlayerToast(it, Modifier.align(Alignment.TopEnd).padding(PlayerGutter))
         }
-    }
-}
-
-/**
- * The rung of the panel above the timeline: whichever of the strips, the countdown or the wait
- * for a track list is asking for attention. Only one of them ever is.
- */
-@Composable
-private fun PanelSlot(
-    state: PlayerUiState,
-    onPlayEpisode: (Int) -> Unit,
-    onPickTranslation: (Translation) -> Unit,
-    onPickQuality: (Quality) -> Unit,
-    onNext: () -> Unit,
-    onCancelAutoplay: () -> Unit,
-    onFocusActions: () -> Unit,
-) {
-    when {
-        state.sheet == PlayerSheet.TRANSLATIONS ->
-            TvEpisodeStrip(state, onEpisode = onPlayEpisode, onTranslation = onPickTranslation)
-        state.sheet == PlayerSheet.QUALITY -> TvQualityStrip(state, onQuality = onPickQuality)
-        state.autoplayCountdownSec != null -> Box(Modifier.fillMaxWidth(), Alignment.CenterEnd) {
-            TvAutoplayCard(
-                episode = state.episode + 1,
-                countdownSec = state.autoplayCountdownSec,
-                onNow = onNext,
-                onCancel = onCancelAutoplay,
-                onFocused = onFocusActions,
-                modifier = Modifier.padding(end = 48.dp, bottom = 24.dp),
-            )
-        }
-        state.loadingTranslations -> TvStripMessage("Загружаем озвучки…")
     }
 }
 
@@ -309,11 +325,12 @@ private fun tvKeyOf(key: Key): TvKey = when (key) {
     Key.DirectionDown -> TvKey.DOWN
     Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> TvKey.CENTER
     Key.Back, Key.Escape -> TvKey.BACK
-    // A remote with separate play and pause buttons is rare enough that one toggle serves all
-    // three; the worst it can do is what the viewer was about to press anyway.
-    Key.MediaPlayPause, Key.MediaPlay, Key.MediaPause -> TvKey.MEDIA_PLAY_PAUSE
+    Key.MediaPlayPause -> TvKey.MEDIA_PLAY_PAUSE
+    Key.MediaPlay -> TvKey.MEDIA_PLAY
+    Key.MediaPause -> TvKey.MEDIA_PAUSE
     Key.MediaFastForward -> TvKey.MEDIA_FAST_FORWARD
     Key.MediaRewind -> TvKey.MEDIA_REWIND
     Key.MediaNext, Key.MediaSkipForward -> TvKey.MEDIA_NEXT
+    Key.MediaStop -> TvKey.MEDIA_STOP
     else -> TvKey.OTHER
 }

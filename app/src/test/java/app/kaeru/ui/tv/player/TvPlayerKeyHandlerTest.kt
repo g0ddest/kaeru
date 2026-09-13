@@ -1,42 +1,41 @@
 package app.kaeru.ui.tv.player
 
 import app.kaeru.player.EpisodeQueue
-import app.kaeru.ui.tv.player.TvPlayerFocus.ACTIONS
-import app.kaeru.ui.tv.player.TvPlayerFocus.NONE
-import app.kaeru.ui.tv.player.TvPlayerFocus.PROGRESS
-import app.kaeru.ui.tv.player.TvPlayerFocus.STRIP
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
  * The whole remote, as a table. Every rule the D-pad obeys lives in [TvPlayerKeyHandler], so
  * every rule can be checked here without a television.
+ *
+ * Two vocabularies meet in this function. While the panel is down the remote drives the video:
+ * left and right scrub, the centre pauses, up and down bring the controls back. While the panel
+ * is up the remote drives the panel: up and down walk its rungs and everything else belongs to
+ * the row that has focus. The media keys are the same buttons either way, which is what makes
+ * them media keys.
  */
 class TvPlayerKeyHandlerTest {
 
     private fun press(
         key: TvKey,
-        focus: TvPlayerFocus = NONE,
+        panel: Boolean = false,
+        playing: Boolean = true,
+        card: Boolean = false,
         repeat: Int = 0,
-        panel: Boolean = focus != NONE,
-    ) = TvPlayerKeyHandler.onKey(key, KeyAction.DOWN, panel, repeat, focus)
+    ) = TvPlayerKeyHandler.onKey(key, KeyAction.DOWN, panel, playing, card, repeat)
 
-    private fun release(key: TvKey, focus: TvPlayerFocus = NONE) =
-        TvPlayerKeyHandler.onKey(key, KeyAction.UP, focus != NONE, 0, focus)
+    private fun release(key: TvKey, panel: Boolean = false) =
+        TvPlayerKeyHandler.onKey(key, KeyAction.UP, panel, isPlaying = true)
 
-    // --- seeking ---------------------------------------------------------------------------
+    // --- the video, with the controls out of the way -----------------------------------------
 
     @Test
     fun `left and right seek ten seconds while the panel is down`() {
         assertEquals(TvPlayerCommand.SeekBy(-EpisodeQueue.SEEK_STEP_MS), press(TvKey.LEFT))
         assertEquals(TvPlayerCommand.SeekBy(EpisodeQueue.SEEK_STEP_MS), press(TvKey.RIGHT))
-    }
-
-    @Test
-    fun `left and right seek while the timeline holds focus`() {
-        assertEquals(TvPlayerCommand.SeekBy(-EpisodeQueue.SEEK_STEP_MS), press(TvKey.LEFT, PROGRESS))
-        assertEquals(TvPlayerCommand.SeekBy(EpisodeQueue.SEEK_STEP_MS), press(TvKey.RIGHT, PROGRESS))
     }
 
     @Test
@@ -51,122 +50,146 @@ class TvPlayerKeyHandlerTest {
     @Test
     fun `holding left accelerates backwards by the same steps`() {
         assertEquals(TvPlayerCommand.SeekBy(-10_000), press(TvKey.LEFT, repeat = 2))
-        assertEquals(TvPlayerCommand.SeekBy(-30_000), press(TvKey.LEFT, PROGRESS, repeat = 4))
-        assertEquals(TvPlayerCommand.SeekBy(-60_000), press(TvKey.LEFT, PROGRESS, repeat = 9))
+        assertEquals(TvPlayerCommand.SeekBy(-30_000), press(TvKey.LEFT, repeat = 4))
+        assertEquals(TvPlayerCommand.SeekBy(-60_000), press(TvKey.LEFT, repeat = 9))
     }
 
     @Test
-    fun `left and right belong to the buttons once the action row has focus`() {
-        assertNull(press(TvKey.LEFT, ACTIONS))
-        assertNull(press(TvKey.RIGHT, ACTIONS, repeat = 5))
-    }
-
-    @Test
-    fun `an open strip keeps the whole D-pad to itself`() {
-        assertNull(press(TvKey.LEFT, STRIP))
-        assertNull(press(TvKey.RIGHT, STRIP))
-        assertNull(press(TvKey.UP, STRIP))
-        assertNull(press(TvKey.DOWN, STRIP))
-        assertNull(press(TvKey.CENTER, STRIP))
-    }
-
-    // --- the vertical axis -----------------------------------------------------------------
-
-    @Test
-    fun `up opens the episodes strip from the video and from the timeline`() {
-        assertEquals(TvPlayerCommand.OpenEpisodes, press(TvKey.UP))
-        assertEquals(TvPlayerCommand.OpenEpisodes, press(TvKey.UP, PROGRESS))
-    }
-
-    @Test
-    fun `up from the action row climbs back to the timeline`() {
-        assertEquals(TvPlayerCommand.FocusProgress, press(TvKey.UP, ACTIONS))
-    }
-
-    @Test
-    fun `down opens quality from the video and from the action row`() {
-        assertEquals(TvPlayerCommand.OpenQuality, press(TvKey.DOWN))
-        assertEquals(TvPlayerCommand.OpenQuality, press(TvKey.DOWN, ACTIONS))
-    }
-
-    @Test
-    fun `down from the timeline drops into the action row`() {
-        assertEquals(TvPlayerCommand.FocusActions, press(TvKey.DOWN, PROGRESS))
-    }
-
-    // --- the centre ------------------------------------------------------------------------
-
-    @Test
-    fun `the centre pauses and resumes while nothing else is focused`() {
+    fun `the centre pauses the picture while the panel is down`() {
         assertEquals(TvPlayerCommand.TogglePlayPause, press(TvKey.CENTER))
-        assertEquals(TvPlayerCommand.TogglePlayPause, press(TvKey.CENTER, PROGRESS))
     }
 
     @Test
-    fun `the centre presses the focused button rather than the video`() {
-        assertNull(press(TvKey.CENTER, ACTIONS))
+    fun `up asks for the panel at the episodes strip and down at the quality strip`() {
+        assertEquals(TvPlayerCommand.ShowPanel(TvPanelRung.EPISODES), press(TvKey.UP))
+        assertEquals(TvPlayerCommand.ShowPanel(TvPanelRung.QUALITY), press(TvKey.DOWN))
     }
 
-    // --- back ------------------------------------------------------------------------------
+    @Test
+    fun `a key with nothing to do brings the panel back where it was left`() {
+        assertEquals(TvPlayerCommand.ShowPanel(null), press(TvKey.OTHER))
+    }
+
+    // --- the panel ----------------------------------------------------------------------------
 
     @Test
-    fun `back hides the panel first and leaves only once it is down`() {
-        assertEquals(TvPlayerCommand.HidePanel, press(TvKey.BACK, PROGRESS))
-        assertEquals(TvPlayerCommand.HidePanel, press(TvKey.BACK, ACTIONS))
+    fun `up and down walk the rungs once the panel is up`() {
+        assertEquals(TvPlayerCommand.MoveRung(down = false), press(TvKey.UP, panel = true))
+        assertEquals(TvPlayerCommand.MoveRung(down = true), press(TvKey.DOWN, panel = true))
+    }
+
+    @Test
+    fun `left, right and the centre belong to the focused row`() {
+        assertNull(press(TvKey.LEFT, panel = true))
+        assertNull(press(TvKey.RIGHT, panel = true, repeat = 6))
+        assertNull(press(TvKey.CENTER, panel = true))
+        assertNull(press(TvKey.OTHER, panel = true))
+    }
+
+    // --- back -----------------------------------------------------------------------------------
+
+    @Test
+    fun `back takes the panel down first and leaves only once it is down`() {
+        assertEquals(TvPlayerCommand.HidePanel, press(TvKey.BACK, panel = true))
         assertEquals(TvPlayerCommand.Exit, press(TvKey.BACK))
     }
 
-    @Test
-    fun `back closes an open strip before it touches the panel`() {
-        assertEquals(TvPlayerCommand.CloseStrip, press(TvKey.BACK, STRIP))
-    }
+    // --- the media keys ---------------------------------------------------------------------
 
     @Test
-    fun `a panel that is up without focus still swallows the first back`() {
-        assertEquals(TvPlayerCommand.HidePanel, press(TvKey.BACK, NONE, panel = true))
-    }
-
-    // --- media keys ------------------------------------------------------------------------
-
-    @Test
-    fun `the media keys work wherever focus happens to be`() {
-        for (focus in TvPlayerFocus.entries) {
-            assertEquals(TvPlayerCommand.TogglePlayPause, press(TvKey.MEDIA_PLAY_PAUSE, focus))
-            assertEquals(TvPlayerCommand.SeekBy(EpisodeQueue.SEEK_STEP_MS), press(TvKey.MEDIA_FAST_FORWARD, focus))
-            assertEquals(TvPlayerCommand.SeekBy(-EpisodeQueue.SEEK_STEP_MS), press(TvKey.MEDIA_REWIND, focus))
-            assertEquals(TvPlayerCommand.PlayNext, press(TvKey.MEDIA_NEXT, focus))
+    fun `play pause toggles wherever the panel is and whatever is playing`() {
+        for (panel in listOf(false, true)) {
+            for (playing in listOf(false, true)) {
+                assertEquals(
+                    "panel=$panel playing=$playing",
+                    TvPlayerCommand.TogglePlayPause,
+                    press(TvKey.MEDIA_PLAY_PAUSE, panel = panel, playing = playing),
+                )
+            }
         }
     }
 
     @Test
-    fun `holding fast forward accelerates like the D-pad does`() {
-        assertEquals(TvPlayerCommand.SeekBy(30_000), press(TvKey.MEDIA_FAST_FORWARD, repeat = 3))
-        assertEquals(TvPlayerCommand.SeekBy(-60_000), press(TvKey.MEDIA_REWIND, ACTIONS, repeat = 8))
+    fun `a remote with separate play and pause keys never fights the state it finds`() {
+        // Two dedicated keys are not a toggle: play on a running episode has to do nothing, or
+        // a viewer pressing it twice stops what they asked to start.
+        assertEquals(TvPlayerCommand.TogglePlayPause, press(TvKey.MEDIA_PLAY, playing = false))
+        assertNull(press(TvKey.MEDIA_PLAY, playing = true))
+        assertEquals(TvPlayerCommand.TogglePlayPause, press(TvKey.MEDIA_PAUSE, playing = true))
+        assertNull(press(TvKey.MEDIA_PAUSE, playing = false))
     }
-
-    // --- everything else -------------------------------------------------------------------
 
     @Test
-    fun `a key with nothing to do only wakes the panel`() {
-        assertEquals(TvPlayerCommand.ShowPanel, press(TvKey.OTHER))
-        assertNull(press(TvKey.OTHER, PROGRESS))
-        assertNull(press(TvKey.OTHER, ACTIONS))
-        assertNull(press(TvKey.OTHER, STRIP))
+    fun `rewind and fast forward seek and accelerate like the D-pad does`() {
+        assertEquals(TvPlayerCommand.SeekBy(EpisodeQueue.SEEK_STEP_MS), press(TvKey.MEDIA_FAST_FORWARD))
+        assertEquals(TvPlayerCommand.SeekBy(-EpisodeQueue.SEEK_STEP_MS), press(TvKey.MEDIA_REWIND))
+        assertEquals(TvPlayerCommand.SeekBy(30_000), press(TvKey.MEDIA_FAST_FORWARD, repeat = 3))
+        assertEquals(TvPlayerCommand.SeekBy(-60_000), press(TvKey.MEDIA_REWIND, repeat = 8))
     }
+
+    @Test
+    fun `next moves on and stop leaves with the position saved`() {
+        assertEquals(TvPlayerCommand.PlayNext, press(TvKey.MEDIA_NEXT))
+        assertEquals(TvPlayerCommand.Exit, press(TvKey.MEDIA_STOP))
+    }
+
+    @Test
+    fun `the media keys still work while a card holds the D-pad`() {
+        assertEquals(TvPlayerCommand.TogglePlayPause, press(TvKey.MEDIA_PLAY_PAUSE, card = true))
+        assertEquals(TvPlayerCommand.SeekBy(EpisodeQueue.SEEK_STEP_MS), press(TvKey.MEDIA_FAST_FORWARD, card = true))
+        assertEquals(TvPlayerCommand.PlayNext, press(TvKey.MEDIA_NEXT, card = true))
+        assertEquals(TvPlayerCommand.Exit, press(TvKey.MEDIA_STOP, card = true))
+    }
+
+    // --- a card on screen -----------------------------------------------------------------------
+
+    @Test
+    fun `a card lets its own buttons answer left, right and the centre`() {
+        for (panel in listOf(false, true)) {
+            for (key in listOf(TvKey.LEFT, TvKey.RIGHT, TvKey.CENTER, TvKey.OTHER)) {
+                assertNull("$key over a card, panel=$panel", press(key, panel = panel, card = true))
+            }
+        }
+    }
+
+    @Test
+    fun `a card swallows up and down rather than letting focus walk out of it`() {
+        // The autoplay offer stands above the panel, and Compose would happily walk a press down
+        // into the strips behind it — leaving the viewer on a control the card is covering.
+        for (panel in listOf(false, true)) {
+            assertEquals(TvPlayerCommand.KeepFocus, press(TvKey.UP, panel = panel, card = true))
+            assertEquals(TvPlayerCommand.KeepFocus, press(TvKey.DOWN, panel = panel, card = true))
+        }
+    }
+
+    // --- releases ---------------------------------------------------------------------------
 
     @Test
     fun `releasing a key commands nothing`() {
         for (key in TvKey.entries) {
             assertNull("$key on release", release(key))
-            assertNull("$key on release over the timeline", release(key, PROGRESS))
-            assertNull("$key on release over the buttons", release(key, ACTIONS))
+            assertNull("$key on release with the panel up", release(key, panel = true))
+        }
+    }
+
+    // --- what wakes the panel -----------------------------------------------------------------
+
+    @Test
+    fun `scrubbing keeps the picture clear and every other key brings the panel back`() {
+        for (key in listOf(TvKey.LEFT, TvKey.RIGHT, TvKey.MEDIA_REWIND, TvKey.MEDIA_FAST_FORWARD)) {
+            assertFalse("$key should scrub without raising the panel", wakesPanel(key, panelVisible = false))
+        }
+        for (key in listOf(TvKey.UP, TvKey.DOWN, TvKey.CENTER, TvKey.OTHER, TvKey.MEDIA_PLAY_PAUSE)) {
+            assertTrue("$key should raise the panel", wakesPanel(key, panelVisible = false))
         }
     }
 
     @Test
-    fun `focus reported without a panel is not believed`() {
-        // The panel hid on its own between the key press and the report; the video is in charge.
-        assertEquals(TvPlayerCommand.SeekBy(EpisodeQueue.SEEK_STEP_MS), press(TvKey.RIGHT, ACTIONS, panel = false))
-        assertEquals(TvPlayerCommand.Exit, press(TvKey.BACK, STRIP, panel = false))
+    fun `walking a row keeps the panel up`() {
+        // Left and right mean «next chip» once the panel is up, and a chosen chip that let the
+        // panel time out under the viewer's thumb would be the panel's worst moment to leave.
+        for (key in TvKey.entries) {
+            assertTrue("$key with the panel up", wakesPanel(key, panelVisible = true))
+        }
     }
 }

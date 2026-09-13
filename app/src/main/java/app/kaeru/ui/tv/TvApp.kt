@@ -165,9 +165,9 @@ private fun TvPlayer(animeId: Int, episode: Int, onEpisode: (Int) -> Unit, onExi
         onSkipIntro = viewModel::skipIntro,
         onNext = viewModel::playNext,
         onCancelAutoplay = viewModel::cancelAutoplay,
-        onOpenTranslations = viewModel::openTranslations,
-        onOpenQualities = viewModel::openQualities,
-        onCloseSheet = viewModel::closeSheet,
+        // Filled rather than opened: on a television the voices are a row of the panel, not a
+        // sheet, so the screen asks for the list and draws it where it already stands.
+        onLoadTranslations = viewModel::loadTranslations,
         onPickTranslation = viewModel::pickTranslation,
         onPickQuality = viewModel::pickQuality,
         onRetry = viewModel::retry,

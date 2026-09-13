@@ -298,8 +298,20 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch { controller.retry() }
     }
 
-    /** Loads the tracks on demand: the sheet is rarely opened and the list costs a request. */
-    fun openTranslations() {
+    /** Loads the tracks on demand and shows them: the sheet costs a request to fill. */
+    fun openTranslations() = fetchTranslations(show = true)
+
+    /**
+     * The same list, with nothing opened over the picture.
+     *
+     * The television has no sheet: the voices are a strip that is already on the panel, and all
+     * it needs is for the list to arrive. Separate from [openTranslations] rather than a flag on
+     * it, because the two screens are asking different things — «show me the voices» and «fill
+     * the row I am already showing».
+     */
+    fun loadTranslations() = fetchTranslations(show = false)
+
+    private fun fetchTranslations(show: Boolean) {
         val id = animeId.value ?: return
         val playing = controller.state.value.stream?.translation
         screen.update { it.copy(loadingTranslations = true) }
@@ -307,7 +319,11 @@ class PlayerViewModel @Inject constructor(
             withContext(io) { resolve.translations(id, playing) }
                 .onSuccess { tracks ->
                     screen.update {
-                        it.copy(translations = tracks, loadingTranslations = false, sheet = PlayerSheet.TRANSLATIONS)
+                        it.copy(
+                            translations = tracks,
+                            loadingTranslations = false,
+                            sheet = if (show) PlayerSheet.TRANSLATIONS else it.sheet,
+                        )
                     }
                 }
                 .onFailure { failure ->
