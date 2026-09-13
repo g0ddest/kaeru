@@ -22,6 +22,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import app.kaeru.ui.common.theme.KaeruBackground
 import app.kaeru.ui.common.theme.KaeruElevated
 import app.kaeru.ui.common.theme.KaeruSecondary
@@ -112,6 +113,11 @@ internal fun BoxScope.PosterOverlays(badge: String?, progress: Float?) {
  * these stays the same height whether or not the titles in it have badges or progress. The title
  * sits a step below a row header in size, which is what keeps a row reading as one section with
  * several titles in it rather than several headings.
+ *
+ * [width] is the row pitch the design system fixes, which is what a horizontally scrolling row
+ * wants: every card the same width whatever is beside it. A grid wants the opposite — the cell
+ * decides — so pass `Dp.Unspecified` there along with `Modifier.fillMaxWidth()`, and the card
+ * takes whatever width it is given.
  */
 @Composable
 fun PosterCard(
@@ -126,7 +132,7 @@ fun PosterCard(
 ) {
     Column(
         modifier
-            .width(width)
+            .then(if (width.isSpecified) Modifier.width(width) else Modifier)
             .clickable(onClick = onClick, onClickLabel = "Открыть", role = Role.Button),
     ) {
         Box(

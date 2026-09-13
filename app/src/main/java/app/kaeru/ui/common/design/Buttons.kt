@@ -130,6 +130,12 @@ fun DestructiveButton(
 /**
  * The quieter of the two. Its container is translucent rather than transparent so it survives
  * sitting on a bright screenshot next to the amber one, which is where it usually is.
+ *
+ * [compact] is the same button in a column a third of the screen wide: the card action under a
+ * poster in a grid. It keeps the shape, the border and the colours and gives up the things that do
+ * not fit — the 52dp height drops to the 48dp floor, the 24dp side padding to 12, and the label to
+ * the size a card title is set in. Nothing else changes, so «В планы» under a poster and
+ * «Подробнее» beside the hero still read as the same control.
  */
 @Composable
 fun SecondaryButton(
@@ -138,13 +144,14 @@ fun SecondaryButton(
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
     enabled: Boolean = true,
+    compact: Boolean = false,
 ) {
     OutlinedButton(
         onClick = onClick,
         enabled = enabled,
         modifier = modifier
             .kaeruFocus(KaeruTokens.ButtonShape)
-            .heightIn(min = KaeruTokens.ButtonHeight),
+            .heightIn(min = if (compact) KaeruTokens.MinTouchTarget else KaeruTokens.ButtonHeight),
         shape = KaeruTokens.ButtonShape,
         border = BorderStroke(1.dp, KaeruDivider),
         colors = ButtonDefaults.outlinedButtonColors(
@@ -153,13 +160,22 @@ fun SecondaryButton(
             disabledContainerColor = Color.Transparent,
             disabledContentColor = KaeruSecondary,
         ),
-        contentPadding = PaddingValues(horizontal = KaeruTokens.Space6),
+        contentPadding = PaddingValues(horizontal = if (compact) KaeruTokens.Space3 else KaeruTokens.Space6),
     ) {
         if (icon != null) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(IconSize))
             Spacer(Modifier.width(KaeruTokens.Space2))
         }
-        Text(text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            text,
+            style = if (compact) {
+                MaterialTheme.typography.titleSmall
+            } else {
+                MaterialTheme.typography.titleMedium
+            },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
