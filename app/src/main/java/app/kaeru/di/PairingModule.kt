@@ -3,6 +3,7 @@ package app.kaeru.di
 import app.kaeru.data.pairing.LanAddresses
 import app.kaeru.data.pairing.NetworkLanAddresses
 import app.kaeru.data.pairing.OkHttpPairingClient
+import app.kaeru.data.pairing.PairingTimeouts
 import app.kaeru.data.pairing.SocketPairingServer
 import app.kaeru.domain.pairing.PairingClient
 import app.kaeru.domain.pairing.TvPairingServer
@@ -25,6 +26,11 @@ annotation class PairingHttp
 @Module
 @InstallIn(SingletonComponent::class)
 object PairingModule {
+
+    /** The shipped clocks. Their reasons are written down on the type itself. */
+    @Provides
+    @Singleton
+    fun pairingTimeouts(): PairingTimeouts = PairingTimeouts()
 
     /**
      * Deliberately not derived from the shared plain client. It carries no interceptors, no

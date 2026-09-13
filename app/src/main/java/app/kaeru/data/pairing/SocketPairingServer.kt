@@ -11,16 +11,17 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.io.IOException
-import java.io.InputStream
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.time.Clock
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -33,20 +34,33 @@ import javax.inject.Singleton
  * picks, and the only thing it will do with what arrives is hand it straight to the token exchange.
  *
  * Written by hand rather than with a server library because the whole protocol is a request line,
- * a `Content-Length` and one small JSON object; every read is bounded, so a caller on the local
- * network cannot make this allocate more than a few kilobytes however it misbehaves.
+ * a `Content-Length` and one small JSON object; every read is bounded in bytes and in time, so a
+ * caller on the local network can neither make this allocate more than a few kilobytes nor keep it
+ * to itself for more than a few seconds.
  */
 @Singleton
 class SocketPairingServer @Inject constructor(
     private val json: Json,
     private val clock: Clock,
     private val addresses: LanAddresses,
+    private val timeouts: PairingTimeouts,
     @param:IoDispatcher private val dispatcher: CoroutineDispatcher,
 ) : TvPairingServer {
 
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
 
-    @Volatile private var socket: ServerSocket? = null
+    /**
+     * Everything about which offer is the current one, and it is never read outside [lock].
+     *
+     * [generation] is what makes a `stop()` that lands in the middle of a `start()` mean something:
+     * the start reads its own number on the way in, and installs its socket only if the number is
+     * still current on the way out. Without it a stop can close the previous socket, watch the
+     * start install a new one behind it, and leave a television listening for a code nobody can see
+     * a QR for — with the expiry timer already cancelled, so nothing would ever close it.
+     */
+    private val lock = Any()
+    private var generation = 0
+    private var socket: ServerSocket? = null
     private var worker: Job? = null
 
     /**
@@ -60,17 +74,52 @@ class SocketPairingServer @Inject constructor(
         session: PairingSession,
         onCode: suspend (code: String, redirectUri: String) -> Result<Unit>,
     ): Result<TvPairingServer.Endpoint> = withContext(dispatcher) {
-        stop()
+        val mine = synchronized(lock) {
+            closeLocked()
+            ++generation
+        }
         val host = addresses.siteLocalIpv4()
             ?: return@withContext Result.failure(PairingFailed(PairingFailureReason.NO_LOCAL_ADDRESS))
         val opened = runCatching { openPort() }.getOrElse { error ->
             return@withContext Result.failure(PairingFailed(PairingFailureReason.NO_LOCAL_ADDRESS, error))
         }
-        socket = opened
-        paired.set(false)
-        worker = scope.launch { serve(opened, session, onCode) }
+        val installed = synchronized(lock) {
+            if (generation != mine) {
+                false
+            } else {
+                socket = opened
+                paired.set(false)
+                worker = scope.launch { serve(mine, opened, session, onCode) }
+                true
+            }
+        }
+        if (!installed) {
+            // Somebody stopped this offer, or replaced it, while the port was being opened. The
+            // socket that was about to become the current one never does.
+            runCatching { opened.close() }
+            return@withContext Result.failure(PairingFailed(PairingFailureReason.SUPERSEDED))
+        }
         Result.success(TvPairingServer.Endpoint(host, opened.localPort))
     }
+
+    override fun stop() {
+        synchronized(lock) {
+            ++generation
+            closeLocked()
+        }
+    }
+
+    /** Caller holds [lock]. */
+    private fun closeLocked() {
+        worker?.cancel()
+        worker = null
+        // Closing is what unblocks `accept()`; the worker is otherwise parked in it forever.
+        runCatching { socket?.close() }
+        socket = null
+    }
+
+    private fun current(generationAtStart: Int): Boolean =
+        synchronized(lock) { generation == generationAtStart }
 
     /**
      * A port of our own, on every interface this television has.
@@ -86,38 +135,59 @@ class SocketPairingServer @Inject constructor(
         bind(InetSocketAddress(ANY_FREE_PORT), BACKLOG)
     }
 
-    override fun stop() {
-        worker?.cancel()
-        worker = null
-        // Closing is what unblocks `accept()`; the worker is otherwise parked in it forever.
-        runCatching { socket?.close() }
-        socket = null
-    }
-
     private suspend fun serve(
+        generationAtStart: Int,
         server: ServerSocket,
         session: PairingSession,
         onCode: suspend (String, String) -> Result<Unit>,
     ) {
-        while (currentCoroutineContext().isActive && !server.isClosed) {
+        while (currentCoroutineContext().isActive && !server.isClosed && current(generationAtStart)) {
             val client = runCatching { server.accept() }.getOrNull() ?: return
             try {
-                client.soTimeout = READ_TIMEOUT_MS
-                val answer = decide(readRequest(client.getInputStream()), session, onCode)
-                // The sign-in this answer reports may already have swapped the screen underneath
-                // us, which takes the login screen's view model and this server down with it. The
-                // phone still has to hear how it went, so the write is not the thing that gets
-                // cancelled.
-                withContext(NonCancellable) { write(client, answer) }
+                handle(generationAtStart, client, session, onCode)
             } catch (_: IOException) {
-                // A phone that hung up mid-request is not a failure anyone needs to hear about.
+                // A phone that hung up mid-request is not a failure anyone needs to hear about,
+                // and neither is a caller the watchdog below closed the socket on. Either way the
+                // loop goes back to accepting: one slow connection must not end the offer.
             } finally {
                 runCatching { client.close() }
             }
         }
     }
 
+    private suspend fun handle(
+        generationAtStart: Int,
+        client: Socket,
+        session: PairingSession,
+        onCode: suspend (String, String) -> Result<Unit>,
+    ) {
+        client.soTimeout = timeouts.readMs
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeouts.acceptMs)
+        // The read loops check the deadline themselves, but only between bytes: a caller that
+        // sends nothing at all is parked inside `read` and notices nothing. Closing the socket
+        // from the outside is what actually ends that, so the deadline gets a watchdog as well as
+        // a check. It is cancelled the instant the request is complete, because what follows is
+        // the television's own round trip to Shikimori and that is allowed to take its time.
+        val watchdog = scope.launch {
+            delay(timeouts.acceptMs)
+            runCatching { client.close() }
+        }
+        val request = try {
+            readRequest(HttpWire(client.getInputStream(), deadline))
+        } finally {
+            watchdog.cancel()
+        }
+        // Once a code has been read off the wire the rest must finish. Cancelling here would lose
+        // the profile write that follows the token write inside the exchange, and would leave the
+        // phone holding a connection that closes with no answer on it — and the sign-in this
+        // answers may itself be what takes the login screen, and this server, down.
+        withContext(NonCancellable) {
+            write(client, decide(generationAtStart, request, session, onCode))
+        }
+    }
+
     private suspend fun decide(
+        generationAtStart: Int,
         request: RawRequest?,
         session: PairingSession,
         onCode: suspend (String, String) -> Result<Unit>,
@@ -125,11 +195,14 @@ class SocketPairingServer @Inject constructor(
         if (request == null || request.method != "POST" || request.path != PAIR_PATH) return badRequest()
         val payload = runCatching { json.decodeFromString<PairingPayload>(request.body) }.getOrNull()
             ?: return badRequest()
+        // The nonce comes first, before anything that would describe the state of this offer: a
+        // caller that has not read the code off the television screen learns only that it guessed
+        // wrong, never whether a pairing is live, spent or stale.
+        if (!session.matches(payload.nonce)) return refused(409, PairingErrors.NONCE_MISMATCH)
         if (payload.code.isBlank()) return badRequest()
         if (paired.get()) return refused(410, PairingErrors.ALREADY_PAIRED)
-        val now = clock.instant()
-        if (session.isExpired(now)) return refused(410, PairingErrors.EXPIRED)
-        if (!session.isValid(now, payload.nonce)) return refused(409, PairingErrors.NONCE_MISMATCH)
+        if (session.isExpired(clock.instant())) return refused(410, PairingErrors.EXPIRED)
+        if (!current(generationAtStart)) return refused(410, PairingErrors.EXPIRED)
         // Claimed before the exchange rather than after it, so two phones racing the same nonce
         // cannot both get as far as spending a code.
         if (!paired.compareAndSet(false, true)) return refused(410, PairingErrors.ALREADY_PAIRED)
@@ -145,69 +218,31 @@ class SocketPairingServer @Inject constructor(
 
     private fun refused(status: Int, error: String) = Answer(status, json.encodeToString(PairingRefused(error)))
 
-    /**
-     * Reads one request, or nothing at all when it is malformed or larger than a pairing could
-     * possibly be. Every loop here is bounded, which is the whole reason this is not a
-     * `BufferedReader`: that would also read past the headers into the body it was not asked for.
-     */
-    private fun readRequest(input: InputStream): RawRequest? {
-        val line = readLine(input) ?: return null
+    private fun readRequest(wire: HttpWire): RawRequest? {
+        val line = wire.line() ?: return null
         val parts = line.split(' ')
         if (parts.size != 3) return null
-        var length = -1
-        var budget = MAX_HEADER_BYTES
-        while (true) {
-            val header = readLine(input) ?: return null
-            if (header.isEmpty()) break
-            budget -= header.length
-            if (budget < 0) return null
-            val colon = header.indexOf(':')
-            if (colon <= 0) return null
-            if (header.take(colon).trim().equals("content-length", ignoreCase = true)) {
-                length = header.substring(colon + 1).trim().toIntOrNull() ?: return null
-            }
-        }
+        val length = wire.contentLength() ?: return null
         if (length < 1 || length > MAX_BODY_BYTES) return null
-        val body = ByteArray(length)
-        var read = 0
-        while (read < length) {
-            val chunk = input.read(body, read, length - read)
-            if (chunk < 0) return null
-            read += chunk
-        }
+        val body = wire.body(length) ?: return null
         return RawRequest(
             method = parts[0].uppercase(),
             path = parts[1].substringBefore('?'),
-            body = String(body, Charsets.UTF_8),
+            body = body,
         )
     }
 
-    /** One CRLF-terminated line, capped, with the terminator stripped. Null on EOF or overrun. */
-    private fun readLine(input: InputStream): String? {
-        val buffer = StringBuilder()
-        while (buffer.length <= MAX_LINE_BYTES) {
-            when (val byte = input.read()) {
-                -1 -> return null
-                '\n'.code -> return buffer.removeSuffix("\r")
-                else -> buffer.append(byte.toChar())
-            }
-        }
-        return null
-    }
-
-    private fun StringBuilder.removeSuffix(suffix: String): String =
-        toString().let { if (it.endsWith(suffix)) it.dropLast(suffix.length) else it }
-
     private fun write(client: Socket, answer: Answer) {
         val body = answer.body.toByteArray(Charsets.UTF_8)
-        val head = buildString {
-            append("HTTP/1.1 ").append(answer.status).append(' ').append(reason(answer.status)).append(CRLF)
-            append("Content-Type: application/json; charset=utf-8").append(CRLF)
-            append("Content-Length: ").append(body.size).append(CRLF)
-            append("Connection: close").append(CRLF).append(CRLF)
-        }
         client.getOutputStream().apply {
-            write(head.toByteArray(Charsets.US_ASCII))
+            write(
+                httpHead(
+                    "HTTP/1.1 ${answer.status} ${reason(answer.status)}",
+                    "Content-Type: application/json; charset=utf-8",
+                    "Content-Length: ${body.size}",
+                    "Connection: close",
+                ),
+            )
             write(body)
             flush()
         }
@@ -229,14 +264,5 @@ class SocketPairingServer @Inject constructor(
         const val ANY_FREE_PORT = 0
         const val BACKLOG = 4
         const val PAIR_PATH = "/pair"
-        const val CRLF = "\r\n"
-
-        /** A phone on the same Wi-Fi answers in milliseconds; anything slower is not the phone. */
-        const val READ_TIMEOUT_MS = 10_000
-        const val MAX_LINE_BYTES = 1_024
-        const val MAX_HEADER_BYTES = 8_192
-
-        /** A nonce, a code and a redirect. Four kilobytes is already generous. */
-        const val MAX_BODY_BYTES = 4_096
     }
 }

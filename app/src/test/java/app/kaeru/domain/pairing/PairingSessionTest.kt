@@ -30,6 +30,17 @@ class PairingSessionTest {
     }
 
     @Test
+    fun `the nonce can be checked without asking whether the offer is still open`() {
+        assertTrue(session.matches("nonce"))
+        assertFalse(session.matches("Nonce"))
+        assertFalse(session.matches(""))
+        // Still this session's nonce an hour later, even though the offer is long gone — which is
+        // what lets a stranger's guess be turned away before anything describes the offer.
+        assertTrue(session.matches("nonce"))
+        assertTrue(session.isExpired(start.plus(Duration.ofHours(1))))
+    }
+
+    @Test
     fun `expiry is the same question asked without a nonce`() {
         assertFalse(session.isExpired(start))
         assertTrue(session.isExpired(session.expiresAt))

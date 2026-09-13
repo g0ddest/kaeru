@@ -68,6 +68,14 @@ enum class PairingFailureReason {
 
     /** This television has no address on a local network, so there is nothing to put in a QR code. */
     NO_LOCAL_ADDRESS,
+
+    /**
+     * The offer was stopped or replaced while it was still being made.
+     *
+     * Never shown: whoever superseded it has already cancelled the work that would have reported
+     * it, and what the viewer sees is whatever took its place.
+     */
+    SUPERSEDED,
 }
 
 /** A television could not be signed in from the phone that scanned its QR code. */

@@ -28,14 +28,20 @@ data class PairingSession(
         Duration.between(now, expiresAt).let { if (it.isNegative) Duration.ZERO else it }
 
     /**
-     * Whether [nonce] is this session's, and the session is still open.
+     * Whether [nonce] is this session's, saying nothing about whether the session is still open.
+     *
+     * Asked on its own so that a caller which has not read the code off the television screen can
+     * be turned away before anything describes the state of the offer behind it.
      *
      * Compared without short-circuiting: the comparison runs against a value a caller on the
      * network chose, and telling it how many leading characters it got right is free information
      * it should not have.
      */
-    fun isValid(now: Instant, nonce: String): Boolean = !isExpired(now) &&
+    fun matches(nonce: String): Boolean =
         MessageDigest.isEqual(this.nonce.toByteArray(Charsets.UTF_8), nonce.toByteArray(Charsets.UTF_8))
+
+    /** Whether [nonce] is this session's, and the session is still open. */
+    fun isValid(now: Instant, nonce: String): Boolean = !isExpired(now) && matches(nonce)
 
     companion object {
         /** Long enough to find the phone and unlock it; short enough that a photograph goes stale. */
