@@ -44,6 +44,7 @@ import app.kaeru.ui.common.design.PosterCard
 import app.kaeru.ui.common.design.RowHeader
 import app.kaeru.ui.common.design.SkeletonHero
 import app.kaeru.ui.common.design.SkeletonRow
+import app.kaeru.ui.common.design.SyncingNotice
 import app.kaeru.ui.common.design.episodeLine
 import app.kaeru.ui.common.design.primaryAction
 import app.kaeru.ui.common.home.DiscoverRows
@@ -132,6 +133,7 @@ fun HomeScreen(
         ) {
             when (content) {
                 HomeContent.Loading -> HomeLoading()
+                HomeContent.FirstSync -> HomeFirstSync()
                 is HomeContent.Error -> HomeError(content.message, onRefresh)
                 HomeContent.Empty -> HomeEmpty(onSearch, catalogue, onAnime, onSeason, onRetrySeason)
                 HomeContent.Feed ->
@@ -253,6 +255,35 @@ private fun FeedRow(row: HomeRow, onAnime: (Int) -> Unit) {
 /** The shape of the screen before the feed arrives, so nothing moves when it does. */
 @Composable
 private fun HomeLoading() = Column(Modifier.fillMaxSize().clipToBounds()) {
+    SkeletonHero()
+    Spacer(Modifier.height(KaeruTokens.Space6))
+    SkeletonRow()
+    Spacer(Modifier.height(KaeruTokens.Space4))
+    SkeletonRow()
+}
+
+/**
+ * The same skeletons, with a sentence saying why they are still skeletons.
+ *
+ * [HomeLoading] is a database read and is gone within a frame; this is a whole list coming over the
+ * network and lasts seconds, which is long enough for silence to become a question — and long
+ * enough that the old screen had time to tell a viewer who had just signed in that their list was
+ * empty.
+ *
+ * The sentence is above the hero rather than in the seam below it, which is the opposite of where
+ * the television puts it. A phone's hero is four-fifths of the screen's width tall, so anything
+ * under it is at or past the fold on a small device, and the only thing on this screen that says
+ * anything would be the one thing a viewer had to scroll for. Above the bar's height it is the
+ * first line read, and when the list lands it is the hero that takes its place.
+ */
+@Composable
+private fun HomeFirstSync() = Column(Modifier.fillMaxSize().clipToBounds()) {
+    SyncingNotice(
+        Modifier
+            .windowInsetsPadding(WindowInsets.statusBars)
+            .padding(top = BarHeight, start = KaeruTokens.GutterPhone, end = KaeruTokens.GutterPhone)
+            .padding(bottom = KaeruTokens.Space6),
+    )
     SkeletonHero()
     Spacer(Modifier.height(KaeruTokens.Space6))
     SkeletonRow()

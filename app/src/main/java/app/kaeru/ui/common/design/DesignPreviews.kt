@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -241,6 +242,22 @@ private fun SkeletonRowPreview() = KaeruTheme { SkeletonRow(count = 3) }
 @Preview(showBackground = true, backgroundColor = DARK, heightDp = 480)
 @Composable
 private fun SkeletonGridPreview() = KaeruTheme { SkeletonGrid(count = 6) }
+
+/**
+ * The two strips together, which is the point: the same amber, the same four device-independent
+ * pixels, one saying how far and one saying that something is happening at all.
+ */
+@Preview(showBackground = true, backgroundColor = DARK, heightDp = 160)
+@Composable
+private fun SyncingNoticePreview() = KaeruTheme {
+    Column(
+        Modifier.padding(KaeruTokens.GutterPhone),
+        verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space6),
+    ) {
+        SyncingNotice()
+        ProgressStrip(0.42f, Modifier.width(KaeruTokens.PosterWidthPhone))
+    }
+}
 
 @Preview(showBackground = true, backgroundColor = DARK, heightDp = 140)
 @Composable

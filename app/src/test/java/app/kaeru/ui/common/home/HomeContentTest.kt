@@ -56,4 +56,45 @@ class HomeContentTest {
     fun `an empty feed with nothing wrong is the invitation`() {
         assertEquals(HomeContent.Empty, homeContentState(HomeUiState(isLoading = false)))
     }
+
+    /**
+     * The fault this state exists for: Room answers an empty list in a millisecond, so a viewer who
+     * has just signed in meets «здесь появятся тайтлы» while their list is still coming down the
+     * wire — an invitation to fill a list that is already full.
+     */
+    @Test
+    fun `an empty feed with a sync still running is not yet an empty list`() {
+        val state = HomeUiState(isLoading = false, isRefreshing = true)
+        assertEquals(HomeContent.FirstSync, homeContentState(state))
+    }
+
+    /** The invitation is what a finished sync found, not what an unfinished one has so far. */
+    @Test
+    fun `an empty feed after the sync finished is the invitation`() {
+        val state = HomeUiState(isLoading = false, isRefreshing = false)
+        assertEquals(HomeContent.Empty, homeContentState(state))
+    }
+
+    @Test
+    fun `a finished sync that found titles is the feed`() {
+        val state = HomeUiState(feed = watchable, isLoading = false, isRefreshing = false)
+        assertEquals(HomeContent.Feed, homeContentState(state))
+    }
+
+    /** A first sync that failed has a cause to give and «Повторить» to offer, not skeletons. */
+    @Test
+    fun `a first sync that failed explains itself`() {
+        val state = HomeUiState(isLoading = false, isRefreshing = false, errorMessage = OFFLINE)
+        assertEquals(HomeContent.Error(OFFLINE), homeContentState(state))
+    }
+
+    /**
+     * A refresh behind a feed the viewer is already reading must never take it away: the rows stay,
+     * and the pull indicator is the only thing that says anything is happening.
+     */
+    @Test
+    fun `a sync over a feed with titles leaves the feed on screen`() {
+        val state = HomeUiState(feed = watchable, isLoading = false, isRefreshing = true)
+        assertEquals(HomeContent.Feed, homeContentState(state))
+    }
 }
