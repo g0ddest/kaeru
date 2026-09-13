@@ -38,8 +38,12 @@ class ResolveEpisodeStream(
             translationOverride
         } else {
             val available = source.translations(animeId).getOrElse { return Result.failure(it) }
-            TranslationRanker.pick(available, prefs.preferredTranslations.first(), remembered?.translationId)
-                ?.withSeasonOf(remembered)
+            TranslationRanker.pick(
+                available,
+                prefs.preferredTranslations.first(),
+                remembered?.translationId,
+                usage(),
+            )?.withSeasonOf(remembered)
         }
 
         // A source with nothing listed is still asked: only it can say whether this is an
@@ -49,15 +53,38 @@ class ResolveEpisodeStream(
         return Result.success(stream)
     }
 
-    /** The tracks on offer, ordered the way the selection sheet should show them. */
-    suspend fun translations(animeId: Int): Result<List<Translation>> {
+    /**
+     * The tracks on offer, ordered the way the selection sheet should show them, each carrying
+     * whether this viewer keeps choosing it.
+     *
+     * Nothing is marked once this anime remembers a track of its own: the sheet already marks that
+     * one as chosen, and a habit is only worth pointing out where there is no answer yet.
+     */
+    suspend fun translations(animeId: Int): Result<List<RankedTranslation>> {
         val remembered = watchStates.observe(animeId).first()
         val available = source.translations(animeId).getOrElse { return Result.failure(it) }
         val seasoned = available.map { it.withSeasonOf(remembered) }
+        val usage = usage()
+        val rememberedId = remembered?.translationId
+        val sorted = TranslationRanker.sort(seasoned, prefs.preferredTranslations.first(), rememberedId, usage)
         return Result.success(
-            TranslationRanker.sort(seasoned, prefs.preferredTranslations.first(), remembered?.translationId),
+            sorted.map { track ->
+                RankedTranslation(
+                    translation = track,
+                    oftenChosen = rememberedId == null && TranslationUsage.oftenChosen(usage, track.id),
+                )
+            },
         )
     }
+
+    /**
+     * How often each track has been chosen, across every anime this device has played.
+     *
+     * Read once per request and handed to the ranker as a map: the rows are a few dozen at most,
+     * and the alternative — a lookup inside the comparator — would hit the database once per
+     * comparison and once per recomposition of whatever showed the result.
+     */
+    private suspend fun usage(): Map<Int, Int> = TranslationUsage.of(watchStates.observeAll().first())
 
     /** The season is a property of the anime's mapping onto Kodik, not of one track. */
     private fun Translation.withSeasonOf(remembered: WatchState?): Translation =

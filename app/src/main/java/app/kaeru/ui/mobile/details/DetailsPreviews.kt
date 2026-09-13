@@ -8,6 +8,7 @@ import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
+import app.kaeru.domain.playback.RankedTranslation
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.model.WatchState
 import app.kaeru.ui.common.theme.KaeruTheme
@@ -58,7 +59,10 @@ private val watching = LibraryEntry(
     WatchState(1, 21, 860_000, 1_400_000, translationId = 11, kodikSeason = 1, updatedAt = now),
 )
 
-private val anilibria = Translation(11, "AniLibria.TV", TranslationKind.VOICE, episodesCount = 28)
+private val anilibria = RankedTranslation(
+    Translation(11, "AniLibria.TV", TranslationKind.VOICE, episodesCount = 28),
+    oftenChosen = false,
+)
 
 @Preview(showBackground = true, backgroundColor = DARK, heightDp = 900)
 @Composable

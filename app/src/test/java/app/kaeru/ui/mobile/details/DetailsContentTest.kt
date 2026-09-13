@@ -8,6 +8,7 @@ import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.model.WatchState
+import app.kaeru.domain.playback.RankedTranslation
 import app.kaeru.ui.common.details.episodeCells
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -145,7 +146,7 @@ class DetailsContentTest {
 
     @Test
     fun `the dub pill names the studio once the list is loaded and stays honest before that`() {
-        val anilibria = Translation(11, "AniLibria.TV", TranslationKind.VOICE, 12)
+        val anilibria = RankedTranslation(Translation(11, "AniLibria.TV", TranslationKind.VOICE, 12), oftenChosen = false)
         assertEquals("Озвучка: AniLibria.TV", translationLabel(listOf(anilibria), currentId = 11))
         assertEquals("Озвучка", translationLabel(emptyList(), currentId = 11))
         assertEquals("Озвучка", translationLabel(listOf(anilibria), currentId = null))

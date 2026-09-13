@@ -123,7 +123,7 @@ class DetailsViewModelTest {
 
         vm.loadTranslations()
         advanceUntilIdle()
-        assertEquals(listOf("AniLibria.TV", "Студийная банда"), vm.uiState.value.translations.map { it.title })
+        assertEquals(listOf("AniLibria.TV", "Студийная банда"), vm.uiState.value.translations.map { it.translation.title })
         assertFalse(vm.uiState.value.loadingTranslations)
         assertEquals(1, source.translationCalls)
 
@@ -139,8 +139,22 @@ class DetailsViewModelTest {
         advanceUntilIdle()
         vm.loadTranslations()
         advanceUntilIdle()
-        assertEquals(listOf("Студийная банда", "AniLibria.TV"), vm.uiState.value.translations.map { it.title })
+        assertEquals(listOf("Студийная банда", "AniLibria.TV"), vm.uiState.value.translations.map { it.translation.title })
     }
+
+    @Test
+    fun `the chooser marks the dub this viewer keeps choosing, and only while none is remembered`() =
+        runTest(main.dispatcher) {
+            watchStates.seed(WatchState(1, 1, 0, 0, source.studioBanda.id, 1, Instant.EPOCH))
+            watchStates.seed(WatchState(2, 1, 0, 0, source.studioBanda.id, 1, Instant.EPOCH))
+            val vm = viewModel(FakeRepository(item))
+            advanceUntilIdle()
+
+            vm.loadTranslations()
+            advanceUntilIdle()
+            assertEquals(listOf("Студийная банда", "AniLibria.TV"), vm.uiState.value.translations.map { it.translation.title })
+            assertEquals(listOf(true, false), vm.uiState.value.translations.map { it.oftenChosen })
+        }
 
     @Test
     fun `a dub list that could not be read says why and can be asked for again`() = runTest(main.dispatcher) {

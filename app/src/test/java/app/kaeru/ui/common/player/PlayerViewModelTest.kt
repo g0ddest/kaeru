@@ -208,8 +208,24 @@ class PlayerViewModelTest {
         advanceUntilIdle()
 
         assertEquals(PlayerSheet.TRANSLATIONS, viewModel.uiState.value.sheet)
-        assertEquals(listOf(anilibria, studioBanda), viewModel.uiState.value.translations)
+        assertEquals(listOf(anilibria, studioBanda), viewModel.uiState.value.translations.map { it.translation })
         assertFalse(viewModel.uiState.value.loadingTranslations)
+    }
+
+    @Test
+    fun `the sheet marks a track this viewer keeps choosing elsewhere`() = runTest(main.dispatcher) {
+        // Nothing on the viewer's own list, so their watching history is what orders the sheet.
+        prefs.preferredTranslations.value = emptyList()
+        watchStates.seed(WatchState(1, 1, 0, 0, translationId = studioBanda.id, kodikSeason = 1, updatedAt = now))
+        watchStates.seed(WatchState(2, 1, 0, 0, translationId = studioBanda.id, kodikSeason = 1, updatedAt = now))
+        viewModel.start(100, 1)
+        advanceUntilIdle()
+
+        viewModel.openTranslations()
+        advanceUntilIdle()
+
+        assertEquals(listOf(studioBanda, anilibria), viewModel.uiState.value.translations.map { it.translation })
+        assertEquals(listOf(true, false), viewModel.uiState.value.translations.map { it.oftenChosen })
     }
 
     @Test

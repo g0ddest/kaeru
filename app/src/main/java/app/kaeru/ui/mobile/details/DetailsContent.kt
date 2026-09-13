@@ -4,8 +4,8 @@ import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
-import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.UserRate
+import app.kaeru.domain.playback.RankedTranslation
 import app.kaeru.ui.common.design.pluralEpisodes
 import app.kaeru.ui.common.design.PrimaryAction
 import app.kaeru.ui.common.design.episodesLabel
@@ -103,9 +103,9 @@ fun statusLabel(status: ListStatus): String = when (status) {
  * asked, which happens the first time the chooser is opened. Until then the control says what it
  * opens and nothing more — a label that guessed a studio name would be a label that lies.
  */
-fun translationLabel(translations: List<Translation>, currentId: Int?): String {
-    val current = currentId?.let { id -> translations.firstOrNull { it.id == id } } ?: return DUB
-    return "$DUB: ${current.title}"
+fun translationLabel(translations: List<RankedTranslation>, currentId: Int?): String {
+    val current = currentId?.let { id -> translations.firstOrNull { it.translation.id == id } } ?: return DUB
+    return "$DUB: ${current.translation.title}"
 }
 
 /**

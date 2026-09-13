@@ -28,8 +28,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
+import app.kaeru.domain.playback.RankedTranslation
 import app.kaeru.ui.common.design.ErrorState
 import app.kaeru.ui.common.design.KaeruTokens
+import app.kaeru.ui.common.design.OftenChosenChip
 import app.kaeru.ui.common.design.RowHeader
 import app.kaeru.ui.common.design.Skeleton
 import app.kaeru.ui.common.design.SkeletonGroup
@@ -54,14 +56,14 @@ private const val SKELETON_ROWS = 3
  * Which voice this anime plays in.
  *
  * The list arrives ranked — the remembered track first, then the studios the viewer put at the top
- * of their settings — so the order is itself the recommendation and the first row is almost always
- * the right one. Picking a track writes it against this anime and nothing else: the episode and the
- * position stay where they were.
+ * of their settings, then the ones they keep choosing elsewhere — so the order is itself the
+ * recommendation and the first row is almost always the right one. Picking a track writes it
+ * against this anime and nothing else: the episode and the position stay where they were.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TranslationPickerSheet(
-    translations: List<Translation>,
+    translations: List<RankedTranslation>,
     currentId: Int?,
     loading: Boolean,
     errorMessage: String?,
@@ -90,12 +92,13 @@ fun TranslationPickerSheet(
                 ),
             )
             else -> LazyColumn(Modifier.heightIn(max = ListHeight)) {
-                items(translations, key = { it.id }) { track ->
+                items(translations, key = { it.translation.id }) { ranked ->
                     TrackRow(
-                        track,
-                        selected = track.id == currentId,
+                        ranked.translation,
+                        selected = ranked.translation.id == currentId,
+                        oftenChosen = ranked.oftenChosen,
                         enabled = enabled,
-                        onClick = { onPick(track) },
+                        onClick = { onPick(ranked.translation) },
                     )
                 }
             }
@@ -115,7 +118,13 @@ private fun LoadingTracks() = SkeletonGroup {
 }
 
 @Composable
-private fun TrackRow(track: Translation, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+private fun TrackRow(
+    track: Translation,
+    selected: Boolean,
+    oftenChosen: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -126,14 +135,23 @@ private fun TrackRow(track: Translation, selected: Boolean, enabled: Boolean, on
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                track.title,
-                style = MaterialTheme.typography.titleSmall,
-                color = if (enabled) KaeruText else KaeruSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space1)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space2),
+            ) {
+                Text(
+                    track.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (enabled) KaeruText else KaeruSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                // Only where the anime has nothing remembered: the row it does remember carries
+                // the tick, and one list saying two things at once says neither.
+                if (oftenChosen) OftenChosenChip()
+            }
             Text(
                 caption(track),
                 style = MaterialTheme.typography.labelMedium,

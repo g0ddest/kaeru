@@ -54,6 +54,7 @@ import androidx.tv.material3.Text
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
+import app.kaeru.domain.playback.RankedTranslation
 import app.kaeru.player.EpisodeQueue
 import app.kaeru.ui.common.player.PlayerUiState
 import app.kaeru.ui.common.design.formatTime
@@ -351,9 +352,9 @@ internal val previewState = PlayerUiState(
     qualities = listOf(Quality.P480, Quality.P720, Quality.P1080),
     nextEpisodeAvailable = true,
     translations = listOf(
-        Translation(1, "AniLibria", TranslationKind.VOICE, 12),
-        Translation(2, "Studio Band", TranslationKind.VOICE, 12),
-        Translation(3, "Crunchyroll", TranslationKind.SUBTITLES, 12),
+        RankedTranslation(Translation(1, "AniLibria", TranslationKind.VOICE, 12), oftenChosen = false),
+        RankedTranslation(Translation(2, "Studio Band", TranslationKind.VOICE, 12), oftenChosen = true),
+        RankedTranslation(Translation(3, "Crunchyroll", TranslationKind.SUBTITLES, 12), oftenChosen = false),
     ),
 )
 

@@ -1,7 +1,7 @@
 package app.kaeru.ui.common.player
 
 import app.kaeru.domain.model.Quality
-import app.kaeru.domain.model.Translation
+import app.kaeru.domain.playback.RankedTranslation
 
 /** Which chooser is open over the video, if any. */
 enum class PlayerSheet { TRANSLATIONS, QUALITY }
@@ -24,7 +24,8 @@ data class PlayerUiState(
     val durationMs: Long = 0,
     val quality: Quality? = null,
     val qualities: List<Quality> = emptyList(),
-    val translations: List<Translation> = emptyList(),
+    /** The tracks on offer, ranked, each saying whether this viewer keeps choosing it. */
+    val translations: List<RankedTranslation> = emptyList(),
     val loadingTranslations: Boolean = false,
     val sheet: PlayerSheet? = null,
     val nextEpisodeAvailable: Boolean = false,

@@ -10,6 +10,7 @@ import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.WatchState
 import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.PlaybackPreferences
+import app.kaeru.domain.playback.RankedTranslation
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.repository.WatchStateRepository
@@ -42,8 +43,11 @@ data class DetailsUiState(
     val failedPick: Translation? = null,
     /** How much of an episode counts as watched; decides which episode the main button offers. */
     val watchedThreshold: Float = 0.9f,
-    /** The dubs this anime has, ranked, once the chooser has asked for them. */
-    val translations: List<Translation> = emptyList(),
+    /**
+     * The dubs this anime has, ranked, once the chooser has asked for them; each says whether it
+     * is one this viewer keeps choosing.
+     */
+    val translations: List<RankedTranslation> = emptyList(),
     val loadingTranslations: Boolean = false,
     /** A dub is being written; the dub control says so and the chooser stops accepting taps. */
     val savingTranslation: Boolean = false,

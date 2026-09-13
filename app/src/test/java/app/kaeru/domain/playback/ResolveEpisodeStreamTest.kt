@@ -120,11 +120,33 @@ class ResolveEpisodeStreamTest {
     }
 
     @Test
-    fun `with nothing remembered the preferred studio wins`() = runTest(dispatcher) {
+    fun `with nothing remembered and nothing watched the built-in studios win`() = runTest(dispatcher) {
         resolve(animeId = 100, episode = 1).getOrThrow()
 
         assertEquals(anilibria.id, source.resolveCalls.single().third?.id)
     }
+
+    @Test
+    fun `an anime nobody has started opens in the track this viewer picks most`() = runTest(dispatcher) {
+        watchStates.seed(row(episode = 1, translationId = studioBanda.id).copy(animeId = 1))
+        watchStates.seed(row(episode = 1, translationId = studioBanda.id).copy(animeId = 2))
+
+        resolve(animeId = 100, episode = 1).getOrThrow()
+
+        assertEquals(studioBanda.id, source.resolveCalls.single().third?.id)
+    }
+
+    @Test
+    fun `the track this anime remembers still beats the one the viewer uses everywhere else`() =
+        runTest(dispatcher) {
+            watchStates.seed(row(episode = 1, translationId = studioBanda.id).copy(animeId = 1))
+            watchStates.seed(row(episode = 1, translationId = studioBanda.id).copy(animeId = 2))
+            watchStates.seed(row(episode = 3, translationId = anilibria.id))
+
+            resolve(animeId = 100, episode = 4).getOrThrow()
+
+            assertEquals(anilibria.id, source.resolveCalls.single().third?.id)
+        }
 
     @Test
     fun `a first play writes a fresh row at the start of the episode`() = runTest(dispatcher) {
@@ -225,9 +247,36 @@ class ResolveEpisodeStreamTest {
 
         val listed = resolve.translations(animeId = 100).getOrThrow()
 
-        assertEquals(listOf(studioBanda.id, anilibria.id, subtitles.id), listed.map { it.id })
-        assertEquals(listOf(2, 2, 2), listed.map { it.season })
+        assertEquals(listOf(studioBanda.id, anilibria.id, subtitles.id), listed.map { it.translation.id })
+        assertEquals(listOf(2, 2, 2), listed.map { it.translation.season })
     }
+
+    @Test
+    fun `the sheet marks the tracks this viewer keeps choosing, ranked by how often`() = runTest(dispatcher) {
+        watchStates.seed(row(episode = 1, translationId = studioBanda.id).copy(animeId = 1))
+        watchStates.seed(row(episode = 1, translationId = studioBanda.id).copy(animeId = 2))
+        watchStates.seed(row(episode = 1, translationId = subtitles.id).copy(animeId = 3))
+
+        val listed = resolve.translations(animeId = 100).getOrThrow()
+
+        // Watched once, subtitles still outrank a studio from the built-in list nobody has played;
+        // once is not a habit, so only the track two anime carry is marked.
+        assertEquals(listOf(studioBanda.id, subtitles.id, anilibria.id), listed.map { it.translation.id })
+        assertEquals(listOf(true, false, false), listed.map { it.oftenChosen })
+    }
+
+    @Test
+    fun `an anime with a track of its own marks nothing, since that track is already marked chosen`() =
+        runTest(dispatcher) {
+            watchStates.seed(row(episode = 1, translationId = studioBanda.id).copy(animeId = 1))
+            watchStates.seed(row(episode = 1, translationId = studioBanda.id).copy(animeId = 2))
+            watchStates.seed(row(episode = 3, translationId = anilibria.id))
+
+            val listed = resolve.translations(animeId = 100).getOrThrow()
+
+            assertEquals(listOf(anilibria.id, studioBanda.id, subtitles.id), listed.map { it.translation.id })
+            assertEquals(listOf(false, false, false), listed.map { it.oftenChosen })
+        }
 
     @Test
     fun `a catalogue failure reaches the selection sheet unchanged`() = runTest(dispatcher) {

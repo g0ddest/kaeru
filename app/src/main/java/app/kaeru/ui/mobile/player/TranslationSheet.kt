@@ -22,21 +22,25 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
+import app.kaeru.domain.playback.RankedTranslation
+import app.kaeru.ui.common.design.OftenChosenChip
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruSurface
 
 /**
  * The track chooser. The list arrives ranked — remembered choice first, then the viewer's
- * preferred studios — so the order itself is the recommendation.
+ * preferred studios, then the ones they keep choosing elsewhere — so the order itself is the
+ * recommendation, and the chip repeats the strongest part of it for the eye.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TranslationSheet(
-    translations: List<Translation>,
+    translations: List<RankedTranslation>,
     currentId: Int?,
     onPick: (Translation) -> Unit,
     onDismiss: () -> Unit,
@@ -55,12 +59,13 @@ fun TranslationSheet(
             )
         }
         LazyColumn(Modifier.heightIn(max = 420.dp)) {
-            items(translations, key = { it.id }) { track ->
+            items(translations, key = { it.translation.id }) { ranked ->
                 SheetRow(
-                    title = track.title,
-                    caption = caption(track),
-                    selected = track.id == currentId,
-                    onClick = { onPick(track) },
+                    title = ranked.translation.title,
+                    caption = caption(ranked.translation),
+                    selected = ranked.translation.id == currentId,
+                    oftenChosen = ranked.oftenChosen,
+                    onClick = { onPick(ranked.translation) },
                 )
             }
         }
@@ -104,7 +109,13 @@ private fun SheetTitle(text: String) {
 }
 
 @Composable
-private fun SheetRow(title: String, caption: String?, selected: Boolean, onClick: () -> Unit) {
+private fun SheetRow(
+    title: String,
+    caption: String?,
+    selected: Boolean,
+    onClick: () -> Unit,
+    oftenChosen: Boolean = false,
+) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -114,7 +125,16 @@ private fun SheetRow(title: String, caption: String?, selected: Boolean, onClick
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (oftenChosen) OftenChosenChip()
+            }
             caption?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

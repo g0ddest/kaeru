@@ -50,6 +50,20 @@ fun MetaChip(text: String, modifier: Modifier = Modifier) {
 }
 
 /**
+ * The mark on a track this viewer keeps coming back to, wherever tracks are listed.
+ *
+ * A chip rather than another line of caption: the row already says what kind of track it is and
+ * how long, and a second grey line under the first would read as more of the same. It never takes
+ * the accent — amber on this screen means «Смотреть» — so the hint stays a hint and the row the
+ * anime already remembers keeps the only tick on the list.
+ */
+@Composable
+fun OftenChosenChip(modifier: Modifier = Modifier) = MetaChip(OFTEN_CHOSEN, modifier)
+
+/** Said once, so the phone sheets and the title screen cannot drift apart. */
+const val OFTEN_CHOSEN = "Часто выбираете"
+
+/**
  * The current list status, and the way to change it.
  *
  * Unlike [MetaChip] this is a control, so it is a full 48dp tall and carries an affordance saying

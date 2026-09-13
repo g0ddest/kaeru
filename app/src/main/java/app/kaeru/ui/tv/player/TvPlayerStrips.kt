@@ -26,6 +26,7 @@ import androidx.tv.material3.Text
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
+import app.kaeru.domain.playback.RankedTranslation
 import app.kaeru.ui.common.player.PlayerUiState
 import app.kaeru.ui.common.theme.KaeruBackground
 import app.kaeru.ui.common.theme.KaeruTvTheme
@@ -68,9 +69,9 @@ fun TvEpisodeStrip(
                 label = "Озвучка",
                 items = state.translations,
                 caption = ::translationLabel,
-                isCurrent = { it.id == state.translationId },
+                isCurrent = { it.translation.id == state.translationId },
                 claimsFocus = state.availableEpisodes == 0,
-                onPick = onTranslation,
+                onPick = { onTranslation(it.translation) },
             )
         }
     }
@@ -107,8 +108,22 @@ fun TvStripMessage(text: String, modifier: Modifier = Modifier) {
     }
 }
 
-private fun translationLabel(track: Translation): String =
-    if (track.type == TranslationKind.SUBTITLES) "${track.title} (субтитры)" else track.title
+/**
+ * What a voice chip says. A chip is a single line with nothing under it, so everything the row has
+ * to say about a track goes in the label: what it is called, whether it is read rather than heard,
+ * and whether this viewer keeps choosing it.
+ *
+ * The last of those joins as a phrase after a comma rather than behind a separator — «AniLibria,
+ * часто выбираете» can be read out; «AniLibria · часто» is a meta string.
+ */
+internal fun translationLabel(ranked: RankedTranslation): String {
+    val track = ranked.translation
+    val name = if (track.type == TranslationKind.SUBTITLES) "${track.title} (субтитры)" else track.title
+    return if (ranked.oftenChosen) "$name, $OFTEN_CHOSEN" else name
+}
+
+/** Lower case, because it finishes the phrase the studio name starts. */
+private const val OFTEN_CHOSEN = "часто выбираете"
 
 @Composable
 private fun StripPanel(modifier: Modifier = Modifier, content: @Composable () -> Unit) {

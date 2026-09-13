@@ -10,6 +10,7 @@ import app.kaeru.domain.model.PlaybackTarget
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.playback.PlaybackPreferences
+import app.kaeru.domain.playback.RankedTranslation
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.repository.WatchStateRepository
@@ -58,7 +59,7 @@ class PlayerViewModel @Inject constructor(
 
     /** What only this screen knows: which sheet is open, and what is waiting to be said. */
     private data class ScreenState(
-        val translations: List<Translation> = emptyList(),
+        val translations: List<RankedTranslation> = emptyList(),
         val loadingTranslations: Boolean = false,
         val sheet: PlayerSheet? = null,
         val completedPrompt: Boolean = false,

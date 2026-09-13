@@ -14,12 +14,15 @@ import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import app.kaeru.ui.common.theme.KaeruText
 import app.kaeru.ui.common.theme.KaeruTheme
 
 private const val DARK = 0xFF0B0C10
@@ -173,7 +176,7 @@ private fun ButtonsPreview() = KaeruTheme {
     }
 }
 
-@Preview(showBackground = true, backgroundColor = DARK, heightDp = 180)
+@Preview(showBackground = true, backgroundColor = DARK, heightDp = 220)
 @Composable
 private fun ChipsPreview() = KaeruTheme {
     Column(
@@ -185,6 +188,10 @@ private fun ChipsPreview() = KaeruTheme {
             MetaChip("28 серий")
             MetaChip("9,1")
             MetaChip("Madhouse")
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space2)) {
+            Text("AniLibria.TV", style = MaterialTheme.typography.titleSmall, color = KaeruText)
+            OftenChosenChip()
         }
         Row(horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space3)) {
             StatusPill("Смотрю", selected = true, onClick = {})
