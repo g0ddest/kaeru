@@ -28,6 +28,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -42,10 +44,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.kaeru.ui.common.design.KaeruSeekBar
 import app.kaeru.ui.common.design.formatTime
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruElevated
+import app.kaeru.ui.common.theme.KaeruSecondary
 import app.kaeru.player.EpisodeQueue
 import kotlin.math.roundToLong
 
@@ -137,15 +139,23 @@ fun PlayerBottomBar(
             Spacer(Modifier.weight(1f))
             Text(formatTime(durationMs), style = MaterialTheme.typography.labelMedium, color = OnVideoMuted)
         }
-        val durationSafe = maxOf(durationMs, 1L)
-        KaeruSeekBar(
-            progress = shown.coerceIn(0, maxOf(durationMs, 0)).toFloat() / durationSafe.toFloat(),
-            onScrub = { fraction -> scrubbing = fraction.coerceIn(0f, 1f) * durationSafe },
-            onScrubEnd = {
+        Slider(
+            value = shown.coerceIn(0, maxOf(durationMs, 0)).toFloat(),
+            onValueChange = { scrubbing = it },
+            onValueChangeFinished = {
                 scrubbing?.let { onSeekTo(it.roundToLong()) }
                 scrubbing = null
             },
+            valueRange = 0f..maxOf(durationMs, 1L).toFloat(),
             enabled = durationMs > 0,
+            colors = SliderDefaults.colors(
+                thumbColor = KaeruAccent,
+                activeTrackColor = KaeruAccent,
+                inactiveTrackColor = Color.White.copy(alpha = 0.24f),
+                disabledThumbColor = KaeruSecondary,
+                disabledActiveTrackColor = KaeruSecondary,
+                disabledInactiveTrackColor = Color.White.copy(alpha = 0.16f),
+            ),
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             DiscButton(Icons.Default.Replay10, "Назад на 10 секунд") { onSeekBy(-EpisodeQueue.SEEK_STEP_MS) }
