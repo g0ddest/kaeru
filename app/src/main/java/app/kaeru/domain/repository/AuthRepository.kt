@@ -25,5 +25,16 @@ interface AuthRepository {
      */
     suspend fun exchangeTypedCode(code: String): Result<Unit>
 
+    /**
+     * Handles an authorization code a phone obtained through its own browser session and handed to
+     * this device over the local network.
+     *
+     * It carries no `state`, because the authorization did not start here: what stands in for it is
+     * the one-time nonce the phone had to read off this screen. [redirectUri] is the phone's, not
+     * this device's — Shikimori checks that a token request repeats the redirect of the
+     * authorization it belongs to — and is refused unless it is one this app owns.
+     */
+    suspend fun exchangePairedCode(code: String, redirectUri: String): Result<Unit>
+
     suspend fun logout()
 }

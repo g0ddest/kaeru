@@ -54,3 +54,22 @@ class CastLoadFailed(cause: Throwable? = null) : Exception("Cast receiver did no
  */
 class SourceFormatChanged(val step: String, cause: Throwable? = null) :
     Exception("Video source format changed at $step", cause)
+
+/** Why a hand-off between the phone and the television did not happen. */
+enum class PairingFailureReason {
+    /** The `kaeru://pair` link was malformed, or pointed somewhere outside the local network. */
+    BAD_LINK,
+
+    /** The television answered and turned the code away: a stale QR, or an exchange it could not finish. */
+    REFUSED,
+
+    /** Nothing answered at the address in the QR code. */
+    UNREACHABLE,
+
+    /** This television has no address on a local network, so there is nothing to put in a QR code. */
+    NO_LOCAL_ADDRESS,
+}
+
+/** A television could not be signed in from the phone that scanned its QR code. */
+class PairingFailed(val reason: PairingFailureReason, cause: Throwable? = null) :
+    Exception("Pairing failed: $reason", cause)

@@ -27,6 +27,7 @@ class AuthViewModelTest {
         var exchangeResult: Result<Unit> = Result.success(Unit)
         val redirectExchanges = mutableListOf<Pair<String, String?>>()
         val typedExchanges = mutableListOf<String>()
+        val pairedExchanges = mutableListOf<Pair<String, String>>()
         private var attempts = 0
         override val isLoggedIn: Flow<Boolean> = loggedIn
 
@@ -43,6 +44,11 @@ class AuthViewModelTest {
 
         override suspend fun exchangeTypedCode(code: String): Result<Unit> {
             typedExchanges += code
+            return exchangeResult.onSuccess { loggedIn.value = true }
+        }
+
+        override suspend fun exchangePairedCode(code: String, redirectUri: String): Result<Unit> {
+            pairedExchanges += code to redirectUri
             return exchangeResult.onSuccess { loggedIn.value = true }
         }
 

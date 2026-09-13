@@ -66,6 +66,22 @@ class ShikimoriAuthRepository @Inject constructor(
         return exchangeCode(code, MOBILE_REDIRECT)
     }
 
+    /**
+     * The television's side of the QR hand-off. The guards mirror [exchangeRedirectCode]'s: an
+     * account already signed in is never swapped out from under itself, and the redirect the phone
+     * reports has to be one of this app's own — a caller on the local network must not be able to
+     * choose where the token request claims it came from.
+     */
+    override suspend fun exchangePairedCode(code: String, redirectUri: String): Result<Unit> {
+        if (isLoggedIn.first()) return rejected("An account is already signed in")
+        if (redirectUri != MOBILE_REDIRECT && redirectUri != OOB_REDIRECT) {
+            return rejected("Pairing named a redirect this app does not use")
+        }
+        val trimmed = code.trim()
+        if (trimmed.isEmpty()) return rejected("Pairing carried no authorization code")
+        return exchangeCode(trimmed, redirectUri)
+    }
+
     override suspend fun exchangeTypedCode(code: String): Result<Unit> =
         exchangeCode(code.trim(), OOB_REDIRECT)
 

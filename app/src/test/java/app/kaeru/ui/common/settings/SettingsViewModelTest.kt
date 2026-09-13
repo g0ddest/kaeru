@@ -49,6 +49,7 @@ class SettingsViewModelTest {
         override fun authorizeUrl(redirectUri: String) = "https://auth.test/"
         override suspend fun exchangeRedirectCode(code: String, state: String?) = Result.success(Unit)
         override suspend fun exchangeTypedCode(code: String) = Result.success(Unit)
+        override suspend fun exchangePairedCode(code: String, redirectUri: String) = Result.success(Unit)
         override suspend fun logout() { logouts++ }
     }
 
