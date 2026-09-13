@@ -6,8 +6,8 @@ Kaeru кастует на Styled Media Receiver, зарегистрирован�
 
 ## Где лежит
 
-Скин раздаётся через GitHub Pages из ветки `gh-pages` этого репозитория:
-`https://g0ddest.github.io/kaeru/kaeru.css` — эта ссылка вписана в консоли в поле Skin URL.
+Скин раздаётся через GitHub Pages из ветки `gh-pages` этого репозитория на поддомене (файл `CNAME` в этой папке, DNS: CNAME `kaeru.vitaliy.velikodniy.name` → `g0ddest.github.io`):
+`https://kaeru.vitaliy.velikodniy.name/kaeru.css` — эта ссылка вписана в консоли в поле Skin URL.
 
 ## Как обновить
 
