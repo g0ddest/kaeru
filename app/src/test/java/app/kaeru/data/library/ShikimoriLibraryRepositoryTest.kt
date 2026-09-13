@@ -11,12 +11,14 @@ import app.cash.turbine.test
 import app.kaeru.data.auth.AccountSession
 import app.kaeru.data.auth.AuthTokens
 import app.kaeru.data.auth.InMemoryTokenStore
+import app.kaeru.data.local.EpisodeProgressEntity
 import app.kaeru.data.local.KaeruDatabase
 import app.kaeru.data.local.WatchStateEntity
 import app.kaeru.data.shikimori.AnimeDetailsDto
 import app.kaeru.data.shikimori.ImageDto
 import app.kaeru.data.shikimori.ScreenshotDto
 import app.kaeru.data.shikimori.StudioDto
+import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.ListStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -211,6 +213,27 @@ class ShikimoriLibraryRepositoryTest {
         }
         assertNull(repo.observeAnime(999).first())
         assertTrue(api.calls.isEmpty())
+    }
+
+    @Test
+    fun `each entry carries the episode positions of its own anime and no others`() = scope.runTest {
+        // The only path by which `episode_progress` reaches the home screen, the title screen and
+        // the television. Group it on the wrong key and every test in the suite stays green while
+        // the feature does nothing on a device.
+        seedWatching()
+        repo.refresh().getOrThrow()
+        db.episodeProgressDao().upsert(EpisodeProgressEntity(100, 4, 600_000, 1_440_000, now))
+        db.episodeProgressDao().upsert(EpisodeProgressEntity(100, 5, 120_000, 1_440_000, now))
+        db.episodeProgressDao().upsert(EpisodeProgressEntity(200, 7, 300_000, 1_440_000, now))
+
+        val byAnime = repo.observeLibrary().first().associateBy { it.anime.id }
+
+        assertEquals(
+            listOf(4 to 600_000L, 5 to 120_000L),
+            byAnime.getValue(100).progress.map { it.episode to it.positionMs },
+        )
+        assertEquals(listOf(7 to 300_000L), byAnime.getValue(200).progress.map { it.episode to it.positionMs })
+        assertEquals(emptyList<EpisodeProgress>(), byAnime.getValue(300).progress)
     }
 
     @Test

@@ -143,6 +143,18 @@ class PlayerViewModelTest {
         }
 
     @Test
+    fun `an episode holding nothing but a mis-tap starts from the beginning`() = runTest(main.dispatcher) {
+        // The same ten seconds the watch button refuses to offer: asked for on purpose, the
+        // episode starts where the viewer expects it to, not ten seconds in.
+        episodes.seed(EpisodeProgress(100, 6, 10_000, 1_440_000, now))
+
+        viewModel.start(animeId = 100, episode = 6)
+        advanceUntilIdle()
+
+        assertEquals(0L, controller.played.single().startPositionMs)
+    }
+
+    @Test
     fun `choosing an episode from the remote resumes that episode's own position`() = runTest(main.dispatcher) {
         episodes.seed(EpisodeProgress(100, 9, 700_000, 1_440_000, now))
         viewModel.start(100, 4)
