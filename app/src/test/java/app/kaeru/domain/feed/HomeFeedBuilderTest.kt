@@ -84,6 +84,13 @@ class HomeFeedBuilderTest {
     }
 
     @Test
+    fun `an announcement never lands in next up, however many episodes it promises`() {
+        val announced = anime(1, AnimeStatus.ANONS, episodes = 12, aired = 0)
+        val feed = builder.build(listOf(entry(announced, watched = 0)), now)
+        assertTrue(feed.nextUp.isEmpty())
+    }
+
+    @Test
     fun `upcoming is ongoing watching with next episode within window`() {
         val soon = anime(2, AnimeStatus.ONGOING, 24, aired = 7, next = now.plus(Duration.ofDays(2)))
         val far = anime(3, AnimeStatus.ONGOING, 24, aired = 7, next = now.plus(Duration.ofDays(20)))

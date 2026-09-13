@@ -1,7 +1,6 @@
 package app.kaeru.ui.common.design
 
 import app.kaeru.domain.model.Anime
-import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.FeedItem
 import app.kaeru.domain.model.FeedKind
 import app.kaeru.domain.model.LibraryEntry
@@ -148,13 +147,13 @@ fun episodeLine(item: FeedItem, now: Instant, zone: ZoneId = ZoneId.systemDefaul
 /**
  * Episodes that exist to play right now.
  *
- * `Anime.availableEpisodes` answers the announced length for anything that is not ongoing, which
- * is right for a finished show — catalogues routinely report `episodesAired = 0` for one — and
- * wrong for an announcement, where twelve episodes are promised and none have been made. Reading
- * it through here is what keeps a button from offering, and a grid from opening, an episode that
- * does not exist yet.
+ * A thin alias for `Anime.availableEpisodes`, kept so call sites here read in terms of what has
+ * aired rather than a more general-sounding name. The rule itself — aired so far while ongoing,
+ * nothing for an announcement, the announced total once finished — lives once on the domain
+ * model; keeping it there is what keeps a button from offering, and a grid from opening, an
+ * episode that does not exist yet.
  */
-fun Anime.airedEpisodes(): Int = if (status == AnimeStatus.ANONS) 0 else availableEpisodes
+fun Anime.airedEpisodes(): Int = availableEpisodes
 
 data class PrimaryAction(
     val label: String,

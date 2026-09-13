@@ -75,6 +75,12 @@ class TvActionsTest {
     }
 
     @Test
+    fun `an announcement is not offered even once it promises a season length`() {
+        val announced = item(FeedKind.PLANNED, episode = 1, status = AnimeStatus.ANONS, episodes = 12, aired = 0)
+        assertEquals(TvWatchAction.NotAired, tvWatchAction(announced))
+    }
+
+    @Test
     fun `a finished show counts its whole run as available`() {
         val last = item(FeedKind.NEXT_UP, episode = 12, status = AnimeStatus.RELEASED, episodes = 12, aired = 0)
         assertEquals(TvWatchAction.Play(12, "Смотреть 12 серию"), tvWatchAction(last))
