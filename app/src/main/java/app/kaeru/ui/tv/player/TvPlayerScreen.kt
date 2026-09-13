@@ -88,9 +88,9 @@ fun TvPlayerScreen(
     val rungFocus = remember { TvPanelRung.entries.associateWith { FocusRequester() } }
 
     // A failure the viewer has answered with «Сменить озвучку»: the message steps aside for the
-    // strip, because the strip is where the answer is and the message has already been read.
+    // strip — but only once there is a strip to step aside for. [tvShowsFailure] is the rule.
     var choosingTrack by remember(state.errorMessage) { mutableStateOf(false) }
-    val failed = state.errorMessage != null && !choosingTrack
+    val failed = tvShowsFailure(state, choosingTrack)
     val countdown = state.autoplayCountdownSec != null && state.nextEpisodeAvailable
     /** Something on screen is asking a question, and owns both the focus and the remote. */
     val cardOpen = failed || state.completedPrompt || countdown
@@ -99,7 +99,12 @@ fun TvPlayerScreen(
     // there anything to control before the first frame: the poster is the whole screen until
     // there is an episode behind it.
     val panelShown = panel.visible && !failed && !state.completedPrompt && !state.isLoading
-    val rungs = tvPanelRungs(state)
+    val content = rememberTvPanelContent(state)
+    val clock = rememberTvPlayerClock(state)
+    val rungs = content.rungs
+    // Nothing to drive before the first frame, so the D-pad is held the way a card holds it: the
+    // centre cannot toggle a stream that has not started, and up and down go nowhere visible.
+    val remoteHeld = cardOpen || state.isLoading
     // Taken once per episode: the only thing measured against it is which day the next one airs.
     val now = remember(state.episode) { Instant.now() }
 
@@ -179,13 +184,16 @@ fun TvPlayerScreen(
     LaunchedEffect(state.isPlaying) { view.keepScreenOn = state.isPlaying }
     DisposableEffect(Unit) { onDispose { view.keepScreenOn = false } }
 
+    // The completion question is not here: it is a real dialog window, so back on it goes to its
+    // own `onDismissRequest` and never reaches this handler.
     BackHandler {
         when {
-            state.completedPrompt -> onDismissCompleted()
             failed -> onExit()
             countdown -> onCancelAutoplay()
+            // Against what is on screen rather than what the panel remembers: back undoes what
+            // the viewer can see, and during the wait for the first frame that is nothing.
             else -> perform(
-                TvPlayerKeyHandler.onKey(TvKey.BACK, KeyAction.DOWN, panel.visible, state.isPlaying),
+                TvPlayerKeyHandler.onKey(TvKey.BACK, KeyAction.DOWN, panelShown, state.isPlaying),
             )
         }
     }
@@ -209,12 +217,16 @@ fun TvPlayerScreen(
                     action = action,
                     panelVisible = wasVisible,
                     isPlaying = state.isPlaying,
-                    cardOpen = cardOpen,
+                    cardOpen = remoteHeld,
                     repeatCount = event.nativeKeyEvent.repeatCount,
                 )
                 if (action == KeyAction.DOWN && wakesPanel(key, wasVisible)) {
                     val wanted = (command as? TvPlayerCommand.ShowPanel)?.rung ?: panel.rung
                     panel = panel.shown(tvRungOrNearest(rungs, wanted), event.nativeKeyEvent.eventTime)
+                    // The jog mark belongs to a clear picture. Press right and then up inside its
+                    // second, and it would otherwise sit in the middle of the panel it was
+                    // drawn to stand in for.
+                    seek = null
                 }
                 perform(command)
             },
@@ -275,8 +287,9 @@ fun TvPlayerScreen(
 
             if (panelShown) {
                 TvPlayerPanel(
-                    state = state,
-                    rungFocus = rungFocus::getValue,
+                    content = content,
+                    clock = clock,
+                    rungFocus = rungFocus,
                     onPickEpisode = onPlayEpisode,
                     onPickTranslation = { track ->
                         choosingTrack = false
@@ -301,7 +314,11 @@ fun TvPlayerScreen(
                         tracksAsked = true
                         onLoadTranslations()
                     }
-                    panel = panel.shown(tvRungOrNearest(rungs, TvPanelRung.TRANSLATIONS))
+                    // Stored unclamped: the voices are exactly what is missing at this moment,
+                    // so clamping here would settle on the transport row and stay there when the
+                    // list arrives. The render-time clamp parks the D-pad somewhere reachable
+                    // meanwhile and the focus effect moves it up the moment the rung exists.
+                    panel = panel.shown(TvPanelRung.TRANSLATIONS)
                 },
             )
         }

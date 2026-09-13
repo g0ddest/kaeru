@@ -247,9 +247,9 @@ fun waitingLabel(
  * The mark on a track the viewer keeps coming back to.
  *
  * One string for three surfaces: the title screen's chooser and the phone player render it as a
- * chip through [OftenChosenChip], and the television, where a chip has no room for a second line,
- * lower-cases the first letter and finishes the studio name with it. A second copy of the phrase
- * would drift from this one the first time either is reworded.
+ * chip through [OftenChosenChip], and the television — where a row is read from three metres and
+ * a chip beside a studio name is a smudge — sets it verbatim on a second line under the name. A
+ * second copy of the phrase would drift from this one the first time either is reworded.
  */
 internal const val OFTEN_CHOSEN = "Часто выбираете"
 

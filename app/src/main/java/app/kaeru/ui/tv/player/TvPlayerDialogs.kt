@@ -204,7 +204,9 @@ fun TvSeekIndicator(deltaMs: Long, modifier: Modifier = Modifier) {
             modifier = Modifier.size(SeekMark),
         )
         Text(
-            "${deltaMs.absoluteValue / 1000} с",
+            // Signed, in the same two words the transport buttons use: one phrase for one idea,
+            // whether the viewer reads it on a button or over the picture.
+            "${if (forward) "+" else "−"}${deltaMs.absoluteValue / 1000} с",
             style = MaterialTheme.typography.titleLarge,
             color = KaeruText,
         )
@@ -258,11 +260,17 @@ private fun TvPlaybackFailurePreview() {
     }
 }
 
+/** Both directions, since the sign is the thing being previewed. */
 @Preview(device = Devices.TV_1080p)
 @Composable
 private fun TvSeekIndicatorPreview() {
     KaeruTvTheme {
-        Box(Modifier.fillMaxSize().background(KaeruBackground), contentAlignment = Alignment.Center) {
+        Column(
+            Modifier.fillMaxSize().background(KaeruBackground),
+            verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space6, Alignment.CenterVertically),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            TvSeekIndicator(-10_000)
             TvSeekIndicator(30_000)
         }
     }
