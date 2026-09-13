@@ -15,10 +15,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import app.kaeru.ui.common.design.DestructiveButton
 import app.kaeru.ui.common.design.IconAction
 import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.design.KaeruTopBar
-import app.kaeru.ui.common.design.PrimaryButton
 import app.kaeru.ui.common.design.SecondaryButton
 import app.kaeru.ui.common.theme.KaeruSecondary
 import app.kaeru.ui.common.theme.KaeruSurface
@@ -42,7 +42,8 @@ private const val CANCEL = "Отмена"
  * threshold, the Kodik token and the update check. Nothing else belongs here until then.
  *
  * Signing out asks first. It is the one action in the app that cannot be undone by pressing the
- * same button again, and the dialog says what is lost (the session) and what is not (the list).
+ * same button again, and the dialog says what is lost (the session) and what is not (the list). The
+ * confirm is red rather than amber: amber is «go» everywhere else, and this is not that.
  */
 @Composable
 fun SettingsScreen(onBack: () -> Unit, onLogout: () -> Unit) {
@@ -65,7 +66,7 @@ fun SettingsScreen(onBack: () -> Unit, onLogout: () -> Unit) {
         AlertDialog(
             onDismissRequest = { confirming = false },
             confirmButton = {
-                PrimaryButton(CONFIRM, onClick = { confirming = false; onLogout() })
+                DestructiveButton(CONFIRM, onClick = { confirming = false; onLogout() })
             },
             dismissButton = { SecondaryButton(CANCEL, onClick = { confirming = false }) },
             title = { Text(CONFIRM_TITLE, style = MaterialTheme.typography.headlineMedium) },

@@ -88,7 +88,7 @@ fun MobileShell(onLogout: () -> Unit, nav: NavHostController = rememberNavContro
                     onRefresh = vm::refresh,
                     onPlay = play,
                     onAnime = openAnime,
-                    onSettings = { nav.navigate(Routes.SETTINGS) },
+                    onSettings = { nav.navigate(Routes.SETTINGS) { launchSingleTop = true } },
                     onSearch = { openTab(Routes.SEARCH) },
                 )
             }

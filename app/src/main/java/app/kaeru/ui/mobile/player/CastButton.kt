@@ -5,9 +5,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.mediarouter.app.MediaRouteButton
+import app.kaeru.ui.common.design.KaeruTokens
 import com.google.android.gms.cast.framework.CastButtonFactory
 
 /**
@@ -57,7 +57,12 @@ fun CastButton(modifier: Modifier = Modifier, overArtwork: Boolean = false) {
     )
 }
 
-/** Black at 32 %, the same scrim the player's own controls sit on. */
-private const val SCRIM = 0x52000000
+/**
+ * Black at 42 %, the same disc `IconAction` draws under a glyph over artwork: the cast button sits
+ * beside one in the home screen's top bar, and two discs of different weights read as two controls
+ * of different importance.
+ */
+private const val SCRIM = 0x6B000000
 
-private val BUTTON_SIZE = 40.dp
+/** The app's floor for anything a finger reaches, and the size of the gear it sits next to. */
+private val BUTTON_SIZE = KaeruTokens.MinTouchTarget

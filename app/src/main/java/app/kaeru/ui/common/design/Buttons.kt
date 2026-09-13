@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruDivider
 import app.kaeru.ui.common.theme.KaeruElevated
+import app.kaeru.ui.common.theme.KaeruError
 import app.kaeru.ui.common.theme.KaeruOnAccent
 import app.kaeru.ui.common.theme.KaeruSecondary
 import app.kaeru.ui.common.theme.KaeruText
@@ -61,6 +62,51 @@ fun PrimaryButton(
         colors = ButtonDefaults.buttonColors(
             containerColor = KaeruAccent,
             contentColor = KaeruOnAccent,
+            disabledContainerColor = KaeruElevated,
+            disabledContentColor = KaeruSecondary,
+        ),
+        elevation = null,
+        contentPadding = PaddingValues(horizontal = KaeruTokens.Space6),
+    ) {
+        if (icon != null) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(IconSize))
+            Spacer(Modifier.width(KaeruTokens.Space2))
+        }
+        Text(text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/**
+ * The button that takes something away and cannot be pressed again to undo it: signing out, and
+ * later anything that deletes.
+ *
+ * It is red rather than amber because amber means «go» everywhere else in the app, and the one
+ * irreversible control should not wear the colour of the one the viewer presses all evening. It is
+ * shaped and sized exactly like [PrimaryButton], so a confirmation dialog reads as the same kind of
+ * choice — only the colour says what kind of thing is about to happen.
+ *
+ * Confirm with it; never use it as the way *into* a dialog, where the quiet [SecondaryButton] is
+ * the honest affordance.
+ */
+@Composable
+fun DestructiveButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    enabled: Boolean = true,
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier
+            // As on the amber button: a ring in the container's own colour would be invisible.
+            .kaeruFocus(KaeruTokens.ButtonShape, borderColor = KaeruText)
+            .heightIn(min = KaeruTokens.ButtonHeight),
+        shape = KaeruTokens.ButtonShape,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = KaeruError,
+            contentColor = KaeruText,
             disabledContainerColor = KaeruElevated,
             disabledContentColor = KaeruSecondary,
         ),

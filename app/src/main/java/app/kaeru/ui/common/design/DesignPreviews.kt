@@ -146,7 +146,7 @@ private fun FocusedControlsPreview() = KaeruTheme {
     }
 }
 
-@Preview(showBackground = true, backgroundColor = DARK, heightDp = 240)
+@Preview(showBackground = true, backgroundColor = DARK, heightDp = 300)
 @Composable
 private fun ButtonsPreview() = KaeruTheme {
     Column(
@@ -158,6 +158,10 @@ private fun ButtonsPreview() = KaeruTheme {
             SecondaryButton("Подробнее", {})
         }
         PrimaryButton("Серия ещё не вышла", {}, enabled = false)
+        Row(horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space3)) {
+            DestructiveButton("Выйти", {})
+            SecondaryButton("Отмена", {})
+        }
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space3),

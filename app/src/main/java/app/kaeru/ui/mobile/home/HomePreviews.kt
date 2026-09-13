@@ -111,6 +111,13 @@ private fun HomeLoadingPreview() = Home(HomeUiState(isLoading = true))
 @Composable
 private fun HomeEmptyPreview() = Home(HomeUiState(isLoading = false))
 
+/** Nothing cached and nothing on the network: the reason, not an invitation to add titles. */
+@Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 800)
+@Composable
+private fun HomeErrorPreview() = Home(
+    HomeUiState(isLoading = false, errorMessage = "Нет соединения. Проверьте интернет"),
+)
+
 /** Only planned titles: no hero to float over, so the first row starts under the bar instead. */
 @Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 800)
 @Composable

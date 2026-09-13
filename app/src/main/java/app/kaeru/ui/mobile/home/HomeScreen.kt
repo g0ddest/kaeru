@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import app.kaeru.domain.model.FeedItem
 import app.kaeru.ui.common.design.HeroBanner
 import app.kaeru.ui.common.design.EmptyState
+import app.kaeru.ui.common.design.ErrorState
 import app.kaeru.ui.common.design.IconAction
 import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.design.KaeruTopBar
@@ -68,6 +69,11 @@ private const val EMPTY_TEXT =
         "Kaeru продолжит с той серии, на которой вы остановились."
 private const val FIND_ANIME = "Найти аниме"
 
+// What each slot of the feed holds, so the list reuses a row's node for a row rather than for the hero.
+private const val HERO = "hero"
+private const val BAR_SPACE = "bar"
+private const val ROW = "row"
+
 /** The height of [KaeruTopBar], which floats over this screen instead of taking space in it. */
 private val BarHeight = 56.dp
 
@@ -91,8 +97,11 @@ fun HomeScreen(
     onSettings: () -> Unit,
     onSearch: () -> Unit,
 ) {
+    val content = homeContentState(state)
     val snackbar = remember { SnackbarHostState() }
-    RetrySnackbar(state.errorMessage, snackbar, onRefresh)
+    // Over a feed the viewer can still use, a failed refresh is a snackbar; over an empty one it is
+    // the screen, and two «Повторить» at once would be one too many.
+    RetrySnackbar(state.errorMessage.takeIf { content is HomeContent.Feed }, snackbar, onRefresh)
     val listState = rememberLazyListState()
     val pull = rememberPullToRefreshState()
     // One clock per feed. «осталось 14 мин» and «завтра» are read against it, and a line that
@@ -114,10 +123,11 @@ fun HomeScreen(
                 )
             },
         ) {
-            when {
-                state.isLoading -> HomeLoading()
-                state.feed.isEmpty -> HomeEmpty(onSearch)
-                else -> FeedList(state, now, listState, onPlay, onAnime)
+            when (content) {
+                HomeContent.Loading -> HomeLoading()
+                is HomeContent.Error -> HomeError(content.message, onRefresh)
+                HomeContent.Empty -> HomeEmpty(onSearch)
+                HomeContent.Feed -> FeedList(state, now, listState, onPlay, onAnime)
             }
         }
         HomeBar(listState, onSettings)
@@ -184,7 +194,8 @@ private fun FeedList(
     onPlay: (Int, Int) -> Unit,
     onAnime: (Int) -> Unit,
 ) {
-    val rows = remember(state.feed, state.watchedThreshold, now) {
+    // `now` is remembered on the same feed, so keying on it as well would buy nothing.
+    val rows = remember(state.feed, state.watchedThreshold) {
         homeRows(state.feed, state.watchedThreshold, now)
     }
     LazyColumn(
@@ -194,15 +205,15 @@ private fun FeedList(
     ) {
         val top = state.feed.top
         if (top != null) {
-            item(key = "hero") { Hero(top, state.watchedThreshold, now, onPlay, onAnime) }
+            item(key = "hero", contentType = HERO) { Hero(top, state.watchedThreshold, now, onPlay, onAnime) }
         } else {
             // Nothing for the floating bar to float over, so the first row starts below it.
-            item(key = "bar") {
+            item(key = "bar", contentType = BAR_SPACE) {
                 Spacer(Modifier.windowInsetsPadding(WindowInsets.statusBars).height(BarHeight))
             }
         }
         rows.forEach { row ->
-            item(key = row.title) { FeedRow(row, onAnime) }
+            item(key = row.title, contentType = ROW) { FeedRow(row, onAnime) }
         }
     }
 }
@@ -259,6 +270,18 @@ private fun HomeLoading() = Column(Modifier.fillMaxSize().clipToBounds()) {
     SkeletonRow()
     Spacer(Modifier.height(KaeruTokens.Space4))
     SkeletonRow()
+}
+
+/**
+ * The list is empty because the load failed, not because there is nothing in it.
+ *
+ * [ErrorState] already carries the cause and «Повторить», so nothing is added here. It is a lazy
+ * list with one screen-sized item for the same reason the empty state is: pull-to-refresh listens
+ * through nested scroll, and this is a screen a viewer will pull at.
+ */
+@Composable
+private fun HomeError(message: String, onRetry: () -> Unit) = LazyColumn(Modifier.fillMaxSize()) {
+    item { ErrorState(message = message, onRetry = onRetry, modifier = Modifier.fillParentMaxSize()) }
 }
 
 /**

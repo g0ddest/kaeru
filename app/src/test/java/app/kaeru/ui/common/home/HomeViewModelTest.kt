@@ -76,6 +76,14 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `the watched threshold reaches the screen from settings`() = runTest(main.dispatcher) {
+        val repo = FakeLibraryRepository().also { it.entries.value = listOf(entry()) }
+        val vm = HomeViewModel(repo, HomeFeedBuilder(), Clock.fixed(now, ZoneOffset.UTC), FakePlaybackPreferences(threshold = 0.95f))
+        advanceUntilIdle()
+        assertEquals(0.95f, vm.uiState.value.watchedThreshold, 0f)
+    }
+
+    @Test
     fun `manual refresh clears previous error`() = runTest(main.dispatcher) {
         val repo = FakeLibraryRepository().also { it.refreshResult = Result.failure(HttpError(500)) }
         val vm = HomeViewModel(repo, HomeFeedBuilder(), Clock.fixed(now, ZoneOffset.UTC), FakePlaybackPreferences())
