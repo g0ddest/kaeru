@@ -48,13 +48,9 @@ class AppPreferencesTest {
 
     @Test
     fun `playback preferences start at the documented defaults`() = runTest(dispatcher) {
-        assertEquals(
-            listOf(
-                "AniLibria", "AniDUB", "Crunchyroll", "Amazing Dubbing", "AniBaza",
-                "AniMaunt", "JAM", "Dream Cast", "SHIZA Project",
-            ),
-            prefs.preferredTranslations.first(),
-        )
+        // No stored list means the viewer has never named a studio, which is not the same as
+        // naming the nine the app ships with: those are the ranker's fallback, not a setting.
+        assertEquals(emptyList<String>(), prefs.preferredTranslations.first())
         assertTrue(prefs.autoplayNext.first())
         assertNull(prefs.defaultQuality.first())
         assertEquals(0.9f, prefs.watchedThreshold.first(), 0.0001f)
@@ -136,7 +132,7 @@ class AppPreferencesTest {
         assertEquals(1_700_000_000_000L, stored[longPreferencesKey("kodik_token_at")])
         assertNull(prefs.userId())
         assertNull(prefs.lastFullSync())
-        assertEquals(AppPreferences.DEFAULT_PREFERRED_TRANSLATIONS, prefs.preferredTranslations.first())
+        assertEquals(emptyList<String>(), prefs.preferredTranslations.first())
         assertTrue(prefs.autoplayNext.first())
     }
 

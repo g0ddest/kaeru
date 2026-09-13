@@ -20,6 +20,10 @@ interface PlaybackPreferences {
     /** Quality to start playback at, or null for the best the source offers. */
     val defaultQuality: Flow<Quality?>
 
-    /** Dub studios in the order the viewer wants them offered. */
+    /**
+     * Dub studios in the order the viewer wants them offered, and only those: empty until
+     * somebody sets them. What answers an anime when this is empty is
+     * [TranslationRanker.DEFAULT_STUDIOS], behind the viewer's own watching history.
+     */
     val preferredTranslations: Flow<List<String>>
 }

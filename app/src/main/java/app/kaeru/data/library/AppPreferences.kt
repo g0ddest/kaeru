@@ -52,15 +52,19 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
     override val watchedThreshold: Flow<Float> = dataStore.data.map { it[watchedThresholdKey] ?: 0.9f }
 
     /**
-     * Dub studios in the order the viewer wants them offered; a track matches when its title
-     * contains one of these names. Stored as one newline-joined string because a preference set
-     * loses the order, and the order is the whole point. An empty list is a deliberate choice and
-     * is kept: only an absent key falls back to [DEFAULT_PREFERRED_TRANSLATIONS].
+     * Dub studios in the order the viewer wants them offered, and nothing else; a track matches
+     * when its title contains one of these names. Stored as one newline-joined string because a
+     * preference set loses the order, and the order is the whole point.
+     *
+     * An absent key reads as an empty list rather than as the studios the app ships with. Those
+     * live in `TranslationRanker.DEFAULT_STUDIOS` and rank below what this viewer actually
+     * watches, which is a decision for the ranker to make — a store that answered with them could
+     * not say whether a viewer had chosen them or simply never opened the setting.
      */
     override val preferredTranslations: Flow<List<String>> = dataStore.data.map { prefs ->
         prefs[preferredTranslationsKey]
             ?.split('\n')?.map { it.trim() }?.filter { it.isNotEmpty() }
-            ?: DEFAULT_PREFERRED_TRANSLATIONS
+            .orEmpty()
     }
 
     suspend fun setPreferredTranslations(studios: List<String>) {
@@ -115,14 +119,6 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
             it.remove(userIdKey)
             it.remove(lastFullSyncKey)
         }
-    }
-
-    companion object {
-        /** Studios that dub most of what this app plays, best first. */
-        val DEFAULT_PREFERRED_TRANSLATIONS = listOf(
-            "AniLibria", "AniDUB", "Crunchyroll", "Amazing Dubbing", "AniBaza",
-            "AniMaunt", "JAM", "Dream Cast", "SHIZA Project",
-        )
     }
 }
 
