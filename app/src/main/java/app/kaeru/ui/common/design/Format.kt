@@ -163,6 +163,13 @@ fun episodeLine(item: FeedItem, now: Instant, zone: ZoneId = ZoneId.systemDefaul
  */
 fun Anime.airedEpisodes(): Int = availableEpisodes
 
+/**
+ * Offered when the whole show is behind the viewer. No episode number on it: a rewatch starts at
+ * the beginning, and «Пересмотреть 1 серию» would read as an offer of one episode rather than of
+ * the show.
+ */
+private const val REWATCH = "Пересмотреть"
+
 data class PrimaryAction(
     val label: String,
     val enabled: Boolean,
@@ -184,12 +191,13 @@ data class PrimaryAction(
  * 1. a position inside an episode — that episode is on this device, so it is offered first, and
  *    which episode that is comes from `ContinueTarget`, so a tap that landed on the wrong tile
  *    never becomes the offer;
- * 2. an episode that has aired — «Смотреть 1 серию» or «Продолжить 7 серию»;
- * 3. an episode that has not, with a date still ahead — «9 серия выйдет завтра»;
- * 4. nothing aired at all — «Ещё не вышло», which is the whole truth about an announcement;
- * 5. anything else still to come — «Ждём 9 серию».
+ * 2. a show with nothing left ahead of it — «Пересмотреть», from the first episode;
+ * 3. an episode that has aired — «Смотреть 1 серию» or «Продолжить 7 серию»;
+ * 4. an episode that has not, with a date still ahead — «9 серия выйдет завтра»;
+ * 5. nothing aired at all — «Ещё не вышло», which is the whole truth about an announcement;
+ * 6. anything else still to come — «Ждём 9 серию».
  *
- * Case 3 is deliberately ahead of case 4: an announcement with a broadcast date is better served
+ * Case 4 is deliberately ahead of case 5: an announcement with a broadcast date is better served
  * by that date than by a shrug, and both are equally unpressable. A date already in the past is
  * ignored — the catalogue has simply not caught up, and repeating it would be a promise about
  * yesterday.
@@ -207,6 +215,9 @@ fun primaryAction(
 
     val aired = entry.anime.airedEpisodes()
     if (next <= aired) {
+        // A show with nothing left ahead of it is offered from the beginning, and the verb says so
+        // rather than pretending this is a first viewing.
+        if (target.rewatch) return PrimaryAction(REWATCH, enabled = true, episode = next)
         // «Продолжить» is a promise about an episode still ahead of the viewer. When the target is
         // one they have already finished — the whole show is behind them, and the alternative is a
         // button naming an episode that will never come out — the honest verb is «Смотреть»: this

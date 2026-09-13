@@ -304,6 +304,48 @@ class FormatTest {
     }
 
     @Test
+    fun `a finished show with everything watched offers a rewatch instead of a wait`() {
+        // Twelve of twelve on Shikimori, nothing on this device. There is no thirteenth episode to
+        // wait for, so the button is pressable and says what pressing it does.
+        val done = entry(
+            anime = anime(AnimeStatus.RELEASED, episodes = 12, aired = 12),
+            watched = 12,
+            status = ListStatus.COMPLETED,
+        )
+        val action = primaryAction(done, 0.9f, now, zone)
+
+        assertEquals("Пересмотреть", action.label)
+        assertTrue(action.enabled)
+        assertEquals(1, action.episode)
+    }
+
+    @Test
+    fun `a rewatcher at the last episode is offered the show from the top`() {
+        val again = entry(
+            anime = anime(AnimeStatus.RELEASED, episodes = 12, aired = 12),
+            watched = 12,
+            status = ListStatus.REWATCHING,
+        )
+        val action = primaryAction(again, 0.9f, now, zone)
+
+        assertEquals("Пересмотреть", action.label)
+        assertTrue(action.enabled)
+        assertEquals(1, action.episode)
+    }
+
+    @Test
+    fun `an ongoing season keeps its waiting label however far the count has got`() {
+        // Eight of twelve are out. Neither a viewer level with them nor one whose count has run
+        // ahead is somebody who has finished this show.
+        val caughtUp = entry(anime = anime(episodes = 12, aired = 8), watched = 8)
+        assertEquals("Ждём 9 серию", primaryAction(caughtUp, 0.9f, now, zone).label)
+        assertFalse(primaryAction(caughtUp, 0.9f, now, zone).enabled)
+
+        val ahead = entry(anime = anime(episodes = 12, aired = 8), watched = 12)
+        assertEquals("Ждём 13 серию", primaryAction(ahead, 0.9f, now, zone).label)
+    }
+
+    @Test
     fun `an announcement with nothing aired offers nothing to press`() {
         val anons = entry(anime = anime(AnimeStatus.ANONS, episodes = 0, aired = 0), watched = 0)
         val action = primaryAction(anons, 0.9f, now, zone)
@@ -350,9 +392,10 @@ class FormatTest {
     }
 
     @Test
-    fun `a show with every episode behind the viewer offers the last one again`() {
+    fun `a show with every episode behind the viewer is offered from the top`() {
         // Finished, and finished on this device. «Ждём 13 серию» would be a promise about an
-        // episode that is never coming, on a show that plays perfectly well.
+        // episode that is never coming, on a show that plays perfectly well — and the thing to
+        // offer somebody who has seen all of it is the beginning, not the finale again.
         val finished = entry(
             anime = anime(AnimeStatus.RELEASED, episodes = 12, aired = 12),
             watched = 12,
@@ -361,9 +404,9 @@ class FormatTest {
 
         val action = primaryAction(finished, 0.9f, now, zone)
 
-        assertEquals("Смотреть 12 серию", action.label)
+        assertEquals("Пересмотреть", action.label)
         assertTrue(action.enabled)
-        assertEquals(12, action.episode)
+        assertEquals(1, action.episode)
     }
 
     @Test

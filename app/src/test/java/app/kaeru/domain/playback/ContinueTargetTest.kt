@@ -174,9 +174,10 @@ class ContinueTargetTest {
     }
 
     @Test
-    fun `a show finished to the last episode offers that episode again rather than nothing`() {
+    fun `a show finished to the last episode is offered from the top rather than from the end`() {
         // Twelve of twelve, all finished here. Walking forward runs off the end of the show, and
-        // the button must still press: there is an episode to play, so there is something to say.
+        // the button must still press — but the thing to press is a rewatch, and a rewatch starts
+        // at the first episode rather than at the one the viewer has just seen.
         val target = ContinueTarget.of(
             rate(12),
             aired = 12,
@@ -185,7 +186,7 @@ class ContinueTargetTest {
             watchedThreshold = threshold,
         )
 
-        assertEquals(ContinueTarget(12, 0), target)
+        assertEquals(ContinueTarget(1, 0, rewatch = true), target)
     }
 
     @Test
@@ -270,5 +271,75 @@ class ContinueTargetTest {
             ContinueTarget(5, 120_000),
             ContinueTarget.of(rate(4), 12, 12, listOf(progress(5, 120_000, durationMs = 0)), threshold),
         )
+    }
+
+    @Test
+    fun `a released show with everything watched and nothing on this device offers it from the top`() {
+        // Twelve of twelve on Shikimori and not one row here — a viewer who watched it elsewhere,
+        // or before this app. There is nothing ahead of them, so the offer is the beginning again.
+        val target = ContinueTarget.of(
+            rate(12, ListStatus.COMPLETED),
+            aired = 12,
+            announced = 12,
+            progress = emptyList(),
+            watchedThreshold = threshold,
+        )
+
+        assertEquals(ContinueTarget(1, 0, rewatch = true), target)
+    }
+
+    @Test
+    fun `a rewatcher who has reached the last episode is offered the show from the top again`() {
+        val target = ContinueTarget.of(
+            rate(12, ListStatus.REWATCHING),
+            aired = 12,
+            announced = 12,
+            progress = emptyList(),
+            watchedThreshold = threshold,
+        )
+
+        assertEquals(ContinueTarget(1, 0, rewatch = true), target)
+    }
+
+    @Test
+    fun `a season still airing has not run out, however far ahead the count has got`() {
+        // Eight of the twelve announced episodes are out. Whatever Shikimori's count says, the
+        // ninth is the one being waited for — this is not a show anybody has finished.
+        assertEquals(
+            ContinueTarget(9, 0),
+            ContinueTarget.of(rate(8), aired = 8, announced = 12, progress = emptyList(), watchedThreshold = threshold),
+        )
+        assertEquals(
+            ContinueTarget(13, 0),
+            ContinueTarget.of(rate(12), aired = 8, announced = 12, progress = emptyList(), watchedThreshold = threshold),
+        )
+    }
+
+    @Test
+    fun `a season that ran past its announced length keeps offering the episodes it grew`() {
+        // Thirteen aired against twelve announced, twelve of them watched: the thirteenth is a new
+        // episode, not the end of the show.
+        val target = ContinueTarget.of(
+            rate(12),
+            aired = 13,
+            announced = 12,
+            progress = emptyList(),
+            watchedThreshold = threshold,
+        )
+
+        assertEquals(ContinueTarget(13, 0), target)
+    }
+
+    @Test
+    fun `an announcement is not a show that has been finished`() {
+        val target = ContinueTarget.of(
+            rate(0),
+            aired = 0,
+            announced = 12,
+            progress = emptyList(),
+            watchedThreshold = threshold,
+        )
+
+        assertEquals(ContinueTarget(1, 0), target)
     }
 }

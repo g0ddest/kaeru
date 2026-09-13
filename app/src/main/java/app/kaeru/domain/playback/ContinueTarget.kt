@@ -11,8 +11,29 @@ import app.kaeru.domain.model.UserRate
  * caller tells the two apart: a target with a position is one this device is in the middle of, and
  * only that case earns «Продолжить с 14:20» instead of «Продолжить 8 серию».
  */
-data class ContinueTarget(val episode: Int, val positionMs: Long) {
+data class ContinueTarget(
+    val episode: Int,
+    val positionMs: Long,
+    /**
+     * There is nothing left of this show ahead of the viewer, and [episode] is it starting over.
+     *
+     * Set in exactly one case: a show whose announced run has all aired and whose every episode is
+     * behind the viewer. Two things read it. The watch button says «Пересмотреть» rather than
+     * «Смотреть 1 серию», because the second would read as a show nobody had opened; and the home
+     * feed leaves the title out of «Дальше по списку», because a finished show is not something to
+     * watch next — it is something to go back to, which the title screen offers.
+     *
+     * Not set for a viewer who has chosen «Пересматриваю» and reset their counter. They have a
+     * show ahead of them, one they are working through in order, and it belongs in the feed with
+     * the rest — the flag is about a show that has run out, not about a viewer who has seen it.
+     */
+    val rewatch: Boolean = false,
+) {
     companion object {
+
+        /** Where a show starts, which is also where a rewatch starts. */
+        private const val FIRST_EPISODE = 1
+
         /**
          * The one rule for "where was I", read off the per-episode positions.
          *
@@ -43,10 +64,16 @@ data class ContinueTarget(val episode: Int, val positionMs: Long) {
          *
          * The answer is deliberately *not* clamped to [aired]: naming an episode that has not come
          * out is how the watch button knows to say «9 серия выйдет завтра» rather than offering
-         * the eighth again. It is clamped only at the end of a show whose end is known — an
-         * [announced] length that the walk has run past, with episodes finished here to show for
-         * it. Then the offer becomes the last episode there is, from the top, because a show the
-         * viewer can play must never leave them with a button they cannot press.
+         * the eighth again. There is one exception, and it is the end of a show rather than a
+         * clamp: when every [announced] episode has aired and the walk has run past the last of
+         * them, the whole show is behind the viewer and the offer becomes the first episode with
+         * [rewatch] set. A show that can be played must never leave its viewer with a button they
+         * cannot press, and the honest thing to offer somebody who has seen all of it is the
+         * beginning — not the finale they watched last, and not a wait for an episode that will
+         * never come.
+         *
+         * A season still airing is not a season that has run out, however far ahead the count on
+         * Shikimori has got: eight episodes of an announced twelve is «Ждём 9 серию».
          *
          * @param rate the viewer's list entry, or null when the anime is in no list at all.
          * @param aired how many episodes exist to play right now.
@@ -63,23 +90,25 @@ data class ContinueTarget(val episode: Int, val positionMs: Long) {
             watchedThreshold: Float,
         ): ContinueTarget {
             val counted = rate?.episodes ?: 0
+            val rewatching = rate?.status == ListStatus.REWATCHING
             val started = progress.filter { it.started }
             val resume = started
                 .filter { it.episode in (counted + 1)..aired && it.unfinished(watchedThreshold) }
                 .maxByOrNull { it.episode }
             if (resume != null) return ContinueTarget(resume.episode, resume.positionMs)
 
-            val finishedHere = if (rate?.status == ListStatus.REWATCHING) {
+            val finishedHere = if (rewatching) {
                 emptySet()
             } else {
                 started.filterNot { it.unfinished(watchedThreshold) }.mapTo(mutableSetOf()) { it.episode }
             }
             var next = counted + 1
             while (next in finishedHere) next++
-            val lastEpisode = maxOf(announced, aired)
-            if (aired > 0 && announced > 0 && finishedHere.isNotEmpty() && next > lastEpisode) {
-                return ContinueTarget(aired, 0)
-            }
+            // A show has run out only when every episode it announced is out. Eight of twelve is a
+            // season still airing, whatever the count on Shikimori has reached, and the ninth
+            // episode is what its viewer is waiting for rather than something they have finished.
+            val runEnded = announced > 0 && aired >= announced
+            if (runEnded && next > maxOf(announced, aired)) return ContinueTarget(FIRST_EPISODE, 0, rewatch = true)
             return ContinueTarget(next, 0)
         }
     }

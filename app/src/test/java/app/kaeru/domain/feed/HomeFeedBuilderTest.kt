@@ -237,4 +237,37 @@ class HomeFeedBuilderTest {
         val feed = builder.build(listOf(entry(a, watched = 12)), now, DEFAULT)
         assertTrue(feed.nextUp.isEmpty())
     }
+
+    @Test
+    fun `a released title finished on this device is not next up either`() {
+        // The same finished show, reached the other way: every episode watched here and Shikimori
+        // still counting six. The viewer sees one show, so the feed has to treat it as one.
+        val a = anime(1, episodes = 12)
+        val feed = builder.build(
+            listOf(entry(a, watched = 6, progress = (1..12).map { stopped(1, it, 0.95f) })),
+            now, DEFAULT,
+        )
+
+        assertTrue(feed.nextUp.isEmpty())
+        assertNull(feed.top)
+    }
+
+    @Test
+    fun `a rewatcher who has reset their count is watching the show, not finished with it`() {
+        // «Пересматриваю» with the counter back at zero: twelve finished rows from the last time
+        // round say nothing about this one, and the first episode is genuinely next.
+        val a = anime(1, episodes = 12)
+        val feed = builder.build(
+            listOf(
+                entry(
+                    a, ListStatus.REWATCHING, watched = 0,
+                    progress = (1..12).map { stopped(1, it, 0.95f) },
+                ),
+            ),
+            now, DEFAULT,
+        )
+
+        assertEquals(listOf(1), feed.nextUp.map { it.entry.anime.id })
+        assertEquals(1, feed.nextUp[0].episode)
+    }
 }
