@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -81,11 +82,10 @@ fun PlayerTopBar(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            val subtitle = listOfNotNull(
-                episode.takeIf { it > 0 }?.let { "$it серия" },
-                translationTitle,
-            ).joinToString("   ")
-            if (subtitle.isNotEmpty()) {
+            // The episode alone: the dub is the chip at the other end of this same row, and a
+            // row that names it twice reads as two different facts about the same thing.
+            val subtitle = episode.takeIf { it > 0 }?.let { "$it серия" }
+            if (subtitle != null) {
                 Text(
                     subtitle,
                     style = MaterialTheme.typography.bodySmall,
@@ -285,7 +285,10 @@ private fun Chip(text: String, onClick: () -> Unit) {
     TextButton(
         onClick = onClick,
         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-        modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Disc),
+        modifier = Modifier
+            .defaultMinSize(minHeight = KaeruTokens.MinTouchTarget)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Disc),
     ) {
         Text(text, color = OnVideo, style = MaterialTheme.typography.labelMedium, maxLines = 1)
     }

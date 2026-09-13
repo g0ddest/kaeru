@@ -279,7 +279,10 @@ fun PlayerScreen(
             )
             // Nothing is said about a show this device has no catalogue entry for: with no aired
             // count there is no way to tell «that was the last one» from «we simply do not know».
-            state.episodeEnding && !state.nextEpisodeAvailable && state.availableEpisodes > 0 -> LastEpisodeCard(
+            // Nor about a finished one, where the end of the last episode is the end of the story
+            // and «Перевести в завершённые?» is already asking the only question worth asking.
+            state.episodeEnding && !state.nextEpisodeAvailable &&
+                state.availableEpisodes > 0 && state.moreEpisodesComing -> LastEpisodeCard(
                 waiting = waitingLabel(
                     episode = state.episode + 1,
                     nextEpisodeAt = state.nextEpisodeAt,

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.common.Player
 import app.kaeru.di.IoDispatcher
 import app.kaeru.domain.model.Anime
+import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.PlaybackTarget
 import app.kaeru.domain.model.Quality
@@ -129,6 +130,7 @@ class PlayerViewModel @Inject constructor(
             nextEpisodeAvailable = playback.hasNextEpisode,
             episodeEnding = playback.nextEpisodeDue,
             nextEpisodeAt = anime?.nextEpisodeAt,
+            moreEpisodesComing = anime != null && anime.status != AnimeStatus.RELEASED,
             episodes = shown.episodes,
             autoplayCountdownSec = playback.autoplayCountdownSec,
             errorMessage = playback.error?.toUserMessage(),

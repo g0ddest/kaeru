@@ -40,6 +40,11 @@ data class PlayerUiState(
     val episodeEnding: Boolean = false,
     /** When the episode after the last aired one is due, for a screen that has to wait for it. */
     val nextEpisodeAt: Instant? = null,
+    /**
+     * The show has episodes still to be broadcast. False for a finished one, where running out of
+     * episodes is the end of the story rather than a wait.
+     */
+    val moreEpisodesComing: Boolean = false,
     /** The season, for the remote control's list: which episodes exist, and what is behind the viewer. */
     val episodes: List<EpisodeCell> = emptyList(),
     val autoplayCountdownSec: Int? = null,

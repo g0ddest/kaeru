@@ -442,6 +442,30 @@ class PlayerViewModelTest {
     }
 
     @Test
+    fun `a finished show has no more episodes coming`() = runTest(main.dispatcher) {
+        viewModel.start(100, 12)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.moreEpisodesComing)
+    }
+
+    @Test
+    fun `an ongoing show has`() = runTest(main.dispatcher) {
+        library.put(
+            LibraryEntry(
+                anime.copy(status = AnimeStatus.ONGOING, episodesAired = 7),
+                UserRate(1, 100, ListStatus.WATCHING, 3, now),
+                null,
+            ),
+        )
+
+        viewModel.start(100, 7)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.moreEpisodesComing)
+    }
+
+    @Test
     fun `the screen knows when the next episode is due to air`() = runTest(main.dispatcher) {
         val airing = Instant.parse("2026-09-20T10:00:00Z")
         library.put(
