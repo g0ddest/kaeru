@@ -4,6 +4,14 @@ data class LibraryEntry(
     val anime: Anime,
     val rate: UserRate,
     val watch: WatchState?,
+    /**
+     * Where this device stopped inside each episode it has opened.
+     *
+     * Defaulted empty so a caller that only has the catalogue — a preview, a title outside the
+     * list — can still build an entry. An entry with no rows behaves exactly as one whose episodes
+     * were never started.
+     */
+    val progress: List<EpisodeProgress> = emptyList(),
 ) {
     /**
      * Episode to start from the watch control: an unfinished local episode that is newer than

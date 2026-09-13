@@ -19,7 +19,8 @@ class WatchProgressTest {
     private val now = Instant.parse("2026-09-13T10:00:00Z")
     private val clock = MutableClock(now)
     private val watchStates = FakeWatchStateRepository()
-    private val progress = WatchProgress(watchStates, clock)
+    private val episodes = FakeEpisodeProgressRepository()
+    private val progress = WatchProgress(watchStates, episodes, clock)
 
     @Test
     fun `a sample with nothing in flight is written straight through`() = runTest {
