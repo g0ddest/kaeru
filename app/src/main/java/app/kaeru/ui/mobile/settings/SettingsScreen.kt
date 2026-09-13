@@ -61,7 +61,7 @@ private const val ADD_STUDIO = "Добавить студию"
 private const val RESET = "Сбросить"
 
 private const val KODIK = "Kodik"
-private const val KODIK_NOTE = "Нужен только если публичный токен перестанет работать"
+private const val KODIK_NOTE = "Нужен, только если публичный токен перестанет работать"
 private const val KODIK_PLACEHOLDER = "Токен"
 private const val CLEAR = "Очистить"
 
@@ -224,30 +224,27 @@ private fun DubsSection(
     }
 }
 
+/**
+ * The field holds no state of its own: every keystroke is the setting.
+ *
+ * Saving on submit or on losing focus would have left one reachable way to lose an edit — with the
+ * keyboard up, the first back press is eaten by the keyboard and the second pops the screen, and a
+ * screen going away is not a focus change. The view model refuses a write that changes nothing and
+ * shows the new value optimistically, so typing into the setting directly costs a keystroke and
+ * nothing else.
+ */
 @Composable
 private fun KodikSection(token: String, onToken: (String) -> Unit) {
-    // Re-seeded when the stored token changes, which after a save is the value already typed, so
-    // the field never rewrites itself under the viewer's hands.
-    var typed by rememberSaveable(token) { mutableStateOf(token) }
     SettingsSection(KODIK) {
         SettingNote(KODIK_NOTE)
         KaeruTextField(
-            value = typed,
-            onValueChange = { typed = it },
+            value = token,
+            onValueChange = onToken,
             placeholder = KODIK_PLACEHOLDER,
-            onSubmit = { onToken(typed) },
-            onFocusLost = { onToken(typed) },
-            // Clearing saves at once rather than waiting for the field to be left: taking a key
-            // out is a decision, and the viewer who takes it out usually leaves the screen next.
-            trailing = if (typed.isEmpty()) {
+            trailing = if (token.isEmpty()) {
                 null
             } else {
-                {
-                    IconAction(Icons.Default.Close, CLEAR, {
-                        typed = ""
-                        onToken("")
-                    })
-                }
+                { IconAction(Icons.Default.Close, CLEAR, { onToken("") }) }
             },
         )
     }
@@ -260,7 +257,11 @@ private fun AboutSection() {
         SettingNote("Kaeru ${BuildConfig.VERSION_NAME}")
         SecondaryButton(
             CHECK_UPDATES,
-            onClick = { CustomTabsIntent.Builder().build().launchUrl(context, RELEASES_URL.toUri()) },
+            // A device with no browser and no Custom Tabs provider has nowhere to send this. There
+            // is nothing useful to say about that, so the press does nothing rather than crashing.
+            onClick = {
+                runCatching { CustomTabsIntent.Builder().build().launchUrl(context, RELEASES_URL.toUri()) }
+            },
         )
     }
 }

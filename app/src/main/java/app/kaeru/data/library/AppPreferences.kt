@@ -15,6 +15,7 @@ import app.kaeru.domain.model.Quality
 import app.kaeru.domain.playback.PlaybackNotificationPrompt
 import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.settings.SettingsStore
+import app.kaeru.domain.settings.WATCHED_THRESHOLD_RANGE
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -76,16 +77,12 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
 
     override val watchedThreshold: Flow<Float> = dataStore.data.map { it[watchedThresholdKey] ?: 0.9f }
 
-    /**
-     * The floor is half an episode: below that a title would be marked watched while the viewer is
-     * still deciding whether to keep watching, and the setting would be doing the opposite of its
-     * job. The screen offers 0.8 to 0.95; this range guards everything that is not the screen.
-     */
+    /** The screen offers 0.8 to 0.95; [WATCHED_THRESHOLD_RANGE] guards everything that is not it. */
     override suspend fun setWatchedThreshold(fraction: Float) {
         // Not a number is not a share of an episode. Writing it would make every later comparison
         // false and silently stop marking anything watched at all.
         if (!fraction.isFinite()) return
-        dataStore.edit { it[watchedThresholdKey] = fraction.coerceIn(MIN_WATCHED_THRESHOLD, 1f) }
+        dataStore.edit { it[watchedThresholdKey] = fraction.coerceIn(WATCHED_THRESHOLD_RANGE) }
     }
 
     /**
@@ -176,9 +173,6 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
         }
     }
 
-    private companion object {
-        const val MIN_WATCHED_THRESHOLD = 0.5f
-    }
 }
 
 /**

@@ -10,7 +10,7 @@ package app.kaeru.domain.settings
  * app — which is what a reset writes too.
  *
  * Every operation returns the list it was given, unchanged and by identity, when it has nothing
- * to do: pressing «выше» on the top row must not rewrite the store with the same nine names.
+ * to do: pressing the up control on the top row must not rewrite the store with the same nine names.
  */
 object TranslationPriorityEditor {
 
@@ -28,7 +28,7 @@ object TranslationPriorityEditor {
     /**
      * Drops one row. Removing the last remaining one empties the list, which the store reads back
      * as «never chosen» — the same state a reset leaves. The screen declines to offer that press,
-     * because «Сбросить» is the labelled way to get there.
+     * because the reset control is the labelled way to get there.
      */
     fun remove(studios: List<String>, index: Int): List<String> =
         if (index < 0 || index >= studios.size) studios else studios.filterIndexed { i, _ -> i != index }

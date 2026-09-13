@@ -41,9 +41,15 @@ class SettingsOptionsTest {
     }
 
     @Test
+    fun `a percentage is one word, so it cannot break across lines`() {
+        // A plain space between the number and the sign is a line break waiting to happen.
+        assertTrue(thresholdOptions(0.9f).all { ' ' !in it.label })
+    }
+
+    @Test
     fun `the threshold row reads as percentages, smallest first`() {
         assertEquals(
-            listOf("80 %", "85 %", "90 %", "95 %"),
+            listOf("80\u00A0%", "85\u00A0%", "90\u00A0%", "95\u00A0%"),
             thresholdOptions(0.9f).map { it.label },
         )
         assertEquals(
@@ -55,11 +61,11 @@ class SettingsOptionsTest {
     @Test
     fun `a stored threshold the row does not offer joins it, in its place`() {
         assertEquals(
-            listOf("70 %", "80 %", "85 %", "90 %", "95 %"),
+            listOf("70\u00A0%", "80\u00A0%", "85\u00A0%", "90\u00A0%", "95\u00A0%"),
             thresholdOptions(0.7f).map { it.label },
         )
         assertEquals(
-            listOf("80 %", "85 %", "90 %", "95 %", "99 %"),
+            listOf("80\u00A0%", "85\u00A0%", "90\u00A0%", "95\u00A0%", "99\u00A0%"),
             thresholdOptions(0.99f).map { it.label },
         )
     }

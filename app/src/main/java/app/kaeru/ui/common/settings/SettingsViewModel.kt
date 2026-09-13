@@ -9,7 +9,9 @@ import app.kaeru.domain.repository.AccountRepository
 import app.kaeru.domain.repository.AuthRepository
 import app.kaeru.domain.settings.SettingsStore
 import app.kaeru.domain.settings.TranslationPriorityEditor
+import app.kaeru.domain.settings.WATCHED_THRESHOLD_RANGE
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -25,10 +27,14 @@ import javax.inject.Inject
  * The settings screen's state, and the writes behind every control on it.
  *
  * **Why the screen shows its own answer.** Each control writes through to the store and then shows
- * what the viewer just chose, without waiting for the store to say it back. The overrides live as
- * long as this view model, which is as long as the screen: nothing else in the app writes these
- * settings, so there is no second writer whose news we would be suppressing, and a switch that
- * flicks back for a frame while a file is written is a switch that looks broken.
+ * what the viewer just chose, without waiting for the store to say it back. A switch that flicks
+ * back for a frame while a file is written is a switch that looks broken.
+ *
+ * **The invariant that makes it safe:** this view model is the only writer of these settings, and
+ * every setter normalises its value the same way the store would, so an override can never mask
+ * somebody else's news and can never differ from what the store ends up holding. If a second
+ * writer ever appears — a sync, another screen — the overrides have to be reconciled against the
+ * store instead of trusted, and this comment is the thread to pull.
  *
  * **What it does not do.** It shows no progress and reports no error for a setting. A preference
  * write is local and cannot be refused; the only thing here that can fail is asking Shikimori for
@@ -65,8 +71,11 @@ class SettingsViewModel @Inject constructor(
 
     private val overrides = MutableStateFlow(Overrides())
 
-    /** True until the first `whoami` of this screen has come back, one way or the other. */
+    /** True until the `whoami` in flight comes back, one way or the other. */
     private val asking = MutableStateFlow(true)
+
+    /** The question currently out, so a second press of «Повторить» does not start a second one. */
+    private var asked: Job? = null
 
     private val stored = combine(
         settings.preferredTranslations,
@@ -105,12 +114,17 @@ class SettingsViewModel @Inject constructor(
      * Asks Shikimori who this is. Called once when the screen opens, and again by the retry the
      * screen offers when nobody could be named at all.
      *
+     * A second press while a question is still out is ignored rather than queued: two answers would
+     * race to lower the skeleton, and the first one home would replace it with «Имя не загрузилось»
+     * while the other was still on its way.
+     *
      * The failure is deliberately dropped: a cached nickname is the right answer when Shikimori
      * cannot be reached, and a screen of local preferences is not the place for a network error.
      */
     fun refreshAccount() {
+        if (asked?.isActive == true) return
         asking.value = true
-        viewModelScope.launch {
+        asked = viewModelScope.launch {
             accounts.refresh()
             asking.value = false
         }
@@ -128,10 +142,17 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settings.setDefaultQuality(quality) }
     }
 
+    /**
+     * Everything the store would do to this value happens here first — the same coercion, the same
+     * refusal of a value that is not a number — so what the screen shows and what the store holds
+     * cannot drift apart. The chips only ever offer values already inside the range.
+     */
     fun setWatchedThreshold(fraction: Float) {
-        if (fraction == uiState.value.watchedThreshold) return
-        overrides.update { it.copy(threshold = fraction) }
-        viewModelScope.launch { settings.setWatchedThreshold(fraction) }
+        if (!fraction.isFinite()) return
+        val wanted = fraction.coerceIn(WATCHED_THRESHOLD_RANGE)
+        if (wanted == uiState.value.watchedThreshold) return
+        overrides.update { it.copy(threshold = wanted) }
+        viewModelScope.launch { settings.setWatchedThreshold(wanted) }
     }
 
     /** Saved on submit and on leaving the field, so an unchanged one costs nothing. */

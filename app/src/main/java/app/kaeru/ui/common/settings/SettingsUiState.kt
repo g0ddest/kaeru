@@ -2,13 +2,18 @@ package app.kaeru.ui.common.settings
 
 import app.kaeru.domain.model.Account
 import app.kaeru.domain.model.Quality
+import app.kaeru.domain.playback.TranslationRanker
 
 /**
  * Everything the settings screen draws.
  *
  * There is no «saving» flag and no per-setting error. A setting here is a local preference: the
- * write cannot be refused and cannot come back wrong, so a control that showed a spinner after a
- * press would be inventing a doubt the viewer does not have.
+ * write cannot be refused, and the view model normalises a value before writing it so it cannot
+ * come back different either. A control that showed a spinner after a press would be inventing a
+ * doubt the viewer does not have.
+ *
+ * The defaults are the values an unconfigured store answers with, so the first frame — before
+ * DataStore has spoken — is already the truth rather than a blank waiting to be filled.
  */
 data class SettingsUiState(
     /** Nobody can be named yet: neither the cache nor Shikimori has answered. */
@@ -19,7 +24,7 @@ data class SettingsUiState(
     val defaultQuality: Quality? = null,
     val watchedThreshold: Float = 0.9f,
     /** The dub order in force: the viewer's own if they set one, otherwise the app's. */
-    val studios: List<String> = emptyList(),
+    val studios: List<String> = TranslationRanker.DEFAULT_STUDIOS,
     /** [studios] is the viewer's own list, so there is something for «Сбросить» to undo. */
     val studiosChosen: Boolean = false,
     /** A Kodik key typed in by hand; empty means the app uses the public one. */

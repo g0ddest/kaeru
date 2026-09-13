@@ -45,4 +45,5 @@ fun thresholdOptions(current: Float): List<ThresholdOption> {
 /** Whether a chip is the one lit. Tolerant of a rounding, which a stored float can carry. */
 fun thresholdChosen(option: Float, current: Float): Boolean = abs(option - current) < SamePercent
 
-private fun percent(fraction: Float): String = "${(fraction * 100).roundToInt()} %"
+/** A non-breaking space before the sign: «80 %» is one word in Russian and never wraps. */
+private fun percent(fraction: Float): String = "${(fraction * 100).roundToInt()}\u00A0%"

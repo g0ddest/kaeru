@@ -19,14 +19,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.ImeAction
@@ -52,10 +48,7 @@ private val LeadingIconSize = 20.dp
  * it, so a name never reflows on the keystroke that makes an icon appear. [trailing] takes that
  * slot when given; otherwise [clearLabel] puts a clear icon there as soon as there is something to
  * clear, and names it — the only control here whose meaning is nowhere else on the row.
- *
- * [onFocusLost] fires when the field gives focus up, which is how a setting that has no button
- * saves what was typed into it.
- */
+ * */
 @Composable
 fun KaeruTextField(
     value: String,
@@ -67,12 +60,9 @@ fun KaeruTextField(
     clearLabel: String? = null,
     imeAction: ImeAction = ImeAction.Done,
     onSubmit: () -> Unit = {},
-    onFocusLost: () -> Unit = {},
     trailing: @Composable (() -> Unit)? = null,
 ) {
     val submit by rememberUpdatedState(onSubmit)
-    val focusLost by rememberUpdatedState(onFocusLost)
-    var focused by remember { mutableStateOf(false) }
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
@@ -89,20 +79,13 @@ fun KaeruTextField(
         ),
         modifier = modifier
             .fillMaxWidth()
-            .onFocusChanged { state ->
-                if (focused && !state.isFocused) focusLost()
-                focused = state.isFocused
-            }
             .kaeruFocus(shape = KaeruTokens.ChipShape, focusedScale = 1f)
             .clip(KaeruTokens.ChipShape)
             .background(KaeruSurface)
             .heightIn(min = KaeruTokens.ButtonHeight),
         decorationBox = { field ->
             Row(
-                Modifier.padding(
-                    start = if (leadingIcon == null) KaeruTokens.Space4 else KaeruTokens.Space3,
-                    end = KaeruTokens.Space1,
-                ),
+                Modifier.padding(start = KaeruTokens.Space4, end = KaeruTokens.Space1),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (leadingIcon != null) {

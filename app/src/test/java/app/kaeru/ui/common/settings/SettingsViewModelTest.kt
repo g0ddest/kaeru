@@ -187,6 +187,68 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `a threshold outside the range is pulled into it before it is shown or written`() =
+        runTest(main.dispatcher) {
+            val store = FakeSettingsStore(echo = false)
+            val vm = viewModel(store)
+            advanceUntilIdle()
+
+            vm.setWatchedThreshold(3f)
+            advanceUntilIdle()
+
+            // The screen and the store cannot drift apart: the value is normalised before either
+            // of them sees it, so the optimistic override is never showing something nobody holds.
+            assertEquals(1f, vm.uiState.value.watchedThreshold, 0.0001f)
+            assertEquals(listOf("threshold=1.0"), store.writes)
+        }
+
+    @Test
+    fun `a threshold that is not a number changes nothing at all`() = runTest(main.dispatcher) {
+        val store = FakeSettingsStore(threshold = 0.85f)
+        val vm = viewModel(store)
+        advanceUntilIdle()
+
+        vm.setWatchedThreshold(Float.NaN)
+        advanceUntilIdle()
+
+        assertEquals(0.85f, vm.uiState.value.watchedThreshold, 0.0001f)
+        assertEquals(emptyList<String>(), store.writes)
+    }
+
+    @Test
+    fun `the dub list is the app's own order before the store has said anything`() {
+        // No advance: this is the very first frame, and it must not draw an empty section.
+        val vm = viewModel()
+
+        assertEquals(defaults, vm.uiState.value.studios)
+    }
+
+    @Test
+    fun `a second press of the retry while a question is still out starts nothing`() =
+        runTest(main.dispatcher) {
+            val accounts = FakeAccountRepository()
+            accounts.result = Result.failure(IllegalStateException("offline"))
+            val vm = viewModel(accounts = accounts)
+            advanceUntilIdle()
+            assertEquals(1, accounts.refreshes)
+
+            val answering = CompletableDeferred<Unit>()
+            accounts.gate = answering
+            vm.refreshAccount()
+            advanceUntilIdle()
+            vm.refreshAccount()
+            vm.refreshAccount()
+            advanceUntilIdle()
+
+            assertEquals(2, accounts.refreshes)
+            assertTrue(vm.uiState.value.accountLoading)
+
+            answering.complete(Unit)
+            advanceUntilIdle()
+            assertFalse(vm.uiState.value.accountLoading)
+        }
+
+    @Test
     fun `choosing what is already chosen writes nothing`() = runTest(main.dispatcher) {
         val store = FakeSettingsStore(autoplay = true, quality = Quality.P480, threshold = 0.9f, token = "t")
         val vm = viewModel(store)

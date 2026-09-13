@@ -4,6 +4,16 @@ import app.kaeru.domain.model.Quality
 import kotlinx.coroutines.flow.Flow
 
 /**
+ * The range a share of an episode can meaningfully take.
+ *
+ * The floor is half an episode: below that a title would be marked watched while the viewer is
+ * still deciding whether to keep watching. It is named here rather than inside the store so that a
+ * screen can offer the same range it will get back, and never show a value the store has quietly
+ * pulled into shape.
+ */
+val WATCHED_THRESHOLD_RANGE: ClosedFloatingPointRange<Float> = 0.5f..1f
+
+/**
  * Everything the settings screen can read and change, as the screen sees it: flows to show and
  * suspend setters that take effect the moment they return.
  *
@@ -37,6 +47,7 @@ interface SettingsStore {
     /** How much of an episode has to be behind the viewer for it to count as watched. */
     val watchedThreshold: Flow<Float>
 
+    /** Coerced into [WATCHED_THRESHOLD_RANGE]; a value that is not a number is not written at all. */
     suspend fun setWatchedThreshold(fraction: Float)
 
     /**
