@@ -1,4 +1,4 @@
-package app.kaeru.ui.mobile.search
+package app.kaeru.ui.common.search
 
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.model.Anime

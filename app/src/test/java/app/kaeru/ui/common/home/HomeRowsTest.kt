@@ -1,4 +1,4 @@
-package app.kaeru.ui.mobile.home
+package app.kaeru.ui.common.home
 
 import app.kaeru.domain.discover.Season
 import app.kaeru.domain.discover.SeasonKind
@@ -11,7 +11,6 @@ import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.model.WatchState
-import app.kaeru.ui.common.home.DiscoverUiState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

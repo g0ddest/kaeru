@@ -1,4 +1,4 @@
-package app.kaeru.ui.mobile.details
+package app.kaeru.ui.common.details
 
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus

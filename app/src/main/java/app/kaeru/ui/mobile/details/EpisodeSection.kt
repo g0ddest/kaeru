@@ -38,7 +38,9 @@ import app.kaeru.ui.common.design.ProgressStrip
 import app.kaeru.ui.common.design.RowHeader
 import app.kaeru.ui.common.design.TextAction
 import app.kaeru.ui.common.design.pluralEpisodesAccusative
+import app.kaeru.ui.common.details.COLLAPSE
 import app.kaeru.ui.common.details.EpisodeCell
+import app.kaeru.ui.common.details.watchedLine
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruElevated
 import app.kaeru.ui.common.theme.KaeruSecondary

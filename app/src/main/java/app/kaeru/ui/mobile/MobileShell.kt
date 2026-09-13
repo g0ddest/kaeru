@@ -32,20 +32,20 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import app.kaeru.ui.common.design.KaeruTokens
+import app.kaeru.ui.common.details.DetailsViewModel
 import app.kaeru.ui.common.home.HomeViewModel
+import app.kaeru.ui.common.library.LibraryViewModel
+import app.kaeru.ui.common.search.SearchViewModel
 import app.kaeru.ui.common.settings.SettingsViewModel
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruElevated
 import app.kaeru.ui.common.theme.KaeruSecondary
 import app.kaeru.ui.common.theme.KaeruSurface
 import app.kaeru.ui.mobile.details.DetailsScreen
-import app.kaeru.ui.mobile.details.DetailsViewModel
 import app.kaeru.ui.mobile.home.HomeScreen
 import app.kaeru.ui.mobile.library.LibraryScreen
-import app.kaeru.ui.mobile.library.LibraryViewModel
 import app.kaeru.ui.mobile.player.PlayerActivity
 import app.kaeru.ui.mobile.search.SearchScreen
-import app.kaeru.ui.mobile.search.SearchViewModel
 import app.kaeru.ui.mobile.settings.SettingsScreen
 
 private data class Tab(val route: String, val label: String, val icon: ImageVector)

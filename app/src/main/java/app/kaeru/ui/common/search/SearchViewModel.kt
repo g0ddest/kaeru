@@ -1,4 +1,4 @@
-package app.kaeru.ui.mobile.search
+package app.kaeru.ui.common.search
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope

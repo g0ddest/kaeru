@@ -34,9 +34,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import app.kaeru.domain.discover.Season
 import app.kaeru.domain.model.FeedItem
-import app.kaeru.ui.common.design.HeroBanner
 import app.kaeru.ui.common.design.EmptyState
 import app.kaeru.ui.common.design.ErrorState
+import app.kaeru.ui.common.design.HeroBanner
 import app.kaeru.ui.common.design.IconAction
 import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.design.KaeruTopBar
@@ -46,7 +46,13 @@ import app.kaeru.ui.common.design.SkeletonHero
 import app.kaeru.ui.common.design.SkeletonRow
 import app.kaeru.ui.common.design.episodeLine
 import app.kaeru.ui.common.design.primaryAction
+import app.kaeru.ui.common.home.DiscoverRows
+import app.kaeru.ui.common.home.HomeContent
+import app.kaeru.ui.common.home.HomeRow
 import app.kaeru.ui.common.home.HomeUiState
+import app.kaeru.ui.common.home.discoverRows
+import app.kaeru.ui.common.home.homeContentState
+import app.kaeru.ui.common.home.homeRows
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruBackground
 import app.kaeru.ui.common.theme.KaeruElevated

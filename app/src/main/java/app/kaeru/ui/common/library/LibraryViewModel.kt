@@ -1,4 +1,4 @@
-package app.kaeru.ui.mobile.library
+package app.kaeru.ui.common.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope

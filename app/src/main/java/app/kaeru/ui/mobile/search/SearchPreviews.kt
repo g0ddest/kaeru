@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
+import app.kaeru.ui.common.search.SearchUiState
 import app.kaeru.ui.common.theme.KaeruTheme
 
 private const val DARK = 0xFF0B0C10

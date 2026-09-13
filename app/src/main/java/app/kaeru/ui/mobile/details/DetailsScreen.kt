@@ -64,9 +64,16 @@ import app.kaeru.ui.common.design.Skeleton
 import app.kaeru.ui.common.design.SkeletonGroup
 import app.kaeru.ui.common.design.SkeletonHero
 import app.kaeru.ui.common.design.StatusPill
-import app.kaeru.ui.common.design.statusLabel
 import app.kaeru.ui.common.design.TextAction
+import app.kaeru.ui.common.design.statusLabel
+import app.kaeru.ui.common.details.COLLAPSE
+import app.kaeru.ui.common.details.DetailsContent
+import app.kaeru.ui.common.details.DetailsUiState
+import app.kaeru.ui.common.details.detailsAction
+import app.kaeru.ui.common.details.detailsContentState
+import app.kaeru.ui.common.details.detailsMeta
 import app.kaeru.ui.common.details.episodeCells
+import app.kaeru.ui.common.details.translationLabel
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruBackground
 import app.kaeru.ui.common.theme.KaeruElevated

@@ -1,4 +1,4 @@
-package app.kaeru.ui.mobile.home
+package app.kaeru.ui.common.home
 
 import app.kaeru.domain.discover.Season
 import app.kaeru.domain.model.Anime
