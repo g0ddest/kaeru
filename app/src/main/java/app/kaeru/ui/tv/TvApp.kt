@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -27,6 +28,9 @@ import app.kaeru.ui.tv.player.TvPlayerScreen
 /** Nothing is playing. */
 private const val NOTHING = 0
 
+/** The one slot whose saved state outlives an episode. */
+private const val SHELL = "shell"
+
 @UnstableApi
 @Composable
 fun TvApp(authViewModel: AuthViewModel = hiltViewModel()) {
@@ -36,6 +40,7 @@ fun TvApp(authViewModel: AuthViewModel = hiltViewModel()) {
     // playing has to survive a process death on a device that is left switched on for days.
     var playingId by rememberSaveable { mutableIntStateOf(NOTHING) }
     var playingEpisode by rememberSaveable { mutableIntStateOf(NOTHING) }
+    val shell = rememberSaveableStateHolder()
 
     KaeruTvTheme {
         when (auth.loggedIn) {
@@ -48,20 +53,24 @@ fun TvApp(authViewModel: AuthViewModel = hiltViewModel()) {
                 onSubmit = { authViewModel.exchangeTvCode(code) },
             )
             true -> when {
-                // Leaving the player uncovers whatever it was opened from, because the shell
-                // behind it was never taken down — only drawn over.
                 playingId != NOTHING -> TvPlayer(
                     animeId = playingId,
                     episode = playingEpisode,
                     onEpisode = { playingEpisode = it },
                     onExit = { playingId = NOTHING },
                 )
-                else -> TvShell(
-                    onPlay = { animeId, episode ->
-                        playingId = animeId
-                        playingEpisode = episode
-                    },
-                )
+                // The shell is taken down while an episode plays rather than drawn over, so that
+                // the remote cannot walk out of the player and into rows nobody can see. What it
+                // remembered — which destination, how far down a list, which card the D-pad was
+                // on — is held here and handed back when the episode ends.
+                else -> shell.SaveableStateProvider(SHELL) {
+                    TvShell(
+                        onPlay = { animeId, episode ->
+                            playingId = animeId
+                            playingEpisode = episode
+                        },
+                    )
+                }
             }
         }
     }
