@@ -46,7 +46,7 @@ import androidx.compose.ui.unit.dp
 import app.kaeru.player.EpisodeQueue
 import app.kaeru.ui.common.Poster
 import app.kaeru.ui.common.player.PlayerUiState
-import app.kaeru.ui.common.player.formatTime
+import app.kaeru.ui.common.design.formatTime
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruBackground
 import app.kaeru.ui.common.theme.KaeruElevated
