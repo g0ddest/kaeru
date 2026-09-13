@@ -108,7 +108,7 @@ private fun StatusTabs(counts: Map<ListStatus, Int>, selected: ListStatus, onSta
                 selected = tab.status == selected,
                 onClick = { onStatus(tab.status) },
                 // Nothing opens; the grid under it changes. The default chevron would promise a menu.
-                trailing = {},
+                affordance = false,
             )
         }
     }

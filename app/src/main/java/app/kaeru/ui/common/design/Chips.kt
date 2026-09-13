@@ -65,8 +65,10 @@ fun OftenChosenChip(modifier: Modifier = Modifier) = MetaChip(OFTEN_CHOSEN, modi
  * The current list status, and the way to change it.
  *
  * Unlike [MetaChip] this is a control, so it is a full 48dp tall and carries an affordance saying
- * a menu is behind it. [trailing] replaces that affordance when a screen needs something else
- * there; the default chevron is decorative, since the pill's own label is what gets read out.
+ * a menu is behind it. Set [affordance] false where nothing opens — a tab, a single-choice row, a
+ * chip that is the whole action — because a chevron there promises a menu that does not exist.
+ * [trailing] puts something else in that place instead; the default chevron is decorative, since
+ * the pill's own label is what gets read out.
  *
  * [role] also decides how the pill announces itself. A tab or a menu anchor has a selected state
  * worth reading out; a plain button does not, and a recent search query announced as «not
@@ -79,6 +81,7 @@ fun StatusPill(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     role: Role = Role.Tab,
+    affordance: Boolean = true,
     trailing: @Composable (() -> Unit)? = null,
 ) {
     Row(
@@ -111,7 +114,7 @@ fun StatusPill(
         )
         if (trailing != null) {
             trailing()
-        } else {
+        } else if (affordance) {
             Icon(
                 Icons.Default.ArrowDropDown,
                 contentDescription = null,

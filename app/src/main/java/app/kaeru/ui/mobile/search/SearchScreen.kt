@@ -129,7 +129,7 @@ private fun RecentQueries(queries: List<String>, onRecent: (String) -> Unit) {
                 onClick = { onRecent(query) },
                 role = Role.Button,
                 // Nothing opens behind it; the chip is the whole action.
-                trailing = {},
+                affordance = false,
             )
         }
     }

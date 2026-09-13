@@ -139,7 +139,7 @@ fun <T> SettingChoiceRow(
                 selected = selected(option),
                 onClick = { onSelect(option) },
                 role = Role.RadioButton,
-                trailing = {},
+                affordance = false,
             )
         }
     }

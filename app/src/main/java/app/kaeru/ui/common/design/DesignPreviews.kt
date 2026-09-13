@@ -340,8 +340,27 @@ private fun AvatarPreview() = KaeruTheme {
         horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // No picture to load in a preview, so both of these show the fallback letter.
+        // Nothing stored, which is the contracted fallback.
         Avatar(url = null, name = "kaeru")
         Avatar(url = null, name = "Фрирен")
+        // A picture that cannot be fetched — a 404, a phone on a train, a preview with no network.
+        // It has to land on the same letter, or the account block loses its face to a grey disc.
+        Avatar(url = "https://shikimori.example/there-is-no-such-avatar.png", name = "kaeru")
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 120)
+@Composable
+private fun SwitchPreview() = KaeruTheme {
+    Row(
+        Modifier.padding(KaeruTokens.GutterPhone),
+        horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // On takes the accent, the same rule that lights the active tab and the chosen chip.
+        KaeruSwitch(checked = true, onCheckedChange = null)
+        KaeruSwitch(checked = false, onCheckedChange = null)
+        KaeruSwitch(checked = true, onCheckedChange = null, enabled = false)
+        KaeruSwitch(checked = false, onCheckedChange = null, enabled = false)
     }
 }
