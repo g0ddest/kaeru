@@ -51,6 +51,7 @@ import app.kaeru.ui.common.design.RowHeader
 import app.kaeru.ui.common.design.SkeletonHero
 import app.kaeru.ui.common.design.SkeletonRow
 import app.kaeru.ui.common.design.StatusPill
+import app.kaeru.ui.common.design.SyncingNotice
 import app.kaeru.ui.common.design.TextAction
 import app.kaeru.ui.common.design.TvPosterCard
 import app.kaeru.ui.common.design.seasonTitle
@@ -136,6 +137,7 @@ fun TvHomeScreen(
 
     when (content) {
         HomeContent.Loading -> TvHomeLoading(modifier)
+        HomeContent.FirstSync -> TvHomeFirstSync(modifier)
         is HomeContent.Error -> TvHomeError(content.message, onRefresh, modifier)
         else -> TvHomeFeed(
             rows = if (content is HomeContent.Feed) rows else emptyList(),
@@ -525,6 +527,33 @@ private fun TvHomeLoading(modifier: Modifier = Modifier) = Column(modifier.fillM
 }
 
 /**
+ * The same skeletons, with a sentence saying why they are still skeletons.
+ *
+ * This is the screen a viewer meets on the evening they sign the television in, and it is the one
+ * that used to tell them their list was empty while the list was still being fetched.
+ *
+ * The sentence sits under the hero band rather than above it, which is the opposite of where the
+ * phone puts it, because the geometry is the opposite too: a 1080p panel is 540dp tall and the band
+ * is 180 of them, so the seam is the middle of the screen — while above the band is the top
+ * twenty-seven device-independent pixels a panel is allowed to crop.
+ *
+ * It is the one state of this screen with nothing focusable on it. There is nothing to press yet;
+ * the rail is still a D-pad press to the left, and the rows claim the focus themselves the moment
+ * they land.
+ */
+@Composable
+private fun TvHomeFirstSync(modifier: Modifier = Modifier) = Column(modifier.fillMaxSize()) {
+    SkeletonHero(aspect = 16f / 3f)
+    Spacer(Modifier.height(KaeruTokens.Space6))
+    SyncingNotice(
+        Modifier.padding(start = TvLayout.Gutter, end = TvLayout.GutterEnd),
+        stripWidth = KaeruTokens.PosterWidthTv,
+    )
+    Spacer(Modifier.height(KaeruTokens.Space6))
+    SkeletonRow(count = 5, gutter = TvLayout.Gutter, posterWidth = KaeruTokens.PosterWidthTv)
+}
+
+/**
  * Nothing to show, and a reason. The retry claims D-pad focus, because on a television a screen
  * with no focused control is a screen the remote cannot reach at all.
  */
@@ -579,6 +608,10 @@ private fun TvHomeScreenPreview() = KaeruTvTheme {
 @Preview(device = Devices.TV_1080p)
 @Composable
 private fun TvHomeLoadingPreview() = KaeruTvTheme { TvHomeLoading() }
+
+@Preview(device = Devices.TV_1080p)
+@Composable
+private fun TvHomeFirstSyncPreview() = KaeruTvTheme { TvHomeFirstSync() }
 
 @Preview(device = Devices.TV_1080p)
 @Composable

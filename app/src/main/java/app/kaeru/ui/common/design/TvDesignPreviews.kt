@@ -167,6 +167,15 @@ private fun TvErrorStatePreview() = KaeruTvTheme {
     )
 }
 
+/** At television type the sentence is wider, and the strip under it grows to match on its own. */
+@Preview(showBackground = true, backgroundColor = DARK, device = Devices.TV_1080p)
+@Composable
+private fun TvSyncingNoticePreview() = KaeruTvTheme {
+    Column(Modifier.fillMaxSize().padding(KaeruTokens.GutterTv)) {
+        SyncingNotice(stripWidth = KaeruTokens.PosterWidthTv)
+    }
+}
+
 @Preview(showBackground = true, backgroundColor = DARK, device = Devices.TV_1080p)
 @Composable
 private fun TvSkeletonPreview() = KaeruTvTheme {
