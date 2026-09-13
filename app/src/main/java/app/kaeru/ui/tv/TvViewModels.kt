@@ -6,10 +6,12 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.core.os.bundleOf
+import androidx.lifecycle.DEFAULT_ARGS_KEY
 import androidx.lifecycle.HasDefaultViewModelProviderFactory
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.VIEW_MODEL_STORE_OWNER_KEY
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.MutableCreationExtras
@@ -52,7 +54,7 @@ fun TvAnimeScope(animeId: Int, content: @Composable () -> Unit) {
  * [CreationExtras] is rebuilt from the host's every time rather than cached, because the host's own
  * extras carry its lifecycle-bound keys and a copy taken once could outlive them.
  */
-private class TvDestinationOwner(
+internal class TvDestinationOwner(
     private val host: HasDefaultViewModelProviderFactory,
     private val args: Bundle,
 ) : ViewModelStoreOwner, HasDefaultViewModelProviderFactory {
@@ -64,7 +66,7 @@ private class TvDestinationOwner(
 
     override val defaultViewModelCreationExtras: CreationExtras
         get() = MutableCreationExtras(host.defaultViewModelCreationExtras).apply {
-            set(androidx.lifecycle.VIEW_MODEL_STORE_OWNER_KEY, this@TvDestinationOwner)
-            set(androidx.lifecycle.DEFAULT_ARGS_KEY, args)
+            set(VIEW_MODEL_STORE_OWNER_KEY, this@TvDestinationOwner)
+            set(DEFAULT_ARGS_KEY, args)
         }
 }

@@ -97,7 +97,9 @@ fun TvSettingsScreen(
 ) {
     var confirming by rememberSaveable { mutableStateOf(false) }
     val first = remember { FocusRequester() }
-    LaunchedEffect(Unit) { first.requestFocusOrLog("the first control of the television settings") }
+    // Not the sign-out button, which is the first focusable on the page: the first press after a
+    // screen opens is the easiest one to make by accident, and it should not be the red one.
+    LaunchedEffect(Unit) { first.requestFocusOrLog("the autoplay switch of the television settings") }
 
     Column(
         modifier
@@ -111,14 +113,10 @@ fun TvSettingsScreen(
             if (!state.accountLoading && state.account == null) {
                 TextAction(RETRY, onRetryAccount)
             }
-            DestructiveButton(
-                SIGN_OUT,
-                onClick = { confirming = true },
-                modifier = Modifier.focusRequester(first),
-            )
+            DestructiveButton(SIGN_OUT, onClick = { confirming = true })
         }
         SettingsSection(PLAYBACK, Modifier.widthIn(max = TextColumn + TvLayout.Gutter), TvLayout.Gutter) {
-            SettingSwitchRow(AUTOPLAY, state.autoplayNext, onAutoplay)
+            SettingSwitchRow(AUTOPLAY, state.autoplayNext, onAutoplay, Modifier.focusRequester(first))
             SettingLabel(QUALITY)
             SettingChoiceRow(
                 options = qualityOptions(state.defaultQuality),

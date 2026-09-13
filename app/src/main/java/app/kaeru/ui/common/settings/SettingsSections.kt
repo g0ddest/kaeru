@@ -33,6 +33,7 @@ import app.kaeru.ui.common.design.AvatarSize
 import app.kaeru.ui.common.design.IconAction
 import app.kaeru.ui.common.design.KaeruSwitch
 import app.kaeru.ui.common.design.KaeruTokens
+import app.kaeru.ui.common.design.kaeruFocus
 import app.kaeru.ui.common.design.RowHeader
 import app.kaeru.ui.common.design.Skeleton
 import app.kaeru.ui.common.design.SkeletonGroup
@@ -99,14 +100,24 @@ fun SettingLabel(text: String) {
  * A setting that is on or off, with the whole row as the target.
  *
  * The switch itself takes no click: the row carries `toggleable`, so the label and the switch are
- * one control that announces itself once and can be hit anywhere along its width.
+ * one control that announces itself once and can be hit anywhere along its width — and, on a
+ * television, one focus stop rather than two.
  */
 @Composable
-fun SettingSwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+fun SettingSwitchRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
             .heightIn(min = KaeruTokens.MinTouchTarget)
+            // A full-width row has nowhere to grow into, so the ring carries the whole focus
+            // signal. Inert under a finger; on a television it is the only thing that says the
+            // remote is here.
+            .kaeruFocus(KaeruTokens.CardShape, focusedScale = 1f)
             .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange),
         verticalAlignment = Alignment.CenterVertically,
     ) {
