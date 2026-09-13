@@ -1,8 +1,10 @@
 package app.kaeru.data.auth
 
+import app.kaeru.data.library.AppPreferences
 import app.kaeru.data.shikimori.SHIKIMORI_BASE_URL
 import app.kaeru.data.shikimori.ShikimoriOAuthApi
 import app.kaeru.data.shikimori.ShikimoriApi
+import app.kaeru.data.shikimori.UserDto
 import app.kaeru.data.shikimori.toDomainFailure
 import app.kaeru.domain.error.AuthCallbackRejected
 import app.kaeru.domain.repository.AuthRepository
@@ -27,6 +29,7 @@ class ShikimoriAuthRepository @Inject constructor(
     private val oauthApi: ShikimoriOAuthApi,
     private val api: ShikimoriApi,
     private val session: AccountSession,
+    private val prefs: AppPreferences,
     @param:Named("shikimoriClientId") private val clientId: String,
     @param:Named("shikimoriClientSecret") private val clientSecret: String,
     private val clock: Clock,
@@ -66,7 +69,17 @@ class ShikimoriAuthRepository @Inject constructor(
     override suspend fun exchangeTypedCode(code: String): Result<Unit> =
         exchangeCode(code.trim(), OOB_REDIRECT)
 
+    /**
+     * The `whoami` that verifies the identity also names it, so the nickname and avatar the
+     * settings screen shows are written down here rather than fetched again on first open.
+     *
+     * They are written after the transition returns, not inside it: the transition's own lock is
+     * held across a network call already, and a sign-out that wins the race leaves a nickname with
+     * no user id beside it — which `AppPreferences.account` reads as nobody signed in, and the next
+     * sign-in overwrites.
+     */
     internal suspend fun exchangeCode(code: String, redirectUri: String): Result<Unit> = try {
+        var profile: UserDto? = null
         session.login {
             val tokens = oauthApi.token(
                 grantType = "authorization_code",
@@ -76,8 +89,10 @@ class ShikimoriAuthRepository @Inject constructor(
                 redirectUri = redirectUri,
             )
             val user = api.whoami("Bearer ${tokens.accessToken}")
+            profile = user
             AuthTokens(tokens.accessToken, tokens.refreshToken, clock.instant().epochSecond + tokens.expiresIn, user.id)
         }
+        profile?.let { prefs.setAccountProfile(it.nickname, it.avatar) }
         Result.success(Unit)
     } catch (cancelled: CancellationException) {
         throw cancelled

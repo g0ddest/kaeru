@@ -92,7 +92,7 @@ class SessionHandoffThreadTest {
             result
         }
         val library = ShikimoriLibraryRepository(api, db.animeDao(), db.userRateDao(), db.watchStateDao(), prefs, deliverySession, PosterEnricher(api), Dispatchers.IO, clock)
-        val auth = ShikimoriAuthRepository(oauth, api, session, "cid", "secret", clock)
+        val auth = ShikimoriAuthRepository(oauth, api, session, prefs, "cid", "secret", clock)
         val delivered = ConcurrentLinkedQueue<List<LibraryEntry>>()
         val first = CountDownLatch(1)
         val bDelivered = CountDownLatch(1)

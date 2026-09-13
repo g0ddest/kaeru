@@ -16,8 +16,10 @@ import okhttp3.OkHttpClient
 import app.kaeru.data.shikimori.ShikimoriOAuthApi
 import app.kaeru.data.shikimori.shikimoriJson
 import app.kaeru.domain.error.AuthCallbackRejected
+import app.kaeru.domain.model.Account
 import app.kaeru.domain.repository.MOBILE_REDIRECT
 import app.kaeru.domain.repository.OOB_REDIRECT
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
@@ -68,7 +70,7 @@ class ShikimoriAuthRepositoryTest {
             .client(OkHttpClient.Builder().addInterceptor(AuthInterceptor(store)).build())
             .addConverterFactory(shikimoriJson().asConverterFactory("application/json".toMediaType()))
             .build().create(ShikimoriApi::class.java)
-        repo = ShikimoriAuthRepository(oauth, api, session, "cid", "sec", clock)
+        repo = ShikimoriAuthRepository(oauth, api, session, prefs, "cid", "sec", clock)
     }
 
     @After
@@ -160,7 +162,7 @@ class ShikimoriAuthRepositoryTest {
 
     @Test
     fun `authorize url encodes reserved characters in client id and redirect`() {
-        val custom = ShikimoriAuthRepository(oauth, api, session, "id&scope=other+value", "sec", clock)
+        val custom = ShikimoriAuthRepository(oauth, api, session, prefs, "id&scope=other+value", "sec", clock)
         val url = custom.authorizeUrl("kaeru://oauth?value=a&other=b+c").toHttpUrl()
         assertEquals("id&scope=other+value", url.queryParameter("client_id"))
         assertEquals("kaeru://oauth?value=a&other=b+c", url.queryParameter("redirect_uri"))
@@ -191,9 +193,30 @@ class ShikimoriAuthRepositoryTest {
     }
 
     @Test
+    fun `signing in remembers the nickname and avatar the settings screen shows`() = runTest {
+        enqueueTokens("""{"id":42,"nickname":"frog","avatar":"https://shikimori.io/frog.png"}""")
+
+        assertTrue(repo.exchangeCode("abc", MOBILE_REDIRECT).isSuccess)
+
+        // The same `whoami` that verifies the identity also names it: asking twice for one sign-in
+        // would be a second round trip for an answer already in hand.
+        assertEquals(Account(42, "frog", "https://shikimori.io/frog.png"), prefs.account.first())
+    }
+
+    @Test
+    fun `signing out forgets the nickname along with the rest of the account`() = runTest {
+        enqueueTokens("""{"id":42,"nickname":"frog","avatar":"https://shikimori.io/frog.png"}""")
+        assertTrue(repo.exchangeCode("abc", MOBILE_REDIRECT).isSuccess)
+
+        repo.logout()
+
+        assertNull(prefs.account.first())
+    }
+
+    @Test
     fun `exchange code form encodes secrets codes and OOB redirect`() = runTest {
         enqueueTokens()
-        val custom = ShikimoriAuthRepository(oauth, api, session, "c+id", "s&ec", clock)
+        val custom = ShikimoriAuthRepository(oauth, api, session, prefs, "c+id", "s&ec", clock)
         assertTrue(custom.exchangeCode("a+b&c", OOB_REDIRECT).isSuccess)
         assertEquals("grant_type=authorization_code&client_id=c%2Bid&client_secret=s%26ec&code=a%2Bb%26c&redirect_uri=urn%3Aietf%3Awg%3Aoauth%3A2.0%3Aoob", server.takeRequest().body.readUtf8())
     }
@@ -230,8 +253,8 @@ class ShikimoriAuthRepositoryTest {
         assertTrue(result.exceptionOrNull() is AuthCallbackRejected)
     }
 
-    private fun enqueueTokens() {
+    private fun enqueueTokens(whoami: String = """{"id":42,"nickname":"frog"}""") {
         server.enqueue(MockResponse().setBody("""{"access_token":"acc","token_type":"Bearer","expires_in":86400,"refresh_token":"ref","scope":"user_rates","created_at":1757600000}"""))
-        server.enqueue(MockResponse().setBody("""{"id":42,"nickname":"frog"}"""))
+        server.enqueue(MockResponse().setBody(whoami))
     }
 }

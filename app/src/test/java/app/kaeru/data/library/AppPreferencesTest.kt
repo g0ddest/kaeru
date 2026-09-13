@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import app.kaeru.domain.model.Account
 import app.kaeru.domain.model.Quality
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
@@ -143,5 +144,87 @@ class AppPreferencesTest {
         prefs.markNotificationsAsked()
 
         assertTrue(prefs.notificationsAsked())
+    }
+
+    @Test
+    fun `the watched threshold round trips`() = runTest(dispatcher) {
+        prefs.setWatchedThreshold(0.85f)
+
+        assertEquals(0.85f, prefs.watchedThreshold.first(), 0.0001f)
+    }
+
+    @Test
+    fun `a threshold outside the range a share of an episode can have is pulled back into it`() =
+        runTest(dispatcher) {
+            prefs.setWatchedThreshold(3f)
+            assertEquals(1f, prefs.watchedThreshold.first(), 0.0001f)
+
+            prefs.setWatchedThreshold(-1f)
+            assertEquals(0.5f, prefs.watchedThreshold.first(), 0.0001f)
+        }
+
+    @Test
+    fun `a threshold that is not a number is not written`() = runTest(dispatcher) {
+        prefs.setWatchedThreshold(0.8f)
+
+        prefs.setWatchedThreshold(Float.NaN)
+
+        assertEquals(0.8f, prefs.watchedThreshold.first(), 0.0001f)
+    }
+
+    @Test
+    fun `the kodik token round trips and an empty one clears the key`() = runTest(dispatcher) {
+        assertNull(prefs.kodikToken.first())
+
+        prefs.setKodikToken("  typed-by-hand  ")
+        assertEquals("typed-by-hand", prefs.kodikToken.first())
+
+        prefs.setKodikToken("   ")
+        assertNull(prefs.kodikToken.first())
+        assertNull(store.data.first()[stringPreferencesKey("kodik_token_override")])
+    }
+
+    @Test
+    fun `the kodik token belongs to the device and survives a sign-out`() = runTest(dispatcher) {
+        prefs.setUserId(42)
+        prefs.setKodikToken("typed-by-hand")
+
+        prefs.clearAccount()
+
+        assertEquals("typed-by-hand", prefs.kodikToken.first())
+    }
+
+    @Test
+    fun `the account is known only once both the id and the nickname are stored`() = runTest(dispatcher) {
+        assertNull(prefs.account.first())
+
+        prefs.setUserId(42)
+        // An id on its own is an account nobody can name yet: whoami has not answered, or this
+        // install predates the screen that shows it.
+        assertNull(prefs.account.first())
+
+        prefs.setAccountProfile("kaeru", "https://shikimori.io/avatar.png")
+
+        assertEquals(Account(42, "kaeru", "https://shikimori.io/avatar.png"), prefs.account.first())
+    }
+
+    @Test
+    fun `an account with no avatar is still an account`() = runTest(dispatcher) {
+        prefs.setUserId(7)
+        prefs.setAccountProfile("kaeru", null)
+
+        assertEquals(Account(7, "kaeru", null), prefs.account.first())
+    }
+
+    @Test
+    fun `signing out forgets who was signed in`() = runTest(dispatcher) {
+        prefs.setUserId(42)
+        prefs.setAccountProfile("kaeru", "https://shikimori.io/avatar.png")
+
+        prefs.clearAccount()
+
+        assertNull(prefs.account.first())
+        assertNull(store.data.first()[stringPreferencesKey("account_nickname")])
+        assertNull(store.data.first()[stringPreferencesKey("account_avatar")])
     }
 }
