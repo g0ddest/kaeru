@@ -6,6 +6,7 @@ import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.annotation.OptIn
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -17,6 +18,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.media3.common.util.UnstableApi
 import app.kaeru.player.CastFramework
 import app.kaeru.player.CastSessionBridge
 import app.kaeru.player.KaeruPlaybackService
@@ -44,6 +46,7 @@ class PlayerActivity : FragmentActivity() {
     private val viewModel: PlayerViewModel by viewModels()
     private var target by mutableStateOf(0 to 1)
 
+    @OptIn(UnstableApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -115,6 +118,7 @@ class PlayerActivity : FragmentActivity() {
         viewModel.reportProgress()
     }
 
+    @OptIn(UnstableApi::class)
     override fun onDestroy() {
         if (isFinishing) {
             viewModel.release()
@@ -138,6 +142,7 @@ class PlayerActivity : FragmentActivity() {
      * Hands the session to the media service so headphones, the lock screen and Bluetooth can
      * drive it. Failing to start it costs the notification, never the video, so it never throws.
      */
+    @OptIn(UnstableApi::class)
     private fun startPlaybackService() {
         runCatching { startService(Intent(this, KaeruPlaybackService::class.java)) }
     }
