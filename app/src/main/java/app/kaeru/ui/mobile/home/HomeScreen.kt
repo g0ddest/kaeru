@@ -52,7 +52,7 @@ import app.kaeru.ui.common.theme.KaeruBackground
 import app.kaeru.ui.common.theme.KaeruElevated
 import app.kaeru.ui.mobile.KaeruSnackbarHost
 import app.kaeru.ui.mobile.RetrySnackbar
-import app.kaeru.ui.mobile.player.CastButton
+import app.kaeru.ui.common.player.CastButton
 import java.time.Instant
 
 private const val WORDMARK = "Kaeru"

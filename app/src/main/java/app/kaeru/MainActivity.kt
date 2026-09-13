@@ -16,7 +16,7 @@ import app.kaeru.player.CastFramework
 import app.kaeru.player.CastSessionBridge
 import app.kaeru.ui.mobile.MobileApp
 import app.kaeru.ui.mobile.OAuthCallback
-import app.kaeru.ui.mobile.player.LocalCastAvailable
+import app.kaeru.ui.common.player.LocalCastAvailable
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 

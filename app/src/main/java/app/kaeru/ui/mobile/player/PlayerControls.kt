@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.kaeru.ui.common.player.CastButton
 import app.kaeru.ui.common.design.KaeruSeekBar
 import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.design.formatTime

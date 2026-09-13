@@ -1,4 +1,4 @@
-package app.kaeru.ui.mobile.player
+package app.kaeru.ui.common.player
 
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
@@ -24,6 +24,10 @@ val LocalCastAvailable = staticCompositionLocalOf { false }
 
 /**
  * The cast button, in the one form the Cast framework will drive: `MediaRouteButton`.
+ *
+ * In `ui.common.player` rather than beside the player screen because the home screen, the title
+ * screen and the player all carry one, and a feature package is not a place the other features
+ * may import from.
  *
  * It manages its own presence — the framework hides it while there is no receiver on the
  * network and shows it when one appears — so the only thing worth deciding here is whether
