@@ -1,32 +1,20 @@
 package app.kaeru.ui.tv
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
-import androidx.tv.material3.Button
-import androidx.tv.material3.MaterialTheme
-import androidx.tv.material3.Surface
-import androidx.tv.material3.Text
-import app.kaeru.domain.model.FeedItem
-import app.kaeru.ui.common.Poster
 import app.kaeru.ui.common.home.HomeViewModel
 import app.kaeru.ui.common.player.PlayerViewModel
 import app.kaeru.ui.common.theme.KaeruTvTheme
@@ -35,19 +23,21 @@ import app.kaeru.ui.tv.auth.TvLoginScreen
 import app.kaeru.ui.tv.home.TvHomeScreen
 import app.kaeru.ui.tv.player.TvPlayerScreen
 
-/** What the viewer is looking at. Three states, and back walks them in this order. */
-private data class TvPlayback(val animeId: Int, val episode: Int)
+/** No title card is open, and no episode is playing. */
+private const val NOTHING = 0
 
 @UnstableApi
 @Composable
 fun TvApp(authViewModel: AuthViewModel = hiltViewModel()) {
     val auth = authViewModel.uiState.collectAsStateWithLifecycle().value
     var code by remember { mutableStateOf("") }
-    var selected by remember { mutableStateOf<FeedItem?>(null) }
-    var playing by remember { mutableStateOf<TvPlayback?>(null) }
-    // Only the title card's back is handled here: the player has its own, which hides the panel
-    // before it lets go of the screen.
-    BackHandler(enabled = playing == null && selected != null) { selected = null }
+    // Saved as ids rather than as the entries themselves: a `LibraryEntry` is not parcelable and
+    // holding one across a process death would mean saving a copy of the catalogue. The feed
+    // comes back from Room in a moment, and the title card is found in it again.
+    var selectedId by rememberSaveable { mutableIntStateOf(NOTHING) }
+    var playingId by rememberSaveable { mutableIntStateOf(NOTHING) }
+    var playingEpisode by rememberSaveable { mutableIntStateOf(NOTHING) }
+
     KaeruTvTheme {
         when (auth.loggedIn) {
             null -> Box(Modifier.fillMaxSize())
@@ -63,20 +53,25 @@ fun TvApp(authViewModel: AuthViewModel = hiltViewModel()) {
                 // home rows for the title card costs nothing and preserves the loaded state.
                 val home: HomeViewModel = hiltViewModel()
                 val homeState = home.uiState.collectAsStateWithLifecycle().value
-                val target = playing
-                val entry = selected
+                val selected = remember(homeState.feed, selectedId) {
+                    if (selectedId == NOTHING) null else tvFeedItem(homeState.feed, selectedId)
+                }
+                // Only the title card's back is handled here: the player has its own, which hides
+                // the panel before it lets go of the screen.
+                BackHandler(enabled = playingId == NOTHING && selected != null) { selectedId = NOTHING }
                 when {
                     // Leaving the player uncovers whatever it was opened from, because that
                     // screen was never taken down — only drawn over.
-                    target != null -> TvPlayer(
-                        target = target,
-                        onEpisode = { playing = target.copy(episode = it) },
-                        onExit = { playing = null },
+                    playingId != NOTHING -> TvPlayer(
+                        animeId = playingId,
+                        episode = playingEpisode,
+                        onEpisode = { playingEpisode = it },
+                        onExit = { playingId = NOTHING },
                     )
-                    entry != null -> TvTitleCard(
-                        item = entry,
-                        onWatch = { playing = TvPlayback(entry.entry.anime.id, it) },
-                        onClose = { selected = null },
+                    selected != null -> TvTitleCard(
+                        item = selected,
+                        onWatch = { playingId = selected.entry.anime.id; playingEpisode = it },
+                        onClose = { selectedId = NOTHING },
                     )
                     else -> TvHomeScreen(
                         state = homeState,
@@ -86,11 +81,14 @@ fun TvApp(authViewModel: AuthViewModel = hiltViewModel()) {
                         // starting — one that has not aired — and for a deliberate long press.
                         onPlay = { item ->
                             when (val action = tvWatchAction(item)) {
-                                is TvWatchAction.Play -> playing = TvPlayback(item.entry.anime.id, action.episode)
-                                TvWatchAction.NotAired -> selected = item
+                                is TvWatchAction.Play -> {
+                                    playingId = item.entry.anime.id
+                                    playingEpisode = action.episode
+                                }
+                                TvWatchAction.NotAired -> selectedId = item.entry.anime.id
                             }
                         },
-                        onDetails = { selected = it },
+                        onDetails = { selectedId = it.entry.anime.id },
                     )
                 }
             }
@@ -106,12 +104,18 @@ fun TvApp(authViewModel: AuthViewModel = hiltViewModel()) {
  */
 @UnstableApi
 @Composable
-private fun TvPlayer(target: TvPlayback, onEpisode: (Int) -> Unit, onExit: () -> Unit) {
+private fun TvPlayer(animeId: Int, episode: Int, onEpisode: (Int) -> Unit, onExit: () -> Unit) {
     val viewModel: PlayerViewModel = hiltViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val player by viewModel.videoPlayer.collectAsStateWithLifecycle()
 
-    LaunchedEffect(target) { viewModel.start(target.animeId, target.episode) }
+    LaunchedEffect(animeId, episode) { viewModel.start(animeId, episode) }
+    // Autoplay moves on without asking this screen, so the screen follows it. Without this the
+    // episode restored after a process death would be the one the viewer started hours ago.
+    // Starting what is already playing is a no-op, so the two effects cannot fight.
+    LaunchedEffect(state.episode) {
+        if (state.episode > 0 && state.episode != episode) onEpisode(state.episode)
+    }
 
     TvPlayerScreen(
         state = state,
@@ -139,37 +143,4 @@ private fun TvPlayer(target: TvPlayback, onEpisode: (Int) -> Unit, onExit: () ->
         onDismissCompleted = viewModel::dismissCompleted,
         onToastShown = viewModel::consumeToast,
     )
-}
-
-@Composable
-private fun TvTitleCard(item: FeedItem, onWatch: (Int) -> Unit, onClose: () -> Unit) {
-    val entry = item.entry
-    val primary = remember { FocusRequester() }
-    val action = remember(item) { tvWatchAction(item) }
-    LaunchedEffect(entry.anime.id) { primary.requestFocusOrLog("главную кнопку карточки тайтла") }
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Surface(modifier = Modifier.fillMaxSize(0.72f)) {
-            Row(Modifier.padding(36.dp), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-                Poster(entry.anime.posterUrl, entry.anime.title, Modifier.weight(0.34f))
-                Column(Modifier.weight(0.66f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text(entry.anime.title, style = MaterialTheme.typography.displaySmall)
-                    Text("Просмотрено ${entry.rate.episodes} из ${entry.anime.availableEpisodes}")
-                    if (action is TvWatchAction.NotAired) Text("Следующая серия ещё не вышла")
-                    entry.anime.description?.let { Text(it, maxLines = 8) }
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        if (action is TvWatchAction.Play) {
-                            Button(
-                                onClick = { onWatch(action.episode) },
-                                modifier = Modifier.focusRequester(primary),
-                            ) { Text(action.label) }
-                        }
-                        Button(
-                            onClick = onClose,
-                            modifier = if (action is TvWatchAction.Play) Modifier else Modifier.focusRequester(primary),
-                        ) { Text("Назад") }
-                    }
-                }
-            }
-        }
-    }
 }

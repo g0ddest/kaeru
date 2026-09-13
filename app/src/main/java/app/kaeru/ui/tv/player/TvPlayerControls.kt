@@ -18,9 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -45,7 +42,6 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
@@ -67,13 +63,13 @@ import app.kaeru.ui.common.theme.KaeruTvTheme
 import app.kaeru.ui.tv.requestFocusOrLog
 
 /** Controls sit on video, so their quiet state is alpha over whatever frame is underneath. */
-private val OnVideo = Color.White
-private val OnVideoMuted = Color(0xFFD6D9DE)
-private val Quiet = Color.White.copy(alpha = 0.12f)
-private val ControlShape = RoundedCornerShape(10.dp)
+internal val OnVideo = Color.White
+internal val OnVideoMuted = Color(0xFFD6D9DE)
+internal val Quiet = Color.White.copy(alpha = 0.12f)
+internal val ControlShape = RoundedCornerShape(10.dp)
 
 /** Wide enough for a remote, far enough from the bezel for a television that overscans. */
-private val EdgePadding = 48.dp
+internal val EdgePadding = 48.dp
 
 /**
  * The controls that sit over the picture: who is speaking at the top, where the episode is and
@@ -267,241 +263,6 @@ private fun TvActionRow(
     }
 }
 
-// --- the strips ----------------------------------------------------------------------------
-
-/**
- * Episodes and voices, above the timeline: the two choices that change what is playing rather
- * than how it looks.
- */
-@Composable
-fun TvEpisodeStrip(
-    state: PlayerUiState,
-    onEpisode: (Int) -> Unit,
-    onTranslation: (Translation) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    if (state.availableEpisodes == 0 && state.translations.isEmpty()) {
-        TvStripMessage("Список серий пока недоступен", modifier)
-        return
-    }
-    StripPanel(modifier) {
-        // A show whose episode count has not arrived yet still gets its voices.
-        if (state.availableEpisodes > 0) {
-            TvChipRow(
-                label = "Серии",
-                items = (1..state.availableEpisodes).toList(),
-                caption = { it.toString() },
-                isCurrent = { it == state.episode },
-                claimsFocus = true,
-                onPick = onEpisode,
-            )
-        }
-        if (state.translations.isNotEmpty()) {
-            TvChipRow(
-                label = "Озвучка",
-                items = state.translations,
-                caption = ::translationLabel,
-                isCurrent = { it.id == state.translationId },
-                claimsFocus = state.availableEpisodes == 0,
-                onPick = onTranslation,
-            )
-        }
-    }
-}
-
-/** The quality ladder, one rung a chip, tallest first is not the order — the source's is. */
-@Composable
-fun TvQualityStrip(
-    state: PlayerUiState,
-    onQuality: (Quality) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    if (state.qualities.isEmpty()) {
-        TvStripMessage("Качество пока недоступно", modifier)
-        return
-    }
-    StripPanel(modifier) {
-        TvChipRow(
-            label = "Качество",
-            items = state.qualities,
-            caption = { "${it.height}p" },
-            isCurrent = { it == state.quality },
-            claimsFocus = true,
-            onPick = onQuality,
-        )
-    }
-}
-
-/** The strip's slot while there is nothing yet to choose from. */
-@Composable
-fun TvStripMessage(text: String, modifier: Modifier = Modifier) {
-    StripPanel(modifier) {
-        Text(text, style = MaterialTheme.typography.titleSmall, color = OnVideoMuted)
-    }
-}
-
-private fun translationLabel(track: Translation): String =
-    if (track.type == TranslationKind.SUBTITLES) "${track.title} (субтитры)" else track.title
-
-@Composable
-private fun StripPanel(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    Column(
-        modifier
-            .fillMaxWidth()
-            .background(KaeruBackground.copy(alpha = 0.94f))
-            .padding(start = EdgePadding, end = EdgePadding, top = 24.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-        content = { content() },
-    )
-}
-
-@Composable
-private fun <T> TvChipRow(
-    label: String,
-    items: List<T>,
-    caption: (T) -> String,
-    isCurrent: (T) -> Boolean,
-    claimsFocus: Boolean,
-    onPick: (T) -> Unit,
-) {
-    val currentIndex = items.indexOfFirst(isCurrent)
-    val listState = rememberLazyListState()
-    // Opening a strip on episode forty must not start the viewer at episode one.
-    LaunchedEffect(Unit) { listState.scrollToItem((currentIndex - 2).coerceAtLeast(0)) }
-    val claimed = remember { mutableStateOf(false) }
-
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(label, style = MaterialTheme.typography.titleSmall, color = OnVideoMuted)
-        LazyRow(state = listState, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            itemsIndexed(items) { index, item ->
-                // The chip claims focus itself: asking from the row can run before a chip far
-                // down the list has been composed, and that request then fails for good.
-                val focusRequester = remember { FocusRequester() }
-                val wanted = claimsFocus && index == currentIndex.coerceAtLeast(0)
-                LaunchedEffect(wanted) {
-                    if (wanted && !claimed.value) {
-                        claimed.value = true
-                        focusRequester.requestFocusOrLog("выбранный элемент полосы «$label»")
-                    }
-                }
-                TvControl(
-                    label = caption(item),
-                    onClick = { onPick(item) },
-                    selected = isCurrent(item),
-                    focusRequester = focusRequester,
-                )
-            }
-        }
-    }
-}
-
-// --- decisions -------------------------------------------------------------------------------
-
-/** The offer to move on, with the time left to say no draining under the line. */
-@Composable
-fun TvAutoplayCard(
-    episode: Int,
-    countdownSec: Int,
-    onNow: () -> Unit,
-    onCancel: () -> Unit,
-    onFocused: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val nowButton = remember { FocusRequester() }
-    LaunchedEffect(Unit) { nowButton.requestFocusOrLog("кнопку «Смотреть сейчас»") }
-    val drain by animateFloatAsState(
-        targetValue = countdownSec.toFloat() / EpisodeQueue.AUTOPLAY_COUNTDOWN_SEC,
-        label = "tvAutoplay",
-    )
-    Column(
-        modifier
-            .width(420.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(KaeruBackground.copy(alpha = 0.96f))
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Text("Следующая серия через $countdownSec", style = MaterialTheme.typography.titleLarge, color = OnVideo)
-        Text("$episode серия", style = MaterialTheme.typography.titleSmall, color = OnVideoMuted)
-        Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.18f))) {
-            Box(Modifier.fillMaxWidth(drain.coerceIn(0f, 1f)).fillMaxHeight().background(KaeruAccent))
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            TvControl(
-                label = "Смотреть сейчас",
-                onClick = onNow,
-                primary = true,
-                focusRequester = nowButton,
-                onFocused = onFocused,
-            )
-            TvControl(label = "Отмена", onClick = onCancel, onFocused = onFocused)
-        }
-    }
-}
-
-/** The finale is behind the viewer; the list is not going to update itself. */
-@Composable
-fun TvCompletedDialog(title: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    val yes = remember { FocusRequester() }
-    LaunchedEffect(Unit) { yes.requestFocusOrLog("кнопку «Да»") }
-    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.78f)), contentAlignment = Alignment.Center) {
-        Column(
-            Modifier.widthIn(max = 640.dp).clip(RoundedCornerShape(16.dp))
-                .background(KaeruBackground).padding(36.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Text(
-                "Перевести «$title» в завершённые?",
-                style = MaterialTheme.typography.headlineSmall,
-                color = OnVideo,
-                textAlign = TextAlign.Center,
-            )
-            Text("Серия была последней из вышедших.", style = MaterialTheme.typography.titleSmall, color = OnVideoMuted)
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                TvControl(label = "Да", onClick = onConfirm, primary = true, focusRequester = yes)
-                TvControl(label = "Позже", onClick = onDismiss)
-            }
-        }
-    }
-}
-
-/** Nothing is playing and nothing will until the viewer chooses one of two ways forward. */
-@Composable
-fun TvPlaybackFailure(message: String, onRetry: () -> Unit, onChangeTranslation: () -> Unit) {
-    val retry = remember { FocusRequester() }
-    LaunchedEffect(Unit) { retry.requestFocusOrLog("кнопку «Повторить»") }
-    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.9f)), contentAlignment = Alignment.Center) {
-        Column(
-            Modifier.widthIn(max = 720.dp).padding(48.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(24.dp),
-        ) {
-            Text(
-                message,
-                style = MaterialTheme.typography.headlineSmall,
-                color = OnVideo,
-                textAlign = TextAlign.Center,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                TvControl(label = "Повторить", onClick = onRetry, primary = true, focusRequester = retry)
-                TvControl(label = "Сменить озвучку", onClick = onChangeTranslation)
-            }
-        }
-    }
-}
-
-/** One line, said once, that needs no answer. */
-@Composable
-fun TvPlayerToast(message: String, modifier: Modifier = Modifier) {
-    Box(
-        modifier.clip(RoundedCornerShape(12.dp)).background(KaeruBackground.copy(alpha = 0.94f))
-            .padding(horizontal = 22.dp, vertical = 14.dp),
-    ) {
-        Text(message, style = MaterialTheme.typography.titleSmall, color = OnVideo)
-    }
-}
-
 // --- the one control everything here is built from -------------------------------------------
 
 /**
@@ -509,7 +270,7 @@ fun TvPlayerToast(message: String, modifier: Modifier = Modifier) {
  * ring — the same language the home cards speak, loud enough to find from across a room.
  */
 @Composable
-private fun TvControl(
+internal fun TvControl(
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -577,7 +338,7 @@ fun TvBufferingMark(modifier: Modifier = Modifier) {
 
 // --- previews --------------------------------------------------------------------------------
 
-private val previewState = PlayerUiState(
+internal val previewState = PlayerUiState(
     title = "Восхождение в тени",
     episode = 7,
     availableEpisodes = 12,
@@ -615,33 +376,5 @@ private fun TvPlayerPanelPreview() {
                 onNext = {},
             )
         }
-    }
-}
-
-@Preview(device = Devices.TV_1080p)
-@Composable
-private fun TvEpisodeStripPreview() {
-    KaeruTvTheme {
-        Box(Modifier.fillMaxSize().background(Color(0xFF20242E)), contentAlignment = Alignment.BottomStart) {
-            TvEpisodeStrip(previewState.copy(translationId = 1), onEpisode = {}, onTranslation = {})
-        }
-    }
-}
-
-@Preview(device = Devices.TV_1080p)
-@Composable
-private fun TvAutoplayCardPreview() {
-    KaeruTvTheme {
-        Box(Modifier.fillMaxSize().background(Color(0xFF20242E)), contentAlignment = Alignment.Center) {
-            TvAutoplayCard(episode = 8, countdownSec = 6, onNow = {}, onCancel = {}, onFocused = {})
-        }
-    }
-}
-
-@Preview(device = Devices.TV_1080p)
-@Composable
-private fun TvPlaybackFailurePreview() {
-    KaeruTvTheme {
-        TvPlaybackFailure("Источник временно недоступен", onRetry = {}, onChangeTranslation = {})
     }
 }

@@ -133,8 +133,15 @@ fun TvPlayerScreen(
             panelVisible = false
         }
     }
-    // The offer to move on belongs with the rest of the controls, so the panel comes back for it.
-    LaunchedEffect(state.autoplayCountdownSec != null) { if (state.autoplayCountdownSec != null) show() }
+    // The offer to move on belongs with the rest of the controls, so the panel comes back for
+    // it — and a chooser standing on the same rung stands down, because a countdown nobody can
+    // see is a countdown nobody can stop.
+    LaunchedEffect(state.autoplayCountdownSec != null) {
+        if (state.autoplayCountdownSec != null) {
+            show()
+            onCloseSheet()
+        }
+    }
     // The root is always composed, so this can never miss: whenever nothing else wants the
     // focus, the player itself takes it back and the remote keeps working.
     LaunchedEffect(panelVisible, overlayOpen) {

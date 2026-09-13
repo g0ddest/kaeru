@@ -2,6 +2,16 @@ package app.kaeru.ui.tv
 
 import app.kaeru.domain.model.FeedItem
 import app.kaeru.domain.model.FeedKind
+import app.kaeru.domain.model.HomeFeed
+import app.kaeru.domain.model.LibraryEntry
+
+/**
+ * The share of an episode that counts as watched, when nothing on this screen has read the
+ * preference. The television's title card has no view model of its own; the number that
+ * actually governs progress lives in `AppPreferences.watchedThreshold` and is applied by the
+ * player and the feed builder, which is where it matters.
+ */
+const val TV_WATCHED_THRESHOLD = 0.9f
 
 /**
  * What the watch control on a home card or a title card does, and what it says.
@@ -21,3 +31,46 @@ fun tvWatchAction(item: FeedItem): TvWatchAction {
     val verb = if (item.kind == FeedKind.CONTINUE) "Продолжить" else "Смотреть"
     return TvWatchAction.Play(item.episode, "$verb ${item.episode} серию")
 }
+
+/** One cell of the title card's episode grid. */
+data class TvEpisodeCell(
+    val episode: Int,
+    /** Out already, so there is something to play. Anything watched counts, whatever the catalogue says. */
+    val aired: Boolean,
+    val watched: Boolean,
+    /** How far into this episode the viewer got, or null when it is not the one in progress. */
+    val progress: Float?,
+)
+
+/**
+ * The season as a grid: every episode the show has announced, marked with what is behind the
+ * viewer, what they are in the middle of, and what has not arrived yet.
+ *
+ * Two different numbers decide the shape. What can be played is what has aired; how long the
+ * grid runs is what the season was announced to hold — so an episode still to come is drawn as
+ * waiting rather than missing. Progress the viewer actually has always wins over both, because
+ * a watched episode plainly exists whatever the catalogue says about it.
+ */
+fun tvEpisodeGrid(entry: LibraryEntry, watchedThreshold: Float = TV_WATCHED_THRESHOLD): List<TvEpisodeCell> {
+    val watched = maxOf(entry.rate.episodes, entry.watch?.episode ?: 0)
+    val playable = maxOf(entry.anime.availableEpisodes, watched)
+    val announced = maxOf(entry.anime.episodes, playable)
+    val inProgress = entry.progressFraction(watchedThreshold)
+    return (1..announced).map { episode ->
+        TvEpisodeCell(
+            episode = episode,
+            aired = episode <= playable,
+            watched = episode <= entry.rate.episodes,
+            progress = inProgress?.takeIf { entry.watch?.episode == episode },
+        )
+    }
+}
+
+/**
+ * The feed entry for one anime, wherever it sits. The television remembers which title card was
+ * open as an id, so after the process is killed the card can be found again in the feed Room
+ * hands back rather than being lost with the composition.
+ */
+fun tvFeedItem(feed: HomeFeed, animeId: Int): FeedItem? =
+    (feed.continueWatching + feed.newEpisodes + feed.nextUp + feed.upcoming + feed.planned)
+        .firstOrNull { it.entry.anime.id == animeId }
