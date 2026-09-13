@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.BrightnessMedium
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.SkipNext
@@ -68,6 +69,7 @@ fun PlayerTopBar(
     onTranslations: () -> Unit,
     onQualities: () -> Unit,
     modifier: Modifier = Modifier,
+    onEnterPictureInPicture: (() -> Unit)? = null,
 ) {
     Row(modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         DiscButton(Icons.AutoMirrored.Filled.ArrowBack, "Назад", onBack)
@@ -92,6 +94,10 @@ fun PlayerTopBar(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+        onEnterPictureInPicture?.let {
+            DiscButton(Icons.Default.PictureInPictureAlt, "В окно", it)
+            Spacer(Modifier.width(4.dp))
         }
         CastButton(Modifier.padding(end = 4.dp))
         // The chips carry the current choice, so the viewer can read their settings without opening anything.

@@ -77,7 +77,20 @@ fun PlayerScreen(
     onConfirmCompleted: () -> Unit,
     onDismissCompleted: () -> Unit,
     onToastShown: () -> Unit,
+    isInPictureInPicture: Boolean = false,
+    onEnterPictureInPicture: (() -> Unit)? = null,
 ) {
+    // A floating window is a few centimetres of picture with the system's own two buttons under
+    // it. Everything this screen draws would cover the episode rather than explain it, and the
+    // state behind it is remembered afresh when the window is expanded, which is what puts the
+    // controls back for the viewer who just asked to see them.
+    if (isInPictureInPicture) {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            if (player != null) ContentFrame(player, Modifier.fillMaxSize())
+        }
+        return
+    }
+
     var controlsVisible by remember { mutableStateOf(true) }
     var pulse by remember { mutableStateOf<SeekPulse?>(null) }
     var pulseKey by remember { mutableIntStateOf(0) }
@@ -209,6 +222,8 @@ fun PlayerScreen(
                             onBack = onBack,
                             onTranslations = onOpenTranslations,
                             onQualities = onOpenQualities,
+                            // Only where there is a picture on this device to put in a window.
+                            onEnterPictureInPicture = onEnterPictureInPicture?.takeIf { !state.isCasting },
                         )
                         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                             if (!failed) {
