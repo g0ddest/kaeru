@@ -1,6 +1,7 @@
 package app.kaeru.ui.mobile.player
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,14 +15,18 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.kaeru.domain.model.Quality
@@ -30,6 +35,8 @@ import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.playback.RankedTranslation
 import app.kaeru.ui.common.design.OftenChosenChip
 import app.kaeru.ui.common.theme.KaeruAccent
+import app.kaeru.ui.common.theme.KaeruDivider
+import app.kaeru.ui.common.theme.KaeruOnAccent
 import app.kaeru.ui.common.theme.KaeruSurface
 
 /**
@@ -73,11 +80,20 @@ fun TranslationSheet(
     }
 }
 
+/**
+ * The quality chooser, and the one place a viewer can settle the question for good.
+ *
+ * The switch is here rather than in settings because this is where they are standing when they
+ * find out what their connection will carry: the episode stalls, they open this, and the decision
+ * they make is about every episode, not only this one.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QualitySheet(
     qualities: List<Quality>,
     current: Quality?,
+    remembered: Boolean,
+    onRemember: (Boolean) -> Unit,
     onPick: (Quality) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -95,7 +111,42 @@ fun QualitySheet(
                 onClick = { onPick(quality) },
             )
         }
+        HorizontalDivider(
+            color = KaeruDivider,
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+        )
+        RememberQualityRow(remembered, onRemember)
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun RememberQualityRow(remembered: Boolean, onRemember: (Boolean) -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .toggleable(value = remembered, role = Role.Switch, onValueChange = onRemember)
+            .padding(horizontal = 24.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("Запоминать качество", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                "Новые серии будут открываться в нём",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(
+            checked = remembered,
+            onCheckedChange = null,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = KaeruOnAccent,
+                checkedTrackColor = KaeruAccent,
+                checkedBorderColor = KaeruAccent,
+            ),
+        )
     }
 }
 

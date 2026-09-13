@@ -28,6 +28,8 @@ data class PlayerUiState(
     val durationMs: Long = 0,
     val quality: Quality? = null,
     val qualities: List<Quality> = emptyList(),
+    /** Whether a quality is settled on for every episode rather than picked one episode at a time. */
+    val rememberQuality: Boolean = false,
     /** The tracks on offer, ranked, each saying whether this viewer keeps choosing it. */
     val translations: List<RankedTranslation> = emptyList(),
     val loadingTranslations: Boolean = false,

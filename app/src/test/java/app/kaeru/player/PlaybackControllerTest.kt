@@ -489,6 +489,58 @@ class PlaybackControllerTest {
     }
 
     @Test
+    fun `a quality picked over a resolve writes the position down before re-opening`() = runTest(dispatcher) {
+        start(episode = 4, durationMs = 1_000_000)
+        engine.moveTo(400_000)
+        advanceUntilIdle()
+        // Two seconds on: too little for a tick to write it, so only a flush can.
+        engine.moveTo(402_000)
+        advanceUntilIdle()
+        var onDisk: List<Pair<Int, Long>> = emptyList()
+        source.onResolve = { onDisk = watchStates.saved.map { it.episode to it.positionMs } }
+
+        // A slow disk, so a track change parks inside its own flush and the quality pick takes
+        // the guard over from it with the position still only in memory.
+        watchStates.block()
+        scope.launch { controller.changeTranslation(studioBanda) }
+        runCurrent()
+        controller.changeQuality(Quality.P480)
+        runCurrent()
+        watchStates.release()
+        advanceUntilIdle()
+
+        // Resolving writes this very row, so the position of the episode being left has to be
+        // on disk before it — or the sample lands after the resolve and puts the row back.
+        assertEquals(4 to 402_000L, onDisk.last())
+        assertEquals(Quality.P480, controller.state.value.quality)
+    }
+
+    @Test
+    fun `a quality picked over an autoplay that then fails is still only a message`() = runTest(dispatcher) {
+        val events = mutableListOf<PlaybackEvent>()
+        scope.launch { controller.events.collect { events += it } }
+        start(episode = 4, durationMs = 1_000_000)
+
+        // The next episode is on its way when the viewer changes quality, and the source then
+        // refuses it. The episode that just finished is still what they are looking at, so this
+        // is the passing message — not the red screen over a video that played perfectly well.
+        source.gate = CompletableDeferred()
+        engine.moveTo(999_000)
+        advanceUntilIdle()
+        engine.end()
+        advanceUntilIdle()
+
+        source.rejects = setOf(5)
+        source.gate = null
+        controller.changeQuality(Quality.P480)
+        advanceUntilIdle()
+
+        assertEquals(1, events.count { it is PlaybackEvent.NextEpisodeUnavailable })
+        assertNull(controller.state.value.error)
+        assertEquals(4, controller.state.value.target?.episode)
+    }
+
+    @Test
     fun `changing the track resolves the same episode at the same position`() = runTest(dispatcher) {
         start()
         engine.moveTo(320_000)

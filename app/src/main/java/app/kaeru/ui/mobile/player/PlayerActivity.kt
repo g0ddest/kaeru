@@ -162,6 +162,7 @@ class PlayerActivity : FragmentActivity() {
                         onCloseSheet = viewModel::closeSheet,
                         onPickTranslation = viewModel::pickTranslation,
                         onPickQuality = viewModel::pickQuality,
+                        onRememberQuality = viewModel::setRememberQuality,
                         onPickEpisode = viewModel::playEpisode,
                         onRetry = viewModel::retry,
                         onStopCasting = viewModel::stopCasting,

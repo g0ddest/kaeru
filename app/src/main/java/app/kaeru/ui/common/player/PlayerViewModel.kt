@@ -105,7 +105,8 @@ class PlayerViewModel @Inject constructor(
         shown,
         screen,
         cast.receiverName,
-    ) { playback, shown, screen, receiverName ->
+        prefs.defaultQuality,
+    ) { playback, shown, screen, receiverName, settledQuality ->
         val anime = shown.anime
         PlayerUiState(
             title = anime?.title.orEmpty(),
@@ -121,6 +122,7 @@ class PlayerViewModel @Inject constructor(
             durationMs = playback.durationMs,
             quality = playback.quality,
             qualities = playback.stream?.urls?.keys.orEmpty().sortedBy { it.height },
+            rememberQuality = settledQuality != null,
             translations = screen.translations,
             loadingTranslations = screen.loadingTranslations,
             sheet = screen.sheet,
@@ -259,6 +261,22 @@ class PlayerViewModel @Inject constructor(
     fun pickQuality(quality: Quality) {
         closeSheet()
         controller.changeQuality(quality)
+        // While the viewer has settled on a quality, every pick is a change of mind about which
+        // one — not a one-off that leaves the old setting behind to override the next episode.
+        if (uiState.value.rememberQuality) viewModelScope.launch { prefs.setDefaultQuality(quality) }
+    }
+
+    /**
+     * Settles on the quality that is playing, or hands the choice back to the source.
+     *
+     * The switch lives in the quality chooser rather than in settings because that is where the
+     * viewer is when they find out their connection will not carry 1080p. Turning it on takes the
+     * rung they are on now; turning it off leaves this episode alone and lets the next one open
+     * at the best the source offers.
+     */
+    fun setRememberQuality(on: Boolean) {
+        val settled = if (on) controller.state.value.quality else null
+        viewModelScope.launch { prefs.setDefaultQuality(settled) }
     }
 
     fun confirmCompleted() {

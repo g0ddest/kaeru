@@ -86,7 +86,7 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
         prefs[defaultQualityKey]?.let { Quality.ofHeight(it) }
     }
 
-    suspend fun setDefaultQuality(quality: Quality?) {
+    override suspend fun setDefaultQuality(quality: Quality?) {
         dataStore.edit { prefs ->
             if (quality == null) prefs.remove(defaultQualityKey) else prefs[defaultQualityKey] = quality.height
         }

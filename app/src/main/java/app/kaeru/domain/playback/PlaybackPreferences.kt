@@ -21,6 +21,13 @@ interface PlaybackPreferences {
     val defaultQuality: Flow<Quality?>
 
     /**
+     * Settles on a quality for every episode from now on, or hands the choice back to the source
+     * with null. Written from the player's quality chooser, which is where the viewer is looking
+     * when they decide that 480p is what this connection can carry.
+     */
+    suspend fun setDefaultQuality(quality: Quality?)
+
+    /**
      * Dub studios in the order the viewer wants them offered, and only those: empty until
      * somebody sets them. What answers an anime when this is empty is
      * [TranslationRanker.DEFAULT_STUDIOS], behind the viewer's own watching history.

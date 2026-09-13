@@ -55,6 +55,10 @@ class LibraryViewModelTest {
         override val autoplayNext = MutableStateFlow(true)
         override val defaultQuality = MutableStateFlow<Quality?>(null)
         override val preferredTranslations = MutableStateFlow(emptyList<String>())
+
+        override suspend fun setDefaultQuality(quality: Quality?) {
+            defaultQuality.value = quality
+        }
     }
 
     @Test

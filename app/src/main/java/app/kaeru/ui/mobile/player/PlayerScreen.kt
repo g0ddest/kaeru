@@ -72,6 +72,7 @@ fun PlayerScreen(
     onCloseSheet: () -> Unit,
     onPickTranslation: (Translation) -> Unit,
     onPickQuality: (Quality) -> Unit,
+    onRememberQuality: (Boolean) -> Unit,
     onPickEpisode: (Int) -> Unit,
     onRetry: () -> Unit,
     onStopCasting: () -> Unit,
@@ -275,7 +276,9 @@ fun PlayerScreen(
                 onCancel = onCancelAutoplay,
                 modifier = endOfEpisode,
             )
-            state.episodeEnding && !state.nextEpisodeAvailable -> LastEpisodeCard(
+            // Nothing is said about a show this device has no catalogue entry for: with no aired
+            // count there is no way to tell «that was the last one» from «we simply do not know».
+            state.episodeEnding && !state.nextEpisodeAvailable && state.availableEpisodes > 0 -> LastEpisodeCard(
                 waiting = waitingLabel(
                     episode = state.episode + 1,
                     nextEpisodeAt = state.nextEpisodeAt,
@@ -299,6 +302,8 @@ fun PlayerScreen(
         PlayerSheet.QUALITY -> QualitySheet(
             qualities = state.qualities,
             current = state.quality,
+            remembered = state.rememberQuality,
+            onRemember = onRememberQuality,
             onPick = onPickQuality,
             onDismiss = onCloseSheet,
         )

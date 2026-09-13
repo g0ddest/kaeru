@@ -17,4 +17,8 @@ class FakePlaybackPreferences(
     override val autoplayNext = MutableStateFlow(autoplay)
     override val defaultQuality = MutableStateFlow(quality)
     override val preferredTranslations = MutableStateFlow(preferred)
+
+    override suspend fun setDefaultQuality(quality: Quality?) {
+        defaultQuality.value = quality
+    }
 }

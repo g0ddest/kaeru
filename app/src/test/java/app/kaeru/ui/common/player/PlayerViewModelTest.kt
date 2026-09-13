@@ -460,6 +460,58 @@ class PlayerViewModelTest {
     }
 
     @Test
+    fun `a quality picked with nothing remembering it is for this episode only`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+
+        viewModel.pickQuality(Quality.P480)
+        advanceUntilIdle()
+
+        assertEquals(Quality.P480, controller.qualities.single())
+        assertNull(prefs.defaultQuality.value)
+        assertFalse(viewModel.uiState.value.rememberQuality)
+    }
+
+    @Test
+    fun `asking for the quality to be remembered writes the one that is playing`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+        controller.playback.update { it.copy(quality = Quality.P720) }
+        advanceUntilIdle()
+
+        viewModel.setRememberQuality(true)
+        advanceUntilIdle()
+
+        assertEquals(Quality.P720, prefs.defaultQuality.value)
+        assertTrue(viewModel.uiState.value.rememberQuality)
+    }
+
+    @Test
+    fun `while it is remembered every pick replaces it`() = runTest(main.dispatcher) {
+        prefs.defaultQuality.value = Quality.P720
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+
+        viewModel.pickQuality(Quality.P480)
+        advanceUntilIdle()
+
+        assertEquals(Quality.P480, prefs.defaultQuality.value)
+    }
+
+    @Test
+    fun `no longer remembering it puts the source back in charge`() = runTest(main.dispatcher) {
+        prefs.defaultQuality.value = Quality.P480
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+
+        viewModel.setRememberQuality(false)
+        advanceUntilIdle()
+
+        assertNull(prefs.defaultQuality.value)
+        assertFalse(viewModel.uiState.value.rememberQuality)
+    }
+
+    @Test
     fun `retrying asks the player to resolve the episode again`() = runTest(main.dispatcher) {
         viewModel.start(100, 4)
         advanceUntilIdle()

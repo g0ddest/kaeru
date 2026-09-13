@@ -287,8 +287,17 @@ class DefaultPlaybackController @Inject constructor(
             if (unfinished != null) {
                 val plan = unfinished.copy(preferQuality = quality)
                 opening = plan
+                // The resolve this takes over was cancelled, possibly inside its own flush.
+                // Resolving writes the row this episode owns, so the position reached has to be
+                // on disk before that happens or the sample lands after it and puts the row back
+                // on the episode being left.
+                flushProgressNow()
                 _state.update { it.copy(isBuffering = true, error = null) }
-                open(plan).onFailure(::fail)
+                // The plan carries whatever it was: a move to the next episode that fails is
+                // still a passing message, not the error screen over an episode that played.
+                open(plan).onFailure { failure ->
+                    if (plan.advancing) announceNextUnavailable(failure) else fail(failure)
+                }
                 return@transition
             }
             val current = _state.value
