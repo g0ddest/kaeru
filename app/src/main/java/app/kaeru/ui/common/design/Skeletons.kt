@@ -32,6 +32,9 @@ import androidx.compose.ui.unit.dp
 import app.kaeru.ui.common.theme.KaeruSurface
 
 private val HeaderBlock = 20.dp
+
+/** About the length of a two-word row title, so the bar stands where the words will. */
+private val HeaderBlockWidth = 140.dp
 private val TitleBlock = 14.dp
 private const val GRID_COLUMNS = 3
 private const val PULSE_MIN = 0.10f
@@ -111,16 +114,39 @@ fun SkeletonRow(
     posterWidth: Dp = KaeruTokens.PosterWidthPhone,
 ) = SkeletonGroup {
     Column(modifier.fillMaxWidth().clipToBounds()) {
-        Skeleton(Modifier.padding(horizontal = gutter).width(140.dp).height(HeaderBlock))
-        Row(
-            Modifier.padding(horizontal = gutter, vertical = KaeruTokens.Space3),
-            horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space3),
-        ) {
-            repeat(count) {
-                Column(Modifier.width(posterWidth)) {
-                    Skeleton(Modifier.fillMaxWidth().aspectRatio(KaeruTokens.PosterAspect))
-                    Skeleton(Modifier.padding(top = KaeruTokens.Space2).fillMaxWidth(0.85f).height(TitleBlock))
-                }
+        Skeleton(Modifier.padding(horizontal = gutter).width(HeaderBlockWidth).height(HeaderBlock))
+        Cards(count, gutter, posterWidth)
+    }
+}
+
+/**
+ * The cards of a loading row and nothing else, for a row whose real heading is already on screen.
+ *
+ * A section that knows its own title before its titles arrive — the discovery rows, whose headings
+ * are constants — should print that title and wait underneath it: it is readable a beat earlier
+ * than a grey bar standing in for it, and the page does not move when the cards land. Using
+ * [SkeletonRow] there would draw a second, fake heading under the real one.
+ */
+@Composable
+fun SkeletonCardsRow(
+    modifier: Modifier = Modifier,
+    count: Int = 3,
+    gutter: Dp = KaeruTokens.GutterPhone,
+    posterWidth: Dp = KaeruTokens.PosterWidthPhone,
+) = SkeletonGroup {
+    Column(modifier.fillMaxWidth().clipToBounds()) { Cards(count, gutter, posterWidth) }
+}
+
+@Composable
+private fun Cards(count: Int, gutter: Dp, posterWidth: Dp) {
+    Row(
+        Modifier.padding(horizontal = gutter, vertical = KaeruTokens.Space3),
+        horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space3),
+    ) {
+        repeat(count) {
+            Column(Modifier.width(posterWidth)) {
+                Skeleton(Modifier.fillMaxWidth().aspectRatio(KaeruTokens.PosterAspect))
+                Skeleton(Modifier.padding(top = KaeruTokens.Space2).fillMaxWidth(0.85f).height(TitleBlock))
             }
         }
     }
