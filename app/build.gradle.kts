@@ -117,4 +117,10 @@ dependencies {
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
+    // Composition tests under Robolectric: the focus a television screen starts on, and whether a
+    // row a remote has to reach is reachable. Both are questions only a real composition answers.
+    testImplementation(libs.compose.ui.test.junit4)
+    // Debug rather than test: it contributes the bare ComponentActivity the compose rule launches,
+    // and a manifest entry only reaches Robolectric through the application's own debug manifest.
+    debugImplementation(libs.compose.ui.test.manifest)
 }

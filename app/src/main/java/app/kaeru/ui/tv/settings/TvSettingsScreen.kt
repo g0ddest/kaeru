@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -49,6 +50,7 @@ import app.kaeru.ui.common.settings.thresholdOptions
 import app.kaeru.ui.common.theme.KaeruTvTheme
 import app.kaeru.ui.tv.TvDialog
 import app.kaeru.ui.tv.TvLayout
+import app.kaeru.ui.tv.claimFocusWhenReady
 import app.kaeru.ui.tv.requestFocusOrLog
 
 private const val ACCOUNT = "Аккаунт"
@@ -125,9 +127,16 @@ fun TvSettingsScreen(
 ) {
     var confirming by rememberSaveable { mutableStateOf(false) }
     val first = remember { FocusRequester() }
+    // Whether the opening claim below has landed. A lazy list composes its items while it is being
+    // measured, which is after the effect runs, so the first ask reaches a node that is either not
+    // there yet or not yet placed — and the second of those accepts the request and does nothing.
+    // The asking therefore ends when the focus arrives here, not when a request is accepted.
+    var claimed by remember { mutableStateOf(false) }
     // Not the sign-out button, which is the first focusable on the page: the first press after a
     // screen opens is the easiest one to make by accident, and it should not be the red one.
-    LaunchedEffect(Unit) { first.requestFocusOrLog("the autoplay switch of the television settings") }
+    LaunchedEffect(Unit) {
+        first.claimFocusWhenReady("the autoplay switch of the television settings") { claimed }
+    }
 
     LazyColumn(
         modifier.fillMaxSize(),
@@ -147,7 +156,12 @@ fun TvSettingsScreen(
 
         heading(PLAYBACK)
         row("autoplay") {
-            SettingSwitchRow(AUTOPLAY, state.autoplayNext, onAutoplay, Modifier.focusRequester(first))
+            SettingSwitchRow(
+                AUTOPLAY, state.autoplayNext, onAutoplay,
+                Modifier
+                    .focusRequester(first)
+                    .onFocusChanged { if (it.isFocused) claimed = true },
+            )
         }
         // A label and the chips it names are one item: they are read together, and splitting them
         // would let the list stop with the question off the top of the panel and the answers on it.

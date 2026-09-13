@@ -52,6 +52,31 @@ internal suspend fun FocusRequester.claimFocus(what: String): Boolean {
     return requestFocusOrLog(what)
 }
 
+/** How many frames a screen waits for its opening focus to land before it gives up asking. */
+private const val CLAIM_FRAMES = 4
+
+/**
+ * Asks for the focus once a frame until it actually arrives.
+ *
+ * [claimFocus] is not enough for a node inside a lazy list. Those are composed while the list is
+ * being measured, so on the frame a screen's opening effect runs the node is in one of two states,
+ * and neither of them takes the focus: missing altogether, which throws and is the case
+ * [claimFocus] covers; or attached and not yet placed, which accepts the request and quietly does
+ * nothing with it. Nothing tells the asker which happened, so the only honest end condition is the
+ * focus arriving — which is what [arrived] reports, latched by `onFocusChanged` on the node itself.
+ *
+ * Four frames and then it stops. A screen whose opening focusable never appears has a different
+ * problem, and asking for ever would keep a coroutine alive for as long as the screen is up.
+ */
+internal suspend fun FocusRequester.claimFocusWhenReady(what: String, arrived: () -> Boolean) {
+    repeat(CLAIM_FRAMES) {
+        if (arrived()) return
+        runCatching { requestFocus() }
+        withFrameNanos { }
+    }
+    if (!arrived()) Log.w(TV_TAG, "Focus never reached $what; the screen starts without D-pad focus")
+}
+
 /** One row of focusable cards as the focus memory sees it: a stable heading and the ids under it. */
 data class TvFocusRow(val key: String, val ids: List<Int>)
 
