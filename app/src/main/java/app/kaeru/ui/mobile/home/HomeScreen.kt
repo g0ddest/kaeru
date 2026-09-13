@@ -1,46 +1,86 @@
 package app.kaeru.ui.mobile.home
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import app.kaeru.domain.model.FeedItem
-import app.kaeru.domain.model.FeedKind
-import app.kaeru.ui.common.Poster
-import app.kaeru.ui.common.ProgressStrip
-import app.kaeru.ui.common.Skeleton
+import app.kaeru.ui.common.design.HeroBanner
+import app.kaeru.ui.common.design.EmptyState
+import app.kaeru.ui.common.design.IconAction
+import app.kaeru.ui.common.design.KaeruTokens
+import app.kaeru.ui.common.design.KaeruTopBar
+import app.kaeru.ui.common.design.PosterCard
+import app.kaeru.ui.common.design.RowHeader
+import app.kaeru.ui.common.design.SkeletonHero
+import app.kaeru.ui.common.design.SkeletonRow
+import app.kaeru.ui.common.design.episodeLine
+import app.kaeru.ui.common.design.primaryActionLabel
 import app.kaeru.ui.common.home.HomeUiState
-import androidx.compose.ui.zIndex
+import app.kaeru.ui.common.theme.KaeruAccent
+import app.kaeru.ui.common.theme.KaeruBackground
+import app.kaeru.ui.common.theme.KaeruElevated
+import app.kaeru.ui.common.theme.KaeruText
 import app.kaeru.ui.mobile.player.CastButton
-import coil3.compose.AsyncImage
+import java.time.Instant
 
+private const val WORDMARK = "Kaeru"
+private const val SETTINGS = "Настройки"
+private const val DETAILS = "Подробнее"
+private const val RETRY = "Повторить"
+private const val EMPTY_TITLE = "Здесь появятся тайтлы из списка «Смотрю»"
+private const val EMPTY_TEXT =
+    "Отметьте аниме как «Смотрю» на Shikimori или найдите его здесь. " +
+        "Kaeru продолжит с той серии, на которой вы остановились."
+private const val FIND_ANIME = "Найти аниме"
+
+/** The height of [KaeruTopBar], which floats over this screen instead of taking space in it. */
+private val BarHeight = 56.dp
+
+/** How far the feed travels before the bar has a ground of its own. */
+private val ScrimDistance = 120.dp
+
+/**
+ * The home screen: what to watch next, and one press to start it.
+ *
+ * The hero is nearly half the screen because it is the answer; the rows under it are the rest of
+ * the list, each one adding the single fact its row leaves open. The top bar floats over the
+ * artwork with no container of its own and takes a ground only once a row scrolls under it.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
@@ -48,94 +88,194 @@ fun HomeScreen(
     onRefresh: () -> Unit,
     onPlay: (animeId: Int, episode: Int) -> Unit,
     onAnime: (Int) -> Unit,
+    onSettings: () -> Unit,
+    onSearch: () -> Unit,
 ) {
-    PullToRefreshBox(isRefreshing = state.isRefreshing, onRefresh = onRefresh) {
-        // Over the feed rather than in a bar of its own: the home screen has no top bar, and
-        // the button hides itself whenever there is no receiver on the network.
-        CastButton(
-            modifier = Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 12.dp).zIndex(1f),
-            overArtwork = true,
-        )
-        when {
-            state.isLoading -> HomeSkeleton()
-            state.feed.isEmpty -> EmptyHome(onRefresh)
-            else -> LazyColumn(Modifier.fillMaxSize()) {
-                state.feed.top?.let { top -> item(key = "hero") { Hero(top, onPlay, onAnime) } }
-                state.errorMessage?.let { message ->
-                    item(key = "error") {
-                        Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(message, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
-                            Button(onClick = onRefresh) { Text("Повторить") }
-                        }
-                    }
-                }
-                if (state.feed.newEpisodes.isNotEmpty()) item { FeedRow("Новые серии", state.feed.newEpisodes, onAnime) }
-                if (state.feed.continueWatching.isNotEmpty()) item { FeedRow("Продолжить", state.feed.continueWatching, onAnime) }
-                if (state.feed.nextUp.isNotEmpty()) item { FeedRow("Следующая серия", state.feed.nextUp, onAnime) }
-                if (state.feed.upcoming.isNotEmpty()) item { FeedRow("Скоро", state.feed.upcoming, onAnime) }
-                if (state.feed.planned.isNotEmpty()) item { FeedRow("В планах", state.feed.planned, onAnime) }
-                item { Spacer(Modifier.height(32.dp)) }
+    val snackbar = remember { SnackbarHostState() }
+    RetrySnackbar(state.errorMessage, snackbar, onRefresh)
+    val listState = rememberLazyListState()
+    val pull = rememberPullToRefreshState()
+    // One clock per feed. «осталось 14 мин» and «завтра» are read against it, and a line that
+    // rewrote itself on every recomposition would be a line nobody could finish reading.
+    val now = remember(state.feed) { Instant.now() }
+    Box(Modifier.fillMaxSize()) {
+        PullToRefreshBox(
+            isRefreshing = state.isRefreshing,
+            onRefresh = onRefresh,
+            state = pull,
+            indicator = {
+                PullToRefreshDefaults.Indicator(
+                    state = pull,
+                    isRefreshing = state.isRefreshing,
+                    modifier = Modifier.align(Alignment.TopCenter)
+                        .windowInsetsPadding(WindowInsets.statusBars),
+                    containerColor = KaeruElevated,
+                    color = KaeruAccent,
+                )
+            },
+        ) {
+            when {
+                state.isLoading -> HomeLoading()
+                state.feed.isEmpty -> HomeEmpty(onSearch)
+                else -> FeedList(state, now, listState, onPlay, onAnime)
             }
+        }
+        HomeBar(listState, onSettings)
+        SnackbarHost(
+            snackbar,
+            Modifier.align(Alignment.BottomCenter).padding(KaeruTokens.Space4),
+        ) { data ->
+            // The default snackbar is a pale slab in a dark app. This one is the app's own
+            // elevated surface, and its action stays in text colour: the amber belongs to the
+            // watch button behind it, which is still the thing this screen is for.
+            Snackbar(
+                snackbarData = data,
+                shape = KaeruTokens.CardShape,
+                containerColor = KaeruElevated,
+                contentColor = KaeruText,
+                actionColor = KaeruText,
+            )
+        }
+    }
+}
+
+/**
+ * A failed refresh over a feed that still has content in it: the message explains itself and the
+ * action repeats what failed. Keyed on the message, so the same failure twice does not nag.
+ */
+@Composable
+private fun RetrySnackbar(message: String?, host: SnackbarHostState, onRetry: () -> Unit) {
+    val retry by rememberUpdatedState(onRetry)
+    LaunchedEffect(message) {
+        if (message == null) return@LaunchedEffect
+        val result = host.showSnackbar(message, actionLabel = RETRY, duration = SnackbarDuration.Long)
+        if (result == SnackbarResult.ActionPerformed) retry()
+    }
+}
+
+/** The wordmark and the two things that are not content: casting, and where the settings are. */
+@Composable
+private fun HomeBar(listState: LazyListState, onSettings: () -> Unit) {
+    val distance = with(LocalDensity.current) { ScrimDistance.toPx() }
+    // Read in the draw phase: the bar's ground follows the scroll without recomposing anything.
+    val scrim = {
+        if (listState.firstVisibleItemIndex > 0) {
+            1f
+        } else {
+            (listState.firstVisibleItemScrollOffset / distance).coerceIn(0f, 1f)
+        }
+    }
+    KaeruTopBar(
+        title = WORDMARK,
+        modifier = Modifier.drawBehind { drawRect(KaeruBackground, alpha = scrim()) },
+        transparent = true,
+        actions = {
+            CastButton(Modifier.padding(horizontal = KaeruTokens.Space1), overArtwork = true)
+            IconAction(Icons.Default.Settings, SETTINGS, onSettings, overArtwork = true)
+        },
+    )
+}
+
+@Composable
+private fun FeedList(
+    state: HomeUiState,
+    now: Instant,
+    listState: LazyListState,
+    onPlay: (Int, Int) -> Unit,
+    onAnime: (Int) -> Unit,
+) {
+    val rows = remember(state.feed, state.watchedThreshold, now) {
+        homeRows(state.feed, state.watchedThreshold, now)
+    }
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = KaeruTokens.Space8),
+    ) {
+        val top = state.feed.top
+        if (top != null) {
+            item(key = "hero") { Hero(top, state.watchedThreshold, now, onPlay, onAnime) }
+        } else {
+            // Nothing for the floating bar to float over, so the first row starts below it.
+            item(key = "bar") {
+                Spacer(Modifier.windowInsetsPadding(WindowInsets.statusBars).height(BarHeight))
+            }
+        }
+        rows.forEach { row ->
+            item(key = row.title) { FeedRow(row, onAnime) }
         }
     }
 }
 
 @Composable
-private fun Hero(item: FeedItem, onPlay: (Int, Int) -> Unit, onAnime: (Int) -> Unit) {
+private fun Hero(
+    item: FeedItem,
+    threshold: Float,
+    now: Instant,
+    onPlay: (Int, Int) -> Unit,
+    onAnime: (Int) -> Unit,
+) {
     val anime = item.entry.anime
-    Box(Modifier.fillMaxWidth().height(420.dp)) {
-        AsyncImage(
-            model = anime.screenshotUrls.firstOrNull() ?: anime.posterUrl,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
-        )
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.background))))
-        Column(Modifier.align(Alignment.BottomStart).padding(24.dp)) {
-            Text(anime.title, style = MaterialTheme.typography.headlineMedium, maxLines = 2)
-            Text("${item.episode} серия", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = { onPlay(anime.id, item.episode) },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                    ),
-                ) { Text(watchLabel(item)) }
-                TextButton(onClick = { onAnime(anime.id) }) { Text("Подробнее") }
-            }
-        }
-    }
+    HeroBanner(
+        title = anime.title,
+        statusLine = episodeLine(item, now),
+        // A screenshot is the show in motion; the poster is the fallback, cropped to the same shape.
+        backdropUrl = anime.screenshotUrls.firstOrNull() ?: anime.posterUrl,
+        primaryLabel = primaryActionLabel(item.entry, threshold),
+        onPrimary = { onPlay(anime.id, item.episode) },
+        secondaryLabel = DETAILS,
+        onSecondary = { onAnime(anime.id) },
+    )
 }
-
-/** Continuing says "продолжить"; everything else, including a new episode, is a fresh watch. */
-private fun watchLabel(item: FeedItem): String =
-    if (item.kind == FeedKind.CONTINUE) "Продолжить ${item.episode} серию" else "Смотреть ${item.episode} серию"
 
 @Composable
-private fun FeedRow(title: String, feed: List<FeedItem>, onAnime: (Int) -> Unit) {
-    Column(Modifier.padding(top = 20.dp)) {
-        Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-        LazyRow(contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(feed, key = { "${it.kind}-${it.entry.anime.id}" }) { item ->
-                Column(Modifier.size(width = 132.dp, height = 230.dp).clickable { onAnime(item.entry.anime.id) }) {
-                    Poster(item.entry.anime.posterUrl, item.entry.anime.title, Modifier.fillMaxWidth().aspectRatio(2f / 3f))
-                    item.entry.progressFraction(0.9f)?.let { ProgressStrip(it) }
-                    Text(item.entry.anime.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 6.dp))
-                }
+private fun FeedRow(row: HomeRow, onAnime: (Int) -> Unit) {
+    Column(Modifier.padding(top = KaeruTokens.Space6)) {
+        RowHeader(row.title)
+        LazyRow(
+            modifier = Modifier.padding(top = KaeruTokens.Space3),
+            contentPadding = PaddingValues(horizontal = KaeruTokens.GutterPhone),
+            horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space3),
+        ) {
+            items(row.items, key = { it.animeId }) { card ->
+                PosterCard(
+                    posterUrl = card.posterUrl,
+                    title = card.title,
+                    onClick = { onAnime(card.animeId) },
+                    subtitle = card.subtitle,
+                    badge = card.badge,
+                    progress = card.progress,
+                )
             }
         }
     }
 }
 
-@Composable private fun HomeSkeleton() = Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-    Skeleton(Modifier.fillMaxWidth().height(300.dp)); Skeleton(Modifier.fillMaxWidth().height(24.dp)); Skeleton(Modifier.fillMaxWidth().height(200.dp))
+/** The shape of the screen before the feed arrives, so nothing moves when it does. */
+@Composable
+private fun HomeLoading() = Column(Modifier.fillMaxSize().clipToBounds()) {
+    SkeletonHero()
+    Spacer(Modifier.height(KaeruTokens.Space6))
+    SkeletonRow()
+    Spacer(Modifier.height(KaeruTokens.Space4))
+    SkeletonRow()
 }
 
-@Composable private fun EmptyHome(onRefresh: () -> Unit) = Column(
-    Modifier.fillMaxSize().padding(32.dp), Arrangement.Center, Alignment.CenterHorizontally,
-) {
-    Text("В списке «Смотрю» пока пусто", style = MaterialTheme.typography.titleLarge)
-    Text("Добавьте аниме на Shikimori и обновите список.", modifier = Modifier.padding(12.dp))
-    Button(onClick = onRefresh) { Text("Обновить") }
+/**
+ * Nothing in the list yet, which is a moment to point somewhere rather than shrug.
+ *
+ * It is a lazy list with one screen-sized item: there is nothing to scroll, but pull-to-refresh
+ * listens through nested scroll, and an empty home is exactly where a viewer pulls.
+ */
+@Composable
+private fun HomeEmpty(onSearch: () -> Unit) = LazyColumn(Modifier.fillMaxSize()) {
+    item {
+        EmptyState(
+            title = EMPTY_TITLE,
+            text = EMPTY_TEXT,
+            modifier = Modifier.fillParentMaxSize(),
+            actionLabel = FIND_ANIME,
+            onAction = onSearch,
+        )
+    }
 }

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.kaeru.domain.feed.HomeFeedBuilder
 import app.kaeru.domain.model.HomeFeed
+import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.ui.common.errorMessageOrNull
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -24,6 +25,7 @@ class HomeViewModel @Inject constructor(
     private val repository: LibraryRepository,
     private val feedBuilder: HomeFeedBuilder,
     private val clock: Clock,
+    prefs: PlaybackPreferences,
 ) : ViewModel() {
     private val refreshState = MutableStateFlow(RefreshState())
     private var refreshJob: Job? = null
@@ -31,12 +33,14 @@ class HomeViewModel @Inject constructor(
     val uiState: StateFlow<HomeUiState> = combine(
         repository.observeLibrary(),
         refreshState,
-    ) { entries, refresh ->
+        prefs.watchedThreshold,
+    ) { entries, refresh, threshold ->
         HomeUiState(
             feed = feedBuilder.build(entries, clock.instant()),
             isLoading = false,
             isRefreshing = refresh.active,
             errorMessage = refresh.error,
+            watchedThreshold = threshold,
         )
     }.stateIn(
         scope = viewModelScope,

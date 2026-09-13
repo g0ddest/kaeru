@@ -8,6 +8,7 @@ import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.UserRate
+import app.kaeru.domain.playback.FakePlaybackPreferences
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.test.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -54,7 +55,7 @@ class HomeViewModelTest {
     @Test
     fun `cached room content is exposed before refresh completes`() = runTest(main.dispatcher) {
         val repo = FakeLibraryRepository().also { it.entries.value = listOf(entry()) }
-        val vm = HomeViewModel(repo, HomeFeedBuilder(), Clock.fixed(now, ZoneOffset.UTC))
+        val vm = HomeViewModel(repo, HomeFeedBuilder(), Clock.fixed(now, ZoneOffset.UTC), FakePlaybackPreferences())
         advanceUntilIdle()
         assertFalse(vm.uiState.value.isLoading)
         assertEquals(7, vm.uiState.value.feed.top?.entry?.anime?.id)
@@ -67,7 +68,7 @@ class HomeViewModelTest {
             it.entries.value = listOf(entry())
             it.refreshResult = Result.failure(NetworkUnavailable(UnknownHostException("shikimori.io")))
         }
-        val vm = HomeViewModel(repo, HomeFeedBuilder(), Clock.fixed(now, ZoneOffset.UTC))
+        val vm = HomeViewModel(repo, HomeFeedBuilder(), Clock.fixed(now, ZoneOffset.UTC), FakePlaybackPreferences())
         advanceUntilIdle()
         assertEquals(7, vm.uiState.value.feed.top?.entry?.anime?.id)
         assertEquals("Нет соединения. Проверьте интернет", vm.uiState.value.errorMessage)
@@ -77,7 +78,7 @@ class HomeViewModelTest {
     @Test
     fun `manual refresh clears previous error`() = runTest(main.dispatcher) {
         val repo = FakeLibraryRepository().also { it.refreshResult = Result.failure(HttpError(500)) }
-        val vm = HomeViewModel(repo, HomeFeedBuilder(), Clock.fixed(now, ZoneOffset.UTC))
+        val vm = HomeViewModel(repo, HomeFeedBuilder(), Clock.fixed(now, ZoneOffset.UTC), FakePlaybackPreferences())
         advanceUntilIdle()
         assertEquals("Shikimori недоступен, попробуйте позже", vm.uiState.value.errorMessage)
         repo.refreshResult = Result.success(Unit)
