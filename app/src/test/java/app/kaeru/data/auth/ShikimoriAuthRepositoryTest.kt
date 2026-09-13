@@ -287,6 +287,34 @@ class ShikimoriAuthRepositoryTest {
         assertEquals(2, server.requestCount)
     }
 
+    @Test
+    fun `an authorization built for a pairing arms nothing on this phone`() = runTest {
+        val pairing = repo.pairingAuthorization()
+        val url = pairing.url.toHttpUrl()
+        assertEquals(MOBILE_REDIRECT, url.queryParameter("redirect_uri"))
+        assertEquals(pairing.state, url.queryParameter("state"))
+        assertTrue(pairing.state.length >= 32)
+
+        // The code this URL produces is going to a television, so nothing here waits for a
+        // callback: one echoing that state is as unsolicited as any other.
+        assertRejected(repo.exchangeRedirectCode("attacker", pairing.state))
+        assertEquals(0, server.requestCount)
+        assertNull(store.get())
+    }
+
+    @Test
+    fun `every pairing authorization carries a state of its own`() {
+        assertNotEquals(repo.pairingAuthorization().state, repo.pairingAuthorization().state)
+    }
+
+    @Test
+    fun `a pairing authorization does not disturb a sign-in already in flight`() = runTest {
+        enqueueTokens()
+        val armed = pendingState()
+        repo.pairingAuthorization()
+        assertTrue(repo.exchangeRedirectCode("abc", armed).isSuccess)
+    }
+
     private fun pendingState(): String =
         requireNotNull(repo.authorizeUrl(MOBILE_REDIRECT).toHttpUrl().queryParameter("state"))
 

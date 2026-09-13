@@ -15,7 +15,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.net.URLDecoder
 import java.security.MessageDigest
 import javax.inject.Inject
 
@@ -53,11 +52,12 @@ data class PairingUiState(
  * point of the whole arrangement, because the alternative is typing an authorization code into a
  * television with a remote control.
  *
- * The `state` of the authorization is checked here rather than in the repository, because the
- * repository's own check is bound to *its* exchange, and this code is deliberately never exchanged
- * on this device. Without it, any application able to fire `kaeru://oauth` could hand this phone a
- * code of its own while a pairing is open and have the television sign into somebody else's
- * account.
+ * The `state` of the authorization is held and checked here rather than in the repository,
+ * because this code is deliberately never exchanged on this device. Without the check, any
+ * application able to fire `kaeru://oauth` could hand this phone a code of its own while a pairing
+ * is open and have the television sign into somebody else's account. And because the repository is
+ * never asked to remember it — [AuthRepository.pairingAuthorization] arms nothing — a hand-off
+ * leaves no live `state` behind for something to replay at the phone's own sign-in later.
  */
 @HiltViewModel
 class PairingViewModel @Inject constructor(
@@ -90,10 +90,10 @@ class PairingViewModel @Inject constructor(
      */
     fun confirm(): String? {
         val request = state.value.request ?: return null
-        val url = auth.authorizeUrl(MOBILE_REDIRECT)
-        expectedState = queryParam(url, "state")
+        val authorization = auth.pairingAuthorization()
+        expectedState = authorization.state
         state.value = PairingUiState(request, PairingStage.AWAITING_CODE)
-        return url
+        return authorization.url
     }
 
     /**
@@ -138,10 +138,4 @@ class PairingViewModel @Inject constructor(
         expected.toByteArray(Charsets.UTF_8),
         actual.toByteArray(Charsets.UTF_8),
     )
-
-    private fun queryParam(url: String, name: String): String? = url.substringAfter('?', "")
-        .split('&')
-        .firstOrNull { it.startsWith("$name=") }
-        ?.substringAfter('=')
-        ?.let { runCatching { URLDecoder.decode(it, Charsets.UTF_8.name()) }.getOrNull() }
 }

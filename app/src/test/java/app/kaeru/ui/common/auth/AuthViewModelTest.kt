@@ -4,6 +4,7 @@ import app.kaeru.domain.error.AuthCallbackRejected
 import app.kaeru.domain.error.HttpError
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.repository.AuthRepository
+import app.kaeru.domain.repository.PairingAuthorization
 import app.kaeru.test.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -36,6 +37,8 @@ class AuthViewModelTest {
             attempts++
             return "https://auth.test/?redirect=$redirectUri&state=state-$attempts"
         }
+
+        override fun pairingAuthorization() = PairingAuthorization("https://auth.test/", "pairing-state")
 
         override suspend fun exchangeRedirectCode(code: String, state: String?): Result<Unit> {
             redirectExchanges += code to state

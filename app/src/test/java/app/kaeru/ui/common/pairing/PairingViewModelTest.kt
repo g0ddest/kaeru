@@ -6,6 +6,7 @@ import app.kaeru.domain.pairing.PairingClient
 import app.kaeru.domain.pairing.PairingRequest
 import app.kaeru.domain.repository.AuthRepository
 import app.kaeru.domain.repository.MOBILE_REDIRECT
+import app.kaeru.domain.repository.PairingAuthorization
 import app.kaeru.test.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -28,11 +29,21 @@ class PairingViewModelTest {
     private val link = television.toUri()
 
     private class FakeAuthRepository : AuthRepository {
+        /** Calls that arm the phone's own callback. A pairing must never make one. */
+        var armed = 0
         var attempts = 0
         override val isLoggedIn: Flow<Boolean> = MutableStateFlow(true)
         override fun authorizeUrl(redirectUri: String): String {
+            armed++
             attempts++
             return "https://auth.test/?redirect_uri=$redirectUri&state=state-$attempts"
+        }
+        override fun pairingAuthorization(): PairingAuthorization {
+            attempts++
+            return PairingAuthorization(
+                url = "https://auth.test/?redirect_uri=$MOBILE_REDIRECT&state=state-$attempts",
+                state = "state-$attempts",
+            )
         }
         override suspend fun exchangeRedirectCode(code: String, state: String?) = Result.success(Unit)
         override suspend fun exchangeTypedCode(code: String) = Result.success(Unit)
@@ -88,6 +99,18 @@ class PairingViewModelTest {
         val vm = viewModel()
         assertNull(vm.confirm())
         assertEquals(0, auth.attempts)
+    }
+
+    @Test
+    fun `the hand-off never arms this phone's own callback`() {
+        val vm = viewModel()
+        vm.open(link)
+        vm.confirm()
+        vm.confirm()
+        // The code this fetches is for the television. Arming the repository would leave a live
+        // `state` behind that nothing here ever spends, and that anything able to fire
+        // `kaeru://oauth` could later echo back to sign this phone into somebody else's account.
+        assertEquals(0, auth.armed)
     }
 
     @Test
