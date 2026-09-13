@@ -30,6 +30,7 @@ private fun Preview(state: SettingsUiState) = KaeruTheme {
         onStudioAdd = {},
         onStudiosReset = {},
         onKodikToken = {},
+        onRetryAccount = {},
     )
 }
 

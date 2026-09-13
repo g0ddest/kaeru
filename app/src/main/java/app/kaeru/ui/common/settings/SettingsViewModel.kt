@@ -98,9 +98,18 @@ class SettingsViewModel @Inject constructor(
         }.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsUiState())
 
     init {
-        // Opening the screen is the one moment the nickname is worth a round trip: it is also the
-        // only moment it is on screen. The failure is deliberately dropped — the cached name is
-        // the right answer when Shikimori cannot be reached.
+        refreshAccount()
+    }
+
+    /**
+     * Asks Shikimori who this is. Called once when the screen opens, and again by the retry the
+     * screen offers when nobody could be named at all.
+     *
+     * The failure is deliberately dropped: a cached nickname is the right answer when Shikimori
+     * cannot be reached, and a screen of local preferences is not the place for a network error.
+     */
+    fun refreshAccount() {
+        asking.value = true
         viewModelScope.launch {
             accounts.refresh()
             asking.value = false

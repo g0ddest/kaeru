@@ -7,6 +7,7 @@ import app.kaeru.domain.repository.AccountRepository
 import app.kaeru.domain.repository.AuthRepository
 import app.kaeru.domain.settings.FakeSettingsStore
 import app.kaeru.test.MainDispatcherRule
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,10 +31,14 @@ class SettingsViewModelTest {
         var result: Result<Unit> = Result.success(Unit)
         var refreshed: Account? = null
         var refreshes = 0
+
+        /** Held open by a test that needs to see the screen while an answer is still on its way. */
+        var gate: CompletableDeferred<Unit>? = null
         override val account: Flow<Account?> = cache
 
         override suspend fun refresh(): Result<Unit> {
             refreshes++
+            gate?.await()
             return result.onSuccess { refreshed?.let { cache.value = it } }
         }
     }
@@ -254,6 +259,34 @@ class SettingsViewModelTest {
 
             assertFalse(vm.uiState.value.accountLoading)
             assertNull(vm.uiState.value.account)
+        }
+
+    @Test
+    fun `asking again puts the skeleton back and can succeed where the first try failed`() =
+        runTest(main.dispatcher) {
+            val accounts = FakeAccountRepository()
+            accounts.result = Result.failure(IllegalStateException("offline"))
+            val vm = viewModel(accounts = accounts)
+            advanceUntilIdle()
+            assertFalse(vm.uiState.value.accountLoading)
+
+            accounts.result = Result.success(Unit)
+            accounts.refreshed = Account(42, "kaeru", null)
+            val answering = CompletableDeferred<Unit>()
+            accounts.gate = answering
+
+            vm.refreshAccount()
+            advanceUntilIdle()
+            // The question is out and nobody is named yet, so the skeleton is back rather than a
+            // line saying the name could not be loaded.
+            assertTrue(vm.uiState.value.accountLoading)
+
+            answering.complete(Unit)
+            advanceUntilIdle()
+
+            assertEquals(Account(42, "kaeru", null), vm.uiState.value.account)
+            assertFalse(vm.uiState.value.accountLoading)
+            assertEquals(2, accounts.refreshes)
         }
 
     @Test

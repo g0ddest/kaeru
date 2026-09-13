@@ -22,6 +22,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import app.kaeru.BuildConfig
 import app.kaeru.domain.model.Quality
@@ -46,6 +47,7 @@ private const val CONFIRM_TITLE = "Выйти из аккаунта?"
 private const val CONFIRM_TEXT = "Список и прогресс останутся на Shikimori, локальный кэш будет очищен"
 private const val CONFIRM = "Выйти"
 private const val CANCEL = "Отмена"
+private const val RETRY = "Повторить"
 
 private const val PLAYBACK = "Воспроизведение"
 private const val AUTOPLAY = "Следующая серия автоматически"
@@ -95,6 +97,7 @@ fun SettingsScreen(
     onStudioAdd: (String) -> Unit,
     onStudiosReset: () -> Unit,
     onKodikToken: (String) -> Unit,
+    onRetryAccount: () -> Unit,
 ) {
     var confirming by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
@@ -108,7 +111,7 @@ fun SettingsScreen(
                 .padding(top = KaeruTokens.Space2, bottom = KaeruTokens.Space8),
             verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space8),
         ) {
-            AccountSection(state, onSignOut = { confirming = true })
+            AccountSection(state, onRetryAccount, onSignOut = { confirming = true })
             PlaybackSection(state, onAutoplay, onQuality, onThreshold)
             DubsSection(state, onStudioUp, onStudioDown, onStudioRemove, onStudioAdd, onStudiosReset)
             KodikSection(state.kodikToken, onKodikToken)
@@ -127,9 +130,14 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun AccountSection(state: SettingsUiState, onSignOut: () -> Unit) {
+private fun AccountSection(state: SettingsUiState, onRetry: () -> Unit, onSignOut: () -> Unit) {
     SettingsSection(ACCOUNT) {
         if (state.accountLoading) AccountSkeleton() else AccountBlock(state.account)
+        // Offered only when Shikimori could not be reached and nothing was cached to fall back
+        // on. With a name on screen there is nothing to retry — it is already the right answer.
+        if (!state.accountLoading && state.account == null) {
+            TextAction(RETRY, onRetry, Modifier.offset(x = -KaeruTokens.Space3))
+        }
         // Signing out never waits on a nickname: knowing who you are is not a condition of leaving.
         DestructiveButton(SIGN_OUT, onClick = onSignOut)
     }
@@ -269,6 +277,9 @@ private fun SignOutDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
         text = { Text(CONFIRM_TEXT, style = MaterialTheme.typography.bodyMedium) },
         shape = KaeruTokens.CardShape,
         containerColor = KaeruSurface,
+        // The app has no shadows and no tinted surfaces: depth is the three-step background ramp
+        // and, here, the scrim the dialog already draws over the page.
+        tonalElevation = 0.dp,
         titleContentColor = KaeruText,
         textContentColor = KaeruSecondary,
     )

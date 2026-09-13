@@ -144,6 +144,7 @@ fun MobileShell(nav: NavHostController = rememberNavController()) {
                     onStudioAdd = vm::addStudio,
                     onStudiosReset = vm::resetStudios,
                     onKodikToken = vm::setKodikToken,
+                    onRetryAccount = vm::refreshAccount,
                 )
             }
             composable(Routes.DETAILS, arguments = listOf(navArgument("animeId") { type = NavType.IntType })) { entry ->
