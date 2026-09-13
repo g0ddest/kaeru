@@ -89,6 +89,17 @@ class HomeContentTest {
     }
 
     /**
+     * The two flags cannot both be set by `HomeViewModel` — starting a sync clears the message —
+     * but the ordering that makes an error win is an invariant of this function, not of that view
+     * model, and it is the difference between explaining a failure and hiding it behind skeletons.
+     */
+    @Test
+    fun `a failure beats a sync that is still running`() {
+        val state = HomeUiState(isLoading = false, isRefreshing = true, errorMessage = OFFLINE)
+        assertEquals(HomeContent.Error(OFFLINE), homeContentState(state))
+    }
+
+    /**
      * A refresh behind a feed the viewer is already reading must never take it away: the rows stay,
      * and the pull indicator is the only thing that says anything is happening.
      */
