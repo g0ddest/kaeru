@@ -87,6 +87,7 @@ class PlayerViewModel @Inject constructor(
             title = anime?.title.orEmpty(),
             posterUrl = anime?.posterUrl,
             episode = playback.target?.episode ?: 0,
+            availableEpisodes = anime?.availableEpisodes ?: 0,
             translationTitle = playback.stream?.translation?.title,
             translationId = playback.stream?.translation?.id,
             isPlaying = playback.isPlaying,

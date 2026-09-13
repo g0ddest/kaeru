@@ -14,6 +14,8 @@ data class PlayerUiState(
     val title: String = "",
     val posterUrl: String? = null,
     val episode: Int = 0,
+    /** How many episodes the show has to offer, for a screen that lists them. */
+    val availableEpisodes: Int = 0,
     val translationTitle: String? = null,
     val translationId: Int? = null,
     val isPlaying: Boolean = false,

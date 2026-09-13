@@ -41,7 +41,6 @@ import androidx.tv.material3.Card
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import app.kaeru.domain.model.FeedItem
-import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.ui.common.Poster
 import app.kaeru.ui.common.home.HomeUiState
 import app.kaeru.ui.common.theme.KaeruAccent
@@ -53,7 +52,8 @@ fun TvHomeScreen(
     state: HomeUiState,
     onRefresh: () -> Unit,
     onLogout: () -> Unit,
-    onAnime: (LibraryEntry) -> Unit,
+    onPlay: (FeedItem) -> Unit,
+    onDetails: (FeedItem) -> Unit,
 ) {
     val rows = remember(state.feed) { tvHomeRows(state.feed) }
     val initialItem = remember(state.feed) { initialTvItem(state.feed, rows) }
@@ -93,7 +93,8 @@ fun TvHomeScreen(
                                 isInitialFocusTarget = item == initialItem,
                                 requestedInitialFocus = requestedInitialFocus,
                                 onFocused = { focused = item },
-                                onClick = { onAnime(item.entry) },
+                                onClick = { onPlay(item) },
+                                onLongClick = { onDetails(item) },
                             )
                         }
                     }
@@ -147,6 +148,7 @@ private fun TvPosterCard(
     requestedInitialFocus: MutableState<Boolean>,
     onFocused: () -> Unit,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
 ) {
     var hasFocus by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
@@ -161,6 +163,8 @@ private fun TvPosterCard(
     }
     Card(
         onClick = onClick,
+        // A long press is the way to the title card now that a short one plays the episode.
+        onLongClick = onLongClick,
         modifier = Modifier
             .focusRequester(focusRequester)
             .size(width = 154.dp, height = 252.dp)
