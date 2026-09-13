@@ -37,7 +37,7 @@ import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.design.ProgressStrip
 import app.kaeru.ui.common.design.RowHeader
 import app.kaeru.ui.common.design.TextAction
-import app.kaeru.ui.common.design.pluralEpisodes
+import app.kaeru.ui.common.design.pluralEpisodesAccusative
 import app.kaeru.ui.common.details.EpisodeCell
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruElevated
@@ -76,7 +76,6 @@ private val CheckSize = 14.dp
 internal fun EpisodeSection(
     cells: List<EpisodeCell>,
     watched: Int,
-    announced: Int,
     onPlay: (Int) -> Unit,
     onMarkWatched: (Int) -> Unit,
 ) {
@@ -89,7 +88,8 @@ internal fun EpisodeSection(
     Column(Modifier.padding(top = KaeruTokens.Space6)) {
         RowHeader(EPISODES)
         Text(
-            watchedLine(watched, announced),
+            // The grid itself is the total: it already draws every episode there turned out to be.
+            watchedLine(watched, cells.size),
             style = MaterialTheme.typography.labelMedium,
             color = KaeruSecondary,
             modifier = Modifier.padding(horizontal = KaeruTokens.GutterPhone, vertical = KaeruTokens.Space1),
@@ -125,7 +125,8 @@ internal fun EpisodeSection(
             remaining > 0 -> {
                 val next = minOf(EPISODE_PAGE, remaining)
                 TextAction(
-                    "Показать ещё ${pluralEpisodes(next)}",
+                    // «Показать» takes the accusative: «ещё 21 серию», never «ещё 21 серия».
+                    "Показать ещё ${pluralEpisodesAccusative(next)}",
                     { visible += next },
                     Modifier.padding(start = KaeruTokens.GutterPhone - KaeruTokens.Space3),
                 )

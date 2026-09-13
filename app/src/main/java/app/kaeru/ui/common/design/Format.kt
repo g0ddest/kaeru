@@ -57,6 +57,16 @@ private fun plural(count: Int, one: String, few: String, many: String): String {
 /** `12 серий`, `1 серия`, `24 серии` — a season length that can stand in a chip on its own. */
 fun pluralEpisodes(count: Int): String = "$count ${plural(count, "серия", "серии", "серий")}"
 
+/**
+ * `21 серию` — the same count as [pluralEpisodes] in the case a verb puts it in.
+ *
+ * «Показать ещё 21 серия» is what a naive join produces and it is simply ungrammatical: «показать»
+ * takes the accusative, so the noun changes and the numeral does not. Separate from
+ * [pluralEpisodes] rather than a parameter on it, because a caller picking a grammatical case with
+ * a boolean is a caller that will pick the wrong one.
+ */
+fun pluralEpisodesAccusative(count: Int): String = "$count ${plural(count, "серию", "серии", "серий")}"
+
 /** `5 из 12`; a season whose length the catalogue does not know prints `5 из ?`. */
 fun episodesLabel(watched: Int, total: Int): String = "$watched из ${if (total > 0) total else "?"}"
 
@@ -123,6 +133,24 @@ fun episodeLine(item: FeedItem, now: Instant, zone: ZoneId = ZoneId.systemDefaul
 }
 
 /**
+ * Episodes that exist to play right now.
+ *
+ * A thin alias for `Anime.availableEpisodes`, kept so call sites here read in terms of what has
+ * aired rather than a more general-sounding name. The rule itself — aired so far while ongoing,
+ * nothing for an announcement, the announced total once finished — lives once on the domain
+ * model; keeping it there is what keeps a button from offering, and a grid from opening, an
+ * episode that does not exist yet.
+ */
+fun Anime.airedEpisodes(): Int = availableEpisodes
+
+data class PrimaryAction(
+    val label: String,
+    val enabled: Boolean,
+    /** The episode this would start, or null when there is nothing to start. */
+    val episode: Int?,
+)
+
+/**
  * The watch button, decided in one place: what it says, whether it can be pressed, and which
  * episode it would start.
  *
@@ -144,24 +172,6 @@ fun episodeLine(item: FeedItem, now: Instant, zone: ZoneId = ZoneId.systemDefaul
  * ignored — the catalogue has simply not caught up, and repeating it would be a promise about
  * yesterday.
  */
-/**
- * Episodes that exist to play right now.
- *
- * A thin alias for `Anime.availableEpisodes`, kept so call sites here read in terms of what has
- * aired rather than a more general-sounding name. The rule itself — aired so far while ongoing,
- * nothing for an announcement, the announced total once finished — lives once on the domain
- * model; keeping it there is what keeps a button from offering, and a grid from opening, an
- * episode that does not exist yet.
- */
-fun Anime.airedEpisodes(): Int = availableEpisodes
-
-data class PrimaryAction(
-    val label: String,
-    val enabled: Boolean,
-    /** The episode this would start, or null when there is nothing to start. */
-    val episode: Int?,
-)
-
 fun primaryAction(
     entry: LibraryEntry?,
     watchedThreshold: Float,

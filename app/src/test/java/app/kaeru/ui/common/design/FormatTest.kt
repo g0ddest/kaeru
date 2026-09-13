@@ -303,4 +303,35 @@ class FormatTest {
         assertEquals("14:20", formatTime(860_000))
         assertEquals("1:02:34", formatTime(3_754_000))
     }
+
+    // --- pluralEpisodesAccusative ----------------------------------------------------------
+
+    @Test
+    fun `a verb puts the count in the accusative`() {
+        assertEquals("1 серию", pluralEpisodesAccusative(1))
+        assertEquals("2 серии", pluralEpisodesAccusative(2))
+        assertEquals("4 серии", pluralEpisodesAccusative(4))
+        assertEquals("5 серий", pluralEpisodesAccusative(5))
+        assertEquals("21 серию", pluralEpisodesAccusative(21))
+        assertEquals("22 серии", pluralEpisodesAccusative(22))
+        assertEquals("60 серий", pluralEpisodesAccusative(60))
+    }
+
+    @Test
+    fun `the accusative keeps the eleven to fourteen exception`() {
+        assertEquals("11 серий", pluralEpisodesAccusative(11))
+        assertEquals("12 серий", pluralEpisodesAccusative(12))
+        assertEquals("14 серий", pluralEpisodesAccusative(14))
+        assertEquals("111 серий", pluralEpisodesAccusative(111))
+    }
+
+    @Test
+    fun `the two cases differ exactly where Russian says they do`() {
+        assertEquals("1 серия", pluralEpisodes(1))
+        assertEquals("1 серию", pluralEpisodesAccusative(1))
+        assertEquals("21 серия", pluralEpisodes(21))
+        assertEquals("21 серию", pluralEpisodesAccusative(21))
+        // Everything else is spelled the same way in both.
+        (2..10).forEach { assertEquals(pluralEpisodes(it), pluralEpisodesAccusative(it)) }
+    }
 }

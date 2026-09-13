@@ -8,6 +8,7 @@ import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.model.WatchState
+import app.kaeru.ui.common.details.episodeCells
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -196,5 +197,15 @@ class DetailsContentTest {
         assertEquals("20 из 28", watchedLine(20, 28))
         assertEquals("30 из 30", watchedLine(30, 28))
         assertEquals("20 из ?", watchedLine(20, 0))
+    }
+
+    @Test
+    fun `the count and the grid agree when more aired than the season announced`() {
+        // Twelve announced, sixteen actually out: the grid draws sixteen tiles, so the line has to
+        // say «из 16». Reading the announced total instead would print «14 из 12» over them.
+        val extended = anime(episodes = 12, aired = 16)
+        val cells = episodeCells(extended, entry(watched = 14).rate, null, 0.9f)
+        assertEquals(16, cells.size)
+        assertEquals("14 из 16", watchedLine(14, cells.size))
     }
 }

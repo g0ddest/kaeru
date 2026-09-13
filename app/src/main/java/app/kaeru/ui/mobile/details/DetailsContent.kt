@@ -131,10 +131,11 @@ private fun emptyRate(animeId: Int) =
 /**
  * «20 из 28» under the episode grid.
  *
- * Shikimori's count can run past the length the catalogue announced — a season extended, a
- * catalogue not caught up — and «30 из 28» over a grid that correctly draws thirty cells is the
- * screen contradicting itself. The announced total gives way to the count in that case. A season
- * whose length nobody has announced still prints «?» rather than inventing one.
+ * [total] is how many cells the grid actually drew, not what the catalogue announced. The two
+ * differ whenever a season runs past its announced length or Shikimori's watched count does, and
+ * «30 из 28» over a grid of thirty tiles is the screen contradicting itself. The count is still
+ * the floor — a caller that somehow passes a smaller total gets the count — and a grid with no
+ * cells prints «?» rather than inventing a length.
  */
-fun watchedLine(watched: Int, announced: Int): String =
-    episodesLabel(watched, if (announced > 0) maxOf(announced, watched) else 0)
+fun watchedLine(watched: Int, total: Int): String =
+    episodesLabel(watched, if (total > 0) maxOf(total, watched) else 0)

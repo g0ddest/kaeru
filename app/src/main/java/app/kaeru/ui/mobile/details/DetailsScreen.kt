@@ -75,8 +75,8 @@ import app.kaeru.ui.mobile.KaeruSnackbarHost
 import app.kaeru.ui.mobile.RetrySnackbar
 import app.kaeru.ui.mobile.player.CastButton
 import java.time.Instant
+
 private const val BACK = "Назад"
-private const val EPISODES = "Серии"
 private const val DESCRIPTION = "Описание"
 private const val PLAN_IT = "Добавить в планы"
 private const val MORE = "Ещё"
@@ -198,7 +198,6 @@ private fun TitlePage(
         EpisodeSection(
             cells = cells,
             watched = entry?.rate?.episodes ?: 0,
-            announced = anime.episodes,
             onPlay = { episode -> onPlay(anime.id, episode) },
             onMarkWatched = onMarkWatched,
         )

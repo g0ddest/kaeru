@@ -1,5 +1,6 @@
 package app.kaeru.ui.mobile.player
 
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
@@ -7,6 +8,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.mediarouter.app.MediaRouteButton
+import app.kaeru.R
 import app.kaeru.ui.common.design.KaeruTokens
 import com.google.android.gms.cast.framework.CastButtonFactory
 
@@ -34,8 +36,10 @@ val LocalCastAvailable = staticCompositionLocalOf { false }
  *
  * @param overArtwork draws a dark disc behind the icon, for the places it sits on a screenshot
  *   rather than on the app's own background and its contrast is otherwise whatever the artwork
- *   happens to be. The disc is the button's own view background, so it comes and goes with it,
- *   and it is applied on every change rather than only when the view is created.
+ *   happens to be. The disc replaces the button's own view background, so turning it off puts
+ *   back exactly what `MediaRouteButton` was built with — its borderless ripple — rather than
+ *   nothing at all, which would leave the control with no answer to a press. It is applied on
+ *   every change rather than only when the view is created.
  */
 @Composable
 fun CastButton(modifier: Modifier = Modifier, overArtwork: Boolean = false) {
@@ -47,6 +51,8 @@ fun CastButton(modifier: Modifier = Modifier, overArtwork: Boolean = false) {
                 // Never fatal: a framework that will not wire the button costs casting, and
                 // an app that crashes on its home screen costs everything.
                 runCatching { CastButtonFactory.setUpMediaRouteButton(context.applicationContext, button) }
+                // The ripple the widget came with, kept so the disc has something to give back.
+                button.setTag(R.id.kaeru_cast_default_background, button.background)
             }
         },
         // The disc is set here rather than in the factory, which runs once. A screen that only
@@ -60,7 +66,7 @@ fun CastButton(modifier: Modifier = Modifier, overArtwork: Boolean = false) {
                     setColor(SCRIM)
                 }
             } else {
-                null
+                button.getTag(R.id.kaeru_cast_default_background) as? Drawable
             }
         },
     )
