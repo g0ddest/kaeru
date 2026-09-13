@@ -53,12 +53,17 @@ class EpisodeProgressMigrationTest {
         }
     }
 
-    /** Column name, declared type and nullability, in the order the table declares them. */
+    /**
+     * Column name, declared type, nullability and place in the primary key, in the order the
+     * table declares them — which is the whole of what Room compares a table against on open. A
+     * key that came out as `animeId` alone would pass every other test here and then refuse to
+     * open on the one install that matters: an upgraded one.
+     */
     private fun migratedColumns(): List<String> {
-        connection.prepare("SELECT name, type, `notnull` FROM pragma_table_info('episode_progress')").use { statement ->
+        connection.prepare("SELECT name, type, `notnull`, pk FROM pragma_table_info('episode_progress')").use { statement ->
             val columns = mutableListOf<String>()
             while (statement.step()) {
-                columns += "${statement.getText(0)} ${statement.getText(1)} ${statement.getLong(2)}"
+                columns += (0..3).joinToString(" ") { statement.getText(it) }
             }
             return columns
         }
@@ -71,11 +76,11 @@ class EpisodeProgressMigrationTest {
         ).allowMainThreadQueries().build()
         try {
             db.openHelper.writableDatabase
-                .query("SELECT name, type, `notnull` FROM pragma_table_info('episode_progress')")
+                .query("SELECT name, type, `notnull`, pk FROM pragma_table_info('episode_progress')")
                 .use { cursor ->
                     val columns = mutableListOf<String>()
                     while (cursor.moveToNext()) {
-                        columns += "${cursor.getString(0)} ${cursor.getString(1)} ${cursor.getLong(2)}"
+                        columns += (0..3).joinToString(" ") { cursor.getString(it) }
                     }
                     return columns
                 }

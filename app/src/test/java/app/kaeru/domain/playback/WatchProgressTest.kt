@@ -1,9 +1,11 @@
 package app.kaeru.domain.playback
 
 import app.kaeru.domain.error.AccountSessionChanged
+import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.WatchState
 import app.kaeru.test.MutableClock
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -30,6 +32,44 @@ class WatchProgressTest {
             WatchState(100, 4, 65_000, 1_400_000, translationId = 7, kodikSeason = null, updatedAt = now),
             watchStates.saved.single(),
         )
+    }
+
+    @Test
+    fun `a sample lands in the episode's own row as well as in the anime's pointer`() = runTest {
+        progress.report(animeId = 100, episode = 4, positionMs = 65_000, durationMs = 1_400_000, translationId = 7)
+
+        assertEquals(EpisodeProgress(100, 4, 65_000, 1_400_000, now), episodes.saved.single())
+        assertEquals(4, watchStates.saved.single().episode)
+    }
+
+    @Test
+    fun `starting another episode leaves the position kept for the last one alone`() = runTest {
+        // The mis-tap, from the sampler's side: the seventh keeps its forty minutes while the
+        // sixth writes its own ten seconds down beside it.
+        episodes.seed(EpisodeProgress(100, 7, 2_400_000, 2_880_000, now))
+
+        progress.report(animeId = 100, episode = 6, positionMs = 10_000, durationMs = 1_400_000, translationId = 7)
+
+        val rows = episodes.observe(100).first()
+        assertEquals(listOf(6 to 10_000L, 7 to 2_400_000L), rows.map { it.episode to it.positionMs })
+    }
+
+    @Test
+    fun `a pointer that cannot be written does not take the episode's position down with it`() = runTest {
+        watchStates.failSaveWith = AccountSessionChanged("signed out")
+
+        progress.report(animeId = 100, episode = 4, positionMs = 65_000, durationMs = 1_400_000, translationId = 7)
+
+        assertEquals(65_000L, episodes.saved.single().positionMs)
+    }
+
+    @Test
+    fun `an episode row that cannot be written does not take the pointer down with it`() = runTest {
+        episodes.failSaveWith = AccountSessionChanged("signed out")
+
+        progress.report(animeId = 100, episode = 4, positionMs = 65_000, durationMs = 1_400_000, translationId = 7)
+
+        assertEquals(4, watchStates.saved.single().episode)
     }
 
     @Test
