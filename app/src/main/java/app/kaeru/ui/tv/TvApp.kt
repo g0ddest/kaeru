@@ -1,6 +1,5 @@
 package app.kaeru.ui.tv
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -19,17 +18,13 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
-import app.kaeru.ui.common.details.DetailsViewModel
-import app.kaeru.ui.common.home.HomeViewModel
 import app.kaeru.ui.common.player.PlayerViewModel
 import app.kaeru.ui.common.theme.KaeruTvTheme
 import app.kaeru.ui.common.auth.AuthViewModel
 import app.kaeru.ui.tv.auth.TvLoginScreen
-import app.kaeru.ui.tv.details.TvTitleScreen
-import app.kaeru.ui.tv.home.TvHomeScreen
 import app.kaeru.ui.tv.player.TvPlayerScreen
 
-/** No title card is open, and no episode is playing. */
+/** Nothing is playing. */
 private const val NOTHING = 0
 
 @UnstableApi
@@ -37,10 +32,8 @@ private const val NOTHING = 0
 fun TvApp(authViewModel: AuthViewModel = hiltViewModel()) {
     val auth = authViewModel.uiState.collectAsStateWithLifecycle().value
     var code by remember { mutableStateOf("") }
-    // Saved as ids rather than as the entries themselves: a `LibraryEntry` is not parcelable and
-    // holding one across a process death would mean saving a copy of the catalogue. The feed
-    // comes back from Room in a moment, and the title card is found in it again.
-    var selectedId by rememberSaveable { mutableIntStateOf(NOTHING) }
+    // Saved as ids rather than as anything richer: a domain entry is not parcelable, and what is
+    // playing has to survive a process death on a device that is left switched on for days.
     var playingId by rememberSaveable { mutableIntStateOf(NOTHING) }
     var playingEpisode by rememberSaveable { mutableIntStateOf(NOTHING) }
 
@@ -54,67 +47,24 @@ fun TvApp(authViewModel: AuthViewModel = hiltViewModel()) {
                 onCode = { code = it },
                 onSubmit = { authViewModel.exchangeTvCode(code) },
             )
-            true -> {
-                // Hoisted above the branch: the feed is held by the ViewModel, so swapping the
-                // home rows for the title card costs nothing and preserves the loaded state.
-                val home: HomeViewModel = hiltViewModel()
-                val homeState = home.uiState.collectAsStateWithLifecycle().value
-                // Only the title card's back is handled here: the player has its own, which hides
-                // the panel before it lets go of the screen.
-                BackHandler(enabled = playingId == NOTHING && selectedId != NOTHING) { selectedId = NOTHING }
-                when {
-                    // Leaving the player uncovers whatever it was opened from, because that
-                    // screen was never taken down — only drawn over.
-                    playingId != NOTHING -> TvPlayer(
-                        animeId = playingId,
-                        episode = playingEpisode,
-                        onEpisode = { playingEpisode = it },
-                        onExit = { playingId = NOTHING },
-                    )
-                    selectedId != NOTHING -> TvTitle(
-                        animeId = selectedId,
-                        onPlay = { animeId, episode -> playingId = animeId; playingEpisode = episode },
-                    )
-                    else -> {
-                        // The catalogue rows are loaded by the screen that draws them, and the
-                        // television draws them now.
-                        LaunchedEffect(home) { home.loadDiscover() }
-                        TvHomeScreen(
-                            state = homeState,
-                            onRefresh = home::refresh,
-                            onPlay = { animeId, episode ->
-                                playingId = animeId
-                                playingEpisode = episode
-                            },
-                            onDetails = { selectedId = it },
-                            onSeason = home::selectSeason,
-                            onRetrySeason = home::retrySeason,
-                        )
-                    }
-                }
+            true -> when {
+                // Leaving the player uncovers whatever it was opened from, because the shell
+                // behind it was never taken down — only drawn over.
+                playingId != NOTHING -> TvPlayer(
+                    animeId = playingId,
+                    episode = playingEpisode,
+                    onEpisode = { playingEpisode = it },
+                    onExit = { playingId = NOTHING },
+                )
+                else -> TvShell(
+                    onPlay = { animeId, episode ->
+                        playingId = animeId
+                        playingEpisode = episode
+                    },
+                )
             }
         }
     }
-}
-
-/**
- * The title card, on a view model scoped to the title it is about.
- *
- * The same [DetailsViewModel] the phone's title screen uses: the id reaches it through
- * [TvAnimeScope]'s default arguments, and the store it lives in is cleared when the card closes.
- */
-@Composable
-private fun TvTitle(animeId: Int, onPlay: (Int, Int) -> Unit) = TvAnimeScope(animeId) {
-    val viewModel: DetailsViewModel = hiltViewModel()
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
-    TvTitleScreen(
-        state = state,
-        onRetry = viewModel::retry,
-        onStatus = viewModel::setStatus,
-        onPlay = onPlay,
-        onLoadTranslations = viewModel::loadTranslations,
-        onPickTranslation = viewModel::pickTranslation,
-    )
 }
 
 /**
