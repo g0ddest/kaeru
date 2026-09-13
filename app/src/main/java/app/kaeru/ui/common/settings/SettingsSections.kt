@@ -1,4 +1,4 @@
-package app.kaeru.ui.mobile.settings
+package app.kaeru.ui.common.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.kaeru.domain.model.Account
 import app.kaeru.ui.common.design.Avatar
@@ -32,6 +33,7 @@ import app.kaeru.ui.common.design.AvatarSize
 import app.kaeru.ui.common.design.IconAction
 import app.kaeru.ui.common.design.KaeruSwitch
 import app.kaeru.ui.common.design.KaeruTokens
+import app.kaeru.ui.common.design.kaeruFocus
 import app.kaeru.ui.common.design.RowHeader
 import app.kaeru.ui.common.design.Skeleton
 import app.kaeru.ui.common.design.SkeletonGroup
@@ -60,11 +62,16 @@ private val SkeletonSourceHeight = 14.dp
  * borders.
  */
 @Composable
-fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space3)) {
-        RowHeader(title)
+fun SettingsSection(
+    title: String,
+    modifier: Modifier = Modifier,
+    gutter: Dp = KaeruTokens.GutterPhone,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space3)) {
+        RowHeader(title, gutter = gutter)
         Column(
-            Modifier.padding(horizontal = KaeruTokens.GutterPhone),
+            Modifier.padding(horizontal = gutter),
             verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space3),
             content = content,
         )
@@ -93,14 +100,24 @@ fun SettingLabel(text: String) {
  * A setting that is on or off, with the whole row as the target.
  *
  * The switch itself takes no click: the row carries `toggleable`, so the label and the switch are
- * one control that announces itself once and can be hit anywhere along its width.
+ * one control that announces itself once and can be hit anywhere along its width — and, on a
+ * television, one focus stop rather than two.
  */
 @Composable
-fun SettingSwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+fun SettingSwitchRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
             .heightIn(min = KaeruTokens.MinTouchTarget)
+            // A full-width row has nowhere to grow into, so the ring carries the whole focus
+            // signal. Inert under a finger; on a television it is the only thing that says the
+            // remote is here.
+            .kaeruFocus(KaeruTokens.CardShape, focusedScale = 1f)
             .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange),
         verticalAlignment = Alignment.CenterVertically,
     ) {

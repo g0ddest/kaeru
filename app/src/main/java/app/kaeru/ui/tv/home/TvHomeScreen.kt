@@ -177,7 +177,9 @@ private fun TvHomeFeed(
     // Resolved once per set of rows, not per recomposition: a background refresh must never pull
     // focus back from wherever the viewer has navigated to since.
     val restore = remember(focusRows) { tvRestoreFocus(focus.key, focusRows) }
-    val claimed = remember(focusRows) { mutableStateOf(false) }
+    // Once per visit to the screen, not once per change to the rows: a background refresh landing
+    // while the viewer is in the drawer must not pull focus back out of it.
+    val claimed = remember { mutableStateOf(false) }
     val initial = remember(restore, rows, discoverCards) { cardFor(restore, rows, discoverCards) }
     var hero by remember(initial) { mutableStateOf(initial?.hero) }
     // Focus is both what the hero reads and what the shell hands back after a title card: one
@@ -199,7 +201,7 @@ private fun TvHomeFeed(
             TvHeroBand(hero)
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(bottom = TvLayout.SafeVertical),
                 verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
             ) {
@@ -241,7 +243,9 @@ private fun TvHeroBand(hero: TvHero?) {
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(TvLayout.HeroHeight)
+                // The height is the band's content; the safe area sits on top of it rather than
+                // inside it, so a two-line name grows into the artwork and not into the panel edge.
+                .height(TvLayout.SafeVertical + TvLayout.HeroHeight)
                 .padding(start = TvLayout.Gutter, end = TvLayout.GutterEnd, top = TvLayout.SafeVertical),
             contentAlignment = Alignment.BottomStart,
         ) {

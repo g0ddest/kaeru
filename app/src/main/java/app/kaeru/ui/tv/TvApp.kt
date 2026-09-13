@@ -1,6 +1,5 @@
 package app.kaeru.ui.tv
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -11,6 +10,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -19,28 +19,28 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
-import app.kaeru.ui.common.home.HomeViewModel
 import app.kaeru.ui.common.player.PlayerViewModel
 import app.kaeru.ui.common.theme.KaeruTvTheme
 import app.kaeru.ui.common.auth.AuthViewModel
 import app.kaeru.ui.tv.auth.TvLoginScreen
-import app.kaeru.ui.tv.home.TvHomeScreen
 import app.kaeru.ui.tv.player.TvPlayerScreen
 
-/** No title card is open, and no episode is playing. */
+/** Nothing is playing. */
 private const val NOTHING = 0
+
+/** The one slot whose saved state outlives an episode. */
+private const val SHELL = "shell"
 
 @UnstableApi
 @Composable
 fun TvApp(authViewModel: AuthViewModel = hiltViewModel()) {
     val auth = authViewModel.uiState.collectAsStateWithLifecycle().value
     var code by remember { mutableStateOf("") }
-    // Saved as ids rather than as the entries themselves: a `LibraryEntry` is not parcelable and
-    // holding one across a process death would mean saving a copy of the catalogue. The feed
-    // comes back from Room in a moment, and the title card is found in it again.
-    var selectedId by rememberSaveable { mutableIntStateOf(NOTHING) }
+    // Saved as ids rather than as anything richer: a domain entry is not parcelable, and what is
+    // playing has to survive a process death on a device that is left switched on for days.
     var playingId by rememberSaveable { mutableIntStateOf(NOTHING) }
     var playingEpisode by rememberSaveable { mutableIntStateOf(NOTHING) }
+    val shell = rememberSaveableStateHolder()
 
     KaeruTvTheme {
         when (auth.loggedIn) {
@@ -52,47 +52,24 @@ fun TvApp(authViewModel: AuthViewModel = hiltViewModel()) {
                 onCode = { code = it },
                 onSubmit = { authViewModel.exchangeTvCode(code) },
             )
-            true -> {
-                // Hoisted above the branch: the feed is held by the ViewModel, so swapping the
-                // home rows for the title card costs nothing and preserves the loaded state.
-                val home: HomeViewModel = hiltViewModel()
-                val homeState = home.uiState.collectAsStateWithLifecycle().value
-                val selected = remember(homeState.feed, selectedId) {
-                    if (selectedId == NOTHING) null else tvFeedItem(homeState.feed, selectedId)
-                }
-                // Only the title card's back is handled here: the player has its own, which hides
-                // the panel before it lets go of the screen.
-                BackHandler(enabled = playingId == NOTHING && selected != null) { selectedId = NOTHING }
-                when {
-                    // Leaving the player uncovers whatever it was opened from, because that
-                    // screen was never taken down — only drawn over.
-                    playingId != NOTHING -> TvPlayer(
-                        animeId = playingId,
-                        episode = playingEpisode,
-                        onEpisode = { playingEpisode = it },
-                        onExit = { playingId = NOTHING },
+            true -> when {
+                playingId != NOTHING -> TvPlayer(
+                    animeId = playingId,
+                    episode = playingEpisode,
+                    onEpisode = { playingEpisode = it },
+                    onExit = { playingId = NOTHING },
+                )
+                // The shell is taken down while an episode plays rather than drawn over, so that
+                // the remote cannot walk out of the player and into rows nobody can see. What it
+                // remembered — which destination, how far down a list, which card the D-pad was
+                // on — is held here and handed back when the episode ends.
+                else -> shell.SaveableStateProvider(SHELL) {
+                    TvShell(
+                        onPlay = { animeId, episode ->
+                            playingId = animeId
+                            playingEpisode = episode
+                        },
                     )
-                    selected != null -> TvTitleCard(
-                        item = selected,
-                        onWatch = { playingId = selected.entry.anime.id; playingEpisode = it },
-                        onClose = { selectedId = NOTHING },
-                    )
-                    else -> {
-                        // The catalogue rows are loaded by the screen that draws them, and the
-                        // television draws them now.
-                        LaunchedEffect(home) { home.loadDiscover() }
-                        TvHomeScreen(
-                            state = homeState,
-                            onRefresh = home::refresh,
-                            onPlay = { animeId, episode ->
-                                playingId = animeId
-                                playingEpisode = episode
-                            },
-                            onDetails = { selectedId = it },
-                            onSeason = home::selectSeason,
-                            onRetrySeason = home::retrySeason,
-                        )
-                    }
                 }
             }
         }

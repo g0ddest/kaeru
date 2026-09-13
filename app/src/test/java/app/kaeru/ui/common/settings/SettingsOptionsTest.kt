@@ -1,4 +1,4 @@
-package app.kaeru.ui.mobile.settings
+package app.kaeru.ui.common.settings
 
 import app.kaeru.domain.model.Quality
 import org.junit.Assert.assertEquals

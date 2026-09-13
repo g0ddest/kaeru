@@ -60,3 +60,41 @@ fun libraryCardSubtitle(entry: LibraryEntry): String? {
         else -> null
     }
 }
+
+/**
+ * What a tab with nothing under it says, and whether it offers a way to fill itself.
+ *
+ * «Смотрю» and «В планах» are the tabs a viewer fills on purpose, so both offer the way to fill
+ * them. The other four fill themselves as a consequence of watching, and a button on «Брошено»
+ * would be an invitation to go and abandon something.
+ */
+data class EmptyTabCopy(val title: String, val text: String, val offersSearch: Boolean = false)
+
+fun emptyTabCopy(status: ListStatus): EmptyTabCopy = when (status) {
+    ListStatus.WATCHING -> EmptyTabCopy(
+        title = "Вы ничего не смотрите",
+        text = "Начните любой тайтл — он окажется здесь вместе с серией, на которой вы остановились.",
+        offersSearch = true,
+    )
+    ListStatus.PLANNED -> EmptyTabCopy(
+        title = "В планах пока пусто",
+        text = "Складывайте сюда всё, что хотите посмотреть потом. Kaeru покажет, когда выйдут новые серии.",
+        offersSearch = true,
+    )
+    ListStatus.COMPLETED -> EmptyTabCopy(
+        title = "Завершённых тайтлов пока нет",
+        text = "Здесь соберётся всё, что вы досмотрели до конца.",
+    )
+    ListStatus.REWATCHING -> EmptyTabCopy(
+        title = "Вы ничего не пересматриваете",
+        text = "Отметьте тайтл как «Пересматриваю» — он появится здесь.",
+    )
+    ListStatus.ON_HOLD -> EmptyTabCopy(
+        title = "Ничего не отложено",
+        text = "Тайтлы на паузе ждут здесь. Вернуться к ним можно в любой вечер.",
+    )
+    ListStatus.DROPPED -> EmptyTabCopy(
+        title = "Ничего не брошено",
+        text = "Тайтлы, которые не пошли, собираются здесь, чтобы не мешать остальным.",
+    )
+}
