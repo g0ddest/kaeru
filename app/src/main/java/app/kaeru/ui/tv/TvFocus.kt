@@ -15,13 +15,18 @@ import androidx.compose.ui.focus.FocusRequester
 internal const val TV_TAG = "KaeruTv"
 
 /**
- * Requests focus, reports the miss instead of swallowing it, and says whether it landed.
+ * Requests focus, reports the miss instead of swallowing it, and says whether it was asked of
+ * anything at all.
  *
- * [FocusRequester.requestFocus] throws when nothing focusable is attached yet, which on a
- * television means the screen is left with no D-pad focus at all: a silent failure here is
- * invisible in logs and fatal to navigation. The boolean is what lets a caller tell a claim that
- * worked from one that has to be made again when the target is finally composed — latching on the
- * attempt rather than on the result is how a screen ends up permanently unfocusable.
+ * [FocusRequester.requestFocus] throws when no node is *attached* to this requester — the node has
+ * not entered the tree yet, or has left it — which on a television means the screen is left with no
+ * D-pad focus: a silent failure there is invisible in logs and fatal to navigation.
+ *
+ * The boolean is narrower than it looks, and deliberately so. It says the request reached an
+ * attached node; it does **not** say the focus moved. A node that is attached but not yet placed,
+ * and a focus group with nothing focusable inside it, both fail quietly and return true here.
+ * Callers that need to know whether focus actually moved have to watch for it arriving — which is
+ * what `onFocusChanged` is for on the screens, and a frame's wait in the shell.
  */
 internal fun FocusRequester.requestFocusOrLog(what: String): Boolean = try {
     requestFocus()
@@ -32,12 +37,14 @@ internal fun FocusRequester.requestFocusOrLog(what: String): Boolean = try {
 }
 
 /**
- * Asks for the focus, and asks again on the next frame if the first ask found nothing to give it to.
+ * Asks for the focus, and asks again on the next frame if the first ask found no node attached.
  *
- * A node can be composed and not yet placed — which is exactly the frame a row that has just been
- * scrolled to a remembered card is in — and [FocusRequester.requestFocus] throws at one of those.
- * Two goes a frame apart is the difference between a screen that lands on the card the viewer left
- * and one the D-pad cannot move at all.
+ * The case it covers is a requester whose node has not entered the tree on the frame the ask was
+ * made. It is not the only way a claim can miss — an attached node that is not yet placed accepts
+ * the request and does nothing with it, and neither ask would notice — so this is a cheap second
+ * chance rather than a guarantee. What actually makes a missed claim recoverable is that the card
+ * is composed afresh once its row has been scrolled to it, which builds the effect again; and what
+ * makes a false «yes» harmless is that the claim is latched by focus arriving, never by the asking.
  */
 internal suspend fun FocusRequester.claimFocus(what: String): Boolean {
     if (requestFocusOrLog(what)) return true

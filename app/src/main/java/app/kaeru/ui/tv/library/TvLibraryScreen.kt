@@ -94,8 +94,12 @@ fun TvLibraryScreen(
     }
     // Taken to the remembered cell before anything asks for focus: a grid composes about two rows
     // of five, so a cell further down than that is not a node any request can name.
-    LaunchedEffect(restore) {
-        val at = restore ?: return@LaunchedEffect
+    //
+    // Only while nothing has focus yet. `restore` is rebuilt on every change to the items, not only
+    // on the way back from a title card, so without the latch a status write landing from Room
+    // would scroll the grid out from under a remote that was being used.
+    LaunchedEffect(restore, claimed.value) {
+        val at = restore?.takeUnless { claimed.value } ?: return@LaunchedEffect
         tvRowScroll(at.index, gridState.firstVisibleItemIndex, TvLayout.GridViewport)
             ?.let { gridState.scrollToItem(it) }
     }

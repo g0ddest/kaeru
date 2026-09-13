@@ -42,3 +42,35 @@ data class TvRoute(
         else -> null
     }
 }
+
+/**
+ * What one press of back does, given where the television is and whether the rail is open.
+ *
+ * Null means the press belongs to the launcher. Everything else is the shell's to carry out, and
+ * the decision is here rather than in the composable so that «back never exits from an open menu»
+ * is a line a test can read.
+ */
+sealed interface TvBack {
+
+    /**
+     * Hand the D-pad back to the content, which is what closes the rail.
+     *
+     * Closing it means moving the focus, not setting a value: `ModalNavigationDrawer` registers no
+     * back handler of its own and re-derives open from whether anything inside it has focus, so a
+     * value set behind a rail that still holds the D-pad renders closed and behaves open.
+     *
+     * [fallback] is where to go when the rail keeps the focus because the screen behind it has
+     * nothing to take it — a first sync is skeletons and one sentence, and nothing on it is
+     * focusable. The press then means what it would have meant with the rail closed. Null on the
+     * home screen, where that would be leaving the app: a press that opened a menu must never be
+     * the press that closes the app.
+     */
+    data class CloseRail(val fallback: TvRoute?) : TvBack
+
+    /** One step back through the destinations. */
+    data class Go(val route: TvRoute) : TvBack
+}
+
+/** @see TvBack */
+fun tvBack(route: TvRoute, railOpen: Boolean): TvBack? =
+    if (railOpen) TvBack.CloseRail(route.back()) else route.back()?.let(TvBack::Go)

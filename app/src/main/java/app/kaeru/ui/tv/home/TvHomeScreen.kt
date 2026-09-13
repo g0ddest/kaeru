@@ -208,12 +208,26 @@ private fun TvHomeFeed(
         backdrop = hero?.backdropUrl
     }
 
-    // The remembered row is taken to the remembered card before anything asks for focus. A lazy row
-    // composes about a screenful, so a card further along than that does not exist as a node and a
-    // request naming it lands nowhere — which left the whole screen with no D-pad focus at all.
-    // A row that is already showing the card is left alone; see `tvRowScroll`.
-    LaunchedEffect(restore) {
-        val at = restore ?: return@LaunchedEffect
+    // The remembered card is brought into existence before anything asks to focus it. A lazy row
+    // composes about a screenful, so a card further along than that is not a node any request can
+    // name — which left the whole screen with no D-pad focus at all.
+    //
+    // Only while nothing has focus yet. `restore` is rebuilt on every change to the feed and to the
+    // catalogue, not only on the way back from a title card, so without the latch a season landing
+    // mid-scrub would scroll the row out from under a remote that was being used. Once focus has
+    // arrived there is nothing left for this to do.
+    LaunchedEffect(restore, claimed.value) {
+        val at = restore?.takeUnless { claimed.value } ?: return@LaunchedEffect
+        // Which row, then how far along it. The vertical half matters when a card changes rows —
+        // watching an episode moves one out of «Новые серии» and into «Продолжить» — because a row
+        // off the top of the screen composes no cards at all. Only the feed's own rows: they are
+        // the column's items one for one (the invitation exists only when there are none of them),
+        // while the catalogue's two are wrapped in items that carry headers and chips as well, so
+        // a card remembered there is left to the column's own restored position.
+        rows.indexOfFirst { it.title == at.row }
+            .takeIf { it >= 0 }
+            ?.let { tvRowScroll(it, listState.firstVisibleItemIndex, TvLayout.ColumnViewport) }
+            ?.let { listState.scrollToItem(it) }
         val row = rowStates.of(at.row)
         tvRowScroll(at.index, row.firstVisibleItemIndex, TvLayout.RowViewport)
             ?.let { row.scrollToItem(it) }

@@ -24,9 +24,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -62,6 +64,7 @@ import app.kaeru.ui.tv.home.TvHomeScreen
 import app.kaeru.ui.tv.library.TvLibraryScreen
 import app.kaeru.ui.tv.search.TvSearchScreen
 import app.kaeru.ui.tv.settings.TvSettingsScreen
+import kotlinx.coroutines.launch
 
 private const val HOME = "Главная"
 private const val LIBRARY = "Мой список"
@@ -91,7 +94,8 @@ private val tabs = listOf(
  *
  * Each destination keeps its own scroll position and its own focused card, held here rather than in
  * the screen: a title card takes the screen down while it is open, and «where was I» has to outlive
- * that. Back closes the title card first, then walks to the home screen, then leaves the app.
+ * that. Back closes the rail first, then the title card, then walks to the home screen, then leaves
+ * the app — `tvBack` is where that order is written down and tested.
  */
 @Composable
 fun TvShell(onPlay: (animeId: Int, episode: Int) -> Unit) {
@@ -100,21 +104,27 @@ fun TvShell(onPlay: (animeId: Int, episode: Int) -> Unit) {
     val home = rememberTvDestinationState()
     val library = rememberTvDestinationState()
     val content = remember { FocusRequester() }
+    val scope = rememberCoroutineScope()
 
-    // Null means there is nowhere left to go and the press belongs to the launcher, so the
-    // handler steps aside rather than swallowing it.
-    val back = route.back()
-    BackHandler(enabled = back != null) { back?.let { route = it } }
-
-    // Registered after the route's, because the dispatcher asks the most recently added enabled
-    // handler first: with the rail open, back belongs to the rail and to nothing else.
-    //
-    // Closing it means moving focus out of it rather than setting the drawer's value.
-    // `ModalNavigationDrawer` registers no back handler of its own and re-derives open from
-    // whether anything inside it has focus, so a value set behind a rail that still holds the
-    // D-pad would render closed and behave open.
-    BackHandler(enabled = drawer.currentValue == DrawerValue.Open) {
-        content.requestFocusOrLog("the content behind an open rail")
+    // One handler for both the rail and the destinations, because one press can only mean one
+    // thing and `tvBack` is where that is decided. Null means there is nowhere left to go and the
+    // press belongs to the launcher, so the handler steps aside rather than swallowing it — which
+    // an open rail never does, whatever it has to fall through to.
+    val back = tvBack(route, railOpen = drawer.currentValue == DrawerValue.Open)
+    BackHandler(enabled = back != null) {
+        when (back) {
+            is TvBack.Go -> route = back.route
+            is TvBack.CloseRail -> scope.launch {
+                content.requestFocusOrLog("the content behind an open rail")
+                // Whether the rail closed is only knowable a frame later: it derives open from
+                // focus, and a request at a group with no focusable child inside it moves nothing
+                // and says nothing. If it is still open, the screen behind it had nothing to take
+                // the D-pad and the press falls through rather than disappearing.
+                withFrameNanos { }
+                if (drawer.currentValue == DrawerValue.Open) back.fallback?.let { route = it }
+            }
+            null -> Unit
+        }
     }
 
     ModalNavigationDrawer(
