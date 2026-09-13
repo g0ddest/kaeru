@@ -95,6 +95,16 @@ interface PlaybackController {
     /** Resolves and starts the current episode again after a failure, from where it stopped. */
     suspend fun retry()
 
+    /**
+     * A player screen is showing this playback from now on.
+     *
+     * Playback can outlive a screen — an episode left on a Chromecast plays on after the player
+     * closes — and what happens when that session ends depends entirely on whether anyone is
+     * there to see it. Every screen says so on its way in, including the one that finds the
+     * episode it wanted already playing.
+     */
+    fun attachScreen()
+
     /** Writes the current position down now, because the screen is going away. */
     fun reportProgress()
 
@@ -148,7 +158,12 @@ class DefaultPlaybackController @Inject constructor(
     private data class Opening(
         val target: PlaybackTarget,
         val freshEpisode: Boolean,
-        val preferQuality: Quality?,
+        val preferQuality: Quality? = null,
+        /**
+         * This is the move to the next episode, so a failure is a passing message rather than
+         * the error screen: the episode that just finished is still what the viewer is looking at.
+         */
+        val advancing: Boolean = false,
     )
 
     /** Settings are read once per episode: changing them mid-episode should not move the goalposts. */
@@ -194,6 +209,13 @@ class DefaultPlaybackController @Inject constructor(
     /** The episode a running transition is still resolving, or null when nothing is on its way. */
     private var opening: Opening? = null
 
+    /**
+     * Whether a player screen is showing this. True by default — playback only ever starts
+     * because a screen asked for it — and false from the moment one goes away leaving an
+     * episode on a receiver.
+     */
+    private var screenAttached = true
+
     // Last, not as a property initializer: following an engine starts reading its reports, and
     // on the main dispatcher that happens at once — before the fields those reports touch exist.
     init {
@@ -202,6 +224,10 @@ class DefaultPlaybackController @Inject constructor(
 
     override suspend fun play(target: PlaybackTarget) {
         transition {
+            // Recorded before the flush, which suspends: an engine switch landing in that window
+            // has to resume this episode rather than the one it supersedes.
+            val plan = Opening(target, freshEpisode = true)
+            opening = plan
             flushProgressNow()
             _state.value = PlaybackState(
                 target = target,
@@ -209,7 +235,7 @@ class DefaultPlaybackController @Inject constructor(
                 positionMs = target.startPositionMs,
                 isCasting = casting,
             )
-            open(target, freshEpisode = true).onFailure(::fail)
+            open(plan).onFailure(::fail)
         }.join()
     }
 
@@ -235,10 +261,12 @@ class DefaultPlaybackController @Inject constructor(
     override suspend fun changeTranslation(translation: Translation) {
         transition {
             val current = _state.value.target ?: return@transition
+            val sameEpisode = current.copy(startPositionMs = _state.value.positionMs, translation = translation)
+            val plan = Opening(sameEpisode, freshEpisode = false, preferQuality = _state.value.quality)
+            opening = plan
             flushProgressNow()
             _state.update { it.copy(isBuffering = true, error = null) }
-            val sameEpisode = current.copy(startPositionMs = _state.value.positionMs, translation = translation)
-            open(sameEpisode, freshEpisode = false, preferQuality = _state.value.quality).onFailure(::fail)
+            open(plan).onFailure(::fail)
         }.join()
     }
 
@@ -276,6 +304,15 @@ class DefaultPlaybackController @Inject constructor(
             reResolved = false
             lastReportedMs = carryPositionMs
             wasPlaying = false
+            // Nothing is showing this. The screen that was is gone and the episode was living on
+            // a receiver, so there is nobody to start it for: audio out of a phone in a pocket,
+            // with no player, no notification and no media session to stop it with, is the one
+            // outcome worse than stopping the television. The position is already on disk from
+            // the flush above, so «Продолжить» picks the episode up whenever someone comes back.
+            if (!screenAttached) {
+                goIdle()
+                return@transition
+            }
             val current = _state.value
             val target = current.target
             val stream = current.stream
@@ -302,9 +339,14 @@ class DefaultPlaybackController @Inject constructor(
             // episode on screen is the retry the viewer would have pressed.
             val unopened = unfinished
                 ?: target?.takeIf { stream == null || quality == null }
-                    ?.let { Opening(it.copy(startPositionMs = carryPositionMs), freshEpisode = false, preferQuality = null) }
+                    ?.let { Opening(it.copy(startPositionMs = carryPositionMs), freshEpisode = false) }
             if (unopened != null) {
-                open(unopened.target, unopened.freshEpisode, unopened.preferQuality).onFailure(::fail)
+                // A next episode that will not resolve is still a next episode: the viewer gets
+                // the passing message and keeps the episode they were watching, not a red line
+                // about an episode that played perfectly well.
+                open(unopened).onFailure { failure ->
+                    if (unopened.advancing) announceNextUnavailable(failure) else fail(failure)
+                }
                 return@transition
             }
             if (target == null || stream == null || quality == null) {
@@ -326,19 +368,27 @@ class DefaultPlaybackController @Inject constructor(
         transition {
             val current = _state.value.target ?: return@transition
             reResolved = false
-            flushProgressNow()
-            _state.update { it.copy(isBuffering = true, error = null) }
-            open(
+            val plan = Opening(
                 current.copy(startPositionMs = _state.value.positionMs),
                 freshEpisode = false,
                 preferQuality = _state.value.quality,
-            ).onFailure(::fail)
+            )
+            opening = plan
+            flushProgressNow()
+            _state.update { it.copy(isBuffering = true, error = null) }
+            open(plan).onFailure(::fail)
         }.join()
+    }
+
+    override fun attachScreen() {
+        screenAttached = true
     }
 
     override fun reportProgress() = flushProgress()
 
     override fun release() {
+        // The screen is going away either way, and what it was showing decides the rest.
+        screenAttached = false
         // A screen closing is not a reason to stop a television in another room. While a
         // receiver has the picture this writes the position down and lets go of nothing else:
         // the episode plays on, and coming back to the player finds the remote where it was.
@@ -349,10 +399,15 @@ class DefaultPlaybackController @Inject constructor(
         }
         transition?.cancel()
         transition = null
-        opening = null
         flushProgress()
         engine.release()
-        _state.value = PlaybackState()
+        goIdle()
+    }
+
+    /** Forget what was playing. Which engine is live is the one thing that survives. */
+    private fun goIdle() {
+        opening = null
+        _state.value = PlaybackState(isCasting = casting)
         markedEpisode = false
         reResolved = false
         autoplayCancelled = false
@@ -364,14 +419,11 @@ class DefaultPlaybackController @Inject constructor(
      * Resolves [target] and hands it to the engine. Failures are returned rather than shown:
      * a failed next episode and a failed first episode mean different things to the viewer.
      */
-    private suspend fun open(
-        target: PlaybackTarget,
-        freshEpisode: Boolean,
-        preferQuality: Quality? = null,
-    ): Result<Unit> {
-        // Recorded before the first suspension, so a switch that cancels this halfway through
-        // knows exactly what it has to finish.
-        opening = Opening(target, freshEpisode, preferQuality)
+    private suspend fun open(plan: Opening): Result<Unit> {
+        val (target, freshEpisode, preferQuality) = plan
+        // Re-asserted here so a caller that could not record it earlier — nothing suspends
+        // between its decision and this call — is still covered.
+        opening = plan
         settings = readSettings()
         // Resolving reads a player page and picks it apart. That is not main-thread work, and
         // everything after it is: the state, the player and its surface all live there.
@@ -412,20 +464,25 @@ class DefaultPlaybackController @Inject constructor(
     private suspend fun openNext() {
         val current = _state.value.target ?: return
         val track = _state.value.stream?.translation ?: current.translation
+        val plan = Opening(EpisodeQueue.next(current).copy(translation = track), freshEpisode = true, advancing = true)
+        opening = plan
         // Awaited, not launched: resolving the next episode writes this anime's row itself, and
         // the position of the episode just finished has to be on disk before that happens.
         flushProgressNow()
-        val next = EpisodeQueue.next(current).copy(translation = track)
-        open(next, freshEpisode = true).onFailure { failure ->
-            // Whatever went wrong — an episode that has not aired, a source that would not serve
-            // it, no connection — the countdown must not start over on the next engine report, or
-            // an ended player would keep retrying for as long as it is left alone.
-            autoplayCancelled = true
-            _state.update { it.copy(autoplayCountdownSec = null) }
-            // A passing message, not the error screen: the episode that just finished is still
-            // there and still playable, and «Следующая серия» is the retry.
-            _events.trySend(PlaybackEvent.NextEpisodeUnavailable(failure))
-        }
+        open(plan).onFailure(::announceNextUnavailable)
+    }
+
+    /**
+     * The next episode could not be started. Whatever went wrong — an episode that has not
+     * aired, a source that would not serve it, no connection — the countdown must not start over
+     * on the next engine report, or an ended player would keep retrying for as long as it is
+     * left alone. A passing message, not the error screen: the episode that just finished is
+     * still there, and «Следующая серия» is the retry.
+     */
+    private fun announceNextUnavailable(failure: Throwable) {
+        autoplayCancelled = true
+        _state.update { it.copy(isBuffering = false, autoplayCountdownSec = null) }
+        _events.trySend(PlaybackEvent.NextEpisodeUnavailable(failure))
     }
 
     /**
@@ -496,7 +553,7 @@ class DefaultPlaybackController @Inject constructor(
         val quality = _state.value.quality
         transition {
             _state.update { it.copy(isBuffering = true, error = null) }
-            open(target.copy(startPositionMs = at), freshEpisode = false, preferQuality = quality)
+            open(Opening(target.copy(startPositionMs = at), freshEpisode = false, preferQuality = quality))
                 .onFailure(::fail)
         }
     }

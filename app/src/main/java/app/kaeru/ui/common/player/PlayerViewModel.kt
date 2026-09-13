@@ -132,6 +132,9 @@ class PlayerViewModel @Inject constructor(
      * one from the lifecycle, one from composition — are one playback.
      */
     fun start(animeId: Int, episode: Int) {
+        // Said every time, including on the path that starts nothing: it is how playback left on
+        // a receiver learns that somebody is looking at it again.
+        controller.attachScreen()
         val loaded = controller.state.value.target
         // Already playing this very episode. That includes a receiver that kept going while the
         // screen was away, where starting again would interrupt a television for nothing — and a

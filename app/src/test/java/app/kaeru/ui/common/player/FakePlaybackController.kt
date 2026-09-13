@@ -38,6 +38,8 @@ class FakePlaybackController : PlaybackController {
         private set
     var reports = 0
         private set
+    var attaches = 0
+        private set
     var releases = 0
         private set
 
@@ -79,6 +81,10 @@ class FakePlaybackController : PlaybackController {
 
     override suspend fun retry() {
         retries += 1
+    }
+
+    override fun attachScreen() {
+        attaches += 1
     }
 
     override fun reportProgress() {

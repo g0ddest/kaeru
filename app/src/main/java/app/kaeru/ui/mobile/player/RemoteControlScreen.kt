@@ -87,7 +87,8 @@ fun RemoteControlScreen(
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад", tint = KaeruText)
             }
             Text(
-                state.receiverName?.let { "Идёт трансляция на $it" } ?: "Идёт трансляция",
+                // Quoted, because a device name is a name and «на Гостиная ТВ» declines badly.
+                state.receiverName?.let { "Идёт трансляция на „$it“" } ?: "Идёт трансляция",
                 style = MaterialTheme.typography.labelLarge,
                 color = KaeruAccent,
                 maxLines = 1,

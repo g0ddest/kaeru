@@ -450,4 +450,107 @@ class CastPlaybackTest {
 
         assertTrue(controller.state.value.error is CastLoadFailed)
     }
+
+    @Test
+    fun `a session that ends after the screen is gone does not start playing on the phone`() = runTest(dispatcher) {
+        playOnPhone()
+        advanceUntilIdle()
+        castNow()
+        receiver.ready(episodeLength)
+        receiver.moveTo(640_000)
+        advanceUntilIdle()
+        val preparedBefore = phone.prepared.size
+
+        // The player screen closes; the television plays on. Then somebody turns it off.
+        controller.release()
+        advanceUntilIdle()
+        controller.switchEngine(phone, controller.state.value.positionMs)
+        advanceUntilIdle()
+
+        // Nothing holds playback, so nothing starts: a phone in a pocket must not begin playing
+        // an episode aloud with no player, no notification and no session to stop it with.
+        assertEquals(preparedBefore, phone.prepared.size)
+        assertFalse(phone.state.value.isPlaying)
+        assertNull(controller.state.value.target)
+        assertNull(controller.state.value.stream)
+        assertFalse(controller.state.value.isCasting)
+        // The position is on disk, so «Продолжить» picks the episode up later.
+        assertEquals(4, watchStates.saved.last().episode)
+        assertEquals(640_000L, watchStates.saved.last().positionMs)
+    }
+
+    @Test
+    fun `a screen that comes back before the session ends still continues locally`() = runTest(dispatcher) {
+        playOnPhone()
+        advanceUntilIdle()
+        castNow()
+        receiver.ready(episodeLength)
+        receiver.moveTo(640_000)
+        advanceUntilIdle()
+        controller.release()
+        advanceUntilIdle()
+
+        // Someone opened the player again while the television was still playing.
+        controller.attachScreen()
+        controller.switchEngine(phone, controller.state.value.positionMs)
+        advanceUntilIdle()
+
+        assertEquals(640_000L, phone.prepared.last().startPositionMs)
+        assertTrue(phone.state.value.isPlaying)
+        assertEquals(4, controller.state.value.target?.episode)
+    }
+
+    @Test
+    fun `a switch while the next episode is only intended still starts the next episode`() = runTest(dispatcher) {
+        playOnPhone()
+        advanceUntilIdle()
+
+        // Every transition that resolves writes the position down first. A switch landing in
+        // that window must resume the episode being moved to, not the one it supersedes.
+        watchStates.block()
+        val advancing = launch { controller.playNext() }
+        advanceUntilIdle()
+        assertEquals(listOf(4), source.resolves)
+
+        val switching = launch { controller.switchEngine(receiver, controller.state.value.positionMs) }
+        advanceUntilIdle()
+        watchStates.release()
+        advanceUntilIdle()
+        advancing.join()
+        switching.join()
+
+        assertEquals("https://cdn/100/5/11/720", receiver.prepared.last().url)
+        assertEquals(5, controller.state.value.target?.episode)
+        assertTrue(controller.state.value.isCasting)
+    }
+
+    @Test
+    fun `a next episode that will not resolve after a disconnect is a message, not an error screen`() =
+        runTest(dispatcher) {
+            val announced = mutableListOf<PlaybackEvent>()
+            val collector = launch { controller.events.collect { announced += it } }
+
+            playOnPhone()
+            advanceUntilIdle()
+            castNow()
+            receiver.ready(episodeLength)
+            advanceUntilIdle()
+
+            source.gate = CompletableDeferred()
+            receiver.end()
+            advanceUntilIdle()
+
+            source.gate = null
+            source.rejects = setOf(5)
+            controller.switchEngine(phone, controller.state.value.positionMs)
+            advanceUntilIdle()
+
+            // The episode that just finished is still what the screen is showing; a red error
+            // line about it would be about the wrong episode.
+            assertNull(controller.state.value.error)
+            assertTrue(announced.any { it is PlaybackEvent.NextEpisodeUnavailable })
+            assertNull(controller.state.value.autoplayCountdownSec)
+            assertEquals(4, controller.state.value.target?.episode)
+            collector.cancel()
+        }
 }

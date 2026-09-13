@@ -439,4 +439,20 @@ class PlayerViewModelTest {
 
         assertEquals(7, controller.played.single().episode)
     }
+
+    @Test
+    fun `a screen coming forward says so, so playback left on a receiver knows someone is there`() =
+        runTest(main.dispatcher) {
+            viewModel.start(animeId = 100, episode = 4)
+            advanceUntilIdle()
+            assertEquals(1, controller.attaches)
+
+            controller.playback.value = PlaybackState(target = PlaybackTarget(100, 4, 0, null), isCasting = true)
+            viewModel.start(animeId = 100, episode = 4)
+            advanceUntilIdle()
+
+            // Even the call that starts nothing has to attach: it is the one a screen reopened
+            // over an ongoing cast makes.
+            assertEquals(2, controller.attaches)
+        }
 }
