@@ -38,12 +38,17 @@ object TranslationRanker {
         "AniMaunt", "JAM", "Dream Cast", "SHIZA Project",
     )
 
-    /** The track to play, or null when the source offers nothing. Always `sort(...).firstOrNull()`. */
+    /**
+     * The track to play, or null when the source offers nothing. Always `sort(...).firstOrNull()`.
+     *
+     * [usage] has no default on purpose: a caller that has no history to offer has to say
+     * `emptyMap()` and mean it, rather than dropping rule 3 by leaving an argument out.
+     */
     fun pick(
         available: List<Translation>,
         preferred: List<String>,
         rememberedId: Int?,
-        usage: Map<Int, Int> = emptyMap(),
+        usage: Map<Int, Int>,
     ): Translation? = available.minWithOrNull(ranking(preferred, rememberedId, usage))
 
     /** The same order as [pick], for the selection sheet. Stable: tracks the rules cannot separate keep source order. */
@@ -51,7 +56,7 @@ object TranslationRanker {
         available: List<Translation>,
         preferred: List<String>,
         rememberedId: Int?,
-        usage: Map<Int, Int> = emptyMap(),
+        usage: Map<Int, Int>,
     ): List<Translation> = available.sortedWith(ranking(preferred, rememberedId, usage))
 
     private fun ranking(preferred: List<String>, rememberedId: Int?, usage: Map<Int, Int>): Comparator<Translation> =

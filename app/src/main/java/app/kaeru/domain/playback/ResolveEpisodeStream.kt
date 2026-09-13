@@ -33,7 +33,8 @@ class ResolveEpisodeStream(
         episode: Int,
         translationOverride: Translation? = null,
     ): Result<EpisodeStream> {
-        val remembered = watchStates.observe(animeId).first()
+        val rows = watchStates.observeAll().first()
+        val remembered = rows.rowFor(animeId)
         val chosen = if (translationOverride != null) {
             translationOverride
         } else {
@@ -42,7 +43,7 @@ class ResolveEpisodeStream(
                 available,
                 prefs.preferredTranslations.first(),
                 remembered?.translationId,
-                usage(),
+                TranslationUsage.of(rows),
             )?.withSeasonOf(remembered)
         }
 
@@ -61,10 +62,11 @@ class ResolveEpisodeStream(
      * one as chosen, and a habit is only worth pointing out where there is no answer yet.
      */
     suspend fun translations(animeId: Int): Result<List<RankedTranslation>> {
-        val remembered = watchStates.observe(animeId).first()
+        val rows = watchStates.observeAll().first()
+        val remembered = rows.rowFor(animeId)
         val available = source.translations(animeId).getOrElse { return Result.failure(it) }
         val seasoned = available.map { it.withSeasonOf(remembered) }
-        val usage = usage()
+        val usage = TranslationUsage.of(rows)
         val rememberedId = remembered?.translationId
         val sorted = TranslationRanker.sort(seasoned, prefs.preferredTranslations.first(), rememberedId, usage)
         return Result.success(
@@ -78,13 +80,20 @@ class ResolveEpisodeStream(
     }
 
     /**
-     * How often each track has been chosen, across every anime this device has played.
+     * What this anime remembers, out of the one snapshot both questions are answered from.
      *
-     * Read once per request and handed to the ranker as a map: the rows are a few dozen at most,
-     * and the alternative — a lookup inside the comparator — would hit the database once per
-     * comparison and once per recomposition of whatever showed the result.
+     * Every call here reads the whole table once — a few dozen tiny rows, one per anime ever
+     * started — rather than asking twice: two reads would register two Room observers, and could
+     * answer from either side of a write that landed between them. The map goes to the ranker
+     * built, never looked up inside the comparator, which would run per comparison.
+     *
+     * The anime being ranked votes in its own usage count, deliberately. Its remembered track gets
+     * one vote toward the habit that is about to put it first anyway — rule 1 has already decided,
+     * and the habit chip is suppressed outright whenever a track is remembered — so the vote can
+     * never show up on screen, and leaving it in keeps [TranslationUsage.of] a plain count of the
+     * table rather than a count with an exception in it.
      */
-    private suspend fun usage(): Map<Int, Int> = TranslationUsage.of(watchStates.observeAll().first())
+    private fun List<WatchState>.rowFor(animeId: Int): WatchState? = firstOrNull { it.animeId == animeId }
 
     /** The season is a property of the anime's mapping onto Kodik, not of one track. */
     private fun Translation.withSeasonOf(remembered: WatchState?): Translation =
