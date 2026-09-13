@@ -1,0 +1,138 @@
+package app.kaeru.ui.tv.player
+
+import app.kaeru.ui.common.details.EpisodeCell
+import app.kaeru.ui.common.player.PlayerUiState
+
+/** Four seconds of playing with nothing pressed and the controls get out of the picture. */
+internal const val PANEL_LINGER_MS = 4_000L
+
+/** How often a held key is allowed to restart the linger timer. */
+private const val WAKE_THROTTLE_MS = 500L
+
+/**
+ * The rungs of the panel's vertical axis, top to bottom.
+ *
+ * Two zones, as the spec draws them: what is playing above the timeline — which episode, whose
+ * voice — and how it is playing below it. The order of the constants is the order on screen, and
+ * everything that walks the axis relies on it.
+ */
+enum class TvPanelRung {
+    /** The season, aired episodes only. */
+    EPISODES,
+
+    /** The voices the source offers for this anime. */
+    TRANSLATIONS,
+
+    /** The quality ladder. */
+    QUALITY,
+
+    /** Play, pause, the two ten-second jumps, the opening skip and the next episode. */
+    TRANSPORT,
+}
+
+/**
+ * Where the panel stands: whether it is on screen and which rung the D-pad is on.
+ *
+ * A value rather than four pieces of composition state, so that «what does this press do to the
+ * panel» is a question with an answer a test can read. The composition holds one of these and
+ * renders it; every rule about it is in this file.
+ */
+data class TvPanel(
+    val visible: Boolean = true,
+    val rung: TvPanelRung = TvPanelRung.TRANSPORT,
+    /** Bumped by every wake that gets past the throttle, so the linger timer restarts. */
+    val wake: Int = 0,
+    /** The press the throttle measures the next one against. */
+    val lastWakeMs: Long = 0,
+) {
+
+    /**
+     * Puts the panel up on [rung] — by default the one it was left on — and restarts the linger
+     * timer if [atMs] is far enough past the last press to be worth a recomposition.
+     *
+     * @param atMs the time of the key behind this wake, or null when no key is behind it.
+     */
+    fun shown(rung: TvPanelRung = this.rung, atMs: Long? = null): TvPanel {
+        val next = nextWake(atMs, lastWakeMs)
+        return copy(
+            visible = true,
+            rung = rung,
+            wake = if (next == null) wake else wake + 1,
+            lastWakeMs = next ?: lastWakeMs,
+        )
+    }
+
+    /** Takes the panel down. The rung is kept: the panel comes back where it was left. */
+    fun hidden(): TvPanel = copy(visible = false)
+
+    /**
+     * Whether this panel should take itself down after [PANEL_LINGER_MS].
+     *
+     * Two things stop the clock. A paused picture keeps its controls — there is nothing behind
+     * them worth looking at, and pausing is usually how a viewer asks to read them. So does
+     * anything still being chosen from, read or waited on, which is what [asking] carries.
+     */
+    fun hidesItself(playing: Boolean, asking: Boolean): Boolean = visible && playing && !asking
+}
+
+/**
+ * Where the panel's throttle stands after a wake at [atMs], or null when the wake came too soon
+ * after [lastWakeMs] to restart the linger timer. A held button repeats twenty times a second
+ * and every restart recomposes the panel, so twice a second is enough.
+ *
+ * A wake with no key behind it — the autoplay offer — always counts and leaves the reference
+ * point where it was. Standing it on a time no press can ever beat is what used to leave every
+ * later press reading as «too soon», so a held button stopped keeping the panel up.
+ */
+internal fun nextWake(atMs: Long?, lastWakeMs: Long): Long? = when {
+    atMs == null -> lastWakeMs
+    atMs - lastWakeMs >= WAKE_THROTTLE_MS -> atMs
+    else -> null
+}
+
+/**
+ * The rungs this state actually has, top to bottom.
+ *
+ * A strip with nothing in it is not a place for the D-pad to land: a remote that stops on an
+ * empty row has nowhere to go but back, and from three metres away the viewer cannot tell an
+ * empty row from a row that has not drawn yet. Only the transport row is unconditional — there
+ * is always something to press there, even over a picture that failed to start.
+ */
+fun tvPanelRungs(state: PlayerUiState): List<TvPanelRung> = buildList {
+    if (tvAiredEpisodes(state).isNotEmpty()) add(TvPanelRung.EPISODES)
+    if (state.translations.isNotEmpty()) add(TvPanelRung.TRANSLATIONS)
+    if (state.qualities.isNotEmpty()) add(TvPanelRung.QUALITY)
+    add(TvPanelRung.TRANSPORT)
+}
+
+/**
+ * The episodes the strip offers: the ones that have aired.
+ *
+ * The title screen draws an episode still to come as waiting, because there the season is the
+ * subject. Here the strip is a way to change what is playing, so an episode nobody can start is
+ * left out rather than drawn unpressable.
+ */
+fun tvAiredEpisodes(state: PlayerUiState): List<EpisodeCell> = state.episodes.filter { it.aired }
+
+/**
+ * The rung the D-pad reaches by stepping from [rung], or the same rung at either end.
+ *
+ * It stops rather than wrapping: a press that means «one more down» should not move the viewer's
+ * eye the full height of the screen.
+ */
+fun tvStepRung(rungs: List<TvPanelRung>, rung: TvPanelRung, down: Boolean): TvPanelRung {
+    val here = rungs.indexOf(rung)
+    if (here < 0) return tvRungOrNearest(rungs, rung)
+    val there = if (down) here + 1 else here - 1
+    return rungs.getOrNull(there) ?: rung
+}
+
+/**
+ * The rung the panel stands on when [wanted] is asked for but this state has no such strip:
+ * the next one down, or the last rung there is.
+ *
+ * Down rather than up, because the axis ends in the transport row and that is the one rung
+ * always worth landing on.
+ */
+fun tvRungOrNearest(rungs: List<TvPanelRung>, wanted: TvPanelRung): TvPanelRung =
+    rungs.firstOrNull { it.ordinal >= wanted.ordinal } ?: rungs.last()
