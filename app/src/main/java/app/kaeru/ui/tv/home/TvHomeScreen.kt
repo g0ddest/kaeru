@@ -70,11 +70,16 @@ import app.kaeru.ui.tv.TvFocusKey
 import app.kaeru.ui.tv.TvFocusMemory
 import app.kaeru.ui.tv.TvFocusRow
 import app.kaeru.ui.tv.TvLayout
+import app.kaeru.ui.tv.TvRestoreTarget
+import app.kaeru.ui.tv.TvRowStates
+import app.kaeru.ui.tv.claimFocus
 import app.kaeru.ui.tv.rememberTvFocusMemory
 import app.kaeru.ui.tv.requestFocusOrLog
 import app.kaeru.ui.tv.tvPreviewEmptyHome
 import app.kaeru.ui.tv.tvPreviewHome
-import app.kaeru.ui.tv.tvRestoreFocus
+import app.kaeru.ui.tv.tvRestoreTarget
+import app.kaeru.ui.tv.tvRowScroll
+import kotlinx.coroutines.delay
 import java.time.Instant
 
 private const val EMPTY_TITLE = "Здесь появятся тайтлы из списка «Смотрю»"
@@ -94,6 +99,9 @@ private const val NOTE = "note"
 
 /** Big enough to read as a play control from across a room, small enough to sit on a line. */
 private val PlayGlyph = 24.dp
+
+/** How long the backdrop waits for the D-pad to stop before it fetches a new full-panel image. */
+private const val BackdropSettle = 250L
 
 /**
  * The television's home screen: artwork across the whole panel, one sentence about the title the
@@ -124,6 +132,7 @@ fun TvHomeScreen(
     modifier: Modifier = Modifier,
     onSearch: (() -> Unit)? = null,
     listState: LazyListState = rememberLazyListState(),
+    rowStates: TvRowStates = remember { TvRowStates() },
     focus: TvFocusMemory = rememberTvFocusMemory(),
 ) {
     // One clock per feed: «осталось 14 мин» and «завтра» are read against it, and a line that
@@ -150,6 +159,7 @@ fun TvHomeScreen(
             onRetrySeason = onRetrySeason,
             onSearch = onSearch,
             listState = listState,
+            rowStates = rowStates,
             focus = focus,
             modifier = modifier,
         )
@@ -168,6 +178,7 @@ private fun TvHomeFeed(
     onRetrySeason: () -> Unit,
     onSearch: (() -> Unit)?,
     listState: LazyListState,
+    rowStates: TvRowStates,
     focus: TvFocusMemory,
     modifier: Modifier = Modifier,
 ) {
@@ -178,22 +189,48 @@ private fun TvHomeFeed(
     }
     // Resolved once per set of rows, not per recomposition: a background refresh must never pull
     // focus back from wherever the viewer has navigated to since.
-    val restore = remember(focusRows) { tvRestoreFocus(focus.key, focusRows) }
+    val restore = remember(focusRows) { tvRestoreTarget(focus.key, focusRows) }
     // Once per visit to the screen, not once per change to the rows: a background refresh landing
     // while the viewer is in the drawer must not pull focus back out of it.
     val claimed = remember { mutableStateOf(false) }
     val initial = remember(restore, rows, discoverCards) { cardFor(restore, rows, discoverCards) }
     var hero by remember(initial) { mutableStateOf(initial?.hero) }
+    // The words follow the remote at once; the picture behind them waits for the press to settle.
+    //
+    // A backdrop is a full-panel image, and keying one directly to focus meant a 1080p fetch and
+    // decode for every card a viewer scrubbed past — twenty of them in two seconds along a long
+    // row, on the one path where the screen must not do any work. `BackdropSettle` is longer than
+    // the gap between presses of a scrub and shorter than a deliberate one, so the picture changes
+    // once, when the viewer has arrived. Re-keyed on each change, so each press restarts the wait.
+    var backdrop by remember(initial) { mutableStateOf(initial?.hero?.backdropUrl) }
+    LaunchedEffect(hero?.backdropUrl) {
+        delay(BackdropSettle)
+        backdrop = hero?.backdropUrl
+    }
+
+    // The remembered row is taken to the remembered card before anything asks for focus. A lazy row
+    // composes about a screenful, so a card further along than that does not exist as a node and a
+    // request naming it lands nowhere — which left the whole screen with no D-pad focus at all.
+    // A row that is already showing the card is left alone; see `tvRowScroll`.
+    LaunchedEffect(restore) {
+        val at = restore ?: return@LaunchedEffect
+        val row = rowStates.of(at.row)
+        tvRowScroll(at.index, row.firstVisibleItemIndex, TvLayout.RowViewport)
+            ?.let { row.scrollToItem(it) }
+    }
+
     // Focus is both what the hero reads and what the shell hands back after a title card: one
-    // callback writes both, so the two can never point at different cards.
+    // callback writes both, so the two can never point at different cards. It also latches the
+    // claim — on focus arriving, never on focus being asked for.
     val onFocused: (String, TvHomeCard) -> Unit = { row, card ->
         hero = card.hero
         focus.key = TvFocusKey(row, card.animeId)
+        claimed.value = true
     }
 
     Box(modifier.fillMaxSize()) {
         Crossfade(
-            targetState = hero?.backdropUrl,
+            targetState = backdrop,
             animationSpec = tween(KaeruTokens.DurationHero),
             label = "tvBackdrop",
         ) { url ->
@@ -214,11 +251,17 @@ private fun TvHomeFeed(
                 }
                 rows.forEach { row ->
                     item(key = row.title, contentType = ROW) {
-                        TvCardRow(row.title, row.items, restore, claimed, onFocused, onPlay, onDetails)
+                        TvCardRow(
+                            row.title, row.items, rowStates.of(row.title),
+                            restore, claimed, onFocused, onPlay, onDetails,
+                        )
                     }
                 }
                 catalogue?.let {
-                    tvDiscoverSections(it, discoverCards, restore, claimed, onFocused, onDetails, onSeason, onRetrySeason)
+                    tvDiscoverSections(
+                        it, discoverCards, rowStates, restore, claimed,
+                        onFocused, onDetails, onSeason, onRetrySeason,
+                    )
                 }
                 if (syncError != null) {
                     item(key = "sync-error", contentType = NOTE) { TvSyncError(syncError, onRefresh) }
@@ -239,7 +282,10 @@ private fun TvHomeFeed(
 private fun TvHeroBand(hero: TvHero?) {
     Crossfade(
         targetState = hero,
-        animationSpec = tween(KaeruTokens.DurationHero),
+        // Fast, where the backdrop is slow. The picture has time to settle because it waits for
+        // the press to settle; the words have to keep up with the remote, and a 400ms fade
+        // restarted by each press of a scrub is a band that reads as a smear.
+        animationSpec = tween(KaeruTokens.DurationFast),
         label = "tvHeroText",
     ) { shown ->
         Box(
@@ -304,7 +350,8 @@ private fun TvHeroBand(hero: TvHero?) {
 private fun TvCardRow(
     title: String,
     cards: List<TvHomeCard>,
-    restore: TvFocusKey?,
+    rowState: LazyListState,
+    restore: TvRestoreTarget?,
     claimed: MutableState<Boolean>,
     onFocused: (String, TvHomeCard) -> Unit,
     onPlay: (Int, Int) -> Unit,
@@ -314,6 +361,10 @@ private fun TvCardRow(
     Column {
         if (header) RowHeader(title, gutter = TvLayout.Gutter)
         LazyRow(
+            // Hoisted above the screen, because this row lives inside a lazy item of a lazy column
+            // and both are destroyed when a title card replaces the screen. Without it the vertical
+            // position came back and every row reopened at its first card.
+            state = rowState,
             modifier = Modifier.padding(top = KaeruTokens.Space3),
             contentPadding = PaddingValues(
                 start = TvLayout.Gutter,
@@ -355,10 +406,13 @@ private fun TvFeedCard(
     onDetails: (Int) -> Unit,
 ) {
     val requester = remember { FocusRequester() }
-    LaunchedEffect(isRestoreTarget) {
+    // Keyed on the claim as well as on the target, so a request that lost the race against
+    // placement is made again rather than latched as done. The claim itself is latched by focus
+    // arriving — in `onFocused`, out of `onFocusChanged` — because latching on the asking is how a
+    // screen ends up with no focus and no second chance at it.
+    LaunchedEffect(isRestoreTarget, claimed.value) {
         if (isRestoreTarget && !claimed.value) {
-            claimed.value = true
-            requester.requestFocusOrLog("card ${card.animeId} of the television home screen")
+            requester.claimFocus("card ${card.animeId} of the television home screen")
         }
     }
     TvPosterCard(
@@ -386,7 +440,8 @@ private fun TvFeedCard(
 private fun LazyListScope.tvDiscoverSections(
     rows: DiscoverRows,
     cards: List<Pair<String, List<TvHomeCard>>>,
-    restore: TvFocusKey?,
+    rowStates: TvRowStates,
+    restore: TvRestoreTarget?,
     claimed: MutableState<Boolean>,
     onFocused: (String, TvHomeCard) -> Unit,
     onDetails: (Int) -> Unit,
@@ -397,7 +452,7 @@ private fun LazyListScope.tvDiscoverSections(
         item(key = "discover-now", contentType = DISCOVER) {
             Column(Modifier.padding(top = KaeruTokens.Space4)) {
                 RowHeader(row.title, gutter = TvLayout.Gutter)
-                TvDiscoverContent(row, cards, restore, claimed, onFocused, onDetails, onRetry = null)
+                TvDiscoverContent(row, cards, rowStates, restore, claimed, onFocused, onDetails, onRetry = null)
             }
         }
     }
@@ -406,7 +461,7 @@ private fun LazyListScope.tvDiscoverSections(
             Column(Modifier.padding(top = KaeruTokens.Space4)) {
                 RowHeader(row.title, gutter = TvLayout.Gutter)
                 TvSeasonChips(rows.seasons, rows.season, onSeason)
-                TvDiscoverContent(row, cards, restore, claimed, onFocused, onDetails, onRetrySeason)
+                TvDiscoverContent(row, cards, rowStates, restore, claimed, onFocused, onDetails, onRetrySeason)
             }
         }
     }
@@ -416,7 +471,8 @@ private fun LazyListScope.tvDiscoverSections(
 private fun TvDiscoverContent(
     row: DiscoverRow,
     cards: List<Pair<String, List<TvHomeCard>>>,
-    restore: TvFocusKey?,
+    rowStates: TvRowStates,
+    restore: TvRestoreTarget?,
     claimed: MutableState<Boolean>,
     onFocused: (String, TvHomeCard) -> Unit,
     onDetails: (Int) -> Unit,
@@ -426,6 +482,7 @@ private fun TvDiscoverContent(
         is DiscoverContent.Titles -> TvCardRow(
             title = row.title,
             cards = cards.firstOrNull { it.first == row.title }?.second.orEmpty(),
+            rowState = rowStates.of(row.title),
             restore = restore,
             claimed = claimed,
             onFocused = onFocused,
@@ -581,14 +638,14 @@ private fun DiscoverRows?.tvCards(): List<Pair<String, List<TvHomeCard>>> {
 
 /** The card the restored focus points at, so the hero is right before focus has actually landed. */
 private fun cardFor(
-    key: TvFocusKey?,
+    target: TvRestoreTarget?,
     rows: List<TvHomeRow>,
     discover: List<Pair<String, List<TvHomeCard>>>,
 ): TvHomeCard? {
-    if (key == null) return null
-    val inRows = rows.firstOrNull { it.title == key.row }?.items
-    val inDiscover = discover.firstOrNull { it.first == key.row }?.second
-    return (inRows ?: inDiscover)?.firstOrNull { it.animeId == key.id }
+    if (target == null) return null
+    val inRows = rows.firstOrNull { it.title == target.row }?.items
+    val inDiscover = discover.firstOrNull { it.first == target.row }?.second
+    return (inRows ?: inDiscover)?.firstOrNull { it.animeId == target.id }
 }
 
 @Preview(device = Devices.TV_1080p)

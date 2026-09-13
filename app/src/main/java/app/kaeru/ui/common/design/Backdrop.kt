@@ -32,7 +32,7 @@ fun Backdrop(
     Box(modifier.background(KaeruSurface)) {
         if (url != null) {
             AsyncImage(
-                model = kaeruImage(url),
+                model = kaeruBackdropImage(url),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 placeholder = ColorPainter(KaeruSurface),
