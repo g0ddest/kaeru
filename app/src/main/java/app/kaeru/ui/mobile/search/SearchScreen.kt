@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,6 +44,9 @@ private const val NOT_FOUND_TEXT = "Попробуйте оригинально�
 /** Same arithmetic as the library grid: three columns survive a 320dp phone, five fit a tablet. */
 private val GridMinCell = 88.dp
 
+/** Two full rows of the loading grid, which fits the shortest phone the app supports. */
+private const val SKELETON_CELLS = 6
+
 /**
  * Where a title that is not in the list yet gets found.
  *
@@ -56,6 +60,7 @@ fun SearchScreen(
     state: SearchUiState,
     onQuery: (String) -> Unit,
     onSubmit: () -> Unit,
+    onRetry: () -> Unit,
     onRecent: (String) -> Unit,
     onPlanned: (Int) -> Unit,
     onOpen: (Int) -> Unit,
@@ -64,7 +69,13 @@ fun SearchScreen(
     val failure = state.addFailure
     // A write that failed over results the viewer can still use, so it is a message rather than a
     // screen, and its «Повторить» goes back to the same title.
-    RetrySnackbar(failure?.message, snackbar) { failure?.let { onPlanned(it.animeId) } }
+    //
+    // Keyed on the failure's own number, not on its words: two titles failing offline produce the
+    // same sentence, and `RetrySnackbar`'s own `LaunchedEffect(message)` would treat the second one
+    // as the first still showing.
+    key(failure?.event) {
+        RetrySnackbar(failure?.message, snackbar) { failure?.let { onPlanned(it.animeId) } }
+    }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             KaeruTopBar(TITLE)
@@ -80,11 +91,16 @@ fun SearchScreen(
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (val content = searchContentState(state)) {
-                    SearchContent.Loading -> SkeletonGrid(Modifier.padding(top = KaeruTokens.Space4), count = 9)
-                    SearchContent.Results -> ResultGrid(state, onPlanned, onOpen)
+                    // Two rows, not a screenful: `SkeletonGrid` is a plain Column with nothing
+                    // to scroll, so a count that outgrows this box gets its last row sliced off.
+                    SearchContent.Loading -> SkeletonGrid(Modifier.padding(top = KaeruTokens.Space4), count = SKELETON_CELLS)
+                    SearchContent.Results ->
+                        // Only the three fields the grid draws, so a keystroke in the field above
+                        // leaves its item provider alone.
+                        ResultGrid(state.results, state.libraryIds, state.addingAnimeId, onPlanned, onOpen)
                     SearchContent.Idle -> EmptyState(IDLE_TITLE, IDLE_TEXT, Modifier.fillMaxSize())
                     SearchContent.NotFound -> EmptyState(NOT_FOUND_TITLE, NOT_FOUND_TEXT, Modifier.fillMaxSize())
-                    is SearchContent.Error -> ErrorState(content.message, onSubmit, Modifier.fillMaxSize())
+                    is SearchContent.Error -> ErrorState(content.message, onRetry, Modifier.fillMaxSize())
                 }
             }
         }
@@ -121,7 +137,13 @@ private fun RecentQueries(queries: List<String>, onRecent: (String) -> Unit) {
 
 /** The answers, and the one thing worth doing with one without opening it. */
 @Composable
-private fun ResultGrid(state: SearchUiState, onPlanned: (Int) -> Unit, onOpen: (Int) -> Unit) {
+private fun ResultGrid(
+    results: List<Anime>,
+    libraryIds: Set<Int>,
+    adding: Int?,
+    onPlanned: (Int) -> Unit,
+    onOpen: (Int) -> Unit,
+) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(GridMinCell),
         contentPadding = PaddingValues(
@@ -133,8 +155,8 @@ private fun ResultGrid(state: SearchUiState, onPlanned: (Int) -> Unit, onOpen: (
         horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space3),
         verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
     ) {
-        items(state.results, key = { it.id }) { anime ->
-            ResultCard(anime, addAction(state, anime.id), onPlanned, onOpen)
+        items(results, key = { it.id }) { anime ->
+            ResultCard(anime, addAction(libraryIds, adding, anime.id), onPlanned, onOpen)
         }
     }
 }

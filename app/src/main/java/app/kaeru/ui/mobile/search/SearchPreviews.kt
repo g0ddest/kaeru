@@ -48,6 +48,7 @@ private fun Screen(state: SearchUiState) = SearchScreen(
     state = state,
     onQuery = {},
     onSubmit = {},
+    onRetry = {},
     onRecent = {},
     onPlanned = {},
     onOpen = {},
@@ -70,6 +71,7 @@ private fun SearchResultsPreview() = KaeruTheme {
             query = "фрирен",
             results = results,
             recentQueries = recent,
+            hasSearched = true,
             libraryIds = setOf(3),
             addingAnimeId = 2,
         ),
@@ -85,7 +87,7 @@ private fun SearchLoadingPreview() = KaeruTheme {
 @Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 800)
 @Composable
 private fun SearchNotFoundPreview() = KaeruTheme {
-    Screen(SearchUiState(query = "фрирн", recentQueries = listOf("фрирн") + recent))
+    Screen(SearchUiState(query = "фрирн", recentQueries = listOf("фрирн") + recent, hasSearched = true))
 }
 
 @Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 800)
@@ -95,6 +97,7 @@ private fun SearchErrorPreview() = KaeruTheme {
         SearchUiState(
             query = "фрирен",
             recentQueries = recent,
+            hasSearched = true,
             errorMessage = "Нет соединения. Проверьте интернет",
         ),
     )

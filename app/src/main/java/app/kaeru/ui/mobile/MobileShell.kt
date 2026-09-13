@@ -117,6 +117,7 @@ fun MobileShell(onLogout: () -> Unit, nav: NavHostController = rememberNavContro
                     state = vm.uiState.collectAsStateWithLifecycle().value,
                     onQuery = vm::setQuery,
                     onSubmit = vm::submit,
+                    onRetry = vm::retry,
                     onRecent = vm::useRecent,
                     onPlanned = vm::addToPlanned,
                     onOpen = openAnime,

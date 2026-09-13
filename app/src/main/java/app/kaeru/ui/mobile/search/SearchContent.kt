@@ -11,6 +11,10 @@ package app.kaeru.ui.mobile.search
  * A failed write is not on this list on purpose. Adding a title to the list is something the
  * viewer does *over* the results, so when it fails the results stay and the failure goes to a
  * snackbar — taking the grid away would lose the thing they were trying to act on.
+ *
+ * «A search has run» is `SearchUiState.hasSearched` and nothing else. Inferring it from the
+ * remembered queries worked only for as long as those queries died with the screen; the day they
+ * are persisted, a freshly opened Search would greet the viewer with «Ничего не найдено».
  */
 sealed interface SearchContent {
     /** Nothing has been searched for yet, whatever is in the field. */
@@ -32,13 +36,11 @@ sealed interface SearchContent {
 /** The decision, made where it can be read in a test rather than inside a composition. */
 fun searchContentState(state: SearchUiState): SearchContent {
     val error = state.errorMessage
-    // A query is only «searched» once it has been remembered, which happens when the search ends.
-    val searched = state.recentQueries.isNotEmpty()
     return when {
         state.searching -> SearchContent.Loading
         error != null -> SearchContent.Error(error)
         state.results.isNotEmpty() -> SearchContent.Results
-        searched -> SearchContent.NotFound
+        state.hasSearched -> SearchContent.NotFound
         else -> SearchContent.Idle
     }
 }
@@ -55,9 +57,12 @@ private const val ADDED = "В списке"
  *
  * Already in the list wins over a write in flight: once the list has the title, what the viewer
  * needs to know is that it is there, not that something is still happening about it.
+ *
+ * It takes the two fields it reads rather than the whole state, so that typing in the field above
+ * cannot invalidate a grid that draws none of what changed.
  */
-fun addAction(state: SearchUiState, animeId: Int): AddAction = when {
-    animeId in state.libraryIds -> AddAction(ADDED, enabled = false)
-    animeId == state.addingAnimeId -> AddAction(ADDING, enabled = false)
+fun addAction(libraryIds: Set<Int>, adding: Int?, animeId: Int): AddAction = when {
+    animeId in libraryIds -> AddAction(ADDED, enabled = false)
+    animeId == adding -> AddAction(ADDING, enabled = false)
     else -> AddAction(ADD, enabled = true)
 }

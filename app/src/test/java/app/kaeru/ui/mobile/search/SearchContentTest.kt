@@ -18,6 +18,15 @@ class SearchContentTest {
         assertEquals(SearchContent.Idle, searchContentState(SearchUiState(query = "фри")))
     }
 
+    /**
+     * Recent queries used to stand in for «a search has run». They are about to be persisted, and a
+     * screen opened with yesterday's chips on it must still say «Что посмотреть сегодня?».
+     */
+    @Test
+    fun `remembered queries alone are not a search that ran`() {
+        assertEquals(SearchContent.Idle, searchContentState(SearchUiState(recentQueries = listOf("фрирен"))))
+    }
+
     @Test
     fun `a search in flight is the skeleton grid, even over results from the last one`() {
         assertEquals(
@@ -30,7 +39,7 @@ class SearchContentTest {
     fun `results win once they land`() {
         assertEquals(
             SearchContent.Results,
-            searchContentState(SearchUiState(query = "фри", results = listOf(frieren), recentQueries = listOf("фри"))),
+            searchContentState(SearchUiState(query = "фри", results = listOf(frieren), hasSearched = true)),
         )
     }
 
@@ -38,7 +47,7 @@ class SearchContentTest {
     fun `a search that found nothing is told apart from one that never ran`() {
         assertEquals(
             SearchContent.NotFound,
-            searchContentState(SearchUiState(query = "ыыы", recentQueries = listOf("ыыы"))),
+            searchContentState(SearchUiState(query = "ыыы", hasSearched = true)),
         )
     }
 
@@ -49,7 +58,7 @@ class SearchContentTest {
             searchContentState(
                 SearchUiState(
                     query = "фри",
-                    recentQueries = listOf("фри"),
+                    hasSearched = true,
                     errorMessage = "Нет соединения. Проверьте интернет",
                 ),
             ),
@@ -64,8 +73,8 @@ class SearchContentTest {
                 SearchUiState(
                     query = "фри",
                     results = listOf(frieren),
-                    recentQueries = listOf("фри"),
-                    addFailure = AddFailure(7, "Нет соединения. Проверьте интернет"),
+                    hasSearched = true,
+                    addFailure = AddFailure(7, "Нет соединения. Проверьте интернет", event = 1),
                 ),
             ),
         )
@@ -73,9 +82,18 @@ class SearchContentTest {
 
     @Test
     fun `the card action says what it will do, what it is doing, and what is already done`() {
-        val state = SearchUiState(results = listOf(frieren), libraryIds = setOf(9), addingAnimeId = 8)
-        assertEquals(AddAction(label = "В планы", enabled = true), addAction(state, animeId = 7))
-        assertEquals(AddAction(label = "Добавляем…", enabled = false), addAction(state, animeId = 8))
-        assertEquals(AddAction(label = "В списке", enabled = false), addAction(state, animeId = 9))
+        val inList = setOf(9)
+        assertEquals(AddAction(label = "В планы", enabled = true), addAction(inList, adding = 8, animeId = 7))
+        assertEquals(AddAction(label = "Добавляем…", enabled = false), addAction(inList, adding = 8, animeId = 8))
+        assertEquals(AddAction(label = "В списке", enabled = false), addAction(inList, adding = 8, animeId = 9))
+    }
+
+    /** The title landing in the list wins over a write still marked pending, never the other way. */
+    @Test
+    fun `a title that is both pending and already in the list reads as done`() {
+        assertEquals(
+            AddAction(label = "В списке", enabled = false),
+            addAction(setOf(7), adding = 7, animeId = 7),
+        )
     }
 }
