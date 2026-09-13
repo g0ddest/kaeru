@@ -41,7 +41,7 @@ class SocketPairingServerTest {
         override fun siteLocalIpv4(): String? = address
     }
 
-    private fun listen(session: PairingSession = PairingSession("nonce-1", now, Duration.ofMinutes(5))) =
+    private suspend fun listen(session: PairingSession = PairingSession("nonce-1", now, Duration.ofMinutes(5))) =
         server.start(session) { code, redirect ->
             synchronized(exchanges) { exchanges += code to redirect }
             exchangeResult
@@ -55,7 +55,16 @@ class SocketPairingServerTest {
             .url("http://127.0.0.1:$port$path")
             .post(payload.toRequestBody("application/json".toMediaType()))
             .build()
-        return http.newCall(request).execute().use { it.code to (it.body?.string() ?: "") }
+        return http.newCall(request).execute().use { response ->
+            // Anything else answering on this port is a bind that should never have succeeded, and
+            // says so here rather than as an unreadable diff of somebody else's response body.
+            assertEquals(
+                "answered by something that is not the pairing server",
+                "application/json; charset=utf-8",
+                response.header("Content-Type"),
+            )
+            response.code to (response.body?.string() ?: "")
+        }
     }
 
     private fun get(port: Int, path: String = "/pair"): Pair<Int, String> =

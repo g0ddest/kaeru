@@ -17,6 +17,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.io.IOException
 import java.io.InputStream
+import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.time.Clock
@@ -55,20 +56,34 @@ class SocketPairingServer @Inject constructor(
      */
     private val paired = AtomicBoolean(false)
 
-    override fun start(
+    override suspend fun start(
         session: PairingSession,
         onCode: suspend (code: String, redirectUri: String) -> Result<Unit>,
-    ): Result<TvPairingServer.Endpoint> {
+    ): Result<TvPairingServer.Endpoint> = withContext(dispatcher) {
         stop()
         val host = addresses.siteLocalIpv4()
-            ?: return Result.failure(PairingFailed(PairingFailureReason.NO_LOCAL_ADDRESS))
-        val opened = runCatching { ServerSocket(ANY_FREE_PORT, BACKLOG) }.getOrElse { error ->
-            return Result.failure(PairingFailed(PairingFailureReason.NO_LOCAL_ADDRESS, error))
+            ?: return@withContext Result.failure(PairingFailed(PairingFailureReason.NO_LOCAL_ADDRESS))
+        val opened = runCatching { openPort() }.getOrElse { error ->
+            return@withContext Result.failure(PairingFailed(PairingFailureReason.NO_LOCAL_ADDRESS, error))
         }
         socket = opened
         paired.set(false)
         worker = scope.launch { serve(opened, session, onCode) }
-        return Result.success(TvPairingServer.Endpoint(host, opened.localPort))
+        Result.success(TvPairingServer.Endpoint(host, opened.localPort))
+    }
+
+    /**
+     * A port of our own, on every interface this television has.
+     *
+     * `SO_REUSEADDR` is turned off, which is not the default: with it on, a wildcard bind happily
+     * shares a port that something else already holds on a single address, and then a connection
+     * to that address reaches the other listener rather than this one. On a television that means
+     * a phone's code being handed to whatever else is listening, which is worth failing to start
+     * over.
+     */
+    private fun openPort(): ServerSocket = ServerSocket().apply {
+        reuseAddress = false
+        bind(InetSocketAddress(ANY_FREE_PORT), BACKLOG)
     }
 
     override fun stop() {

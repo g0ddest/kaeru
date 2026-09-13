@@ -70,25 +70,31 @@ class TvPairingViewModel @Inject constructor(
     val uiState: StateFlow<TvPairingUiState> = state.asStateFlow()
 
     private var expiry: Job? = null
+    private var opening: Job? = null
 
     /** Opens a port and puts a fresh code on screen. Calling it again replaces both. */
     fun start() {
         expiry?.cancel()
+        opening?.cancel()
         state.value = TvPairingUiState(deviceName = deviceName, status = TvPairingStatus.STARTING)
-        val session = PairingSession.create(clock)
-        server.start(session, ::exchange).fold(
-            onSuccess = { endpoint -> offer(session, endpoint) },
-            onFailure = { error ->
-                state.value = TvPairingUiState(
-                    deviceName = deviceName,
-                    status = TvPairingStatus.UNAVAILABLE,
-                    errorMessage = error.toUserMessage(),
-                )
-            },
-        )
+        opening = viewModelScope.launch {
+            val session = PairingSession.create(clock)
+            server.start(session, ::exchange).fold(
+                onSuccess = { endpoint -> offer(session, endpoint) },
+                onFailure = { error ->
+                    state.value = TvPairingUiState(
+                        deviceName = deviceName,
+                        status = TvPairingStatus.UNAVAILABLE,
+                        errorMessage = error.toUserMessage(),
+                    )
+                },
+            )
+        }
     }
 
     fun stop() {
+        opening?.cancel()
+        opening = null
         expiry?.cancel()
         expiry = null
         server.stop()

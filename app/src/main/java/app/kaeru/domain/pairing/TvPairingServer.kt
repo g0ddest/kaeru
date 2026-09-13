@@ -18,8 +18,11 @@ interface TvPairingServer {
      * or when no port could be opened; the login screen then falls back to the typed code.
      *
      * One successful [onCode] is all a session is worth: everything after it is refused.
+     *
+     * Suspends because opening the port means reading this device's own interfaces and binding a
+     * socket, neither of which belongs on the thread that is drawing the screen asking for it.
      */
-    fun start(
+    suspend fun start(
         session: PairingSession,
         onCode: suspend (code: String, redirectUri: String) -> Result<Unit>,
     ): Result<Endpoint>
