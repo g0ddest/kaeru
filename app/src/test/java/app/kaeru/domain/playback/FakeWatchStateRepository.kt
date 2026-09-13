@@ -46,6 +46,8 @@ class FakeWatchStateRepository : WatchStateRepository {
 
     override fun observe(animeId: Int): Flow<WatchState?> = rows.map { it[animeId] }
 
+    override fun observeAll(): Flow<List<WatchState>> = rows.map { it.values.toList() }
+
     override suspend fun save(state: WatchState) {
         started += state
         inFlight += 1

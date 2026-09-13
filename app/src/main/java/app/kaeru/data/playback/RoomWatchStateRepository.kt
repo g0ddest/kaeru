@@ -38,6 +38,13 @@ class RoomWatchStateRepository @Inject constructor(
         // would wake up whoever is watching this one.
         .distinctUntilChanged()
 
+    // Like [observe], a read, so it does not wait on the account lock either. The whole table is
+    // a few dozen tiny rows — one per anime ever started — and the ranking asks for it once per
+    // request rather than once per comparison.
+    override fun observeAll(): Flow<List<WatchState>> = dao.observeAll()
+        .map { rows -> rows.map { it.toDomain() } }
+        .distinctUntilChanged()
+
     override suspend fun save(state: WatchState) = accountWrite { dao.upsert(state.toEntity()) }
 
     override suspend fun clear(animeId: Int) = accountWrite { dao.deleteByAnimeId(animeId) }
