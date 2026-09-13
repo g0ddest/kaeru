@@ -159,7 +159,7 @@ private fun TvEmptyStatePreview() = KaeruTvTheme {
 @Composable
 private fun TvErrorStatePreview() = KaeruTvTheme {
     ErrorState(
-        message = "Нет соединения. Проверьте интернет и повторите",
+        message = "Нет соединения. Проверьте интернет",
         onRetry = {},
         secondaryLabel = "Сменить озвучку",
         onSecondary = {},

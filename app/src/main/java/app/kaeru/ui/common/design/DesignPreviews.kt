@@ -218,7 +218,7 @@ private fun EmptyStatePreview() = KaeruTheme {
 @Composable
 private fun ErrorStatePreview() = KaeruTheme {
     ErrorState(
-        message = "Нет соединения. Проверьте интернет и повторите",
+        message = "Нет соединения. Проверьте интернет",
         onRetry = {},
         secondaryLabel = "Сменить озвучку",
         onSecondary = {},

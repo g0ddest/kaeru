@@ -51,7 +51,6 @@ import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.playback.RankedTranslation
-import app.kaeru.ui.common.details.EpisodeCell
 import app.kaeru.player.EpisodeQueue
 import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.design.LocalFocusPreview

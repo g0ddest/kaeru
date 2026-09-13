@@ -701,5 +701,5 @@ private fun TvHomeEmptyPreview() = KaeruTvTheme {
 @Preview(device = Devices.TV_1080p)
 @Composable
 private fun TvHomeErrorPreview() = KaeruTvTheme {
-    TvHomeError("Нет соединения. Проверьте интернет и повторите", {})
+    TvHomeError("Нет соединения. Проверьте интернет", {})
 }

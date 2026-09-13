@@ -104,12 +104,13 @@ class HomeViewModel @Inject constructor(
     init { syncLibrary() }
 
     /**
-     * Start the catalogue rows. Called by the screen that draws them, once.
+     * Start the catalogue rows. Called by the screen that draws them, once — both home screens do.
      *
-     * Not in `init`, because the television shares this view model and draws none of this: it would
-     * otherwise spend four requests on rows nobody sees, queued by the rate limiter ahead of the
-     * library sync it actually needs. Both loads are guarded, so calling this again — coming back
-     * to the home screen, a recomposition — costs nothing.
+     * Not in `init`, which is for the library sync every reader of this view model wants. The
+     * catalogue is four more requests on top of it, and a screen sharing this view model without
+     * drawing a catalogue would put them in the rate limiter ahead of the sync it actually came
+     * for. Both loads are guarded, so calling this again — coming back to the home screen, a
+     * recomposition — costs nothing.
      *
      * Unforced: reopening the screen should cost the catalogue nothing for six hours.
      */

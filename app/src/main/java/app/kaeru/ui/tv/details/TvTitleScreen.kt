@@ -639,7 +639,7 @@ private fun TvTitleLoadingPreview() = KaeruTvTheme { TvTitleLoading() }
 @Preview(device = Devices.TV_1080p)
 @Composable
 private fun TvTitleErrorPreview() = KaeruTvTheme {
-    TvTitleError("Нет соединения. Проверьте интернет и повторите", {})
+    TvTitleError("Нет соединения. Проверьте интернет", {})
 }
 
 @Preview(device = Devices.TV_1080p)

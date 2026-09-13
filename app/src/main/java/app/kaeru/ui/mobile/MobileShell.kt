@@ -108,8 +108,7 @@ fun MobileShell(
         ) {
             composable(Routes.HOME) {
                 val vm: HomeViewModel = hiltViewModel()
-                // The catalogue rows are the phone's; the television shares this view model and
-                // draws none of them, so nothing fetches them until this screen asks.
+                // The catalogue rows are loaded by the screen that draws them, and this one does.
                 LaunchedEffect(vm) { vm.loadDiscover() }
                 val state = vm.uiState.collectAsStateWithLifecycle().value
                 // Once the hero is on screen, resolve what it offers: the viewer spends a few
