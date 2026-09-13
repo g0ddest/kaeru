@@ -1,6 +1,7 @@
 package app.kaeru.ui.mobile.player
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +15,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -27,11 +31,10 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,18 +42,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.kaeru.player.EpisodeQueue
 import app.kaeru.ui.common.Poster
 import app.kaeru.ui.common.player.PlayerUiState
 import app.kaeru.ui.common.player.CastButton
+import app.kaeru.ui.common.design.KaeruSeekBar
+import app.kaeru.ui.common.design.KaeruTokens
+import app.kaeru.ui.common.design.ProgressStrip
 import app.kaeru.ui.common.design.formatTime
+import app.kaeru.ui.common.details.EpisodeCell
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruBackground
 import app.kaeru.ui.common.theme.KaeruElevated
+import app.kaeru.ui.common.theme.KaeruOnAccent
 import app.kaeru.ui.common.theme.KaeruSecondary
 import app.kaeru.ui.common.theme.KaeruText
 import kotlin.math.roundToLong
@@ -77,6 +86,7 @@ fun RemoteControlScreen(
     onCancelAutoplay: () -> Unit,
     onOpenTranslations: () -> Unit,
     onOpenQualities: () -> Unit,
+    onPickEpisode: (Int) -> Unit,
     onRetry: () -> Unit,
     onStopCasting: () -> Unit,
 ) {
@@ -146,35 +156,108 @@ fun RemoteControlScreen(
                 Transport(state, onTogglePlayPause, onSeekBy, onNext, onCancelAutoplay)
             }
         }
+
+        // The one thing the phone can do that the television's own remote cannot: jump straight
+        // to another episode. Across the bottom rather than beside the poster, because it is a
+        // list of many and everything above it is a list of one.
+        EpisodeStrip(state, onPickEpisode)
     }
 }
+
+/**
+ * The season, as something to press.
+ *
+ * The same three facts the title screen's grid draws — counted, in progress, not aired yet — in
+ * a strip that fits under a landscape remote. An episode that has not aired is drawn and not
+ * offered, so the shape of the season is still readable.
+ */
+@Composable
+private fun EpisodeStrip(state: PlayerUiState, onPick: (Int) -> Unit) {
+    if (state.episodes.size < 2) return
+    val listState = rememberLazyListState()
+    // Opens on what is playing rather than on episode one: a viewer on episode 24 should not
+    // have to scroll to find where they are.
+    LaunchedEffect(state.episode, state.episodes.size) {
+        val index = state.episodes.indexOfFirst { it.number == state.episode }
+        if (index >= 0) listState.scrollToItem(index)
+    }
+    Column(Modifier.padding(top = 12.dp, bottom = 16.dp)) {
+        Text(
+            "Серии",
+            style = MaterialTheme.typography.titleMedium,
+            color = KaeruText,
+            modifier = Modifier.padding(start = 24.dp, bottom = 8.dp),
+        )
+        LazyRow(
+            state = listState,
+            contentPadding = PaddingValues(horizontal = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(state.episodes, key = { it.number }) { cell ->
+                EpisodeTile(cell, playing = cell.number == state.episode, onPick = { onPick(cell.number) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun EpisodeTile(cell: EpisodeCell, playing: Boolean, onPick: () -> Unit) {
+    val label = when {
+        playing -> "${cell.number} серия, идёт сейчас"
+        !cell.aired -> "${cell.number} серия, ещё не вышла"
+        cell.watched -> "${cell.number} серия, просмотрена"
+        else -> "${cell.number} серия"
+    }
+    Box(
+        Modifier
+            .size(TILE_SIZE)
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (playing) KaeruAccent else KaeruElevated)
+            .clickable(enabled = cell.aired && !playing, onClickLabel = label, onClick = onPick)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            cell.number.toString(),
+            style = MaterialTheme.typography.titleMedium,
+            color = when {
+                playing -> KaeruOnAccent
+                !cell.aired -> KaeruSecondary
+                cell.watched -> KaeruSecondary
+                else -> KaeruText
+            },
+        )
+        cell.progress?.takeIf { !playing }?.let {
+            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp)) {
+                ProgressStrip(it)
+            }
+        }
+    }
+}
+
+private val TILE_SIZE = 56.dp
 
 @Composable
 private fun Timeline(state: PlayerUiState, onSeekTo: (Long) -> Unit) {
     var scrubbing by remember { mutableStateOf<Float?>(null) }
     val shown = scrubbing?.roundToLong() ?: state.positionMs
-    Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
+    val durationSafe = maxOf(state.durationMs, 1L)
+    Row(Modifier.fillMaxWidth().padding(horizontal = KaeruTokens.SeekInset)) {
         Text(formatTime(shown), style = MaterialTheme.typography.labelMedium, color = KaeruText)
         Spacer(Modifier.weight(1f))
         Text(formatTime(state.durationMs), style = MaterialTheme.typography.labelMedium, color = KaeruSecondary)
     }
-    Slider(
-        value = shown.coerceIn(0, maxOf(state.durationMs, 0)).toFloat(),
-        onValueChange = { scrubbing = it },
-        onValueChangeFinished = {
+    KaeruSeekBar(
+        progress = shown.coerceIn(0, maxOf(state.durationMs, 0)).toFloat() / durationSafe.toFloat(),
+        onScrub = { fraction -> scrubbing = fraction.coerceIn(0f, 1f) * durationSafe },
+        onScrubEnd = {
             scrubbing?.let { onSeekTo(it.roundToLong()) }
             scrubbing = null
         },
-        valueRange = 0f..maxOf(state.durationMs, 1L).toFloat(),
         enabled = state.durationMs > 0,
-        colors = SliderDefaults.colors(
-            thumbColor = KaeruAccent,
-            activeTrackColor = KaeruAccent,
-            inactiveTrackColor = Color.White.copy(alpha = 0.24f),
-            disabledThumbColor = KaeruSecondary,
-            disabledActiveTrackColor = KaeruSecondary,
-            disabledInactiveTrackColor = Color.White.copy(alpha = 0.16f),
-        ),
+        // A receiver buffers on its own side and tells us nothing about it, so there is nothing
+        // honest to draw ahead of the position while casting.
+        buffered = 0f,
     )
 }
 
@@ -215,15 +298,17 @@ private fun Transport(
         // The countdown takes over the button rather than floating over it: this screen has
         // nothing to float above, and one decision deserves one place to make it.
         val countdown = state.autoplayCountdownSec
-        if (countdown == null) {
-            TextButton(onClick = onNext) {
+        when {
+            !state.nextEpisodeAvailable -> Unit
+            countdown == null -> TextButton(onClick = onNext) {
                 Icon(Icons.Default.SkipNext, contentDescription = null, tint = KaeruText)
                 Spacer(Modifier.width(6.dp))
                 Text("Следующая серия", color = KaeruText)
             }
-        } else {
-            TextButton(onClick = onNext) { Text("Следующая серия через $countdown", color = KaeruAccent) }
-            TextButton(onClick = onCancelAutoplay) { Text("Отмена", color = KaeruSecondary) }
+            else -> {
+                TextButton(onClick = onNext) { Text("Следующая серия через $countdown", color = KaeruAccent) }
+                TextButton(onClick = onCancelAutoplay) { Text("Отмена", color = KaeruSecondary) }
+            }
         }
     }
 }

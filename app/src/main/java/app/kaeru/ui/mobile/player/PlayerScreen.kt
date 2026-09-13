@@ -72,6 +72,7 @@ fun PlayerScreen(
     onCloseSheet: () -> Unit,
     onPickTranslation: (Translation) -> Unit,
     onPickQuality: (Quality) -> Unit,
+    onPickEpisode: (Int) -> Unit,
     onRetry: () -> Unit,
     onStopCasting: () -> Unit,
     onConfirmCompleted: () -> Unit,
@@ -145,6 +146,7 @@ fun PlayerScreen(
                 onCancelAutoplay = onCancelAutoplay,
                 onOpenTranslations = onOpenTranslations,
                 onOpenQualities = onOpenQualities,
+                onPickEpisode = onPickEpisode,
                 onRetry = onRetry,
                 onStopCasting = onStopCasting,
             )

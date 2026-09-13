@@ -2,6 +2,7 @@ package app.kaeru.ui.common.player
 
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.playback.RankedTranslation
+import app.kaeru.ui.common.details.EpisodeCell
 import java.time.Instant
 
 /** Which chooser is open over the video, if any. */
@@ -37,6 +38,8 @@ data class PlayerUiState(
     val episodeEnding: Boolean = false,
     /** When the episode after the last aired one is due, for a screen that has to wait for it. */
     val nextEpisodeAt: Instant? = null,
+    /** The season, for the remote control's list: which episodes exist, and what is behind the viewer. */
+    val episodes: List<EpisodeCell> = emptyList(),
     val autoplayCountdownSec: Int? = null,
     val errorMessage: String? = null,
     /** The picture is on a Chromecast: the screen is a remote control, not a player. */

@@ -350,6 +350,66 @@ class PlayerViewModelTest {
     }
 
     @Test
+    fun `the remote lists the season with what is behind the viewer marked`() = runTest(main.dispatcher) {
+        watchStates.seed(WatchState(100, 4, 720_000, 1_440_000, translationId = 11, kodikSeason = 1, updatedAt = now))
+
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+
+        val episodes = viewModel.uiState.value.episodes
+        assertEquals(12, episodes.size)
+        // Three episodes counted on Shikimori, the fourth half watched on this phone.
+        assertEquals(listOf(1, 2, 3), episodes.filter { it.watched }.map { it.number })
+        assertEquals(0.5f, episodes.first { it.number == 4 }.progress!!, 1e-3f)
+        assertTrue(episodes.all { it.aired })
+    }
+
+    @Test
+    fun `the remote does not list an episode that has not aired as playable`() = runTest(main.dispatcher) {
+        library.put(
+            LibraryEntry(
+                anime.copy(status = AnimeStatus.ONGOING, episodes = 12, episodesAired = 5),
+                UserRate(1, 100, ListStatus.WATCHING, 3, now),
+                null,
+            ),
+        )
+
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+
+        val episodes = viewModel.uiState.value.episodes
+        assertEquals(12, episodes.size)
+        assertEquals((1..5).toList(), episodes.filter { it.aired }.map { it.number })
+    }
+
+    @Test
+    fun `choosing an episode from the remote plays it in the track that is playing`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+        controller.playback.update { it.copy(stream = stream(episode = 4, track = studioBanda)) }
+
+        viewModel.playEpisode(9)
+        advanceUntilIdle()
+
+        val asked = controller.played.last()
+        assertEquals(9, asked.episode)
+        assertEquals(studioBanda, asked.translation)
+        assertEquals(0L, asked.startPositionMs)
+    }
+
+    @Test
+    fun `choosing the episode that is already playing changes nothing`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+        val before = controller.played.size
+
+        viewModel.playEpisode(4)
+        advanceUntilIdle()
+
+        assertEquals(before, controller.played.size)
+    }
+
+    @Test
     fun `an episode with aired episodes after it offers the next one`() = runTest(main.dispatcher) {
         viewModel.start(100, 4)
         advanceUntilIdle()

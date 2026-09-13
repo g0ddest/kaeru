@@ -18,6 +18,8 @@ import app.kaeru.player.CastSessionBridge
 import app.kaeru.player.EpisodeQueue
 import app.kaeru.player.PlaybackController
 import app.kaeru.player.PlaybackEvent
+import app.kaeru.ui.common.details.EpisodeCell
+import app.kaeru.ui.common.details.episodeCells
 import app.kaeru.ui.common.toUserMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineDispatcher
@@ -66,13 +68,33 @@ class PlayerViewModel @Inject constructor(
         val toast: String? = null,
     )
 
+    /** The anime, and the season as the remote control lists it. Read together, shown together. */
+    private data class Shown(val anime: Anime? = null, val episodes: List<EpisodeCell> = emptyList())
+
     private val animeId = MutableStateFlow<Int?>(null)
     private val screen = MutableStateFlow(ScreenState())
     private var requested: Pair<Int, Int>? = null
     private var startJob: Job? = null
 
-    private val anime: Flow<Anime?> = animeId.flatMapLatest { id ->
-        if (id == null) flowOf(null) else library.observeAnimeDetails(id)
+    /**
+     * Everything about the show itself. The season list is built here rather than on the screen
+     * because it needs three sources — the catalogue, the viewer's count and this device's own
+     * position — and a screen that gathered them would be the third place in the app doing it.
+     */
+    private val shown: Flow<Shown> = animeId.flatMapLatest { id ->
+        if (id == null) {
+            flowOf(Shown())
+        } else {
+            combine(
+                library.observeAnimeDetails(id),
+                library.observeAnime(id),
+                watchStates.observe(id),
+                prefs.watchedThreshold,
+            ) { details, entry, watch, threshold ->
+                val anime = entry?.anime ?: details
+                Shown(anime, anime?.let { episodeCells(it, entry?.rate, watch, threshold) }.orEmpty())
+            }
+        }
     }
 
     /** The player a video surface attaches to, or null while there is none to attach to. */
@@ -80,10 +102,11 @@ class PlayerViewModel @Inject constructor(
 
     val uiState: StateFlow<PlayerUiState> = combine(
         controller.state,
-        anime,
+        shown,
         screen,
         cast.receiverName,
-    ) { playback, anime, screen, receiverName ->
+    ) { playback, shown, screen, receiverName ->
+        val anime = shown.anime
         PlayerUiState(
             title = anime?.title.orEmpty(),
             posterUrl = anime?.posterUrl,
@@ -104,6 +127,7 @@ class PlayerViewModel @Inject constructor(
             nextEpisodeAvailable = playback.hasNextEpisode,
             episodeEnding = playback.nextEpisodeDue,
             nextEpisodeAt = anime?.nextEpisodeAt,
+            episodes = shown.episodes,
             autoplayCountdownSec = playback.autoplayCountdownSec,
             errorMessage = playback.error?.toUserMessage(),
             isCasting = playback.isCasting,
@@ -180,6 +204,23 @@ class PlayerViewModel @Inject constructor(
 
     fun playNext() {
         viewModelScope.launch { controller.playNext() }
+    }
+
+    /**
+     * The viewer picked an episode from the list on the remote control.
+     *
+     * The track that is playing carries over, exactly as it does when one episode runs into the
+     * next: jumping back to episode two is not a request to reconsider the voice. Picking the
+     * episode already on screen does nothing, rather than restarting a television mid-scene.
+     */
+    fun playEpisode(episode: Int) {
+        val id = animeId.value ?: return
+        if (controller.state.value.target?.episode == episode) return
+        val track = controller.state.value.stream?.translation
+        requested = id to episode
+        startJob = viewModelScope.launch {
+            controller.play(PlaybackTarget(id, episode, resumeFrom(id, episode), translation = track))
+        }
     }
 
     fun cancelAutoplay() = controller.cancelAutoplay()
