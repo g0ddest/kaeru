@@ -1,6 +1,7 @@
 package app.kaeru.data.library
 
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -8,6 +9,7 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import app.kaeru.data.kodik.KodikTokenKeys
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.playback.PlaybackPreferences
 import kotlinx.coroutines.flow.Flow
@@ -81,8 +83,18 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
         }
     }
 
+    /**
+     * Wipes the store except for what belongs to this device rather than to the app: the Kodik
+     * key somebody typed in and the token scraped for it. Those are configuration — a wipe that
+     * took them would leave a device that used to play silently unable to, with nothing on
+     * screen to say why.
+     */
     suspend fun clear() {
-        dataStore.edit { it.clear() }
+        dataStore.edit { prefs ->
+            val kept = DEVICE_KEYS.mapNotNull { key -> prefs[key]?.let { key to it } }
+            prefs.clear()
+            kept.forEach { (key, value) -> prefs.put(key, value) }
+        }
     }
 
     /** Drops what belongs to the signed-in account. Playback settings are the device's, not the account's. */
@@ -94,6 +106,18 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
     }
 
     companion object {
+        /** What a wipe leaves behind: settings of the device, not of whoever is signed in. */
+        private val DEVICE_KEYS: List<Preferences.Key<*>> = KodikTokenKeys.all
+
+        /**
+         * The one cast the preference API cannot express on its own: a value just read from
+         * [key] is by construction a value [key] accepts.
+         */
+        @Suppress("UNCHECKED_CAST")
+        private fun MutablePreferences.put(key: Preferences.Key<*>, value: Any) {
+            this[key as Preferences.Key<Any>] = value
+        }
+
         /** Studios that dub most of what this app plays, best first. */
         val DEFAULT_PREFERRED_TRANSLATIONS = listOf(
             "AniLibria", "AniDUB", "Crunchyroll", "Amazing Dubbing", "AniBaza",

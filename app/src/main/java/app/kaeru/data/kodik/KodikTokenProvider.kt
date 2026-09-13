@@ -34,6 +34,21 @@ interface KodikTokenProvider {
 }
 
 /**
+ * Where the Kodik token lives in the preference store.
+ *
+ * Named in one place rather than inline because these three are device configuration, not
+ * account data: whoever wipes the store has to know to leave them alone, or a key somebody
+ * typed in by hand disappears with a sign-out.
+ */
+internal object KodikTokenKeys {
+    val override = stringPreferencesKey("kodik_token_override")
+    val token = stringPreferencesKey("kodik_token")
+    val storedAt = longPreferencesKey("kodik_token_at")
+
+    val all: List<Preferences.Key<*>> = listOf(override, token, storedAt)
+}
+
+/**
  * Resolution order: a token stored by settings, then the one baked in at build
  * time, then the public token scraped from `add-players.min.js`. Only the
  * scraped token is cached (24 h) and only it is re-extracted on `forceRefresh`:
@@ -49,9 +64,9 @@ class DefaultKodikTokenProvider @Inject constructor(
     @param:Named("kodikAddPlayersUrl") private val addPlayersUrl: String,
 ) : KodikTokenProvider {
 
-    private val overrideKey = stringPreferencesKey("kodik_token_override")
-    private val tokenKey = stringPreferencesKey("kodik_token")
-    private val tokenAtKey = longPreferencesKey("kodik_token_at")
+    private val overrideKey = KodikTokenKeys.override
+    private val tokenKey = KodikTokenKeys.token
+    private val tokenAtKey = KodikTokenKeys.storedAt
 
     /** Serialises extraction so a burst of resolves fetches the script once, not once per caller. */
     private val fetchLock = Mutex()

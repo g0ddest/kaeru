@@ -5,6 +5,8 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import app.kaeru.domain.model.Quality
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
@@ -109,5 +111,29 @@ class AppPreferencesTest {
         assertEquals(listOf("AniDUB"), prefs.preferredTranslations.first())
         assertEquals(false, prefs.autoplayNext.first())
         assertEquals(Quality.P480, prefs.defaultQuality.first())
+    }
+
+    @Test
+    fun `wiping the app keeps the device's own configuration and drops everything else`() = runTest(dispatcher) {
+        store.edit {
+            it[stringPreferencesKey("kodik_token_override")] = "typed-by-hand"
+            it[stringPreferencesKey("kodik_token")] = "scraped"
+            it[longPreferencesKey("kodik_token_at")] = 1_700_000_000_000
+        }
+        prefs.setUserId(42)
+        prefs.setLastFullSync(Instant.ofEpochMilli(1_000))
+        prefs.setPreferredTranslations(listOf("AniDUB"))
+        prefs.setAutoplayNext(false)
+
+        prefs.clear()
+
+        val stored = store.data.first()
+        assertEquals("typed-by-hand", stored[stringPreferencesKey("kodik_token_override")])
+        assertEquals("scraped", stored[stringPreferencesKey("kodik_token")])
+        assertEquals(1_700_000_000_000L, stored[longPreferencesKey("kodik_token_at")])
+        assertNull(prefs.userId())
+        assertNull(prefs.lastFullSync())
+        assertEquals(AppPreferences.DEFAULT_PREFERRED_TRANSLATIONS, prefs.preferredTranslations.first())
+        assertTrue(prefs.autoplayNext.first())
     }
 }
