@@ -104,6 +104,7 @@ private const val SUBTITLES = "Субтитры"
 private const val OFTEN_CHOSEN = "часто выбираете"
 private const val NO_TRACKS = "Источник не предложил ни одной озвучки для этого аниме"
 private const val TRACKS_FAILED_RETRY = "Повторить"
+private const val RETRY = "Повторить"
 private const val LIST_STATUS = "Список"
 private const val ADD_TO_LIST = "Добавить в список"
 
@@ -151,6 +152,7 @@ fun TvTitleScreen(
             state = state,
             onStatus = onStatus,
             onPlay = onPlay,
+            onRetry = onRetry,
             onLoadTranslations = onLoadTranslations,
             onPickTranslation = onPickTranslation,
             modifier = modifier,
@@ -164,6 +166,7 @@ private fun TvTitleReady(
     state: DetailsUiState,
     onStatus: (ListStatus) -> Unit,
     onPlay: (Int, Int) -> Unit,
+    onRetry: () -> Unit,
     onLoadTranslations: () -> Unit,
     onPickTranslation: (Translation) -> Unit,
     modifier: Modifier = Modifier,
@@ -203,11 +206,13 @@ private fun TvTitleReady(
                 action = action,
                 primary = primary,
                 onPlay = onPlay,
+                onRetry = onRetry,
                 onOpenSheet = { openSheet = it; if (it == TvTitleSheet.TRANSLATIONS) onLoadTranslations() },
                 modifier = Modifier.weight(1.15f).fillMaxHeight(),
             )
             TvEpisodeColumn(
                 cells = cells,
+                animeId = anime.id,
                 watched = watchedLine(state.entry?.rate?.episodes ?: 0, cells.size),
                 onPlay = { episode -> onPlay(anime.id, episode) },
                 modifier = Modifier.weight(1f).fillMaxHeight(),
@@ -246,6 +251,7 @@ private fun TvTitleDetails(
     action: PrimaryAction,
     primary: FocusRequester,
     onPlay: (Int, Int) -> Unit,
+    onRetry: () -> Unit,
     onOpenSheet: (TvTitleSheet) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -303,7 +309,11 @@ private fun TvTitleDetails(
             TextAction(if (expanded) COLLAPSE else EXPAND, { expanded = !expanded })
         }
         state.errorMessage?.let {
+            // The phone puts this failure in a snackbar with «Повторить». A television has no
+            // snackbar, so the line carries its own way forward — and being focusable is also what
+            // brings it into view, since the D-pad walking down this column is what scrolls it.
             Text(it, style = MaterialTheme.typography.bodyMedium, color = KaeruText)
+            TextAction(RETRY, onRetry)
         }
     }
 }
@@ -316,6 +326,7 @@ private fun TvPoster(anime: Anime) =
 @Composable
 private fun TvEpisodeColumn(
     cells: List<TvEpisodeCell>,
+    animeId: Int,
     watched: String,
     onPlay: (Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -337,7 +348,10 @@ private fun TvEpisodeColumn(
         }
         val next = cells.indexOfFirst { !it.watched && it.aired }.coerceAtLeast(0)
         val grid = rememberLazyGridState()
-        LaunchedEffect(cells) { grid.scrollToItem((next - EPISODE_COLUMNS).coerceAtLeast(0)) }
+        // Once per title, not once per change to the cells. A status write or a progress update
+        // landing from Room rebuilds `cells`, and keying on those would snap a viewer who had
+        // scrolled to episode 24 back to whichever tile is next unwatched.
+        LaunchedEffect(animeId) { grid.scrollToItem((next - EPISODE_COLUMNS).coerceAtLeast(0)) }
         LazyVerticalGrid(
             columns = GridCells.Fixed(EPISODE_COLUMNS),
             state = grid,
@@ -460,8 +474,12 @@ private fun TvTranslationDialog(
     onDismiss: () -> Unit,
 ) {
     val first = remember { FocusRequester() }
+    // Whatever the panel is showing, something in it takes the D-pad: the first track when there
+    // are tracks, «Повторить» when the load failed. A dialog with no focusable content is a dialog
+    // a remote cannot leave, so the loading and empty branches are the two that deliberately have
+    // none — there back is the only way out, and back is what a viewer presses at them anyway.
     LaunchedEffect(translations, loading, errorMessage) {
-        if (translations.isNotEmpty()) first.requestFocusOrLog("the dub panel")
+        if (translations.isNotEmpty() || errorMessage != null) first.requestFocusOrLog("the dub panel")
     }
     TvDialog(title = DUB, onDismiss = onDismiss) {
         when {
@@ -472,7 +490,11 @@ private fun TvTranslationDialog(
             }
             errorMessage != null -> {
                 Text(errorMessage, style = MaterialTheme.typography.bodyMedium, color = KaeruText)
-                SecondaryButton(TRACKS_FAILED_RETRY, onRetry, Modifier.padding(top = KaeruTokens.Space3))
+                SecondaryButton(
+                    TRACKS_FAILED_RETRY,
+                    onRetry,
+                    Modifier.padding(top = KaeruTokens.Space3).focusRequester(first),
+                )
             }
             translations.isEmpty() ->
                 Text(NO_TRACKS, style = MaterialTheme.typography.bodyMedium, color = KaeruSecondary)

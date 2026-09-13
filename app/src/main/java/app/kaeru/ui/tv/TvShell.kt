@@ -2,6 +2,7 @@ package app.kaeru.ui.tv
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
@@ -25,6 +28,8 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -94,11 +99,23 @@ fun TvShell(onPlay: (animeId: Int, episode: Int) -> Unit) {
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val home = rememberTvDestinationState()
     val library = rememberTvDestinationState()
+    val content = remember { FocusRequester() }
 
     // Null means there is nowhere left to go and the press belongs to the launcher, so the
     // handler steps aside rather than swallowing it.
     val back = route.back()
     BackHandler(enabled = back != null) { back?.let { route = it } }
+
+    // Registered after the route's, because the dispatcher asks the most recently added enabled
+    // handler first: with the rail open, back belongs to the rail and to nothing else.
+    //
+    // Closing it means moving focus out of it rather than setting the drawer's value.
+    // `ModalNavigationDrawer` registers no back handler of its own and re-derives open from
+    // whether anything inside it has focus, so a value set behind a rail that still holds the
+    // D-pad would render closed and behave open.
+    BackHandler(enabled = drawer.currentValue == DrawerValue.Open) {
+        content.requestFocusOrLog("the content behind an open rail")
+    }
 
     ModalNavigationDrawer(
         drawerContent = { value -> TvRail(value, route.destination) { route = route.open(it) } },
@@ -109,32 +126,52 @@ fun TvShell(onPlay: (animeId: Int, episode: Int) -> Unit) {
             1f to Color.Transparent,
         ),
     ) {
-        val titleId = route.titleId
-        // The title card replaces its destination rather than covering it. A screen still composed
-        // under an overlay is a screen the D-pad can walk back into, which on a television means
-        // focus disappearing into rows nobody can see; the scroll position and the focused card the
-        // destination would lose are held above it here instead.
-        if (titleId != null) {
-            TvTitle(titleId, onPlay)
-        } else {
-            when (route.destination) {
-                TvDestination.HOME -> TvHome(route, home, onPlay) { route = it }
-                TvDestination.LIBRARY -> TvLibrary(route, library) { route = it }
-                TvDestination.SEARCH -> TvSearch(route) { route = it }
-                TvDestination.SETTINGS -> TvSettings()
+        // A focus group, so that one request can hand the D-pad back to the screen without naming
+        // anything on it: the group passes the focus on to a child, and which child that is stays
+        // the screen's business.
+        Box(Modifier.fillMaxSize().focusRequester(content).focusGroup()) {
+            val titleId = route.titleId
+            // The title card replaces its destination rather than covering it. A screen still
+            // composed under an overlay is a screen the D-pad can walk back into, which on a
+            // television means focus disappearing into rows nobody can see; the scroll position and
+            // the focused card the destination would lose are held above it here instead.
+            if (titleId != null) {
+                TvTitle(titleId, onPlay)
+            } else {
+                when (route.destination) {
+                    TvDestination.HOME -> TvHome(route, home, onPlay) { route = it }
+                    TvDestination.LIBRARY -> TvLibrary(route, library) { route = it }
+                    TvDestination.SEARCH -> TvSearch(route) { route = it }
+                    TvDestination.SETTINGS -> TvSettings()
+                }
             }
         }
     }
 }
 
-/** Where one destination was: which card the remote sat on, and how far down the list it was. */
-class TvDestinationState(val list: LazyListState, val focus: TvFocusMemory)
+/**
+ * Where one destination was: which card the remote sat on, and how far down — and along — its lists
+ * it was.
+ *
+ * Held here rather than in the screen because the screen is taken down every time a title card
+ * opens. Each destination uses the containers it actually has: the home screen the vertical [list]
+ * and the per-row [rows], the library the [grid]. Two unused handles is the price of one shape of
+ * memory for every destination, and they cost an object each.
+ */
+class TvDestinationState(
+    val list: LazyListState,
+    val grid: LazyGridState,
+    val rows: TvRowStates,
+    val focus: TvFocusMemory,
+)
 
 @Composable
 private fun rememberTvDestinationState(): TvDestinationState {
     val list = rememberLazyListState()
+    val grid = rememberLazyGridState()
+    val rows = remember { TvRowStates() }
     val focus = rememberTvFocusMemory()
-    return remember(list, focus) { TvDestinationState(list, focus) }
+    return remember(list, grid, rows, focus) { TvDestinationState(list, grid, rows, focus) }
 }
 
 /**
@@ -202,18 +239,21 @@ private fun TvHome(
         onRetrySeason = viewModel::retrySeason,
         onSearch = { onRoute(route.open(TvDestination.SEARCH)) },
         listState = state.list,
+        rowStates = state.rows,
         focus = state.focus,
     )
 }
 
 @Composable
-private fun TvLibrary(route: TvRoute, state: TvDestinationState, onRoute: (TvRoute) -> Unit) {
+private fun TvLibrary(route: TvRoute, destination: TvDestinationState, onRoute: (TvRoute) -> Unit) {
     val viewModel: LibraryViewModel = hiltViewModel()
     TvLibraryScreen(
         state = viewModel.uiState.collectAsStateWithLifecycle().value,
         onStatus = viewModel::selectStatus,
         onAnime = { onRoute(route.openTitle(it)) },
         onSearch = { onRoute(route.open(TvDestination.SEARCH)) },
+        gridState = destination.grid,
+        focus = destination.focus,
     )
 }
 

@@ -54,4 +54,20 @@ object TvLayout {
      * and bottom edges — and the caption underneath it disappears with them.
      */
     val CardFocusPad = KaeruTokens.Space2
+
+    /**
+     * How many cards of a row can be relied on to be composed, counted low on purpose.
+     *
+     * The content column is 960 − 80 − 56 = 824dp and a card's pitch is 168 + 16 = 184dp, so four
+     * and a half fit; a lazy row composes a little beyond its viewport as well. Four is the number
+     * that is true even if a future card grows, and being wrong low costs one needless scroll while
+     * being wrong high costs a screen the D-pad cannot move.
+     */
+    const val RowViewport = 4
+
+    /**
+     * The same count for the library's grid: five columns, and a 540dp panel shows two full rows of
+     * them under the tabs with a third on the way in.
+     */
+    const val GridViewport = 10
 }

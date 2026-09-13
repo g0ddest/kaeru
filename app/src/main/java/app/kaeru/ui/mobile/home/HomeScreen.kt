@@ -115,15 +115,19 @@ fun HomeScreen(
     // Built here rather than inside a list content lambda: it allocates a card per title and
     // formats a line per card, and that lambda re-runs on every recomposition of the screen.
     val catalogue = remember(state.discover) { state.discover?.let(::discoverRows) }
+    // The first sync says what it is doing in words and an amber strip. Material pins its spinner
+    // open for the whole of any refresh, gesture or not, so on a first launch the screen would say
+    // the same thing twice in two vocabularies. The gesture stays armed; only its indicator waits.
+    val spinning = state.isRefreshing && content != HomeContent.FirstSync
     Box(Modifier.fillMaxSize()) {
         PullToRefreshBox(
-            isRefreshing = state.isRefreshing,
+            isRefreshing = spinning,
             onRefresh = onRefresh,
             state = pull,
             indicator = {
                 PullToRefreshDefaults.Indicator(
                     state = pull,
-                    isRefreshing = state.isRefreshing,
+                    isRefreshing = spinning,
                     modifier = Modifier.align(Alignment.TopCenter)
                         .windowInsetsPadding(WindowInsets.statusBars),
                     containerColor = KaeruElevated,

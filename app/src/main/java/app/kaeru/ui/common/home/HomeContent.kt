@@ -1,7 +1,5 @@
 package app.kaeru.ui.common.home
 
-import app.kaeru.ui.common.home.HomeUiState
-
 /**
  * Which of the five screens the home screen is at this moment.
  *
