@@ -41,6 +41,8 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="kaeru" android:host="oauth" />
+                <!-- The television's QR code. Read by the phone, never fired by this app. -->
+                <data android:scheme="kaeru" android:host="pair" />
             </intent-filter>
         </activity>
 

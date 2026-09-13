@@ -1,4 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false" />
+    <!--
+      Everything this app knows the name of stays on TLS, listed rather than defaulted so that a
+      plain-http url slipping into one of these call paths fails loudly instead of working.
+    -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">shikimori.io</domain>
+        <domain includeSubdomains="true">shikimori.one</domain>
+        <domain includeSubdomains="true">kodik-api.com</domain>
+        <domain includeSubdomains="true">kodik-add.com</domain>
+        <domain includeSubdomains="true">kodikplayer.com</domain>
+    </domain-config>
+
+    <!--
+      The default has to permit cleartext because of one request: the phone handing a television on
+      the same Wi-Fi a one-time authorization code. That television's address is a private one the
+      router made up minutes ago, there is no certificate anybody could issue for it, and this file
+      cannot express an address range — `<domain>` matches a host name or a literal, never a CIDR —
+      so there is no way to allow `192.168/16` and nothing else here.
+
+      The narrowing that this file cannot do is done in code instead: the pairing request goes
+      through its own OkHttp client whose only connection spec is CLEARTEXT, which therefore cannot
+      reach an https url at all, and `OkHttpPairingClient` refuses every address outside 10/8,
+      172.16/12, 192.168/16 and 169.254/16 before a socket is opened.
+    -->
+    <base-config cleartextTrafficPermitted="true" />
 </network-security-config>
