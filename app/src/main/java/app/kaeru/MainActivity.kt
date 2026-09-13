@@ -30,11 +30,13 @@ class MainActivity : FragmentActivity() {
 
     private var pendingCallback by mutableStateOf<OAuthCallback?>(null)
 
+    private var pendingPairing by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        readAuthCallback(intent)
+        readDeepLink(intent)
         // Listening from here too, so a session that ends while the player is closed still
         // brings playback back to the phone.
         castSessions.start()
@@ -43,7 +45,12 @@ class MainActivity : FragmentActivity() {
             // has to appear then rather than never.
             val castAvailable by cast.isAvailable.collectAsStateWithLifecycle()
             CompositionLocalProvider(LocalCastAvailable provides castAvailable) {
-                MobileApp(callback = pendingCallback, onCallbackConsumed = { pendingCallback = null })
+                MobileApp(
+                    callback = pendingCallback,
+                    onCallbackConsumed = { pendingCallback = null },
+                    pairingLink = pendingPairing,
+                    onPairingLinkConsumed = { pendingPairing = null },
+                )
             }
         }
     }
@@ -51,18 +58,24 @@ class MainActivity : FragmentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        readAuthCallback(intent)
+        readDeepLink(intent)
     }
 
     /**
-     * Reads one `kaeru://oauth` callback and strips it from the intent, so a recreation (rotation,
-     * process restart) cannot replay it. Validation of `state` belongs to the auth layer: this
-     * only carries the parameters across.
+     * Reads one of the app's two deep links and strips it from the intent, so a recreation
+     * (rotation, process restart) cannot replay it. Neither is trusted here: a `kaeru://oauth`
+     * callback is validated by the auth layer and a `kaeru://pair` link by `PairingRequest`, which
+     * refuses everything that does not point at a television on this network. This only carries
+     * them across.
      */
-    private fun readAuthCallback(intent: Intent?) {
+    private fun readDeepLink(intent: Intent?) {
         val data: Uri = intent?.data ?: return
-        if (data.scheme != "kaeru" || data.host != "oauth") return
-        pendingCallback = OAuthCallback(data.getQueryParameter("code"), data.getQueryParameter("state"))
+        if (data.scheme != "kaeru") return
+        when (data.host) {
+            "oauth" -> pendingCallback = OAuthCallback(data.getQueryParameter("code"), data.getQueryParameter("state"))
+            "pair" -> pendingPairing = data.toString()
+            else -> return
+        }
         intent.data = null
     }
 }
