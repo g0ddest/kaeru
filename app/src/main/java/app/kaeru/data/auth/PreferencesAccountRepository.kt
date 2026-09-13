@@ -2,6 +2,7 @@ package app.kaeru.data.auth
 
 import app.kaeru.data.library.AppPreferences
 import app.kaeru.data.shikimori.ShikimoriApi
+import app.kaeru.data.shikimori.absolute
 import app.kaeru.data.shikimori.toDomainFailure
 import app.kaeru.domain.model.Account
 import app.kaeru.domain.repository.AccountRepository
@@ -33,7 +34,7 @@ class PreferencesAccountRepository @Inject constructor(
      */
     override suspend fun refresh(): Result<Unit> = try {
         val user = api.whoami()
-        if (user.id == prefs.userId()) prefs.setAccountProfile(user.nickname, user.avatar)
+        if (user.id == prefs.userId()) prefs.setAccountProfile(user.nickname, absolute(user.avatar))
         Result.success(Unit)
     } catch (cancelled: CancellationException) {
         throw cancelled

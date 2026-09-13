@@ -1,6 +1,9 @@
 package app.kaeru.data.auth
 
 import app.cash.turbine.test
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -20,6 +23,7 @@ import app.kaeru.domain.model.Account
 import app.kaeru.domain.repository.MOBILE_REDIRECT
 import app.kaeru.domain.repository.OOB_REDIRECT
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
@@ -38,6 +42,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
+import java.io.IOException
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -201,6 +206,38 @@ class ShikimoriAuthRepositoryTest {
         // The same `whoami` that verifies the identity also names it: asking twice for one sign-in
         // would be a second round trip for an answer already in hand.
         assertEquals(Account(42, "frog", "https://shikimori.io/frog.png"), prefs.account.first())
+    }
+
+    @Test
+    fun `a nickname that cannot be written down does not fail a sign-in that already happened`() =
+        runTest {
+            // The token store and the preference store are two different files, so the second can
+            // fail on its own. By the time it is written the sign-in has committed.
+            val unwritable = AppPreferences(object : DataStore<Preferences> {
+                override val data = flowOf(emptyPreferences())
+                override suspend fun updateData(transform: suspend (Preferences) -> Preferences) =
+                    throw IOException("no space left on device")
+            })
+            val repo = ShikimoriAuthRepository(oauth, api, session, unwritable, "cid", "sec", clock)
+            enqueueTokens()
+
+            assertTrue(repo.exchangeCode("abc", MOBILE_REDIRECT).isSuccess)
+
+            assertTrue(repo.isLoggedIn.first())
+            // The name is simply missing until the settings screen asks `whoami` again.
+            assertNull(prefs.account.first())
+        }
+
+    @Test
+    fun `a relative avatar path is stored as a url something can actually load`() = runTest {
+        enqueueTokens("""{"id":42,"nickname":"frog","avatar":"/system/users/x160/42.png"}""")
+
+        assertTrue(repo.exchangeCode("abc", MOBILE_REDIRECT).isSuccess)
+
+        assertEquals(
+            Account(42, "frog", "https://shikimori.io/system/users/x160/42.png"),
+            prefs.account.first(),
+        )
     }
 
     @Test
