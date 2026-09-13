@@ -87,6 +87,31 @@ class HomeFeedBuilderTest {
     }
 
     @Test
+    fun `an anime rises in the row when any of its episodes is touched, not only the target`() {
+        // Going back to the sixth on purpose leaves the card pointing at the seventh — that is the
+        // rule — but the title was plainly watched five minutes ago, and it must not sink below
+        // one nobody has opened since yesterday.
+        val revisited = anime(1, AnimeStatus.ONGOING, episodes = 24, aired = 10)
+        val untouched = anime(2, AnimeStatus.ONGOING, episodes = 24, aired = 10)
+        val feed = builder.build(
+            listOf(
+                entry(
+                    revisited, watched = 5,
+                    progress = listOf(
+                        stopped(1, 7, 0.4f, now.minus(Duration.ofDays(2))),
+                        stopped(1, 6, 0.3f, now.minus(Duration.ofMinutes(5))),
+                    ),
+                ),
+                entry(untouched, watched = 3, progress = listOf(stopped(2, 4, 0.4f, now.minus(Duration.ofDays(1))))),
+            ),
+            now,
+        )
+
+        assertEquals(listOf(1, 2), feed.continueWatching.map { it.entry.anime.id })
+        assertEquals(7, feed.continueWatching.first().episode)
+    }
+
+    @Test
     fun `a later episode outranks an earlier one still unfinished`() {
         val a = anime(1, AnimeStatus.ONGOING, episodes = 24, aired = 10)
         val feed = builder.build(

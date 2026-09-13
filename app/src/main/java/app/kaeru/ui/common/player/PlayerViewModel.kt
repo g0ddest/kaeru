@@ -6,6 +6,7 @@ import androidx.media3.common.Player
 import app.kaeru.di.IoDispatcher
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
+import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.PlaybackTarget
 import app.kaeru.domain.model.Quality
@@ -242,17 +243,22 @@ class PlayerViewModel @Inject constructor(
      * An episode already watched to its end starts over: resuming on the last frame would only
      * offer the next episode again.
      *
+     * A position the watch button would not offer is not one to drop the viewer into either: an
+     * episode holding nothing but a mis-tap starts from the beginning, by the same cutoff the rest
+     * of the feature uses.
+     *
      * [saved] stands in when the per-episode table has no row for this episode but the anime's
      * pointer is inside it. The sampler writes the two independently, so either can be the one
      * that got through; the pointer is only ever believed about the episode it names.
      */
     private suspend fun resumeFrom(saved: WatchState?, animeId: Int, episode: Int): Long {
         val row = episodeProgress.observe(animeId).first().firstOrNull { it.episode == episode }
-        val pointer = saved?.takeIf { it.episode == episode }
-        val positionMs = row?.positionMs ?: pointer?.positionMs ?: return 0
-        val durationMs = row?.durationMs ?: pointer?.durationMs ?: 0
+            ?: saved?.takeIf { it.episode == episode }
+                ?.let { EpisodeProgress(animeId, episode, it.positionMs, it.durationMs, it.updatedAt) }
+            ?: return 0
+        if (!row.started) return 0
         val threshold = prefs.watchedThreshold.first()
-        return if (EpisodeQueue.watched(positionMs, durationMs, threshold)) 0 else positionMs
+        return if (EpisodeQueue.watched(row.positionMs, row.durationMs, threshold)) 0 else row.positionMs
     }
 
     fun togglePlayPause() = controller.togglePlayPause()

@@ -13,7 +13,8 @@ private const val EPISODE_MS = 1_440_000L
 class ContinueTargetTest {
     private val threshold = 0.9f
 
-    private fun rate(episodes: Int) = UserRate(1L, 100, ListStatus.WATCHING, episodes, Instant.EPOCH)
+    private fun rate(episodes: Int, status: ListStatus = ListStatus.WATCHING) =
+        UserRate(1L, 100, status, episodes, Instant.EPOCH)
 
     private fun progress(episode: Int, positionMs: Long, durationMs: Long = EPISODE_MS) =
         EpisodeProgress(100, episode, positionMs, durationMs, Instant.EPOCH)
@@ -25,6 +26,7 @@ class ContinueTargetTest {
         val target = ContinueTarget.of(
             rate(6),
             aired = 10,
+            announced = 24,
             progress = listOf(progress(7, 2_400_000, 2_880_000), progress(6, 10_000)),
             watchedThreshold = threshold,
         )
@@ -37,6 +39,7 @@ class ContinueTargetTest {
         val target = ContinueTarget.of(
             rate(6),
             aired = 10,
+            announced = 24,
             progress = listOf(progress(7, 1_400_000)),
             watchedThreshold = threshold,
         )
@@ -48,7 +51,7 @@ class ContinueTargetTest {
     fun `with nothing started the next episode after Shikimori's count is offered`() {
         assertEquals(
             ContinueTarget(7, 0),
-            ContinueTarget.of(rate(6), aired = 10, progress = emptyList(), watchedThreshold = threshold),
+            ContinueTarget.of(rate(6), aired = 10, announced = 24, progress = emptyList(), watchedThreshold = threshold),
         )
     }
 
@@ -56,7 +59,7 @@ class ContinueTargetTest {
     fun `an anime in no list at all starts at the first episode`() {
         assertEquals(
             ContinueTarget(1, 0),
-            ContinueTarget.of(null, aired = 12, progress = emptyList(), watchedThreshold = threshold),
+            ContinueTarget.of(null, aired = 12, announced = 12, progress = emptyList(), watchedThreshold = threshold),
         )
     }
 
@@ -64,7 +67,7 @@ class ContinueTargetTest {
     fun `an announcement with nothing aired has nothing to resume`() {
         assertEquals(
             ContinueTarget(1, 0),
-            ContinueTarget.of(rate(0), aired = 0, progress = listOf(progress(1, 600_000)), watchedThreshold = threshold),
+            ContinueTarget.of(rate(0), aired = 0, announced = 12, progress = listOf(progress(1, 600_000)), watchedThreshold = threshold),
         )
     }
 
@@ -74,6 +77,7 @@ class ContinueTargetTest {
         val target = ContinueTarget.of(
             rate(8),
             aired = 8,
+            announced = 12,
             progress = listOf(progress(9, 600_000)),
             watchedThreshold = threshold,
         )
@@ -87,6 +91,7 @@ class ContinueTargetTest {
         val target = ContinueTarget.of(
             rate(3),
             aired = 12,
+            announced = 12,
             progress = listOf(progress(4, 600_000), progress(9, 300_000), progress(6, 900_000)),
             watchedThreshold = threshold,
         )
@@ -101,11 +106,11 @@ class ContinueTargetTest {
         val film = 7_200_000L
         assertEquals(
             ContinueTarget(5, 60_000),
-            ContinueTarget.of(rate(4), 12, listOf(progress(5, 60_000, film)), threshold),
+            ContinueTarget.of(rate(4), 12, 12, listOf(progress(5, 60_000, film)), threshold),
         )
         assertEquals(
             ContinueTarget(5, 0),
-            ContinueTarget.of(rate(4), 12, listOf(progress(5, 59_999, film)), threshold),
+            ContinueTarget.of(rate(4), 12, 12, listOf(progress(5, 59_999, film)), threshold),
         )
     }
 
@@ -116,11 +121,11 @@ class ContinueTargetTest {
         val short = 180_000L
         assertEquals(
             ContinueTarget(5, 3_600),
-            ContinueTarget.of(rate(4), 12, listOf(progress(5, 3_600, short)), threshold),
+            ContinueTarget.of(rate(4), 12, 12, listOf(progress(5, 3_600, short)), threshold),
         )
         assertEquals(
             ContinueTarget(5, 0),
-            ContinueTarget.of(rate(4), 12, listOf(progress(5, 3_000, short)), threshold),
+            ContinueTarget.of(rate(4), 12, 12, listOf(progress(5, 3_000, short)), threshold),
         )
     }
 
@@ -129,20 +134,113 @@ class ContinueTargetTest {
         val exactly = (EPISODE_MS * 0.9).toLong()
         assertEquals(
             ContinueTarget(6, 0),
-            ContinueTarget.of(rate(4), 12, listOf(progress(5, exactly)), threshold),
+            ContinueTarget.of(rate(4), 12, 12, listOf(progress(5, exactly)), threshold),
         )
         assertEquals(
             ContinueTarget(5, exactly - 1_000),
-            ContinueTarget.of(rate(4), 12, listOf(progress(5, exactly - 1_000)), threshold),
+            ContinueTarget.of(rate(4), 12, 12, listOf(progress(5, exactly - 1_000)), threshold),
         )
     }
 
     @Test
-    fun `an episode finished locally moves the pointer on before Shikimori has heard about it`() {
+    fun `a mis-tap on a later episode does not cost the earlier one its position`() {
+        // The cutoff carrying its own weight: ten seconds of the ninth is the highest episode
+        // there is a row for, and "highest wins" alone would hand the pointer to it and throw
+        // forty minutes of the seventh away.
         val target = ContinueTarget.of(
-            rate(4),
+            rate(6),
+            aired = 10,
+            announced = 24,
+            progress = listOf(progress(7, 2_400_000, 2_880_000), progress(9, 10_000)),
+            watchedThreshold = threshold,
+        )
+
+        assertEquals(ContinueTarget(7, 2_400_000), target)
+    }
+
+    @Test
+    fun `the finale watched early does not carry the pointer past the episodes in between`() {
+        // Shikimori counts three; the viewer jumps to the twelfth out of the grid and watches it
+        // whole. The fourth is still the next one to watch — nobody has seen it.
+        val target = ContinueTarget.of(
+            rate(3),
             aired = 12,
-            progress = listOf(progress(5, 1_400_000), progress(6, 1_400_000)),
+            announced = 12,
+            progress = listOf(progress(12, 1_400_000)),
+            watchedThreshold = threshold,
+        )
+
+        assertEquals(ContinueTarget(4, 0), target)
+    }
+
+    @Test
+    fun `a show finished to the last episode offers that episode again rather than nothing`() {
+        // Twelve of twelve, all finished here. Walking forward runs off the end of the show, and
+        // the button must still press: there is an episode to play, so there is something to say.
+        val target = ContinueTarget.of(
+            rate(12),
+            aired = 12,
+            announced = 12,
+            progress = (1..12).map { progress(it, 1_400_000) },
+            watchedThreshold = threshold,
+        )
+
+        assertEquals(ContinueTarget(12, 0), target)
+    }
+
+    @Test
+    fun `a season nobody has measured is never a season that has run out`() {
+        // Shikimori leaves `episodes` at zero for most ongoing shows. Finishing the latest episode
+        // there is means waiting for the next one, not watching this one again.
+        val target = ContinueTarget.of(
+            rate(8),
+            aired = 8,
+            announced = 0,
+            progress = listOf(progress(8, 1_400_000)),
+            watchedThreshold = threshold,
+        )
+
+        assertEquals(ContinueTarget(9, 0), target)
+    }
+
+    @Test
+    fun `a rewatcher starts where their own counter says, not where the last time round ended`() {
+        // Every episode is finished — from the first time through. Those rows say nothing about
+        // where this time through has got to, and the counter they reset says the beginning.
+        val target = ContinueTarget.of(
+            rate(0, ListStatus.REWATCHING),
+            aired = 12,
+            announced = 12,
+            progress = (1..12).map { progress(it, 1_400_000) },
+            watchedThreshold = threshold,
+        )
+
+        assertEquals(ContinueTarget(1, 0), target)
+    }
+
+    @Test
+    fun `a rewatcher part-way through an episode is still returned to it`() {
+        // The old rows are ignored, but the one being watched right now is not.
+        val target = ContinueTarget.of(
+            rate(2, ListStatus.REWATCHING),
+            aired = 12,
+            announced = 12,
+            progress = listOf(progress(1, 1_400_000), progress(2, 1_400_000), progress(3, 600_000)),
+            watchedThreshold = threshold,
+        )
+
+        assertEquals(ContinueTarget(3, 600_000), target)
+    }
+
+    @Test
+    fun `an episode finished locally moves the pointer on before Shikimori has heard about it`() {
+        // Three counted on the server, the fourth, fifth and sixth finished here since: the walk
+        // steps over each of them in turn and stops at the seventh, which nobody has opened.
+        val target = ContinueTarget.of(
+            rate(3),
+            aired = 12,
+            announced = 12,
+            progress = listOf(progress(4, 1_400_000), progress(5, 1_400_000), progress(6, 1_400_000)),
             watchedThreshold = threshold,
         )
 
@@ -156,6 +254,7 @@ class ContinueTargetTest {
         val target = ContinueTarget.of(
             rate(8),
             aired = 12,
+            announced = 12,
             progress = listOf(progress(6, 700_000)),
             watchedThreshold = threshold,
         )
@@ -169,7 +268,7 @@ class ContinueTargetTest {
         // that must not be thrown away.
         assertEquals(
             ContinueTarget(5, 120_000),
-            ContinueTarget.of(rate(4), 12, listOf(progress(5, 120_000, durationMs = 0)), threshold),
+            ContinueTarget.of(rate(4), 12, 12, listOf(progress(5, 120_000, durationMs = 0)), threshold),
         )
     }
 }

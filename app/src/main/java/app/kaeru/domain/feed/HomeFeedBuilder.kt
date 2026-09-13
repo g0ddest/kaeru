@@ -22,7 +22,11 @@ class HomeFeedBuilder(
         val continueWatching = active
             .map { it to it.continueTarget(watchedThreshold) }
             .filter { (_, target) -> target.positionMs > 0 }
-            .sortedByDescending { (entry, target) -> entry.progressAt(target.episode)?.updatedAt ?: Instant.EPOCH }
+            // Ordered by when the title itself was last watched, not by the target episode's own
+            // row: going back to an earlier episode on purpose leaves the card pointing at the
+            // later one, and a row sorted on that stale timestamp would sink the very title the
+            // viewer had open five minutes ago.
+            .sortedByDescending { (entry, _) -> entry.episodeProgress.maxOfOrNull { it.updatedAt } ?: Instant.EPOCH }
             .map { (entry, target) -> FeedItem(entry, target.episode, FeedKind.CONTINUE) }
         val inProgressIds = continueWatching.map { it.entry.anime.id }.toSet()
 

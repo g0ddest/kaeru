@@ -207,7 +207,12 @@ fun primaryAction(
 
     val aired = entry.anime.airedEpisodes()
     if (next <= aired) {
-        val label = if (next <= 1) "Смотреть 1 серию" else "Продолжить $next серию"
+        // «Продолжить» is a promise about an episode still ahead of the viewer. When the target is
+        // one they have already finished — the whole show is behind them, and the alternative is a
+        // button naming an episode that will never come out — the honest verb is «Смотреть»: this
+        // starts the episode again.
+        val seen = next <= entry.rate.episodes || entry.progressAt(next)?.unfinished(watchedThreshold) == false
+        val label = if (next <= 1 || seen) "Смотреть $next серию" else "Продолжить $next серию"
         return PrimaryAction(label, enabled = true, episode = next)
     }
     return PrimaryAction(

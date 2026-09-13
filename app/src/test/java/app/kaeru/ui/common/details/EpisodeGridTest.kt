@@ -124,6 +124,18 @@ class EpisodeGridTest {
     }
 
     @Test
+    fun `a row nobody really started does not conjure an episode the season does not have`() {
+        // A stale or mis-numbered row for a thirteenth episode would otherwise add a tile the grid
+        // calls playable while drawing no strip on it — the two rules disagreeing in public.
+        val cells = episodeCells(
+            anime(episodes = 12, aired = 12, AnimeStatus.RELEASED), rate(12), null,
+            listOf(stopped(13, 10_000)), threshold,
+        )
+
+        assertEquals(12, cells.size)
+    }
+
+    @Test
     fun `an episode watched past the threshold shows no strip because it is behind the viewer`() {
         val cells = episodeCells(anime(episodes = 28, aired = 24), rate(20), watch(21, 1_350_000), emptyList(), threshold)
         assertNull(cells.first { it.number == 21 }.progress)

@@ -31,7 +31,7 @@ data class LibraryEntry(
      * shared by the home feed, the title screen and the player.
      */
     fun continueTarget(watchedThreshold: Float): ContinueTarget =
-        ContinueTarget.of(rate, anime.availableEpisodes, episodeProgress, watchedThreshold)
+        ContinueTarget.of(rate, anime.availableEpisodes, anime.episodes, episodeProgress, watchedThreshold)
 
     /** Episode to start from the watch control. */
     fun nextEpisode(watchedThreshold: Float): Int = continueTarget(watchedThreshold).episode

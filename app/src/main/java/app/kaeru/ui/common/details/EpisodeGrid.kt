@@ -58,7 +58,10 @@ fun episodeCells(
     // can drift from the first.
     val entry = LibraryEntry(anime, rate ?: emptyRate(anime.id), watch, progress)
     val seen = rate?.episodes ?: 0
-    val reached = maxOf(seen, entry.episodeProgress.maxOfOrNull { it.episode } ?: 0)
+    // Only an episode somebody really started stretches the season past what the catalogue
+    // announced. A stale or mis-numbered row that draws no strip must not add a tile the grid then
+    // claims is playable — the two rules would be disagreeing in public about the same episode.
+    val reached = maxOf(seen, entry.episodeProgress.filter { it.started }.maxOfOrNull { it.episode } ?: 0)
     val playable = maxOf(anime.airedEpisodes(), reached)
     val announced = maxOf(anime.episodes, playable)
     return (1..announced).map { episode ->
