@@ -5,6 +5,7 @@ import app.kaeru.domain.model.Quality
 import app.kaeru.domain.playback.TranslationRanker
 import app.kaeru.domain.repository.AccountRepository
 import app.kaeru.domain.repository.AuthRepository
+import app.kaeru.domain.repository.PairingAuthorization
 import app.kaeru.domain.settings.FakeSettingsStore
 import app.kaeru.test.MainDispatcherRule
 import kotlinx.coroutines.CompletableDeferred
@@ -47,8 +48,10 @@ class SettingsViewModelTest {
         var logouts = 0
         override val isLoggedIn: Flow<Boolean> = MutableStateFlow(true)
         override fun authorizeUrl(redirectUri: String) = "https://auth.test/"
+        override fun pairingAuthorization() = PairingAuthorization("https://auth.test/", "pairing-state")
         override suspend fun exchangeRedirectCode(code: String, state: String?) = Result.success(Unit)
         override suspend fun exchangeTypedCode(code: String) = Result.success(Unit)
+        override suspend fun exchangePairedCode(code: String, redirectUri: String) = Result.success(Unit)
         override suspend fun logout() { logouts++ }
     }
 

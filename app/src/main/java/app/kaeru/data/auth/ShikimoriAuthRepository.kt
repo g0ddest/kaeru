@@ -11,6 +11,7 @@ import app.kaeru.domain.error.AuthCallbackRejected
 import app.kaeru.domain.repository.AuthRepository
 import app.kaeru.domain.repository.MOBILE_REDIRECT
 import app.kaeru.domain.repository.OOB_REDIRECT
+import app.kaeru.domain.repository.PairingAuthorization
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -47,9 +48,23 @@ class ShikimoriAuthRepository @Inject constructor(
     override val isLoggedIn: Flow<Boolean> = session.userId.map { it != null }.distinctUntilChanged()
 
     override fun authorizeUrl(redirectUri: String): String {
-        val state = Base64.getUrlEncoder().withoutPadding()
-            .encodeToString(ByteArray(32).also(random::nextBytes))
+        val state = newState()
         pendingState = state
+        return authorizePage(redirectUri, state)
+    }
+
+    /**
+     * The same page, with the `state` handed out rather than remembered: a code fetched here is
+     * for a television, and leaving one armed on this phone would outlive the hand-off by the
+     * life of the process.
+     */
+    override fun pairingAuthorization(): PairingAuthorization =
+        newState().let { state -> PairingAuthorization(authorizePage(MOBILE_REDIRECT, state), state) }
+
+    private fun newState(): String = Base64.getUrlEncoder().withoutPadding()
+        .encodeToString(ByteArray(32).also(random::nextBytes))
+
+    private fun authorizePage(redirectUri: String, state: String): String {
         val redirect = URLEncoder.encode(redirectUri, "UTF-8")
         val client = URLEncoder.encode(clientId, "UTF-8")
         return "${SHIKIMORI_BASE_URL}oauth/authorize?client_id=$client&redirect_uri=$redirect" +
@@ -65,6 +80,22 @@ class ShikimoriAuthRepository @Inject constructor(
         if (state == null || !matches(expected, state)) return rejected("Callback state does not match")
         if (code.isBlank()) return rejected("Callback carried no authorization code")
         return exchangeCode(code, MOBILE_REDIRECT)
+    }
+
+    /**
+     * The television's side of the QR hand-off. The guards mirror [exchangeRedirectCode]'s: an
+     * account already signed in is never swapped out from under itself, and the redirect the phone
+     * reports has to be one of this app's own — a caller on the local network must not be able to
+     * choose where the token request claims it came from.
+     */
+    override suspend fun exchangePairedCode(code: String, redirectUri: String): Result<Unit> {
+        if (isLoggedIn.first()) return rejected("An account is already signed in")
+        if (redirectUri != MOBILE_REDIRECT && redirectUri != OOB_REDIRECT) {
+            return rejected("Pairing named a redirect this app does not use")
+        }
+        val trimmed = code.trim()
+        if (trimmed.isEmpty()) return rejected("Pairing carried no authorization code")
+        return exchangeCode(trimmed, redirectUri)
     }
 
     override suspend fun exchangeTypedCode(code: String): Result<Unit> =

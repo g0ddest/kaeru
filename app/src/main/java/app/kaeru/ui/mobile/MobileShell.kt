@@ -36,6 +36,8 @@ import app.kaeru.ui.common.details.DetailsViewModel
 import app.kaeru.ui.common.home.HomeViewModel
 import app.kaeru.ui.common.library.LibraryViewModel
 import app.kaeru.ui.common.search.SearchViewModel
+import app.kaeru.ui.common.pairing.PairingStage
+import app.kaeru.ui.common.pairing.PairingUiState
 import app.kaeru.ui.common.settings.SettingsViewModel
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruElevated
@@ -44,6 +46,7 @@ import app.kaeru.ui.common.theme.KaeruSurface
 import app.kaeru.ui.mobile.details.DetailsScreen
 import app.kaeru.ui.mobile.home.HomeScreen
 import app.kaeru.ui.mobile.library.LibraryScreen
+import app.kaeru.ui.mobile.pairing.PairingScreen
 import app.kaeru.ui.mobile.player.PlayerActivity
 import app.kaeru.ui.mobile.search.SearchScreen
 import app.kaeru.ui.mobile.settings.SettingsScreen
@@ -59,8 +62,21 @@ private val tabs = listOf(
 private val tabRoutes = tabs.map { it.route }.toSet()
 
 @Composable
-fun MobileShell(nav: NavHostController = rememberNavController()) {
+fun MobileShell(
+    pairing: PairingUiState = PairingUiState(),
+    onConfirmPairing: () -> String? = { null },
+    onDismissPairing: () -> Unit = {},
+    nav: NavHostController = rememberNavController(),
+) {
     val route = nav.currentBackStackEntryAsState().value?.destination?.route
+    // A television's QR code arrives as a deep link rather than as a tap, so the screen it opens
+    // is pushed from here rather than reached from a tab. Single top, because a second scan while
+    // the question is already on screen is the same question.
+    LaunchedEffect(pairing.stage) {
+        if (pairing.stage != PairingStage.IDLE && route != Routes.PAIR) {
+            nav.navigate(Routes.PAIR) { launchSingleTop = true }
+        }
+    }
     val context = LocalContext.current
     // Playback is its own activity: landscape, immersive, and outliving this back stack.
     val play: (Int, Int) -> Unit = { animeId, episode ->
@@ -149,6 +165,16 @@ fun MobileShell(nav: NavHostController = rememberNavController()) {
                     onStudiosReset = vm::resetStudios,
                     onKodikToken = vm::setKodikToken,
                     onRetryAccount = vm::refreshAccount,
+                )
+            }
+            composable(Routes.PAIR) {
+                PairingScreen(
+                    state = pairing,
+                    onConfirm = onConfirmPairing,
+                    onDismiss = {
+                        onDismissPairing()
+                        nav.popBackStack()
+                    },
                 )
             }
             composable(Routes.DETAILS, arguments = listOf(navArgument("animeId") { type = NavType.IntType })) { entry ->

@@ -6,6 +6,8 @@ import app.kaeru.domain.error.CastLoadFailed
 import app.kaeru.domain.error.EpisodeNotAvailable
 import app.kaeru.domain.error.HttpError
 import app.kaeru.domain.error.NetworkUnavailable
+import app.kaeru.domain.error.PairingFailed
+import app.kaeru.domain.error.PairingFailureReason
 import app.kaeru.domain.error.SourceFormatChanged
 import app.kaeru.domain.error.SourceUnavailable
 import app.kaeru.domain.error.SourceUnavailableReason
@@ -23,6 +25,10 @@ private const val EPISODE_MISSING = "Серия ещё не появилась �
 private const val CAST_LOAD_FAILED = "Chromecast не смог загрузить видео"
 private const val SOURCE_CHANGED = "Источник обновился, ждите обновления приложения"
 private const val STORAGE_FAILED = "Не удалось сохранить прогресс просмотра"
+private const val PAIR_BAD_LINK = "Эта ссылка не для входа на телевизоре"
+private const val PAIR_REFUSED = "Телевизор не принял вход. Покажите новый QR-код и попробуйте снова"
+private const val PAIR_UNREACHABLE = "Телевизор не отвечает. Проверьте, что телефон в той же сети Wi-Fi"
+private const val PAIR_NO_ADDRESS = "Телевизор не в локальной сети. Войдите по коду"
 private const val UNKNOWN = "Что-то пошло не так. Повторите попытку"
 
 /**
@@ -42,6 +48,10 @@ fun Throwable.toUserMessage(): String = when {
     this is SourceFormatChanged -> SOURCE_CHANGED
     this is AccountSessionChanged -> SESSION_CHANGED
     this is StorageFailure -> STORAGE_FAILED
+    this is PairingFailed && reason == PairingFailureReason.BAD_LINK -> PAIR_BAD_LINK
+    this is PairingFailed && reason == PairingFailureReason.UNREACHABLE -> PAIR_UNREACHABLE
+    this is PairingFailed && reason == PairingFailureReason.NO_LOCAL_ADDRESS -> PAIR_NO_ADDRESS
+    this is PairingFailed -> PAIR_REFUSED
     else -> UNKNOWN
 }
 

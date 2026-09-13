@@ -283,6 +283,75 @@ class ShikimoriAuthRepositoryTest {
         assertNull(store.get())
     }
 
+    @Test
+    fun `a code paired from a phone is exchanged with the redirect that phone used`() = runTest {
+        enqueueTokens()
+        assertTrue(repo.exchangePairedCode("  paired-code  ", MOBILE_REDIRECT).isSuccess)
+        assertEquals(
+            "grant_type=authorization_code&client_id=cid&client_secret=sec&code=paired-code&redirect_uri=kaeru%3A%2F%2Foauth",
+            server.takeRequest().body.readUtf8(),
+        )
+        assertEquals(42L, store.get()?.userId)
+    }
+
+    @Test
+    fun `a paired code needs no state because the nonce on the television was the confirmation`() = runTest {
+        enqueueTokens()
+        assertTrue(repo.exchangePairedCode("paired-code", MOBILE_REDIRECT).isSuccess)
+    }
+
+    @Test
+    fun `a pairing cannot redirect the token request anywhere this app does not own`() = runTest {
+        assertRejected(repo.exchangePairedCode("code", "https://attacker.example/collect"))
+        assertRejected(repo.exchangePairedCode("code", ""))
+        assertEquals(0, server.requestCount)
+        assertNull(store.get())
+    }
+
+    @Test
+    fun `a pairing carrying no code never reaches the oauth api`() = runTest {
+        assertRejected(repo.exchangePairedCode("   ", MOBILE_REDIRECT))
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun `a pairing cannot switch the account a television is already signed into`() = runTest {
+        enqueueTokens()
+        assertTrue(repo.exchangePairedCode("first", MOBILE_REDIRECT).isSuccess)
+        val before = store.get()
+        assertRejected(repo.exchangePairedCode("second", MOBILE_REDIRECT))
+        assertEquals(before, store.get())
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `an authorization built for a pairing arms nothing on this phone`() = runTest {
+        val pairing = repo.pairingAuthorization()
+        val url = pairing.url.toHttpUrl()
+        assertEquals(MOBILE_REDIRECT, url.queryParameter("redirect_uri"))
+        assertEquals(pairing.state, url.queryParameter("state"))
+        assertTrue(pairing.state.length >= 32)
+
+        // The code this URL produces is going to a television, so nothing here waits for a
+        // callback: one echoing that state is as unsolicited as any other.
+        assertRejected(repo.exchangeRedirectCode("attacker", pairing.state))
+        assertEquals(0, server.requestCount)
+        assertNull(store.get())
+    }
+
+    @Test
+    fun `every pairing authorization carries a state of its own`() {
+        assertNotEquals(repo.pairingAuthorization().state, repo.pairingAuthorization().state)
+    }
+
+    @Test
+    fun `a pairing authorization does not disturb a sign-in already in flight`() = runTest {
+        enqueueTokens()
+        val armed = pendingState()
+        repo.pairingAuthorization()
+        assertTrue(repo.exchangeRedirectCode("abc", armed).isSuccess)
+    }
+
     private fun pendingState(): String =
         requireNotNull(repo.authorizeUrl(MOBILE_REDIRECT).toHttpUrl().queryParameter("state"))
 
