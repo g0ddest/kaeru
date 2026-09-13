@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
@@ -67,11 +68,15 @@ fun TvApp(authViewModel: AuthViewModel = hiltViewModel()) {
                 // belongs to the screen, and the view model outlives it — `hiltViewModel()` on a
                 // television hands out one scoped to the activity, so `onCleared` does not fire
                 // when this branch is swapped for the home screen after a successful sign-in.
+                //
+                // Keyed on the screen being *visible* rather than merely composed. Home pressed on
+                // the remote leaves this composition alive, and a port left bound behind a
+                // launcher is a port listening for a code whose QR nobody can see.
                 val pairingViewModel: TvPairingViewModel = hiltViewModel()
                 val pairing by pairingViewModel.uiState.collectAsStateWithLifecycle()
-                DisposableEffect(pairingViewModel) {
+                LifecycleStartEffect(pairingViewModel) {
                     pairingViewModel.start()
-                    onDispose { pairingViewModel.stop() }
+                    onStopOrDispose { pairingViewModel.stop() }
                 }
                 TvLoginScreen(
                     authorizeUrl = authViewModel.tvAuthorizeUrl,
