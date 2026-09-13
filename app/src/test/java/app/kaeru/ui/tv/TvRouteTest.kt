@@ -1,6 +1,7 @@
 package app.kaeru.ui.tv
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -62,5 +63,48 @@ class TvRouteTest {
     @Test
     fun `a title over the home screen goes back to the home screen, not out of the app`() {
         assertEquals(TvRoute(TvDestination.HOME), home.openTitle(7).back())
+    }
+
+    // ---- what a press of back means once the rail is in the picture ----
+
+    @Test
+    fun `with the rail closed, back is one step through the destinations`() {
+        assertEquals(TvBack.Go(TvRoute(TvDestination.HOME)), tvBack(TvRoute(TvDestination.SEARCH), railOpen = false))
+    }
+
+    @Test
+    fun `with the rail closed on the home screen, back belongs to the launcher`() {
+        assertNull(tvBack(home, railOpen = false))
+    }
+
+    /** The fault this answers: back on an open rail used to leave the app from an open menu. */
+    @Test
+    fun `an open rail takes the press before any destination does`() {
+        assertEquals(TvBack.CloseRail(TvRoute(TvDestination.HOME)), tvBack(TvRoute(TvDestination.SEARCH), railOpen = true))
+    }
+
+    /**
+     * The rail cannot always close: it stays open while the screen behind it has nothing to take
+     * the D-pad, which a first sync — skeletons and one sentence — does not. The press then means
+     * what it would have meant with the rail closed rather than nothing at all.
+     */
+    @Test
+    fun `a rail that cannot close falls through to the destination back would have gone to`() {
+        val overLibrary = TvRoute(TvDestination.LIBRARY, titleId = 7)
+        assertEquals(TvBack.CloseRail(TvRoute(TvDestination.LIBRARY)), tvBack(overLibrary, railOpen = true))
+    }
+
+    /** On the home screen there is nothing to fall through to, and back must never exit a menu. */
+    @Test
+    fun `an open rail on the home screen has nowhere to fall through to`() {
+        assertEquals(TvBack.CloseRail(null), tvBack(home, railOpen = true))
+    }
+
+    /** Non-null whatever the fallback is, so the press is never handed to the launcher. */
+    @Test
+    fun `an open rail always takes the press`() {
+        TvDestination.entries.forEach { destination ->
+            assertNotNull(tvBack(TvRoute(destination), railOpen = true))
+        }
     }
 }

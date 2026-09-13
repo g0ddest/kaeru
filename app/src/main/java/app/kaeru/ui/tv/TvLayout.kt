@@ -70,4 +70,10 @@ object TvLayout {
      * them under the tabs with a third on the way in.
      */
     const val GridViewport = 10
+
+    /**
+     * And for the home screen's column of rows: the band takes 177 of 540dp and a row is 344, so
+     * one row is fully on screen and a second has pixels on it. Two is therefore «already showing».
+     */
+    const val ColumnViewport = 2
 }

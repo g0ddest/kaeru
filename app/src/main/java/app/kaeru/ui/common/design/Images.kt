@@ -40,10 +40,18 @@ internal fun kaeruImage(url: String?): ImageRequest {
 private val BackdropSize = Size(1280, 720)
 
 /**
- * The same loader, capped, for the one image that covers the screen.
+ * The same loader, capped, for the images that cover a screen.
  *
- * No Coil crossfade here: the screen it belongs to is already cross-fading the whole backdrop when
- * the focused card changes, and a fade inside a fade is the same transition paid for twice.
+ * It keeps [kaeruImage]'s fade. `Backdrop` is shared — the phone's details header and the
+ * television's title card draw one with nothing fading around them — and taking the fade away left
+ * those two hard-cutting from the placeholder to the artwork, which is the glitch the doc above
+ * argues against by name.
+ *
+ * It does not double up on the television's home screen either. That screen cross-fades the whole
+ * backdrop when the focused card changes, and the two only overlap if the new picture arrives
+ * inside that 400ms — which means it came from the memory cache, and Coil skips this transition
+ * for a memory-cache hit. An image off the network arrives after the outer fade has finished, so
+ * what this adds there is a fade in place of a pop.
  */
 @Composable
 internal fun kaeruBackdropImage(url: String?): ImageRequest {
@@ -53,6 +61,7 @@ internal fun kaeruBackdropImage(url: String?): ImageRequest {
             .data(url)
             .size(BackdropSize)
             .scale(Scale.FILL)
+            .crossfade(KaeruTokens.DurationNormal)
             .build()
     }
 }
