@@ -86,6 +86,49 @@ class KodikSourceProviderTest {
         assertTrue(translations.any { it.type == TranslationKind.SUBTITLES })
     }
 
+    // --- a film with a single voice and no chooser on its page ------------------------------
+
+    /** Kodik renders no translations box when there is only one voice; the page still names it. */
+    private fun singleTrackFilm() {
+        routes.playerPageBody = fixture("movie-single-track.html")
+    }
+
+    @Test
+    fun `a film with no chooser offers the one track its page names`() = runTest {
+        singleTrackFilm()
+
+        val translations = provider.translations(SHIKIMORI_ID).getOrThrow()
+
+        assertEquals(1, translations.size)
+        val only = translations.single()
+        assertEquals(923, only.id)
+        assertEquals("AnimeVost", only.title)
+        assertEquals(TranslationKind.VOICE, only.type)
+        assertEquals(1, only.episodesCount)
+    }
+
+    @Test
+    fun `a film with no chooser plays instead of reporting a missing episode`() = runTest {
+        singleTrackFilm()
+
+        val stream = provider.resolve(SHIKIMORI_ID, episode = 1, translation = null).getOrThrow()
+
+        assertEquals(1, stream.episode)
+        assertEquals(923, stream.translation.id)
+        assertEquals("AnimeVost", stream.translation.title)
+        assertTrue("expected playable urls, got ${stream.urls}", stream.urls.isNotEmpty())
+    }
+
+    @Test
+    fun `the one track of such a film is also the one a remembered choice matches`() = runTest {
+        singleTrackFilm()
+        val remembered = Translation(923, "AnimeVost", TranslationKind.VOICE, episodesCount = 1)
+
+        val stream = provider.resolve(SHIKIMORI_ID, episode = 1, translation = remembered).getOrThrow()
+
+        assertEquals(923, stream.translation.id)
+    }
+
     @Test
     fun `get-player is posted with the shikimori id the token and the anime types`() = runTest {
         provider.translations(SHIKIMORI_ID).getOrThrow()
