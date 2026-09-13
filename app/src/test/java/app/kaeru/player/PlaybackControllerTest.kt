@@ -19,6 +19,7 @@ import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.playback.WatchProgress
 import app.kaeru.test.MutableClock
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
@@ -398,6 +399,35 @@ class PlaybackControllerTest {
         assertEquals("https://cdn/100/4/11/480", engine.prepared.last().url)
         assertEquals(320_000L, engine.prepared.last().startPositionMs)
         assertEquals(Quality.P480, controller.state.value.quality)
+    }
+
+    @Test
+    fun `a quality picked while an episode is still resolving is the one that plays`() = runTest(dispatcher) {
+        start()
+        engine.moveTo(320_000)
+        advanceUntilIdle()
+        val beforeThePick = engine.prepared.size
+
+        // A track change is seconds of Kodik round trip. A quality picked inside that window
+        // used to prepare the stream being replaced and then be overridden by the resolve it
+        // landed in, so the one thing that did not happen was what the viewer asked for.
+        source.gate = CompletableDeferred()
+        val changing = scope.launch { controller.changeTranslation(studioBanda) }
+        advanceUntilIdle()
+        assertEquals(beforeThePick, engine.prepared.size)
+
+        source.gate = null
+        controller.changeQuality(Quality.P480)
+        advanceUntilIdle()
+
+        // The pick took the guard over rather than running alongside the resolve.
+        assertTrue(changing.isCompleted)
+        // One prepare, on the track that was being resolved, at the quality that was picked.
+        assertEquals(beforeThePick + 1, engine.prepared.size)
+        assertEquals("https://cdn/100/4/22/480", engine.prepared.last().url)
+        assertEquals(320_000L, engine.prepared.last().startPositionMs)
+        assertEquals(Quality.P480, controller.state.value.quality)
+        assertEquals(studioBanda, controller.state.value.stream?.translation)
     }
 
     @Test

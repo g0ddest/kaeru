@@ -270,17 +270,37 @@ class DefaultPlaybackController @Inject constructor(
         }.join()
     }
 
+    /**
+     * Inside the guard like every other swap. A pick that landed during a track change, a retry
+     * or an autoplay resolve used to prepare the stream being replaced and then be overridden by
+     * that resolve, so the one thing that did not happen was what the viewer asked for.
+     *
+     * An episode still on its way is finished at the picked quality rather than dropped: it may
+     * be a different episode or a different voice, and only the quality was being argued about.
+     */
     override fun changeQuality(quality: Quality) {
-        val current = _state.value
-        val url = current.stream?.urls?.get(quality) ?: return
-        flushProgress()
-        val at = current.positionMs
-        lastReportedMs = at
-        _state.value = current.copy(quality = quality, isBuffering = true, error = null)
-        // No metadata: the session is already showing this episode, and a quality swap is
-        // not a new thing to announce.
-        engine.prepare(url, headers, at)
-        engine.play()
+        // Read before the guard replaces the transition; a cancelled resolve leaves its plan
+        // behind precisely so whoever supersedes it can finish the job.
+        val unfinished = opening?.takeIf { switching }
+        transition {
+            if (unfinished != null) {
+                val plan = unfinished.copy(preferQuality = quality)
+                opening = plan
+                _state.update { it.copy(isBuffering = true, error = null) }
+                open(plan).onFailure(::fail)
+                return@transition
+            }
+            val current = _state.value
+            val url = current.stream?.urls?.get(quality) ?: return@transition
+            val at = current.positionMs
+            flushProgressNow()
+            lastReportedMs = at
+            _state.update { it.copy(quality = quality, isBuffering = true, error = null) }
+            // No metadata: the session is already showing this episode, and a quality swap is
+            // not a new thing to announce.
+            engine.prepare(url, headers, at)
+            engine.play()
+        }
     }
 
     override suspend fun playNext() {
