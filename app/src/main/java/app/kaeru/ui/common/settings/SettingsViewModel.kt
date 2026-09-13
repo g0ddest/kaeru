@@ -1,0 +1,171 @@
+package app.kaeru.ui.common.settings
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import app.kaeru.domain.model.Account
+import app.kaeru.domain.model.Quality
+import app.kaeru.domain.playback.TranslationRanker
+import app.kaeru.domain.repository.AccountRepository
+import app.kaeru.domain.repository.AuthRepository
+import app.kaeru.domain.settings.SettingsStore
+import app.kaeru.domain.settings.TranslationPriorityEditor
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+/**
+ * The settings screen's state, and the writes behind every control on it.
+ *
+ * **Why the screen shows its own answer.** Each control writes through to the store and then shows
+ * what the viewer just chose, without waiting for the store to say it back. The overrides live as
+ * long as this view model, which is as long as the screen: nothing else in the app writes these
+ * settings, so there is no second writer whose news we would be suppressing, and a switch that
+ * flicks back for a frame while a file is written is a switch that looks broken.
+ *
+ * **What it does not do.** It shows no progress and reports no error for a setting. A preference
+ * write is local and cannot be refused; the only thing here that can fail is asking Shikimori for
+ * the nickname, and the answer to that failure is the nickname already cached.
+ */
+@HiltViewModel
+class SettingsViewModel @Inject constructor(
+    private val settings: SettingsStore,
+    private val accounts: AccountRepository,
+    private val auth: AuthRepository,
+) : ViewModel() {
+
+    /** What the viewer has chosen on this screen, ahead of the store having said it back. */
+    private data class Overrides(
+        val autoplay: Boolean? = null,
+        val quality: Quality? = null,
+        /** Quality's own null means «Авто», so whether an override exists is a separate fact. */
+        val qualityChosen: Boolean = false,
+        val threshold: Float? = null,
+        val studios: List<String>? = null,
+        val token: String? = null,
+    )
+
+    /** The five settings, read together so one recomposition carries all of them. */
+    private data class Stored(
+        val studios: List<String>,
+        val autoplay: Boolean,
+        val quality: Quality?,
+        val threshold: Float,
+        val token: String?,
+    )
+
+    private data class AccountState(val loaded: Boolean, val account: Account?)
+
+    private val overrides = MutableStateFlow(Overrides())
+
+    /** True until the first `whoami` of this screen has come back, one way or the other. */
+    private val asking = MutableStateFlow(true)
+
+    private val stored = combine(
+        settings.preferredTranslations,
+        settings.autoplayNext,
+        settings.defaultQuality,
+        settings.watchedThreshold,
+        settings.kodikToken,
+    ) { studios, autoplay, quality, threshold, token -> Stored(studios, autoplay, quality, threshold, token) }
+
+    private val accountState = accounts.account
+        .map { AccountState(loaded = true, account = it) }
+        .onStart { emit(AccountState(loaded = false, account = null)) }
+
+    val uiState: StateFlow<SettingsUiState> =
+        combine(stored, overrides, accountState, asking) { settings, chosen, account, asking ->
+            val studios = chosen.studios ?: settings.studios
+            SettingsUiState(
+                // An account nobody has named yet is a skeleton while there is still a question
+                // outstanding, and «нет аккаунта» once there is not.
+                accountLoading = !account.loaded || (account.account == null && asking),
+                account = account.account,
+                autoplayNext = chosen.autoplay ?: settings.autoplay,
+                defaultQuality = if (chosen.qualityChosen) chosen.quality else settings.quality,
+                watchedThreshold = chosen.threshold ?: settings.threshold,
+                studios = TranslationPriorityEditor.shown(studios, TranslationRanker.DEFAULT_STUDIOS),
+                studiosChosen = studios.isNotEmpty(),
+                kodikToken = chosen.token ?: settings.token.orEmpty(),
+            )
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsUiState())
+
+    init {
+        // Opening the screen is the one moment the nickname is worth a round trip: it is also the
+        // only moment it is on screen. The failure is deliberately dropped — the cached name is
+        // the right answer when Shikimori cannot be reached.
+        viewModelScope.launch {
+            accounts.refresh()
+            asking.value = false
+        }
+    }
+
+    fun setAutoplayNext(enabled: Boolean) {
+        if (enabled == uiState.value.autoplayNext) return
+        overrides.update { it.copy(autoplay = enabled) }
+        viewModelScope.launch { settings.setAutoplayNext(enabled) }
+    }
+
+    fun setDefaultQuality(quality: Quality?) {
+        if (quality == uiState.value.defaultQuality) return
+        overrides.update { it.copy(quality = quality, qualityChosen = true) }
+        viewModelScope.launch { settings.setDefaultQuality(quality) }
+    }
+
+    fun setWatchedThreshold(fraction: Float) {
+        if (fraction == uiState.value.watchedThreshold) return
+        overrides.update { it.copy(threshold = fraction) }
+        viewModelScope.launch { settings.setWatchedThreshold(fraction) }
+    }
+
+    /** Saved on submit and on leaving the field, so an unchanged one costs nothing. */
+    fun setKodikToken(token: String) {
+        val cleaned = token.trim()
+        if (cleaned == uiState.value.kodikToken) return
+        overrides.update { it.copy(token = cleaned) }
+        viewModelScope.launch { settings.setKodikToken(cleaned.ifEmpty { null }) }
+    }
+
+    fun moveStudioUp(index: Int) = editStudios { TranslationPriorityEditor.moveUp(it, index) }
+
+    fun moveStudioDown(index: Int) = editStudios { TranslationPriorityEditor.moveDown(it, index) }
+
+    fun removeStudio(index: Int) = editStudios { TranslationPriorityEditor.remove(it, index) }
+
+    fun addStudio(name: String) = editStudios { TranslationPriorityEditor.add(it, name) }
+
+    /** Hands the order back to the app. Storing nothing is how the store says «never chosen». */
+    fun resetStudios() {
+        if (!uiState.value.studiosChosen) return
+        overrides.update { it.copy(studios = emptyList()) }
+        viewModelScope.launch { settings.setPreferredTranslations(emptyList()) }
+    }
+
+    /**
+     * Signs the viewer out. Only the confirmation dialog calls this: every other control on the
+     * screen writes a preference and nothing else.
+     */
+    fun signOut() {
+        viewModelScope.launch { auth.logout() }
+    }
+
+    /**
+     * Writes the whole order down, which is what turns the app's opening guess into the viewer's
+     * own list the first time they touch it. An edit with nothing to do returns the list it was
+     * given, and that identity is the signal to leave the store alone.
+     */
+    private fun editStudios(edit: (List<String>) -> List<String>) {
+        val current = uiState.value.studios
+        val next = edit(current)
+        if (next === current) return
+        overrides.update { it.copy(studios = next) }
+        viewModelScope.launch { settings.setPreferredTranslations(next) }
+    }
+}
