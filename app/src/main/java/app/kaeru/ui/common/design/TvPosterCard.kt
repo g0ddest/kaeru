@@ -32,6 +32,10 @@ import app.kaeru.ui.common.theme.KaeruText
  *
  * Only the artwork is inside the focusable surface, so the name under it stays put while the
  * picture lifts. [onLongClick] is the quick menu the spec asks for on a long press of OK.
+ *
+ * [titleMaxLines] is one on a screen where the row's height has to be known in advance — the
+ * immersive home, where the hero above the rows is already showing the focused title in full and a
+ * card that ran to a second line would push its own caption off the bottom of the panel.
  */
 @Composable
 fun TvPosterCard(
@@ -44,6 +48,7 @@ fun TvPosterCard(
     badge: String? = null,
     progress: Float? = null,
     width: Dp = KaeruTokens.PosterWidthTv,
+    titleMaxLines: Int = 2,
 ) {
     Column(modifier.width(width)) {
         Surface(
@@ -76,7 +81,7 @@ fun TvPosterCard(
             title,
             style = MaterialTheme.typography.titleSmall,
             color = KaeruText,
-            maxLines = 2,
+            maxLines = titleMaxLines,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = KaeruTokens.Space2),
         )

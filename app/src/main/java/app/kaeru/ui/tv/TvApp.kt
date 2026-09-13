@@ -77,23 +77,22 @@ fun TvApp(authViewModel: AuthViewModel = hiltViewModel()) {
                         onWatch = { playingId = selected.entry.anime.id; playingEpisode = it },
                         onClose = { selectedId = NOTHING },
                     )
-                    else -> TvHomeScreen(
-                        state = homeState,
-                        onRefresh = home::refresh,
-                        onLogout = authViewModel::logout,
-                        // One press plays. The card opens only for an episode there is no point
-                        // starting — one that has not aired — and for a deliberate long press.
-                        onPlay = { item ->
-                            when (val action = tvWatchAction(item)) {
-                                is TvWatchAction.Play -> {
-                                    playingId = item.entry.anime.id
-                                    playingEpisode = action.episode
-                                }
-                                TvWatchAction.NotAired -> selectedId = item.entry.anime.id
-                            }
-                        },
-                        onDetails = { selectedId = it.entry.anime.id },
-                    )
+                    else -> {
+                        // The catalogue rows are loaded by the screen that draws them, and the
+                        // television draws them now.
+                        LaunchedEffect(home) { home.loadDiscover() }
+                        TvHomeScreen(
+                            state = homeState,
+                            onRefresh = home::refresh,
+                            onPlay = { animeId, episode ->
+                                playingId = animeId
+                                playingEpisode = episode
+                            },
+                            onDetails = { selectedId = it },
+                            onSeason = home::selectSeason,
+                            onRetrySeason = home::retrySeason,
+                        )
+                    }
                 }
             }
         }
