@@ -60,8 +60,8 @@ fun MetaChip(text: String, modifier: Modifier = Modifier) {
 @Composable
 fun OftenChosenChip(modifier: Modifier = Modifier) = MetaChip(OFTEN_CHOSEN, modifier)
 
-/** Said once, so the phone sheets and the title screen cannot drift apart. */
-const val OFTEN_CHOSEN = "Часто выбираете"
+/** Lives here rather than in each sheet, so the phone player and the title screen cannot drift apart. */
+private const val OFTEN_CHOSEN = "Часто выбираете"
 
 /**
  * The current list status, and the way to change it.

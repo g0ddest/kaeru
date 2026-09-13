@@ -135,7 +135,7 @@ private fun TrackRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space1)) {
+        Column(Modifier.weight(1f)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space2),

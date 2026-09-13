@@ -8,9 +8,9 @@ import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
-import app.kaeru.domain.playback.RankedTranslation
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.model.WatchState
+import app.kaeru.domain.playback.RankedTranslation
 import app.kaeru.ui.common.theme.KaeruTheme
 import java.time.Duration
 import java.time.Instant
