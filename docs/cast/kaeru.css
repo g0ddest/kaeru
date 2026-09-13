@@ -1,0 +1,27 @@
+/* Kaeru — skin for the Styled Media Receiver 0EEA38FE.
+   The Cast console's "Skin URL" points at this file; image URLs resolve relative to it. */
+
+/* Idle screen after connecting: dark ground, logo centred by the receiver. */
+.background {
+  background: #0B0C10 center / cover no-repeat url(background.png);
+}
+
+.logo {
+  background: center / contain no-repeat url(logo.png);
+}
+
+/* While the receiver itself is loading. */
+.splash {
+  background: #0B0C10 center / cover no-repeat url(splash.png);
+}
+
+/* Played part of the timeline: the app's accent. */
+.progressBar {
+  background-color: #F5A524;
+}
+
+/* Small frog in the corner during playback. */
+.watermark {
+  background: center / contain no-repeat url(watermark.png);
+  background-size: 57px 57px;
+}
