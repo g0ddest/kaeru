@@ -219,7 +219,7 @@ class PlayerViewModelTest {
             playingOn(episode = 7, positionMs = 420_000)
             val attached = controller.attaches
 
-            viewModel.attachLive()
+            assertTrue("the session should have been adopted", viewModel.attachLive())
             advanceUntilIdle()
 
             assertTrue(controller.played.isEmpty())
@@ -232,13 +232,16 @@ class PlayerViewModelTest {
         }
 
     @Test
-    fun `a screen opened with no episode named and nothing playing starts nothing`() =
+    fun `a screen opened with no episode named and nothing playing says there is nothing to show`() =
         runTest(main.dispatcher) {
-            viewModel.attachLive()
+            // The activity closes on this answer: a remote control with no session behind it is a
+            // dead screen, and going back to the app is the only useful thing left.
+            assertFalse("there is no session to adopt", viewModel.attachLive())
             advanceUntilIdle()
 
             assertTrue(controller.played.isEmpty())
             assertEquals("", viewModel.uiState.value.title)
+            assertEquals(0, controller.attaches)
         }
 
     @Test

@@ -73,6 +73,9 @@ class PlayerActivity : FragmentActivity() {
     private val viewModel: PlayerViewModel by viewModels()
     private var launch by mutableStateOf(Launch())
 
+    /** Numbers the launches, so two of the same episode are still two launches. See [Launch.seq]. */
+    private var launches = 0
+
     /** The launch already handed over, so a second delivery of it is a return rather than a choice. */
     private var delivered: Launch? = null
 
@@ -253,9 +256,10 @@ class PlayerActivity : FragmentActivity() {
         val current = launch
         delivered = current
         // The Cast framework builds the notification's intent itself, so it carries no anime and
-        // no episode. Whatever is playing is what the viewer tapped it about.
+        // no episode. Whatever is playing is what the viewer tapped it about — and if nothing is,
+        // there is no remote control to draw and the app is a better place to be than an empty one.
         if (current.animeId <= 0) {
-            viewModel.attachLive()
+            if (!viewModel.attachLive()) finish()
             return
         }
         viewModel.start(current.animeId, current.episode, explicit)
@@ -355,11 +359,7 @@ class PlayerActivity : FragmentActivity() {
         return RemoteAction(Icon.createWithResource(this, icon), label, label, pending)
     }
 
-    private fun read(intent: Intent?, explicit: Boolean) = Launch(
-        animeId = intent?.getIntExtra(EXTRA_ANIME_ID, 0) ?: 0,
-        episode = intent?.getIntExtra(EXTRA_EPISODE, 1) ?: 1,
-        explicit = explicit,
-    )
+    private fun read(intent: Intent?, explicit: Boolean) = readLaunch(intent, explicit, ++launches)
 
     private fun goImmersive() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -399,9 +399,6 @@ class PlayerActivity : FragmentActivity() {
     }
 
     companion object {
-        private const val EXTRA_ANIME_ID = "animeId"
-        private const val EXTRA_EPISODE = "episode"
-
         /** Registered for this app only, so nothing outside it can drive the floating window. */
         private const val ACTION_WINDOW_CONTROL = "app.kaeru.player.WINDOW_CONTROL"
         private const val EXTRA_WINDOW_CONTROL = "control"
@@ -428,7 +425,31 @@ class PlayerActivity : FragmentActivity() {
  * The episode is what the intent said at the moment it was built; [explicit] is what says whether
  * that number is still allowed to overrule a session that has moved on since.
  */
-private data class Launch(val animeId: Int = 0, val episode: Int = 1, val explicit: Boolean = false)
+internal data class Launch(
+    val animeId: Int = 0,
+    val episode: Int = 1,
+    val explicit: Boolean = false,
+    /**
+     * Which launch this is, counted from one.
+     *
+     * A launch is an event, not a value, and everything downstream compares it structurally — the
+     * effect that delivers it and the guard that decides whether it has been delivered already.
+     * Without this, asking for episode 7 a second time while the session sits on episode 9 would
+     * read as the launch already made, be downgraded to a return, and attach to 9.
+     */
+    val seq: Int = 0,
+)
+
+/** Reads a launch out of [intent]. [seq] is what makes each read a launch of its own. */
+internal fun readLaunch(intent: Intent?, explicit: Boolean, seq: Int) = Launch(
+    animeId = intent?.getIntExtra(EXTRA_ANIME_ID, 0) ?: 0,
+    episode = intent?.getIntExtra(EXTRA_EPISODE, 1) ?: 1,
+    explicit = explicit,
+    seq = seq,
+)
+
+private const val EXTRA_ANIME_ID = "animeId"
+private const val EXTRA_EPISODE = "episode"
 
 /**
  * Whether a launch of the player is the viewer asking for an episode, or the same session coming

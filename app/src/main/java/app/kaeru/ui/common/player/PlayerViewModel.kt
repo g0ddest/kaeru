@@ -213,12 +213,17 @@ class PlayerViewModel @Inject constructor(
      * whole — including the anime id, which everything the remote control draws from the
      * catalogue needs and which the intent does not carry. Nothing is started: a notification
      * only exists while something is already playing.
+     *
+     * @return whether there was a session to adopt. False leaves the screen with nothing to show
+     *   and nothing to start, which the caller answers by closing it rather than by drawing a
+     *   remote control with no receiver behind it.
      */
-    fun attachLive() {
-        val live = controller.state.value.target ?: return
+    fun attachLive(): Boolean {
+        val live = controller.state.value.target ?: return false
         controller.attachScreen()
         requested = live.animeId to live.episode
         animeId.value = live.animeId
+        return true
     }
 
     /**
