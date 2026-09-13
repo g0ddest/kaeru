@@ -19,6 +19,7 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
@@ -71,7 +72,7 @@ fun LibraryScreen(
         KaeruTopBar(TITLE)
         StatusTabs(state.counts, state.status, onStatus)
         SortControl(state.sort, onSort)
-        Box(Modifier.fillMaxSize()) {
+        Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
                 state.isLoading -> SkeletonGrid(Modifier.padding(top = KaeruTokens.Space4), count = 9)
                 state.items.isEmpty() -> EmptyTab(state.status, onSearch)
@@ -84,13 +85,13 @@ fun LibraryScreen(
 /** Where the list is cut, and how much is in each part. */
 @Composable
 private fun StatusTabs(counts: Map<ListStatus, Int>, selected: ListStatus, onStatus: (ListStatus) -> Unit) {
-    val tabs = libraryTabs(counts)
+    val tabs = remember(counts) { libraryTabs(counts) }
     LazyRow(
         modifier = Modifier.padding(top = KaeruTokens.Space2),
         contentPadding = PaddingValues(horizontal = KaeruTokens.GutterPhone),
         horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space2),
     ) {
-        items(tabs, key = { it.status }) { tab ->
+        items(tabs, key = { it.status.name }) { tab ->
             StatusPill(
                 text = tab.text,
                 selected = tab.status == selected,
@@ -164,6 +165,8 @@ private fun LibraryGrid(items: List<LibraryEntry>, threshold: Float, onAnime: (I
                 progress = entry.progressFraction(threshold),
                 // The cell decides how wide a card is here, not the design system's row pitch.
                 width = Dp.Unspecified,
+                // Two lines reserved, so «7 из 28» lines up across a row of cards.
+                titleMinLines = 2,
             )
         }
     }

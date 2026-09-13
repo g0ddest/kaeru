@@ -30,7 +30,6 @@ import app.kaeru.ui.common.theme.KaeruSecondary
 import app.kaeru.ui.common.theme.KaeruSurface
 import app.kaeru.ui.common.theme.KaeruText
 
-private val FieldHeight = 52.dp
 private val LeadingIconSize = 20.dp
 
 /** «Найти» as a button inside the field is what this replaces; the keyboard already has that key. */
@@ -82,7 +81,7 @@ fun SearchField(
             .kaeruFocus(shape = KaeruTokens.ChipShape, focusedScale = 1f)
             .clip(KaeruTokens.ChipShape)
             .background(KaeruSurface)
-            .heightIn(min = FieldHeight),
+            .heightIn(min = KaeruTokens.ButtonHeight),
         decorationBox = { field ->
             Row(
                 Modifier.padding(start = KaeruTokens.Space4, end = KaeruTokens.Space1),

@@ -78,7 +78,7 @@ fun SearchScreen(
             if (state.recentQueries.isNotEmpty()) {
                 RecentQueries(state.recentQueries, onRecent)
             }
-            Box(Modifier.fillMaxSize()) {
+            Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (val content = searchContentState(state)) {
                     SearchContent.Loading -> SkeletonGrid(Modifier.padding(top = KaeruTokens.Space4), count = 9)
                     SearchContent.Results -> ResultGrid(state, onPlanned, onOpen)
@@ -154,9 +154,13 @@ private fun ResultCard(anime: Anime, action: AddAction, onPlanned: (Int) -> Unit
             title = anime.title,
             onClick = { onOpen(anime.id) },
             modifier = Modifier.fillMaxWidth(),
-            subtitle = anime.year?.toString(),
+            // The year rides on the artwork rather than under the name: it is the one thing that
+            // tells two seasons of the same show apart, and as a badge it costs the card no height.
+            badge = anime.year?.toString(),
             // The cell decides how wide a card is here, not the design system's row pitch.
             width = Dp.Unspecified,
+            // Two lines reserved, so every «В планы» in a row sits on the same line.
+            titleMinLines = 2,
         )
         SecondaryButton(
             text = action.label,

@@ -118,6 +118,12 @@ internal fun BoxScope.PosterOverlays(badge: String?, progress: Float?) {
  * wants: every card the same width whatever is beside it. A grid wants the opposite — the cell
  * decides — so pass `Dp.Unspecified` there along with `Modifier.fillMaxWidth()`, and the card
  * takes whatever width it is given.
+ *
+ * [titleMinLines] reserves that many lines for the name whether or not it needs them. A row leaves
+ * it at one, because a row is read one card at a time and blank space under a short name would be
+ * space for nothing. A grid passes two: there the cards sit side by side, and a neighbour whose
+ * name runs to a second line drags everything under it — a subtitle, a card action — out of line
+ * with the rest of the row.
  */
 @Composable
 fun PosterCard(
@@ -129,6 +135,7 @@ fun PosterCard(
     badge: String? = null,
     progress: Float? = null,
     width: Dp = KaeruTokens.PosterWidthPhone,
+    titleMinLines: Int = 1,
 ) {
     Column(
         modifier
@@ -148,6 +155,7 @@ fun PosterCard(
             title,
             style = MaterialTheme.typography.titleSmall,
             color = KaeruText,
+            minLines = titleMinLines,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = KaeruTokens.Space2),

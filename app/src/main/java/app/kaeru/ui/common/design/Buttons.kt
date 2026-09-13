@@ -133,7 +133,7 @@ fun DestructiveButton(
  *
  * [compact] is the same button in a column a third of the screen wide: the card action under a
  * poster in a grid. It keeps the shape, the border and the colours and gives up the things that do
- * not fit — the 52dp height drops to the 48dp floor, the 24dp side padding to 12, and the label to
+ * not fit — the 52dp height drops to the 48dp floor, the 24dp side padding to 8, and the label to
  * the size a card title is set in. Nothing else changes, so «В планы» under a poster and
  * «Подробнее» beside the hero still read as the same control.
  */
@@ -160,7 +160,7 @@ fun SecondaryButton(
             disabledContainerColor = Color.Transparent,
             disabledContentColor = KaeruSecondary,
         ),
-        contentPadding = PaddingValues(horizontal = if (compact) KaeruTokens.Space3 else KaeruTokens.Space6),
+        contentPadding = PaddingValues(horizontal = if (compact) KaeruTokens.Space2 else KaeruTokens.Space6),
     ) {
         if (icon != null) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(IconSize))
