@@ -350,6 +350,52 @@ class FormatTest {
     }
 
     @Test
+    fun `a show with every episode behind the viewer offers the last one again`() {
+        // Finished, and finished on this device. «Ждём 13 серию» would be a promise about an
+        // episode that is never coming, on a show that plays perfectly well.
+        val finished = entry(
+            anime = anime(AnimeStatus.RELEASED, episodes = 12, aired = 12),
+            watched = 12,
+            progress = (1..12).map { stopped(it, 1_400_000) },
+        )
+
+        val action = primaryAction(finished, 0.9f, now, zone)
+
+        assertEquals("Смотреть 12 серию", action.label)
+        assertTrue(action.enabled)
+        assertEquals(12, action.episode)
+    }
+
+    @Test
+    fun `a rewatch that has reset the count still has something to press`() {
+        val rewatching = entry(
+            anime = anime(AnimeStatus.RELEASED, episodes = 12, aired = 12),
+            watched = 0,
+            status = ListStatus.REWATCHING,
+            progress = (1..12).map { stopped(it, 1_400_000) },
+        )
+
+        val action = primaryAction(rewatching, 0.9f, now, zone)
+
+        assertEquals("Смотреть 12 серию", action.label)
+        assertTrue(action.enabled)
+    }
+
+    @Test
+    fun `the finale watched early does not skip the episodes in between`() {
+        val jumped = entry(
+            anime = anime(AnimeStatus.RELEASED, episodes = 12, aired = 12),
+            watched = 3,
+            progress = listOf(stopped(12, 1_400_000)),
+        )
+
+        val action = primaryAction(jumped, 0.9f, now, zone)
+
+        assertEquals("Продолжить 4 серию", action.label)
+        assertEquals(4, action.episode)
+    }
+
+    @Test
     fun `a button that cannot be pressed never names an episode to play`() {
         val cases = listOf(
             entry(anime = anime(aired = 8, nextEpisodeAt = at(2026, 4, 13, 18, 0)), watched = 8),
