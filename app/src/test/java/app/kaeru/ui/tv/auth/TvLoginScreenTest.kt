@@ -1,5 +1,7 @@
 package app.kaeru.ui.tv.auth
 
+import app.kaeru.ui.common.auth.AuthFailure
+import app.kaeru.ui.common.auth.AuthUiState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -82,10 +84,57 @@ class TvLoginScreenTest {
     }
 
     @Test
+    fun `a code that did not work says so, and says what to do about it`() {
+        assertEquals(
+            "Код не подошёл или уже использован. Получите новый код и попробуйте ещё раз",
+            tvCodeStatus(AuthUiState(loggedIn = false, failure = AuthFailure.CODE_REJECTED)),
+        )
+    }
+
+    @Test
+    fun `a code that never got through blames the connection rather than the viewer`() {
+        assertEquals(
+            "Нет связи с Shikimori. Повторить",
+            tvCodeStatus(AuthUiState(loggedIn = false, failure = AuthFailure.NO_CONNECTION)),
+        )
+    }
+
+    @Test
+    fun `an exchange in flight says so instead of leaving the last failure on screen`() {
+        val busy = AuthUiState(loggedIn = false, exchanging = true, failure = AuthFailure.CODE_REJECTED)
+        assertEquals("Входим…", tvCodeStatus(busy))
+    }
+
+    @Test
+    fun `a field nobody has failed at yet says nothing at all`() {
+        assertNull(tvCodeStatus(AuthUiState(loggedIn = false)))
+    }
+
+    @Test
+    fun `nothing can be typed or submitted while the code is being checked`() {
+        val busy = AuthUiState(loggedIn = false, exchanging = true)
+        assertFalse(tvCodeFieldEnabled(busy))
+        assertFalse(tvCodeSubmitEnabled(busy, "aBc1dEf2"))
+    }
+
+    @Test
+    fun `the button waits for something to submit`() {
+        val idle = AuthUiState(loggedIn = false)
+        assertTrue(tvCodeFieldEnabled(idle))
+        assertFalse(tvCodeSubmitEnabled(idle, ""))
+        assertFalse(tvCodeSubmitEnabled(idle, "   "))
+        assertTrue(tvCodeSubmitEnabled(idle, "aBc1dEf2"))
+    }
+
+    @Test
     fun `nothing on this screen uses the separator the design system forbids`() {
         TvPairingStatus.entries.forEach { status ->
             val state = waiting(status = status)
             assertTrue(status.name, '·' !in tvLoginStatus(state) && '·' !in tvLoginHint(state))
+        }
+        AuthFailure.entries.forEach { failure ->
+            val line = tvCodeStatus(AuthUiState(loggedIn = false, failure = failure))
+            assertTrue(failure.name, line != null && '·' !in line)
         }
     }
 }

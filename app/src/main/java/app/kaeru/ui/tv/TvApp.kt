@@ -8,7 +8,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -22,11 +21,28 @@ import androidx.media3.common.util.UnstableApi
 import app.kaeru.ui.common.home.HomeViewModel
 import app.kaeru.ui.common.player.PlayerViewModel
 import app.kaeru.ui.common.theme.KaeruTvTheme
+import app.kaeru.ui.common.auth.AuthUiState
 import app.kaeru.ui.common.auth.AuthViewModel
 import app.kaeru.ui.tv.auth.TvLoginScreen
 import app.kaeru.ui.tv.auth.TvPairingViewModel
 import app.kaeru.ui.tv.home.TvHomeScreen
 import app.kaeru.ui.tv.player.TvPlayerScreen
+
+/** The three things a television can be showing before any of them has a screen of its own. */
+internal enum class TvScreen { LOADING, LOGIN, APP }
+
+/**
+ * Which of them, from the account alone.
+ *
+ * Nothing else is allowed a say. A phone signing this television in flips `loggedIn` to true while
+ * the login screen still holds whatever the last typed attempt left on the state, and the screen
+ * has to go the moment the account exists rather than once that debris is tidied away.
+ */
+internal fun tvScreen(auth: AuthUiState): TvScreen = when (auth.loggedIn) {
+    null -> TvScreen.LOADING
+    false -> TvScreen.LOGIN
+    true -> TvScreen.APP
+}
 
 /** No title card is open, and no episode is playing. */
 private const val NOTHING = 0
@@ -35,7 +51,7 @@ private const val NOTHING = 0
 @Composable
 fun TvApp(authViewModel: AuthViewModel = hiltViewModel()) {
     val auth = authViewModel.uiState.collectAsStateWithLifecycle().value
-    var code by remember { mutableStateOf("") }
+    val code by authViewModel.tvCode.collectAsStateWithLifecycle()
     // Saved as ids rather than as the entries themselves: a `LibraryEntry` is not parcelable and
     // holding one across a process death would mean saving a copy of the catalogue. The feed
     // comes back from Room in a moment, and the title card is found in it again.
@@ -44,9 +60,9 @@ fun TvApp(authViewModel: AuthViewModel = hiltViewModel()) {
     var playingEpisode by rememberSaveable { mutableIntStateOf(NOTHING) }
 
     KaeruTvTheme {
-        when (auth.loggedIn) {
-            null -> Box(Modifier.fillMaxSize())
-            false -> {
+        when (tvScreen(auth)) {
+            TvScreen.LOADING -> Box(Modifier.fillMaxSize())
+            TvScreen.LOGIN -> {
                 // The pairing port is opened here rather than in the view model's constructor: it
                 // belongs to the screen, and the view model outlives it — `hiltViewModel()` on a
                 // television hands out one scoped to the activity, so `onCleared` does not fire
@@ -62,12 +78,12 @@ fun TvApp(authViewModel: AuthViewModel = hiltViewModel()) {
                     state = auth,
                     pairing = pairing,
                     code = code,
-                    onCode = { code = it },
-                    onSubmit = { authViewModel.exchangeTvCode(code) },
+                    onCode = authViewModel::setTvCode,
+                    onSubmit = authViewModel::exchangeTvCode,
                     onNewQr = pairingViewModel::start,
                 )
             }
-            true -> {
+            TvScreen.APP -> {
                 // Hoisted above the branch: the feed is held by the ViewModel, so swapping the
                 // home rows for the title card costs nothing and preserves the loaded state.
                 val home: HomeViewModel = hiltViewModel()

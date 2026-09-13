@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import app.kaeru.ui.common.auth.AuthFailure
 import app.kaeru.ui.common.auth.AuthUiState
 import app.kaeru.ui.common.design.KaeruTextField
 import app.kaeru.ui.common.design.KaeruTokens
@@ -58,7 +59,10 @@ private const val TYPED_STEPS = "1. Отсканируйте этот код\n2.
 private const val CODE_PLACEHOLDER = "Код авторизации"
 private const val CODE_CLEAR = "Очистить код"
 private const val SIGN_IN = "Войти"
-private const val CHECKING = "Проверяем…"
+private const val CODE_CHECKING = "Входим…"
+private const val CODE_REJECTED =
+    "Код не подошёл или уже использован. Получите новый код и попробуйте ещё раз"
+private const val CODE_OFFLINE = "Нет связи с Shikimori. Повторить"
 
 private val PairingQr = 224.dp
 private val TypedQr = 132.dp
@@ -168,17 +172,21 @@ private fun TypedCodeHalf(
             value = code,
             onValueChange = onCode,
             modifier = Modifier.width(TypedFieldWidth),
+            enabled = tvCodeFieldEnabled(state),
             placeholder = CODE_PLACEHOLDER,
             clearLabel = CODE_CLEAR,
             onSubmit = onSubmit,
         )
-        PrimaryButton(
-            text = if (state.exchanging) CHECKING else SIGN_IN,
-            onClick = onSubmit,
-            enabled = code.isNotBlank() && !state.exchanging,
-        )
-        state.errorMessage?.let {
-            Text(it, style = MaterialTheme.typography.bodyMedium, color = KaeruError)
+        PrimaryButton(SIGN_IN, onSubmit, enabled = tvCodeSubmitEnabled(state, code))
+        // One line for this half, in the place the old error text was: what is happening, or what
+        // went wrong and which of the two things to do about it.
+        tvCodeStatus(state)?.let { line ->
+            Text(
+                line,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (state.exchanging) KaeruSecondary else KaeruError,
+                modifier = Modifier.width(TypedFieldWidth),
+            )
         }
     }
 }
@@ -251,6 +259,26 @@ internal fun tvLoginCountdown(pairing: TvPairingUiState, now: Instant): String? 
 
 internal fun tvLoginOffersNewQr(pairing: TvPairingUiState): Boolean =
     pairing.status == TvPairingStatus.EXPIRED || pairing.status == TvPairingStatus.UNAVAILABLE
+
+/**
+ * The one line under the typed-code field.
+ *
+ * A refused code and a refused connection are the same red text to look at and two different
+ * things to do, so they are never collapsed into one message. Nothing is said before the first
+ * attempt: an untouched field with a warning under it reads as an error the viewer already made.
+ */
+internal fun tvCodeStatus(state: AuthUiState): String? = when {
+    state.exchanging -> CODE_CHECKING
+    state.failure == AuthFailure.NO_CONNECTION -> CODE_OFFLINE
+    state.failure == AuthFailure.CODE_REJECTED -> CODE_REJECTED
+    else -> null
+}
+
+/** Nothing is typed into a field whose contents are already on their way to Shikimori. */
+internal fun tvCodeFieldEnabled(state: AuthUiState): Boolean = !state.exchanging
+
+internal fun tvCodeSubmitEnabled(state: AuthUiState, code: String): Boolean =
+    code.isNotBlank() && !state.exchanging
 
 internal fun tvLoginName(pairing: TvPairingUiState): String =
     pairing.deviceName.trim().ifEmpty { UNNAMED_TV }
