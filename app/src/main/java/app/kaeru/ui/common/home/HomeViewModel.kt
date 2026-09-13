@@ -88,7 +88,7 @@ class HomeViewModel @Inject constructor(
         discoverState,
     ) { entries, refresh, threshold, discovered ->
         HomeUiState(
-            feed = feedBuilder.build(entries, clock.instant()),
+            feed = feedBuilder.build(entries, clock.instant(), threshold),
             isLoading = false,
             isRefreshing = refresh.active,
             errorMessage = refresh.error,

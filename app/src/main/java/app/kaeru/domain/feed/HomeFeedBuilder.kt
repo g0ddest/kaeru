@@ -9,11 +9,15 @@ import app.kaeru.domain.model.ListStatus
 import java.time.Duration
 import java.time.Instant
 
-class HomeFeedBuilder(
-    private val watchedThreshold: Float = 0.9f,
-    private val upcomingWindow: Duration = Duration.ofDays(7),
-) {
-    fun build(entries: List<LibraryEntry>, now: Instant): HomeFeed {
+class HomeFeedBuilder(private val upcomingWindow: Duration = Duration.ofDays(7)) {
+    /**
+     * @param watchedThreshold how much of an episode counts as watched, as the viewer set it.
+     *   A parameter of the call rather than of the builder, and deliberately without a default:
+     *   this is a singleton, the setting changes while it is alive, and every label drawn around
+     *   the feed reads the live value. A builder holding 0.9 of its own is a hero whose button
+     *   says «Продолжить 7 серию» and starts the sixth.
+     */
+    fun build(entries: List<LibraryEntry>, now: Instant, watchedThreshold: Float): HomeFeed {
         val active = entries.filter { it.rate.status == ListStatus.WATCHING || it.rate.status == ListStatus.REWATCHING }
 
         // An entry is being continued exactly when its target carries a position: the rule for
