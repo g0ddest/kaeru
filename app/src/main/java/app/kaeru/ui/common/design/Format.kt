@@ -135,8 +135,8 @@ fun episodeLine(item: FeedItem, now: Instant, zone: ZoneId = ZoneId.systemDefaul
     val anime = item.entry.anime
     return when (item.kind) {
         FeedKind.CONTINUE -> {
-            val watch = item.entry.watch?.takeIf { it.episode == item.episode }
-            val left = watch?.let { remainingLine(it.positionMs, it.durationMs) }
+            val row = item.entry.progressAt(item.episode)
+            val left = row?.let { remainingLine(it.positionMs, it.durationMs) }
             if (left == null) "${item.episode} серия" else "${item.episode} серия, $left"
         }
         FeedKind.NEW_EPISODE -> "Вышла ${item.episode} серия"
@@ -181,7 +181,9 @@ data class PrimaryAction(
  *
  * The order of the cases is the order of what the viewer most wants to know:
  *
- * 1. a position inside an episode — that episode is on this device, so it is offered first;
+ * 1. a position inside an episode — that episode is on this device, so it is offered first, and
+ *    which episode that is comes from `ContinueTarget`, so a tap that landed on the wrong tile
+ *    never becomes the offer;
  * 2. an episode that has aired — «Смотреть 1 серию» or «Продолжить 7 серию»;
  * 3. an episode that has not, with a date still ahead — «9 серия выйдет завтра»;
  * 4. nothing aired at all — «Ещё не вышло», which is the whole truth about an announcement;
@@ -199,11 +201,9 @@ fun primaryAction(
     zone: ZoneId = ZoneId.systemDefault(),
 ): PrimaryAction {
     if (entry == null) return PrimaryAction("Смотреть", enabled = true, episode = 1)
-    val next = entry.nextEpisode(watchedThreshold)
-    val position = entry.watch
-        ?.takeIf { entry.progressFraction(watchedThreshold) != null && it.positionMs > 0 }
-        ?.positionMs
-    if (position != null) return PrimaryAction("Продолжить с ${formatTime(position)}", true, next)
+    val target = entry.continueTarget(watchedThreshold)
+    val next = target.episode
+    if (target.positionMs > 0) return PrimaryAction("Продолжить с ${formatTime(target.positionMs)}", true, next)
 
     val aired = entry.anime.airedEpisodes()
     if (next <= aired) {

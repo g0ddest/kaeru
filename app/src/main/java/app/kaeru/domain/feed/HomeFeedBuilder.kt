@@ -16,13 +16,14 @@ class HomeFeedBuilder(
     fun build(entries: List<LibraryEntry>, now: Instant): HomeFeed {
         val active = entries.filter { it.rate.status == ListStatus.WATCHING || it.rate.status == ListStatus.REWATCHING }
 
+        // An entry is being continued exactly when its target carries a position: the rule for
+        // which episode that is, and for what counts as started rather than mis-tapped, lives once
+        // in `ContinueTarget` and is the same one the watch button obeys.
         val continueWatching = active
-            .filter { e ->
-                val w = e.watch ?: return@filter false
-                w.episode > e.rate.episodes && w.fraction in 0.01f..<watchedThreshold
-            }
-            .sortedByDescending { it.watch!!.updatedAt }
-            .map { FeedItem(it, it.watch!!.episode, FeedKind.CONTINUE) }
+            .map { it to it.continueTarget(watchedThreshold) }
+            .filter { (_, target) -> target.positionMs > 0 }
+            .sortedByDescending { (entry, target) -> entry.progressAt(target.episode)?.updatedAt ?: Instant.EPOCH }
+            .map { (entry, target) -> FeedItem(entry, target.episode, FeedKind.CONTINUE) }
         val inProgressIds = continueWatching.map { it.entry.anime.id }.toSet()
 
         val newEpisodes = active

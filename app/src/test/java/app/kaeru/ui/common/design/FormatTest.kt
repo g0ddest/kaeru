@@ -5,6 +5,7 @@ import app.kaeru.domain.discover.SeasonKind
 import app.kaeru.domain.discover.seasonChoices
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
+import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.FeedItem
 import app.kaeru.domain.model.FeedKind
 import app.kaeru.domain.model.LibraryEntry
@@ -58,10 +59,14 @@ class FormatTest {
         watched: Int = 6,
         watch: WatchState? = null,
         status: ListStatus = ListStatus.WATCHING,
-    ) = LibraryEntry(anime, UserRate(1L, anime.id, status, watched, Instant.EPOCH), watch)
+        progress: List<EpisodeProgress> = emptyList(),
+    ) = LibraryEntry(anime, UserRate(1L, anime.id, status, watched, Instant.EPOCH), watch, progress)
 
     private fun watch(episode: Int, positionMs: Long, durationMs: Long = 1_440_000) =
         WatchState(21, episode, positionMs, durationMs, null, null, Instant.EPOCH)
+
+    private fun stopped(episode: Int, positionMs: Long, durationMs: Long = 1_440_000) =
+        EpisodeProgress(21, episode, positionMs, durationMs, Instant.EPOCH)
 
     // --- episodesLabel ---------------------------------------------------------------------
 
@@ -316,6 +321,32 @@ class FormatTest {
         val action = primaryAction(anons, 0.9f, now, zone)
         assertEquals("1 серия выйдет завтра", action.label)
         assertFalse(action.enabled)
+    }
+
+    @Test
+    fun `the timecode is the one from the episode being continued, not the one opened last`() {
+        // Forty minutes into the seventh, then a tap lands on the sixth: the button still offers
+        // to pick the seventh up where it was left.
+        val misTapped = entry(
+            watched = 6,
+            watch = watch(6, 10_000),
+            progress = listOf(stopped(7, 860_000), stopped(6, 10_000)),
+        )
+
+        val action = primaryAction(misTapped, 0.9f, now, zone)
+
+        assertEquals("Продолжить с 14:20", action.label)
+        assertEquals(7, action.episode)
+    }
+
+    @Test
+    fun `ten seconds of an episode is never what the button offers to continue`() {
+        val barelyOpened = entry(watched = 6, watch = watch(7, 10_000), progress = listOf(stopped(7, 10_000)))
+
+        val action = primaryAction(barelyOpened, 0.9f, now, zone)
+
+        assertEquals("Продолжить 7 серию", action.label)
+        assertEquals(7, action.episode)
     }
 
     @Test
