@@ -17,6 +17,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.BrightnessMedium
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -203,6 +205,48 @@ fun NextEpisodeCard(episode: Int, countdownSec: Int, onNow: () -> Unit, onCancel
         }
     }
 }
+
+/**
+ * What a swipe over the video is doing, while it does it.
+ *
+ * A strip rather than a number: the viewer is dragging a level, and a bar that fills answers
+ * «how far up am I» at a glance, where «62 %» has to be read. It stands on the side the finger
+ * is on, because that is the half of the picture the gesture belongs to, and it fades rather
+ * than disappearing so the last value can be checked after the thumb has gone.
+ */
+@Composable
+fun SwipeIndicator(side: PlayerSide, level: Float, modifier: Modifier = Modifier) {
+    val brightness = side == PlayerSide.LEFT
+    Column(
+        modifier
+            .clip(RoundedCornerShape(22.dp))
+            .background(Disc)
+            .padding(horizontal = 12.dp, vertical = 14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(
+            imageVector = if (brightness) Icons.Default.BrightnessMedium else Icons.AutoMirrored.Filled.VolumeUp,
+            contentDescription = if (brightness) "Яркость" else "Громкость",
+            tint = OnVideo,
+            modifier = Modifier.size(20.dp),
+        )
+        Box(
+            Modifier.padding(top = 10.dp).width(INDICATOR_WIDTH).height(INDICATOR_HEIGHT)
+                .clip(RoundedCornerShape(3.dp)).background(Color.White.copy(alpha = 0.24f)),
+            contentAlignment = Alignment.BottomCenter,
+        ) {
+            Box(
+                Modifier.width(INDICATOR_WIDTH)
+                    .height(INDICATOR_HEIGHT * level.coerceIn(0f, 1f))
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(OnVideo),
+            )
+        }
+    }
+}
+
+private val INDICATOR_WIDTH = 6.dp
+private val INDICATOR_HEIGHT = 120.dp
 
 /**
  * The other end of an episode: nothing follows it yet.

@@ -4,7 +4,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,7 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -49,6 +47,9 @@ import java.time.Instant
 
 private const val CONTROLS_LINGER_MS = 3_000L
 private const val PULSE_MS = 450L
+
+/** How long the brightness or volume strip stays up after the finger leaves. */
+private const val SWIPE_LINGER_MS = 700L
 
 /**
  * The phone player: video edge to edge, everything else floating over it and getting out of
@@ -80,6 +81,11 @@ fun PlayerScreen(
     var controlsVisible by remember { mutableStateOf(true) }
     var pulse by remember { mutableStateOf<SeekPulse?>(null) }
     var pulseKey by remember { mutableIntStateOf(0) }
+    // The last swipe, kept after it ends so the strip has something to fade out.
+    var swipe by remember { mutableStateOf<SwipeLevel?>(null) }
+    var swipeVisible by remember { mutableStateOf(false) }
+    var swipeEnded by remember { mutableIntStateOf(0) }
+    val hardware = rememberPlayerHardware()
     val failed = state.errorMessage != null
     val snackbar = remember { SnackbarHostState() }
     // Taken once per episode: the only thing measured against it is which day the next one airs.
@@ -100,6 +106,11 @@ fun PlayerScreen(
             delay(PULSE_MS)
             pulse = null
         }
+    }
+    LaunchedEffect(swipeEnded) {
+        if (swipeEnded == 0) return@LaunchedEffect
+        delay(SWIPE_LINGER_MS)
+        swipeVisible = false
     }
     LaunchedEffect(state.toast) {
         val message = state.toast ?: return@LaunchedEffect
@@ -128,30 +139,46 @@ fun PlayerScreen(
             if (player != null) ContentFrame(player, Modifier.fillMaxSize())
 
             Box(
-                Modifier.fillMaxSize().pointerInput(state.durationMs) {
-                    detectTapGestures(
-                        onTap = { controlsVisible = !controlsVisible },
-                        onDoubleTap = { offset ->
-                            val third = size.width / 3f
-                            when {
-                                offset.x < third -> {
-                                    onSeekBy(-EpisodeQueue.SEEK_STEP_MS)
-                                    pulse = SeekPulse(forward = false)
-                                    pulseKey += 1
-                                }
-                                offset.x > size.width - third -> {
-                                    onSeekBy(EpisodeQueue.SEEK_STEP_MS)
-                                    pulse = SeekPulse(forward = true)
-                                    pulseKey += 1
-                                }
-                                else -> controlsVisible = !controlsVisible
-                            }
-                        },
-                    )
-                },
+                Modifier.fillMaxSize().playerGestures(
+                    onTap = { controlsVisible = !controlsVisible },
+                    onSeek = { forward ->
+                        onSeekBy(if (forward) EpisodeQueue.SEEK_STEP_MS else -EpisodeQueue.SEEK_STEP_MS)
+                        pulse = SeekPulse(forward = forward)
+                        pulseKey += 1
+                    },
+                    onSwipeStart = { side ->
+                        when (side) {
+                            PlayerSide.LEFT -> hardware.brightness()
+                            PlayerSide.RIGHT -> hardware.volume()
+                        }
+                    },
+                    onSwipe = { side, level ->
+                        when (side) {
+                            PlayerSide.LEFT -> hardware.setBrightness(level)
+                            PlayerSide.RIGHT -> hardware.setVolume(level)
+                        }
+                        swipe = SwipeLevel(side, level)
+                        swipeVisible = true
+                    },
+                    onSwipeEnd = { swipeEnded += 1 },
+                ),
             )
 
             pulse?.let { SeekPulseBadge(it) }
+
+            swipe?.let { level ->
+                AnimatedVisibility(
+                    visible = swipeVisible,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                    modifier = Modifier
+                        .align(if (level.side == PlayerSide.LEFT) Alignment.CenterStart else Alignment.CenterEnd)
+                        .safeDrawingPadding()
+                        .padding(horizontal = 24.dp),
+                ) {
+                    SwipeIndicator(level.side, level.level)
+                }
+            }
 
             if (failed) {
                 PlaybackFailure(
@@ -273,6 +300,8 @@ fun PlayerScreen(
 }
 
 private data class SeekPulse(val forward: Boolean)
+
+private data class SwipeLevel(val side: PlayerSide, val level: Float)
 
 @Composable
 private fun SeekPulseBadge(pulse: SeekPulse) {
