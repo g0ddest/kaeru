@@ -92,7 +92,7 @@ private fun LibraryLoadedPreview() = KaeruTheme {
 private fun LibraryByTitlePreview() = KaeruTheme {
     LibraryScreen(
         state = LibraryUiState(
-            items = selectLibrary(watching, ListStatus.WATCHING, LibrarySort.TITLE),
+            items = selectLibrary(sortKeys(watching), ListStatus.WATCHING, LibrarySort.TITLE),
             counts = counts,
             sort = LibrarySort.TITLE,
             isLoading = false,

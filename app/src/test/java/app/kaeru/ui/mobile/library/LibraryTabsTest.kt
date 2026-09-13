@@ -30,11 +30,13 @@ class LibraryTabsTest {
     @Test
     fun `every status gets a tab and the counts come from the whole list`() {
         val counts = libraryCounts(
-            listOf(
-                entry(1, ListStatus.WATCHING),
-                entry(2, ListStatus.WATCHING),
-                entry(3, ListStatus.PLANNED),
-                entry(4, ListStatus.DROPPED),
+            sortKeys(
+                listOf(
+                    entry(1, ListStatus.WATCHING),
+                    entry(2, ListStatus.WATCHING),
+                    entry(3, ListStatus.PLANNED),
+                    entry(4, ListStatus.DROPPED),
+                ),
             ),
         )
         val tabs = libraryTabs(counts)

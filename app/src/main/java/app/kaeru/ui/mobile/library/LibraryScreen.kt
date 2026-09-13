@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -42,6 +43,12 @@ private const val FIND_ANIME = "Найти аниме"
 private const val SORT_UPDATED = "Обновление"
 private const val SORT_TITLE = "Название"
 
+/** A constant of the screen, not of a composition. */
+private val SortOptions = listOf(LibrarySort.UPDATED to SORT_UPDATED, LibrarySort.TITLE to SORT_TITLE)
+
+/** Two full rows of the loading grid, which fits the shortest phone the app supports. */
+private const val SKELETON_CELLS = 6
+
 /**
  * Narrow enough that three columns survive a 320dp phone, wide enough that a fifth appears on a
  * tablet: `(288 + 12) / (88 + 12)` is exactly 3 at the narrowest screen the app supports.
@@ -74,7 +81,9 @@ fun LibraryScreen(
         SortControl(state.sort, onSort)
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
-                state.isLoading -> SkeletonGrid(Modifier.padding(top = KaeruTokens.Space4), count = 9)
+                // Two rows, not a screenful: `SkeletonGrid` is a plain Column with nothing to
+                // scroll, so a count that outgrows this box gets its last row sliced off.
+                state.isLoading -> SkeletonGrid(Modifier.padding(top = KaeruTokens.Space4), count = SKELETON_CELLS)
                 state.items.isEmpty() -> EmptyTab(state.status, onSearch)
                 else -> LibraryGrid(state.items, state.watchedThreshold, onAnime)
             }
@@ -87,7 +96,9 @@ fun LibraryScreen(
 private fun StatusTabs(counts: Map<ListStatus, Int>, selected: ListStatus, onStatus: (ListStatus) -> Unit) {
     val tabs = remember(counts) { libraryTabs(counts) }
     LazyRow(
-        modifier = Modifier.padding(top = KaeruTokens.Space2),
+        // The pills carry `Role.Tab` one at a time; the group is what lets a screen reader say
+        // which of how many, the way Material's own tab row does.
+        modifier = Modifier.padding(top = KaeruTokens.Space2).selectableGroup(),
         contentPadding = PaddingValues(horizontal = KaeruTokens.GutterPhone),
         horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space2),
     ) {
@@ -113,17 +124,16 @@ private fun StatusTabs(counts: Map<ListStatus, Int>, selected: ListStatus, onSta
  */
 @Composable
 private fun SortControl(sort: LibrarySort, onSort: (LibrarySort) -> Unit) {
-    val options = listOf(LibrarySort.UPDATED to SORT_UPDATED, LibrarySort.TITLE to SORT_TITLE)
     SingleChoiceSegmentedButtonRow(
         modifier = Modifier
             .padding(start = KaeruTokens.GutterPhone, top = KaeruTokens.Space3)
             .height(KaeruTokens.MinTouchTarget),
     ) {
-        options.forEachIndexed { index, (option, label) ->
+        SortOptions.forEachIndexed { index, (option, label) ->
             SegmentedButton(
                 selected = sort == option,
                 onClick = { onSort(option) },
-                shape = SegmentedButtonDefaults.itemShape(index, options.size, KaeruTokens.ButtonShape),
+                shape = SegmentedButtonDefaults.itemShape(index, SortOptions.size, KaeruTokens.ButtonShape),
                 colors = SegmentedButtonDefaults.colors(
                     activeContainerColor = KaeruElevated,
                     activeContentColor = KaeruText,
