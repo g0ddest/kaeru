@@ -36,8 +36,12 @@ data class PairingRequest(
         const val SCHEME = "kaeru"
         const val AUTHORITY = "pair"
 
-        /** A name is a label on a screen, not a payload; anything longer is a link worth suspecting. */
-        const val MAX_NAME = 64
+        /**
+         * A name is a label on a screen, not a payload. It is also the bulk of what goes into the
+         * QR code, and 64 Cyrillic characters percent-encode to some 380 bytes — enough to push
+         * the code to a version dense enough to lose the whole argument for showing it large.
+         */
+        const val MAX_NAME = 24
 
         /** The nonce this app issues is 43 characters of base64url; the cap leaves room and no more. */
         const val MAX_NONCE = 128
@@ -93,7 +97,14 @@ data class PairingRequest(
             }
             .toMap()
 
-        private fun encode(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name())
+        /**
+         * `URLEncoder` writes a form body, where a space is `+`. [decode] reads that back, so
+         * Kaeru's own round trip is exact either way — but a third-party scanner handing the raw
+         * string to a strict URI parser reads a literal plus in the television's name, and `%20`
+         * costs nothing.
+         */
+        private fun encode(value: String): String =
+            URLEncoder.encode(value, Charsets.UTF_8.name()).replace("+", "%20")
 
         private fun decode(value: String): String? =
             runCatching { URLDecoder.decode(value, Charsets.UTF_8.name()) }.getOrNull()
