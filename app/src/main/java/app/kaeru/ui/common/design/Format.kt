@@ -209,13 +209,37 @@ fun primaryAction(
         val label = if (next <= 1) "Смотреть 1 серию" else "Продолжить $next серию"
         return PrimaryAction(label, enabled = true, episode = next)
     }
-    val date = entry.anime.nextEpisodeAt?.takeIf { !it.isBefore(now) }
-    val label = when {
-        date != null -> "$next серия выйдет ${relativeDay(date, now, zone)}"
+    return PrimaryAction(
+        waitingLabel(next, entry.anime.nextEpisodeAt, aired, now, zone),
+        enabled = false,
+        episode = null,
+    )
+}
+
+/**
+ * What to say about an episode that cannot be started yet.
+ *
+ * The waiting half of [primaryAction], on its own because the player says the same thing when an
+ * episode runs out with nothing aired after it: «13 серия выйдет завтра» rather than a countdown
+ * to an episode Kodik does not have. One wording, so the button on the title screen and the card
+ * over the video cannot drift apart.
+ *
+ * A date already in the past is ignored — the catalogue has simply not caught up, and repeating
+ * it would be a promise about yesterday.
+ */
+fun waitingLabel(
+    episode: Int,
+    nextEpisodeAt: Instant?,
+    aired: Int,
+    now: Instant,
+    zone: ZoneId = ZoneId.systemDefault(),
+): String {
+    val date = nextEpisodeAt?.takeIf { !it.isBefore(now) }
+    return when {
+        date != null -> "$episode серия выйдет ${relativeDay(date, now, zone)}"
         aired <= 0 -> "Ещё не вышло"
-        else -> "Ждём $next серию"
+        else -> "Ждём $episode серию"
     }
-    return PrimaryAction(label, enabled = false, episode = null)
 }
 
 /**

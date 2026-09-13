@@ -4,6 +4,7 @@ import androidx.media3.common.Player
 import app.kaeru.di.IoDispatcher
 import app.kaeru.di.LocalEngine
 import app.kaeru.di.PlaybackScope
+import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.EpisodeStream
 import app.kaeru.domain.model.PlaybackTarget
 import app.kaeru.domain.model.Quality
@@ -373,7 +374,12 @@ class DefaultPlaybackController @Inject constructor(
                 opening = null
                 return@transition
             }
-            next.prepare(stream.urls.getValue(quality), headers, carryPositionMs, describe(target, stream))
+            next.prepare(
+                stream.urls.getValue(quality),
+                headers,
+                carryPositionMs,
+                describe(target, stream, animeOf(target.animeId)),
+            )
             next.play()
             onEngineState(next.state.value, force = true)
         }.join()
@@ -452,6 +458,10 @@ class DefaultPlaybackController @Inject constructor(
                 opening = null
                 return Result.failure(it)
             }
+        // One read, two users: what the notification says this is, and how many episodes there
+        // are to go. Read per episode rather than followed, so a catalogue refresh landing
+        // mid-episode cannot move the goalposts of a countdown already under way.
+        val anime = animeOf(target.animeId)
         val quality = preferQuality?.takeIf { stream.urls.containsKey(it) }
             ?: EpisodeQueue.startQuality(stream.urls.keys, settings.quality)
             ?: stream.urls.keys.first()
@@ -470,9 +480,10 @@ class DefaultPlaybackController @Inject constructor(
             positionMs = target.startPositionMs,
             // A track swap keeps the length it already knows, so the timeline does not flash empty.
             durationMs = if (freshEpisode) 0 else _state.value.durationMs,
+            airedEpisodes = anime?.availableEpisodes ?: 0,
             isCasting = casting,
         )
-        engine.prepare(stream.urls.getValue(quality), headers, target.startPositionMs, describe(target, stream))
+        engine.prepare(stream.urls.getValue(quality), headers, target.startPositionMs, describe(target, stream, anime))
         engine.play()
         opening = null
         // Everything the engine said while this transition ran was ignored on purpose. Take its
@@ -506,11 +517,15 @@ class DefaultPlaybackController @Inject constructor(
     }
 
     /**
-     * What the notification says. The anime is read from the local cache — the card is already
-     * there, because nothing reaches the player without passing a screen that showed it.
+     * The anime from the local cache — the card is already there, because nothing reaches the
+     * player without passing a screen that showed it. Null for one this device has never seen,
+     * which costs the notification its title and the countdown its guard, but never the video.
      */
-    private suspend fun describe(target: PlaybackTarget, stream: EpisodeStream): StreamMetadata {
-        val anime = withContext(io) { library.observeAnimeDetails(target.animeId).first() }
+    private suspend fun animeOf(animeId: Int): Anime? =
+        withContext(io) { library.observeAnimeDetails(animeId).first() }
+
+    /** What the notification says. */
+    private fun describe(target: PlaybackTarget, stream: EpisodeStream, anime: Anime?): StreamMetadata {
         return StreamMetadata(
             title = anime?.title ?: "${target.episode} серия",
             subtitle = listOfNotNull(
@@ -548,8 +563,8 @@ class DefaultPlaybackController @Inject constructor(
             positionMs = position,
             bufferedPositionMs = buffered,
             durationMs = duration,
-            nextEpisodeAvailable =
-                if (lengthKnown) EpisodeQueue.nextEpisodeDue(position, duration, ended) else current.nextEpisodeAvailable,
+            nextEpisodeDue =
+                if (lengthKnown) EpisodeQueue.nextEpisodeDue(position, duration, ended) else current.nextEpisodeDue,
             autoplayCountdownSec = countdown,
         )
         if (lengthKnown) {
@@ -582,6 +597,10 @@ class DefaultPlaybackController @Inject constructor(
 
     private fun countdownFor(positionMs: Long, durationMs: Long, ended: Boolean): Int? {
         if (!settings.autoplay || autoplayCancelled) return null
+        // Nothing has aired after this one. The episode ends and stays ended: a countdown here
+        // would run down to «Серия ещё не появилась в Kodik», which is the app answering a
+        // question nobody asked.
+        if (!_state.value.hasNextEpisode) return null
         if (!EpisodeQueue.countdownDue(positionMs, durationMs, ended)) return null
         if (ended || durationMs <= 0) return 0
         val remaining = (durationMs - positionMs).coerceAtLeast(0)

@@ -190,6 +190,39 @@ class FormatTest {
         lines.forEach { line -> assertFalse(line, line.contains("·")) }
     }
 
+    // --- waitingLabel ----------------------------------------------------------------------
+
+    @Test
+    fun `a dated episode still to come is named by its day`() {
+        val label = waitingLabel(9, at(2026, 4, 13, 18, 0), aired = 8, now = now, zone = zone)
+
+        assertEquals("9 серия выйдет завтра", label)
+    }
+
+    @Test
+    fun `a broadcast further out is named by how many days away it is`() {
+        val label = waitingLabel(9, at(2026, 4, 15, 18, 0), aired = 8, now = now, zone = zone)
+
+        assertEquals("9 серия выйдет через 3 дня", label)
+    }
+
+    @Test
+    fun `an episode with no date is simply waited for`() {
+        assertEquals("Ждём 9 серию", waitingLabel(9, null, aired = 8, now = now, zone = zone))
+    }
+
+    @Test
+    fun `a date already past is not repeated as a promise`() {
+        val label = waitingLabel(9, at(2026, 4, 10, 18, 0), aired = 8, now = now, zone = zone)
+
+        assertEquals("Ждём 9 серию", label)
+    }
+
+    @Test
+    fun `an announcement with nothing aired says so instead of naming an episode`() {
+        assertEquals("Ещё не вышло", waitingLabel(1, null, aired = 0, now = now, zone = zone))
+    }
+
     // --- primaryAction ---------------------------------------------------------------------
 
     @Test

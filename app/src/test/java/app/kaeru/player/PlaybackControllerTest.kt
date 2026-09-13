@@ -226,7 +226,7 @@ class PlaybackControllerTest {
 
         engine.moveTo(1_412_000)
         advanceUntilIdle()
-        assertTrue(controller.state.value.nextEpisodeAvailable)
+        assertTrue(controller.state.value.nextEpisodeDue)
         assertNull(controller.state.value.autoplayCountdownSec)
 
         engine.moveTo(1_433_000)
@@ -244,7 +244,7 @@ class PlaybackControllerTest {
         engine.end()
         advanceUntilIdle()
 
-        assertTrue(controller.state.value.nextEpisodeAvailable)
+        assertTrue(controller.state.value.nextEpisodeDue)
         assertNull(controller.state.value.autoplayCountdownSec)
         assertEquals(1, engine.prepared.size)
     }
@@ -261,7 +261,7 @@ class PlaybackControllerTest {
         advanceUntilIdle()
 
         assertNull(controller.state.value.autoplayCountdownSec)
-        assertTrue(controller.state.value.nextEpisodeAvailable)
+        assertTrue(controller.state.value.nextEpisodeDue)
         assertEquals(1, engine.prepared.size)
     }
 
@@ -276,8 +276,65 @@ class PlaybackControllerTest {
         assertEquals(5, controller.state.value.target?.episode)
         assertEquals("https://cdn/100/5/11/720", engine.prepared.last().url)
         assertEquals(0L, engine.prepared.last().startPositionMs)
-        assertFalse(controller.state.value.nextEpisodeAvailable)
+        assertFalse(controller.state.value.nextEpisodeDue)
         assertNull(controller.state.value.autoplayCountdownSec)
+    }
+
+    @Test
+    fun `the last aired episode never counts down to an episode that does not exist`() = runTest(dispatcher) {
+        start(episode = 12, durationMs = 1_440_000)
+
+        engine.moveTo(1_435_000)
+        advanceUntilIdle()
+
+        assertEquals(12, controller.state.value.airedEpisodes)
+        assertFalse(controller.state.value.hasNextEpisode)
+        assertTrue(controller.state.value.nextEpisodeDue)
+        assertNull(controller.state.value.autoplayCountdownSec)
+    }
+
+    @Test
+    fun `an episode that runs out with nothing after it starts nothing`() = runTest(dispatcher) {
+        start(episode = 12, durationMs = 1_440_000)
+
+        engine.moveTo(1_439_000)
+        advanceUntilIdle()
+        engine.end()
+        advanceUntilIdle()
+
+        assertEquals(1, engine.prepared.size)
+        assertEquals(listOf(12), source.resolves)
+        assertEquals(12, controller.state.value.target?.episode)
+        assertNull(controller.state.value.error)
+    }
+
+    @Test
+    fun `an ongoing show counts what has aired, not what was announced`() = runTest(dispatcher) {
+        library.put(
+            LibraryEntry(
+                Anime(
+                    100, "Фрирен", "Frieren", null, emptyList(), AnimeStatus.ONGOING,
+                    episodes = 24, episodesAired = 7, nextEpisodeAt = null,
+                    score = null, year = null, studio = null, description = null,
+                ),
+                UserRate(1, 100, ListStatus.WATCHING, episodes = 3, updatedAt = now),
+                null,
+            ),
+        )
+
+        start(episode = 7, durationMs = 1_000_000)
+        advanceUntilIdle()
+
+        assertEquals(7, controller.state.value.airedEpisodes)
+        assertFalse(controller.state.value.hasNextEpisode)
+    }
+
+    @Test
+    fun `an episode with more aired after it has a next one`() = runTest(dispatcher) {
+        start(episode = 4, durationMs = 1_000_000)
+        advanceUntilIdle()
+
+        assertTrue(controller.state.value.hasNextEpisode)
     }
 
     @Test
@@ -319,7 +376,7 @@ class PlaybackControllerTest {
         assertEquals(1, source.resolves.count { it == 5 })
         assertEquals(1, events.count { it is PlaybackEvent.NextEpisodeUnavailable })
         assertEquals(4, controller.state.value.target?.episode)
-        assertTrue(controller.state.value.nextEpisodeAvailable)
+        assertTrue(controller.state.value.nextEpisodeDue)
         assertNull(controller.state.value.autoplayCountdownSec)
         assertNull(controller.state.value.error)
     }

@@ -101,7 +101,9 @@ class PlayerViewModel @Inject constructor(
             translations = screen.translations,
             loadingTranslations = screen.loadingTranslations,
             sheet = screen.sheet,
-            nextEpisodeAvailable = playback.nextEpisodeAvailable,
+            nextEpisodeAvailable = playback.hasNextEpisode,
+            episodeEnding = playback.nextEpisodeDue,
+            nextEpisodeAt = anime?.nextEpisodeAt,
             autoplayCountdownSec = playback.autoplayCountdownSec,
             errorMessage = playback.error?.toUserMessage(),
             isCasting = playback.isCasting,
@@ -189,9 +191,10 @@ class PlayerViewModel @Inject constructor(
     /** Loads the tracks on demand: the sheet is rarely opened and the list costs a request. */
     fun openTranslations() {
         val id = animeId.value ?: return
+        val playing = controller.state.value.stream?.translation
         screen.update { it.copy(loadingTranslations = true) }
         viewModelScope.launch {
-            withContext(io) { resolve.translations(id) }
+            withContext(io) { resolve.translations(id, playing) }
                 .onSuccess { tracks ->
                     screen.update {
                         it.copy(translations = tracks, loadingTranslations = false, sheet = PlayerSheet.TRANSLATIONS)

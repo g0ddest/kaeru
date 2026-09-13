@@ -2,6 +2,7 @@ package app.kaeru.ui.common.player
 
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.playback.RankedTranslation
+import java.time.Instant
 
 /** Which chooser is open over the video, if any. */
 enum class PlayerSheet { TRANSLATIONS, QUALITY }
@@ -30,7 +31,12 @@ data class PlayerUiState(
     val translations: List<RankedTranslation> = emptyList(),
     val loadingTranslations: Boolean = false,
     val sheet: PlayerSheet? = null,
+    /** An episode after this one has aired, so «Следующая серия» leads somewhere. */
     val nextEpisodeAvailable: Boolean = false,
+    /** The episode is in its last half-minute: time to say what comes after it, or that nothing does. */
+    val episodeEnding: Boolean = false,
+    /** When the episode after the last aired one is due, for a screen that has to wait for it. */
+    val nextEpisodeAt: Instant? = null,
     val autoplayCountdownSec: Int? = null,
     val errorMessage: String? = null,
     /** The picture is on a Chromecast: the screen is a remote control, not a player. */

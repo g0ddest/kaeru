@@ -259,7 +259,7 @@ class CastPlaybackTest {
 
         receiver.moveTo(1_415_000)
         advanceUntilIdle()
-        assertTrue(controller.state.value.nextEpisodeAvailable)
+        assertTrue(controller.state.value.nextEpisodeDue)
 
         receiver.moveTo(1_437_000)
         advanceUntilIdle()

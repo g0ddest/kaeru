@@ -203,6 +203,32 @@ fun NextEpisodeCard(episode: Int, countdownSec: Int, onNow: () -> Unit, onCancel
     }
 }
 
+/**
+ * The other end of an episode: nothing follows it yet.
+ *
+ * Same place and same shape as [NextEpisodeCard], because it answers the same question at the
+ * same moment — what happens when this runs out. It simply has no action to offer, so it has no
+ * buttons and no drain, and says when to come back instead.
+ */
+@Composable
+fun LastEpisodeCard(waiting: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier
+            .width(300.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(KaeruElevated.copy(alpha = 0.94f))
+            .padding(16.dp),
+    ) {
+        Text(waiting, style = MaterialTheme.typography.titleMedium, color = OnVideo)
+        Text(
+            "Пока это последняя вышедшая серия",
+            style = MaterialTheme.typography.bodySmall,
+            color = OnVideoMuted,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+    }
+}
+
 @Composable
 private fun Chip(text: String, onClick: () -> Unit) {
     TextButton(

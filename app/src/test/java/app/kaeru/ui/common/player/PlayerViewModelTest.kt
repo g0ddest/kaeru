@@ -335,7 +335,7 @@ class PlayerViewModelTest {
     fun `the countdown and the next episode offer come straight from the player`() = runTest(main.dispatcher) {
         viewModel.start(100, 4)
         advanceUntilIdle()
-        controller.playback.update { it.copy(nextEpisodeAvailable = true, autoplayCountdownSec = 7) }
+        controller.playback.update { it.copy(airedEpisodes = 12, autoplayCountdownSec = 7) }
         advanceUntilIdle()
 
         assertEquals(7, viewModel.uiState.value.autoplayCountdownSec)
@@ -347,6 +347,55 @@ class PlayerViewModelTest {
 
         assertEquals(1, controller.cancels)
         assertEquals(1, controller.nexts)
+    }
+
+    @Test
+    fun `an episode with aired episodes after it offers the next one`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+        controller.playback.update { it.copy(airedEpisodes = 12) }
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.nextEpisodeAvailable)
+    }
+
+    @Test
+    fun `the last aired episode offers no next one`() = runTest(main.dispatcher) {
+        viewModel.start(100, 12)
+        advanceUntilIdle()
+        controller.playback.update { it.copy(airedEpisodes = 12) }
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.nextEpisodeAvailable)
+    }
+
+    @Test
+    fun `an episode running out is announced whether or not another one follows`() = runTest(main.dispatcher) {
+        viewModel.start(100, 12)
+        advanceUntilIdle()
+        controller.playback.update { it.copy(airedEpisodes = 12, nextEpisodeDue = true) }
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.episodeEnding)
+        assertFalse(viewModel.uiState.value.nextEpisodeAvailable)
+    }
+
+    @Test
+    fun `the screen knows when the next episode is due to air`() = runTest(main.dispatcher) {
+        val airing = Instant.parse("2026-09-20T10:00:00Z")
+        library.put(
+            LibraryEntry(
+                anime.copy(status = AnimeStatus.ONGOING, episodesAired = 7, nextEpisodeAt = airing),
+                UserRate(1, 100, ListStatus.WATCHING, 3, now),
+                null,
+            ),
+        )
+
+        viewModel.start(100, 7)
+        advanceUntilIdle()
+
+        assertEquals(airing, viewModel.uiState.value.nextEpisodeAt)
+        assertEquals(7, viewModel.uiState.value.availableEpisodes)
     }
 
     @Test

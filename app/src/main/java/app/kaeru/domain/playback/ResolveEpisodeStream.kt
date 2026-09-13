@@ -59,10 +59,17 @@ class ResolveEpisodeStream(
      *
      * Nothing is marked once this anime remembers a track of its own: the sheet already marks that
      * one as chosen, and a habit is only worth pointing out where there is no answer yet.
+     *
+     * @param playing the track the player is using right now, if any. A film whose Kodik page
+     *   carries no translations box lists nothing at all, and a chooser that opens on an empty
+     *   list is the app denying what the viewer can plainly hear; the track that is playing is
+     *   the honest answer to «which voice is this», so it stands in for the list it is missing
+     *   from. It is never added to a list the source did answer with.
      */
-    suspend fun translations(animeId: Int): Result<List<RankedTranslation>> {
+    suspend fun translations(animeId: Int, playing: Translation? = null): Result<List<RankedTranslation>> {
         val remembered = watchStates.observe(animeId).first()
-        val available = source.translations(animeId).getOrElse { return Result.failure(it) }
+        val listed = source.translations(animeId).getOrElse { return Result.failure(it) }
+        val available = listed.ifEmpty { listOfNotNull(playing) }
         val seasoned = available.map { it.withSeasonOf(remembered) }
         val usage = usage()
         val rememberedId = remembered?.translationId

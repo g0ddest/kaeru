@@ -285,4 +285,29 @@ class ResolveEpisodeStreamTest {
 
         assertSame(failure, resolve.translations(animeId = 100).exceptionOrNull())
     }
+
+    @Test
+    fun `a movie the source lists no tracks for still shows the one that is playing`() = runTest(dispatcher) {
+        source.translations = Result.success(emptyList())
+
+        val listed = resolve.translations(animeId = 100, playing = anilibria).getOrThrow()
+
+        assertEquals(listOf(anilibria), listed.map { it.translation })
+        assertEquals(listOf(false), listed.map { it.oftenChosen })
+    }
+
+    @Test
+    fun `nothing listed and nothing playing is still an empty list, not an invented track`() =
+        runTest(dispatcher) {
+            source.translations = Result.success(emptyList())
+
+            assertEquals(emptyList<RankedTranslation>(), resolve.translations(animeId = 100).getOrThrow())
+        }
+
+    @Test
+    fun `a track the source does list is not replaced by the one that is playing`() = runTest(dispatcher) {
+        val listed = resolve.translations(animeId = 100, playing = subtitles).getOrThrow()
+
+        assertEquals(3, listed.size)
+    }
 }

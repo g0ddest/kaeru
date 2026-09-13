@@ -5,23 +5,17 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -39,7 +33,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -47,10 +40,12 @@ import androidx.media3.ui.compose.ContentFrame
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.player.EpisodeQueue
+import app.kaeru.ui.common.design.ErrorState
+import app.kaeru.ui.common.design.waitingLabel
 import app.kaeru.ui.common.player.PlayerSheet
 import app.kaeru.ui.common.player.PlayerUiState
-import app.kaeru.ui.common.theme.KaeruAccent
 import kotlinx.coroutines.delay
+import java.time.Instant
 
 private const val CONTROLS_LINGER_MS = 3_000L
 private const val PULSE_MS = 450L
@@ -87,6 +82,8 @@ fun PlayerScreen(
     var pulseKey by remember { mutableIntStateOf(0) }
     val failed = state.errorMessage != null
     val snackbar = remember { SnackbarHostState() }
+    // Taken once per episode: the only thing measured against it is which day the next one airs.
+    val now = remember(state.episode) { Instant.now() }
 
     // Controls linger for three seconds of uninterrupted playback. Anything that asks for a
     // decision — a failure, a countdown, an open sheet — keeps them up.
@@ -202,7 +199,9 @@ fun PlayerScreen(
                                 durationMs = state.durationMs,
                                 // While the card is counting down it carries the same action; two
                                 // buttons for one decision is one button too many.
-                                showNext = state.autoplayCountdownSec == null,
+                                // Only where there is something to move on to, and not while
+                                // the card below is already offering the same move.
+                                showNext = state.nextEpisodeAvailable && state.autoplayCountdownSec == null,
                                 onSeekTo = onSeekTo,
                                 onSeekBy = onSeekBy,
                                 onSkipIntro = onSkipIntro,
@@ -219,15 +218,27 @@ fun PlayerScreen(
             }
         }
 
-        // The remote control carries its own countdown, in the row the decision belongs to.
-        state.autoplayCountdownSec?.takeIf { !state.isCasting }?.let { seconds ->
-            NextEpisodeCard(
+        // Both live in the same corner and answer the same question: what happens when this
+        // episode runs out. The remote control carries its own, in the row the decision belongs to.
+        val endOfEpisode = Modifier.align(Alignment.BottomEnd).safeDrawingPadding()
+            .padding(end = 24.dp, bottom = if (controlsVisible) 148.dp else 24.dp)
+        when {
+            state.isCasting || failed -> Unit
+            state.autoplayCountdownSec != null && state.nextEpisodeAvailable -> NextEpisodeCard(
                 episode = state.episode + 1,
-                countdownSec = seconds,
+                countdownSec = state.autoplayCountdownSec,
                 onNow = onNext,
                 onCancel = onCancelAutoplay,
-                modifier = Modifier.align(Alignment.BottomEnd).safeDrawingPadding()
-                    .padding(end = 24.dp, bottom = if (controlsVisible) 148.dp else 24.dp),
+                modifier = endOfEpisode,
+            )
+            state.episodeEnding && !state.nextEpisodeAvailable -> LastEpisodeCard(
+                waiting = waitingLabel(
+                    episode = state.episode + 1,
+                    nextEpisodeAt = state.nextEpisodeAt,
+                    aired = state.availableEpisodes,
+                    now = now,
+                ),
+                modifier = endOfEpisode,
             )
         }
 
@@ -279,26 +290,19 @@ private fun SeekPulseBadge(pulse: SeekPulse) {
     }
 }
 
+/**
+ * The video would not play. Over the frame rather than instead of it, so the top bar is still
+ * reachable: from here the ways forward are trying the same stream again and trying another
+ * voice, and the second one lives in the chooser behind this.
+ */
 @Composable
 private fun PlaybackFailure(message: String, onRetry: () -> Unit, onChangeTranslation: () -> Unit) {
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.88f)), contentAlignment = Alignment.Center) {
-        Column(
-            Modifier.widthIn(max = 420.dp).padding(32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                message,
-                style = MaterialTheme.typography.titleMedium,
-                color = Color.White,
-                textAlign = TextAlign.Center,
-            )
-            Row(Modifier.padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(
-                    onClick = onRetry,
-                    colors = ButtonDefaults.buttonColors(containerColor = KaeruAccent, contentColor = Color.Black),
-                ) { Text("Повторить") }
-                OutlinedButton(onClick = onChangeTranslation) { Text("Сменить озвучку", color = Color.White) }
-            }
-        }
+        ErrorState(
+            message = message,
+            onRetry = onRetry,
+            secondaryLabel = "Сменить озвучку",
+            onSecondary = onChangeTranslation,
+        )
     }
 }
