@@ -47,7 +47,12 @@ class StreamPrefetchCache(private val clock: Clock) {
         val held = fresh() ?: return null
         if (translationId == null) return null
         if (held.stream.animeId != animeId || held.stream.episode != episode) return null
-        if (held.stream.translation.id != translationId) return null
+        if (held.stream.translation.id != translationId) {
+            // The voice changed under the links. They are of no use to anyone now, so they go
+            // rather than sit out their half hour taking up the one slot there is.
+            entry = null
+            return null
+        }
         entry = null
         return held.stream
     }

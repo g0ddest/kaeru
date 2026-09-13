@@ -10,6 +10,7 @@ import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.UserRate
+import app.kaeru.domain.model.WatchState
 import app.kaeru.domain.model.EpisodeStream
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
@@ -112,10 +113,19 @@ class HomeViewModelTest {
     private val source = RecordingSource()
     private val watchStates = FakeWatchStateRepository()
 
+    /**
+     * A title this device has played before, which is what a continue-watching card is. The
+     * prefetch only prepares those: an anime with no remembered voice could never claim the
+     * links, because the cache is keyed on it.
+     */
+    private fun remembering(animeId: Int = 7, episode: Int = 20) = watchStates.seed(
+        WatchState(animeId, episode, 900_000, 1_440_000, translationId = 11, kodikSeason = 1, updatedAt = now),
+    )
+
     private fun prefetching(prefs: FakePlaybackPreferences): PrefetchTopCardStream {
         val clock = MutableClock(now)
         val cache = StreamPrefetchCache(clock)
-        return PrefetchTopCardStream(ResolveEpisodeStream(source, watchStates, prefs, clock, cache), cache)
+        return PrefetchTopCardStream(ResolveEpisodeStream(source, watchStates, prefs, clock, cache), cache, watchStates)
     }
 
     private fun viewModel(
@@ -416,6 +426,7 @@ class HomeViewModelTest {
     @Test
     fun `the card at the top of the screen is resolved before it is pressed`() = runTest(main.dispatcher) {
         val repo = FakeLibraryRepository().also { it.entries.value = listOf(entry()) }
+        remembering()
         val vm = viewModel(repo)
         advanceUntilIdle()
 
@@ -429,6 +440,7 @@ class HomeViewModelTest {
     @Test
     fun `a screen that renders again does not ask Kodik again`() = runTest(main.dispatcher) {
         val repo = FakeLibraryRepository().also { it.entries.value = listOf(entry()) }
+        remembering()
         val vm = viewModel(repo)
         advanceUntilIdle()
 
@@ -444,7 +456,20 @@ class HomeViewModelTest {
     @Test
     fun `a card offering an episode that has not aired is not prepared`() = runTest(main.dispatcher) {
         val waiting = entry().let { it.copy(anime = it.anime.copy(episodesAired = 20)) }
+        remembering()
         val repo = FakeLibraryRepository().also { it.entries.value = listOf(waiting) }
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+
+        vm.prefetchTopCard()
+        advanceUntilIdle()
+
+        assertTrue(source.resolves.isEmpty())
+    }
+
+    @Test
+    fun `a title nobody has started yet is not prepared`() = runTest(main.dispatcher) {
+        val repo = FakeLibraryRepository().also { it.entries.value = listOf(entry()) }
         val vm = viewModel(repo)
         advanceUntilIdle()
 

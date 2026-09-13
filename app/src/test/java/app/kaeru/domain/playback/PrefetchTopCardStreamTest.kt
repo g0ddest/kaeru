@@ -36,7 +36,7 @@ class PrefetchTopCardStreamTest {
     private val cache = StreamPrefetchCache(clock)
     private val source = RecordingSource()
     private val resolve = ResolveEpisodeStream(source, watchStates, prefs, clock, cache)
-    private val prefetch = PrefetchTopCardStream(resolve, cache)
+    private val prefetch = PrefetchTopCardStream(resolve, cache, watchStates)
 
     private class RecordingSource : EpisodeSourceProvider {
         var failure: Throwable? = null
@@ -94,6 +94,16 @@ class PrefetchTopCardStreamTest {
         prefetch(animeId = 100, episode = 4)
 
         assertTrue(watchStates.saved.isEmpty())
+    }
+
+    @Test
+    fun `an anime with no remembered voice is not prepared at all`() = runTest(dispatcher) {
+        // Nothing is remembered, so nothing could claim the links: the take is keyed on the voice
+        // the press is about to ask for, and preparing writes no memory to answer it with.
+        prefetch(animeId = 100, episode = 1)
+
+        assertTrue(source.resolves.isEmpty())
+        assertNull(cache.take(100, 1, anilibria.id))
     }
 
     @Test

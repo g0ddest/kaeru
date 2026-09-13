@@ -56,7 +56,14 @@ android {
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
 
-ksp { arg("room.generateKotlin", "true") }
+ksp {
+    arg("room.generateKotlin", "true")
+    // Exported from version 2 on. A migration can only be checked against the schema it is
+    // migrating to, and there is no v1 schema to check the one this app already has — but every
+    // migration after it will have one, which is the point of turning this on now rather than
+    // when it is needed.
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
 
 dependencies {
     implementation(libs.core.ktx)

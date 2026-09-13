@@ -1,5 +1,6 @@
 package app.kaeru.ui.mobile.player
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.tooling.preview.Preview
 import app.kaeru.domain.model.Quality
 import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.design.RowHeader
@@ -34,6 +36,7 @@ import app.kaeru.ui.common.theme.KaeruOnAccent
 import app.kaeru.ui.common.theme.KaeruSecondary
 import app.kaeru.ui.common.theme.KaeruSurface
 import app.kaeru.ui.common.theme.KaeruText
+import app.kaeru.ui.common.theme.KaeruTheme
 
 /**
  * The quality chooser, and the one place a viewer can settle the question for good.
@@ -114,5 +117,25 @@ private fun QualityRow(title: String, selected: Boolean, onClick: () -> Unit) {
     ) {
         Text(title, style = MaterialTheme.typography.titleSmall, color = KaeruText, modifier = Modifier.weight(1f))
         if (selected) Icon(Icons.Default.Check, contentDescription = "Выбрано", tint = KaeruAccent)
+    }
+}
+
+/**
+ * The sheet's contents in a plain column: a `ModalBottomSheet` previews as an empty screen, since
+ * it draws into a window of its own.
+ */
+@Preview(showBackground = true, backgroundColor = 0xFF15171E, widthDp = 360, heightDp = 300)
+@Composable
+private fun QualitySheetPreview() = KaeruTheme {
+    Column(Modifier.background(KaeruSurface)) {
+        RowHeader("Качество")
+        QualityRow("1080p", selected = false, onClick = {})
+        QualityRow("720p", selected = true, onClick = {})
+        QualityRow("480p", selected = false, onClick = {})
+        HorizontalDivider(
+            color = KaeruDivider,
+            modifier = Modifier.padding(horizontal = KaeruTokens.GutterPhone, vertical = KaeruTokens.Space2),
+        )
+        RememberQualityRow(remembered = true, onRemember = {})
     }
 }

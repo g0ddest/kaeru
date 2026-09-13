@@ -81,7 +81,8 @@ object PlaybackModule {
     fun prefetchTopCardStream(
         resolve: ResolveEpisodeStream,
         cache: StreamPrefetchCache,
-    ): PrefetchTopCardStream = PrefetchTopCardStream(resolve, cache)
+        watchStates: WatchStateRepository,
+    ): PrefetchTopCardStream = PrefetchTopCardStream(resolve, cache, watchStates)
 
     /**
      * A single instance on purpose: the coalescing queue that keeps one position write in

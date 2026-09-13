@@ -1,5 +1,6 @@
 package app.kaeru.ui.common.design
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
@@ -33,6 +35,7 @@ import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruSecondary
 import app.kaeru.ui.common.theme.KaeruSurface
 import app.kaeru.ui.common.theme.KaeruText
+import app.kaeru.ui.common.theme.KaeruTheme
 
 private const val DUB = "Озвучка"
 private const val SUBTITLES = "Субтитры"
@@ -173,4 +176,40 @@ private fun caption(track: Translation): String {
     val kind = if (track.type == TranslationKind.SUBTITLES) SUBTITLES else DUB
     val episodes = track.episodesCount?.takeIf { it > 0 } ?: return kind
     return "$kind, ${pluralEpisodes(episodes)}"
+}
+
+/**
+ * The sheet's contents in a plain column, for the same reason as the quality chooser's: a
+ * `ModalBottomSheet` draws into a window of its own and previews as an empty screen. Three tracks,
+ * one of them chosen and one of them a habit, which is the only combination worth looking at.
+ */
+@Preview(showBackground = true, backgroundColor = 0xFF15171E, widthDp = 360, heightDp = 260)
+@Composable
+private fun TranslationPickerPreview() = KaeruTheme {
+    val tracks = listOf(
+        RankedTranslation(Translation(11, "AniLibria.TV", TranslationKind.VOICE, 28), oftenChosen = false),
+        RankedTranslation(Translation(22, "Студийная банда", TranslationKind.VOICE, 28), oftenChosen = true),
+        RankedTranslation(Translation(33, "Субтитры", TranslationKind.SUBTITLES, null), oftenChosen = false),
+    )
+    Column(Modifier.background(KaeruSurface)) {
+        RowHeader(DUB)
+        tracks.forEach { ranked ->
+            TrackRow(
+                ranked.translation,
+                selected = ranked.translation.id == 11,
+                oftenChosen = ranked.oftenChosen,
+                enabled = true,
+                onClick = {},
+            )
+        }
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF15171E, widthDp = 360, heightDp = 160)
+@Composable
+private fun TranslationPickerLoadingPreview() = KaeruTheme {
+    Column(Modifier.background(KaeruSurface)) {
+        RowHeader(DUB)
+        LoadingTracks()
+    }
 }

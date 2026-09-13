@@ -1,8 +1,10 @@
 package app.kaeru.data.local
 
+import androidx.room.Room
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.driver.AndroidSQLiteDriver
 import androidx.sqlite.execSQL
+import androidx.test.core.app.ApplicationProvider
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -73,6 +75,50 @@ class WatchStateMigrationTest {
         MIGRATION_1_2.migrate(connection)
 
         assertNull(column("translationTitle"))
+    }
+
+    /** Column name, declared type and nullability, in the order the table declares them. */
+    private fun migratedColumns(): List<String> {
+        connection.prepare("SELECT name, type, `notnull` FROM pragma_table_info('watch_state')").use { statement ->
+            val columns = mutableListOf<String>()
+            while (statement.step()) {
+                columns += "${statement.getText(0)} ${statement.getText(1)} ${statement.getLong(2)}"
+            }
+            return columns
+        }
+    }
+
+    private fun freshColumns(): List<String> {
+        val db = Room.inMemoryDatabaseBuilder(
+            ApplicationProvider.getApplicationContext(),
+            KaeruDatabase::class.java,
+        ).allowMainThreadQueries().build()
+        try {
+            db.openHelper.writableDatabase
+                .query("SELECT name, type, `notnull` FROM pragma_table_info('watch_state')")
+                .use { cursor ->
+                    val columns = mutableListOf<String>()
+                    while (cursor.moveToNext()) {
+                        columns += "${cursor.getString(0)} ${cursor.getString(1)} ${cursor.getLong(2)}"
+                    }
+                    return columns
+                }
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
+     * The check the database's own build cannot make for this migration: `exportSchema` starts at
+     * version 2, so there is no version 1 for `MigrationTestHelper` to open. Comparing the migrated
+     * table with the one Room creates from scratch answers the same question — an upgraded install
+     * and a fresh one must not end up with different tables.
+     */
+    @Test
+    fun `an upgraded table is the table Room would have created`() {
+        MIGRATION_1_2.migrate(connection)
+
+        assertEquals(freshColumns(), migratedColumns())
     }
 
     @Test

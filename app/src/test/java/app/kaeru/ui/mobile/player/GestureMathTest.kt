@@ -88,10 +88,4 @@ class GestureMathTest {
         assertEquals(0f, GestureMath.level(0, max = 0), 0f)
         assertEquals(0, GestureMath.step(0.5f, max = 0))
     }
-
-    @Test
-    fun `a drag is only a swipe while it is going mostly up or down`() {
-        assertTrue(GestureMath.isVertical(dx = 4f, dy = -40f))
-        assertFalse(GestureMath.isVertical(dx = 40f, dy = -4f))
-    }
 }

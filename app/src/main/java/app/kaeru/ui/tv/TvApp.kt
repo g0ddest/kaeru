@@ -114,7 +114,11 @@ private fun TvPlayer(animeId: Int, episode: Int, onEpisode: (Int) -> Unit, onExi
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val player by viewModel.videoPlayer.collectAsStateWithLifecycle()
 
-    LaunchedEffect(animeId, episode) { viewModel.start(animeId, episode) }
+    // Explicit, and deliberately so: unlike the phone's intent, this key cannot go stale — the
+    // effect below walks the route on to whatever autoplay reached, so every value that arrives
+    // here is either the viewer picking an episode or the route agreeing with the session. A
+    // non-explicit start would attach instead of playing, and the episode grid would stop working.
+    LaunchedEffect(animeId, episode) { viewModel.start(animeId, episode, explicit = true) }
     // Autoplay moves on without asking this screen, so the screen follows it. Without this the
     // episode restored after a process death would be the one the viewer started hours ago.
     // Starting what is already playing is a no-op, so the two effects cannot fight.

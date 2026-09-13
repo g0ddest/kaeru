@@ -70,6 +70,15 @@ class StreamPrefetchCacheTest {
     }
 
     @Test
+    fun `links prepared for a voice the viewer has abandoned are thrown away, not just refused`() {
+        cache.put(stream(track = anilibria))
+
+        cache.take(100, 4, translationId = studioBanda.id)
+
+        assertFalse("the stale entry should be gone, not waiting for its TTL", cache.holds(100, 4))
+    }
+
+    @Test
     fun `an episode with nothing remembered about its voice is not served from here`() {
         cache.put(stream())
 

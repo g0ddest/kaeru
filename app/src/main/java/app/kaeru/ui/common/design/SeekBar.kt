@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
@@ -32,6 +33,9 @@ import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruSecondary
 import app.kaeru.ui.common.theme.KaeruText
 import app.kaeru.ui.common.theme.KaeruTheme
+
+/** What a screen reader calls the bar before it reads the percentage off it. */
+private const val TIMELINE = "Таймлайн"
 
 /** Resting and pressed diameters. Neither changes the layout: both are drawn, not laid out. */
 private val ThumbSize = 14.dp
@@ -96,13 +100,13 @@ fun KaeruSeekBar(
     val density = LocalDensity.current
     val insetPx = with(density) { KaeruTokens.SeekInset.toPx() }
     val trackPx = with(density) { KaeruTokens.ProgressHeight.toPx() }
-    val thumbPx = with(density) { thumbDiameter.toPx() / 2f }
 
     Spacer(
         modifier
             .fillMaxWidth()
             .height(KaeruTokens.SeekBarHeight)
             .semantics {
+                contentDescription = TIMELINE
                 progressBarRangeInfo = ProgressBarRangeInfo(played, 0f..1f)
                 if (enabled) {
                     setProgress { target ->
@@ -142,6 +146,10 @@ fun KaeruSeekBar(
                 }
             }
             .drawBehind {
+                // Read here rather than in the composition: the thumb animates for 150ms, and
+                // reading it up there would invalidate the whole composable once a frame to move
+                // a circle by a pixel.
+                val thumbPx = thumbDiameter.toPx() / 2f
                 val middle = size.height / 2f
                 val left = insetPx
                 val span = (size.width - insetPx * 2f).coerceAtLeast(0f)

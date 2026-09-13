@@ -13,7 +13,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.getSystemService
-import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /** Which half of the picture a finger came down on, and therefore what a swipe there means. */
@@ -56,9 +55,6 @@ object GestureMath {
             else -> DoubleTapZone.TOGGLE
         }
     }
-
-    /** Whether a movement is a swipe rather than a tap that wandered sideways. */
-    fun isVertical(dx: Float, dy: Float): Boolean = abs(dy) > abs(dx)
 
     /**
      * Where a level ends up after a finger has travelled [dragPx] from where it came down.
@@ -167,15 +163,23 @@ class PlayerHardware(private val activity: Activity?, private val audio: AudioMa
 
     fun volume(): Float {
         val manager = audio ?: return 0f
-        val max = manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        return GestureMath.level(manager.getStreamVolume(AudioManager.STREAM_MUSIC), max)
+        // Reading a device's own volume should not be able to fail, and on some it does. A gesture
+        // that starts from silence is wrong; a gesture that crashes the player is worse.
+        return runCatching {
+            GestureMath.level(
+                manager.getStreamVolume(AudioManager.STREAM_MUSIC),
+                manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC),
+            )
+        }.getOrDefault(0f)
     }
 
     fun setVolume(level: Float) {
         val manager = audio ?: return
-        val max = manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         // No system flag: the screen draws its own indicator, and two of them at once is one too many.
-        runCatching { manager.setStreamVolume(AudioManager.STREAM_MUSIC, GestureMath.step(level, max), 0) }
+        runCatching {
+            val max = manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            manager.setStreamVolume(AudioManager.STREAM_MUSIC, GestureMath.step(level, max), 0)
+        }
     }
 
     private companion object {

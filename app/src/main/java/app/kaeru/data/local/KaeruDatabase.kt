@@ -11,7 +11,9 @@ import androidx.sqlite.execSQL
 @Database(
     entities = [AnimeEntity::class, UserRateEntity::class, WatchStateEntity::class],
     version = 2,
-    exportSchema = false,
+    // Written to `app/schemas` from this version on, so the next migration can be checked against
+    // the schema it produces rather than only against the rows it preserves.
+    exportSchema = true,
 )
 @TypeConverters(Converters::class)
 abstract class KaeruDatabase : RoomDatabase() {
