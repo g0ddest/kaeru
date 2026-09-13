@@ -16,6 +16,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -124,10 +125,12 @@ class AppPreferencesTest {
         prefs.setLastFullSync(Instant.ofEpochMilli(1_000))
         prefs.setPreferredTranslations(listOf("AniDUB"))
         prefs.setAutoplayNext(false)
+        prefs.markNotificationsAsked()
 
         prefs.clear()
 
         val stored = store.data.first()
+        assertTrue(prefs.notificationsAsked())
         assertEquals("typed-by-hand", stored[stringPreferencesKey("kodik_token_override")])
         assertEquals("scraped", stored[stringPreferencesKey("kodik_token")])
         assertEquals(1_700_000_000_000L, stored[longPreferencesKey("kodik_token_at")])
@@ -135,5 +138,14 @@ class AppPreferencesTest {
         assertNull(prefs.lastFullSync())
         assertEquals(AppPreferences.DEFAULT_PREFERRED_TRANSLATIONS, prefs.preferredTranslations.first())
         assertTrue(prefs.autoplayNext.first())
+    }
+
+    @Test
+    fun `the notification question is remembered so it is put only once`() = runTest(dispatcher) {
+        assertFalse(prefs.notificationsAsked())
+
+        prefs.markNotificationsAsked()
+
+        assertTrue(prefs.notificationsAsked())
     }
 }

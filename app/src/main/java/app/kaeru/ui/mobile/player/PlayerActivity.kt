@@ -1,10 +1,15 @@
 package app.kaeru.ui.mobile.player
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.annotation.OptIn
 import androidx.compose.runtime.CompositionLocalProvider
@@ -13,18 +18,22 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalView
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.util.UnstableApi
+import app.kaeru.domain.playback.PlaybackNotificationPrompt
 import app.kaeru.player.CastFramework
 import app.kaeru.player.CastSessionBridge
 import app.kaeru.player.KaeruPlaybackService
 import app.kaeru.ui.common.player.PlayerViewModel
 import app.kaeru.ui.common.theme.KaeruTheme
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
@@ -43,8 +52,20 @@ class PlayerActivity : FragmentActivity() {
 
     @Inject lateinit var castSessions: CastSessionBridge
 
+    /** The one thing this screen remembers between launches: whether the question was put. */
+    @Inject lateinit var notificationPrompt: PlaybackNotificationPrompt
+
     private val viewModel: PlayerViewModel by viewModels()
     private var target by mutableStateOf(0 to 1)
+
+    /**
+     * Registered as a field, which is before the activity is started, as the contract requires.
+     * The answer changes nothing about playback: it is recorded so the question is put once.
+     */
+    private val askNotifications =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            lifecycleScope.launch { notificationPrompt.markNotificationsAsked() }
+        }
 
     @OptIn(UnstableApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -52,6 +73,9 @@ class PlayerActivity : FragmentActivity() {
         enableEdgeToEdge()
         goImmersive()
         target = read(intent)
+        // Asked before the service is started, so a phone that says yes has the notification
+        // from the first episode; nothing waits on the answer.
+        askForNotifications()
         // Before anything plays, so the session sees playback start and can raise its
         // notification; a session created mid-playback may never hear a transition.
         startPlaybackService()
@@ -139,6 +163,26 @@ class PlayerActivity : FragmentActivity() {
     }
 
     /**
+     * Puts the notification permission to the viewer, once, on the versions that require it.
+     *
+     * Android 13 and later hold a foreground service's notification back without it, which is
+     * how an episode ended up playing on with no notification in the shade and no transport
+     * control to stop it. Nothing here gates playback: the service starts either way, and a
+     * refusal costs the notification and its controls, never the video. Headphone and Bluetooth
+     * buttons keep working through the media session regardless.
+     */
+    private fun askForNotifications() {
+        val granted = ContextCompat.checkSelfPermission(this, POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        lifecycleScope.launch {
+            val asked = notificationPrompt.notificationsAsked()
+            if (!shouldAskForNotifications(Build.VERSION.SDK_INT, granted, asked)) return@launch
+            // A device with nothing to answer the request throws rather than refusing.
+            runCatching { askNotifications.launch(POST_NOTIFICATIONS) }
+        }
+    }
+
+    /**
      * Hands the session to the media service so headphones, the lock screen and Bluetooth can
      * drive it. Failing to start it costs the notification, never the video, so it never throws.
      */
@@ -150,6 +194,13 @@ class PlayerActivity : FragmentActivity() {
     companion object {
         private const val EXTRA_ANIME_ID = "animeId"
         private const val EXTRA_EPISODE = "episode"
+        /**
+         * Inlined on purpose: the name is a plain string that older platforms simply do not
+         * know, and nothing ever asks for it there — [shouldAskForNotifications] is what keeps
+         * the request on the versions that have it.
+         */
+        @SuppressLint("InlinedApi")
+        private const val POST_NOTIFICATIONS = Manifest.permission.POST_NOTIFICATIONS
 
         fun intent(context: Context, animeId: Int, episode: Int): Intent =
             Intent(context, PlayerActivity::class.java)
@@ -157,3 +208,11 @@ class PlayerActivity : FragmentActivity() {
                 .putExtra(EXTRA_EPISODE, episode)
     }
 }
+
+/**
+ * Whether to put the notification permission to the viewer: only where the platform withholds
+ * it until asked, only while it is missing, and only once. A refusal is an answer — putting the
+ * question again on every episode would be the worse bargain.
+ */
+internal fun shouldAskForNotifications(sdkInt: Int, granted: Boolean, alreadyAsked: Boolean): Boolean =
+    sdkInt >= Build.VERSION_CODES.TIRAMISU && !granted && !alreadyAsked

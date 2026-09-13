@@ -5,6 +5,7 @@ import app.kaeru.data.kodik.KodikConstants
 import app.kaeru.data.library.AppPreferences
 import app.kaeru.data.playback.RoomWatchStateRepository
 import app.kaeru.domain.playback.MarkEpisodeWatched
+import app.kaeru.domain.playback.PlaybackNotificationPrompt
 import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.playback.WatchProgress
@@ -111,6 +112,10 @@ abstract class PlaybackBindings {
     /** The settings reader every layer above `data` sees. */
     @Binds
     abstract fun playbackPreferences(impl: AppPreferences): PlaybackPreferences
+
+    /** The same store, as the one note the player screen has to keep between launches. */
+    @Binds
+    abstract fun playbackNotificationPrompt(impl: AppPreferences): PlaybackNotificationPrompt
 
     @Binds
     @LocalEngine

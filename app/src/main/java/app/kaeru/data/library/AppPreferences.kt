@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import app.kaeru.data.kodik.KodikTokenKeys
 import app.kaeru.domain.model.Quality
+import app.kaeru.domain.playback.PlaybackNotificationPrompt
 import app.kaeru.domain.playback.PlaybackPreferences
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -22,13 +23,17 @@ import javax.inject.Singleton
 
 @Singleton
 class AppPreferences @Inject constructor(@param:Named("prefs") private val dataStore: DataStore<Preferences>) :
-    PlaybackPreferences {
+    PlaybackPreferences, PlaybackNotificationPrompt {
     private val userIdKey = longPreferencesKey("user_id")
     private val lastFullSyncKey = longPreferencesKey("last_full_sync")
     private val watchedThresholdKey = floatPreferencesKey("watched_threshold")
     private val preferredTranslationsKey = stringPreferencesKey("preferred_translations")
     private val autoplayNextKey = booleanPreferencesKey("autoplay_next")
     private val defaultQualityKey = intPreferencesKey("default_quality")
+    private val notificationsAskedKey = booleanPreferencesKey("notifications_asked")
+
+    /** What a wipe leaves behind: configuration of the device, not of whoever is signed in. */
+    private val deviceKeys: List<Preferences.Key<*>> = KodikTokenKeys.all + notificationsAskedKey
 
     suspend fun userId(): Long? = dataStore.data.first()[userIdKey]
 
@@ -83,15 +88,22 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
         }
     }
 
+    override suspend fun notificationsAsked(): Boolean = dataStore.data.first()[notificationsAskedKey] ?: false
+
+    override suspend fun markNotificationsAsked() {
+        dataStore.edit { it[notificationsAskedKey] = true }
+    }
+
     /**
      * Wipes the store except for what belongs to this device rather than to the app: the Kodik
-     * key somebody typed in and the token scraped for it. Those are configuration — a wipe that
-     * took them would leave a device that used to play silently unable to, with nothing on
-     * screen to say why.
+     * key somebody typed in, the token scraped for it, and the note that the notification
+     * question has already been put. Those are configuration — a wipe that took them would leave
+     * a device that used to play silently unable to, and would put a system prompt the viewer
+     * has already answered in front of them again.
      */
     suspend fun clear() {
         dataStore.edit { prefs ->
-            val kept = DEVICE_KEYS.mapNotNull { key -> prefs[key]?.let { key to it } }
+            val kept = deviceKeys.mapNotNull { key -> prefs[key]?.let { key to it } }
             prefs.clear()
             kept.forEach { (key, value) -> prefs.put(key, value) }
         }
@@ -106,22 +118,19 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
     }
 
     companion object {
-        /** What a wipe leaves behind: settings of the device, not of whoever is signed in. */
-        private val DEVICE_KEYS: List<Preferences.Key<*>> = KodikTokenKeys.all
-
-        /**
-         * The one cast the preference API cannot express on its own: a value just read from
-         * [key] is by construction a value [key] accepts.
-         */
-        @Suppress("UNCHECKED_CAST")
-        private fun MutablePreferences.put(key: Preferences.Key<*>, value: Any) {
-            this[key as Preferences.Key<Any>] = value
-        }
-
         /** Studios that dub most of what this app plays, best first. */
         val DEFAULT_PREFERRED_TRANSLATIONS = listOf(
             "AniLibria", "AniDUB", "Crunchyroll", "Amazing Dubbing", "AniBaza",
             "AniMaunt", "JAM", "Dream Cast", "SHIZA Project",
         )
     }
+}
+
+/**
+ * The one cast the preference API cannot express on its own: a value just read from [key] is by
+ * construction a value [key] accepts.
+ */
+@Suppress("UNCHECKED_CAST")
+private fun MutablePreferences.put(key: Preferences.Key<*>, value: Any) {
+    this[key as Preferences.Key<Any>] = value
 }
