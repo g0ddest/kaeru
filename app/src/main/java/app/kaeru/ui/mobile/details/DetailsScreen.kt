@@ -188,7 +188,7 @@ private fun TitlePage(
 ) {
     val entry = state.entry
     val cells = remember(anime, entry, state.watchedThreshold) {
-        episodeCells(anime, entry?.rate, entry?.watch, state.watchedThreshold)
+        episodeCells(anime, entry?.rate, entry?.watch, entry?.progress.orEmpty(), state.watchedThreshold)
     }
     // One clock per anime. «9 серия выйдет завтра» is read against it, and a label that rewrote
     // itself on every recomposition would be a label nobody could finish reading.

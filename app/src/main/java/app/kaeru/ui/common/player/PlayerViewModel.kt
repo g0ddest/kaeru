@@ -14,6 +14,7 @@ import app.kaeru.domain.model.WatchState
 import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.playback.RankedTranslation
 import app.kaeru.domain.playback.ResolveEpisodeStream
+import app.kaeru.domain.repository.EpisodeProgressRepository
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.repository.WatchStateRepository
 import app.kaeru.player.CastSessionBridge
@@ -57,6 +58,7 @@ class PlayerViewModel @Inject constructor(
     private val resolve: ResolveEpisodeStream,
     private val library: LibraryRepository,
     private val watchStates: WatchStateRepository,
+    private val episodeProgress: EpisodeProgressRepository,
     private val prefs: PlaybackPreferences,
     @param:IoDispatcher private val io: CoroutineDispatcher,
 ) : ViewModel() {
@@ -80,8 +82,13 @@ class PlayerViewModel @Inject constructor(
 
     /**
      * Everything about the show itself. The season list is built here rather than on the screen
-     * because it needs three sources — the catalogue, the viewer's count and this device's own
-     * position — and a screen that gathered them would be the third place in the app doing it.
+     * because it needs four sources — the catalogue, the viewer's count, this device's positions
+     * and the episode it played last — and a screen that gathered them would be the third place in
+     * the app doing it.
+     *
+     * The positions are read from their own repository rather than off [LibraryRepository]'s
+     * entry, because this screen also opens on a title that is in no list at all, where there is
+     * no entry to read them from.
      */
     private val shown: Flow<Shown> = animeId.flatMapLatest { id ->
         if (id == null) {
@@ -91,10 +98,11 @@ class PlayerViewModel @Inject constructor(
                 library.observeAnimeDetails(id),
                 library.observeAnime(id),
                 watchStates.observe(id),
+                episodeProgress.observe(id),
                 prefs.watchedThreshold,
-            ) { details, entry, watch, threshold ->
+            ) { details, entry, watch, progress, threshold ->
                 val anime = entry?.anime ?: details
-                Shown(anime, anime?.let { episodeCells(it, entry?.rate, watch, threshold) }.orEmpty())
+                Shown(anime, anime?.let { episodeCells(it, entry?.rate, watch, progress, threshold) }.orEmpty())
             }
         }
     }
@@ -201,7 +209,7 @@ class PlayerViewModel @Inject constructor(
             // row is not: autoplay writes it as it goes. So on a launch that is not a choice the
             // row wins, and the intent is only the answer when there is no row at all.
             val wanted = if (explicit) episode else saved?.episode ?: episode
-            controller.play(PlaybackTarget(animeId, wanted, resumeFrom(saved, wanted), translation = null))
+            controller.play(PlaybackTarget(animeId, wanted, resumeFrom(saved, animeId, wanted), translation = null))
         }
     }
 
@@ -227,14 +235,24 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
-     * Where to pick this episode up, out of the row already read. A position belongs to the
-     * episode it was taken in, and an episode already watched to its end starts over: resuming on
-     * the last frame would only offer the next episode again.
+     * Where to pick this episode up. Every episode keeps its own position, so going back to an
+     * earlier one lands where that one was left rather than at the beginning — and, just as
+     * importantly, never spends the position of the episode that was playing.
+     *
+     * An episode already watched to its end starts over: resuming on the last frame would only
+     * offer the next episode again.
+     *
+     * [saved] stands in when the per-episode table has no row for this episode but the anime's
+     * pointer is inside it. The sampler writes the two independently, so either can be the one
+     * that got through; the pointer is only ever believed about the episode it names.
      */
-    private suspend fun resumeFrom(saved: WatchState?, episode: Int): Long {
-        val row = saved?.takeIf { it.episode == episode } ?: return 0
+    private suspend fun resumeFrom(saved: WatchState?, animeId: Int, episode: Int): Long {
+        val row = episodeProgress.observe(animeId).first().firstOrNull { it.episode == episode }
+        val pointer = saved?.takeIf { it.episode == episode }
+        val positionMs = row?.positionMs ?: pointer?.positionMs ?: return 0
+        val durationMs = row?.durationMs ?: pointer?.durationMs ?: 0
         val threshold = prefs.watchedThreshold.first()
-        return if (EpisodeQueue.watched(row.positionMs, row.durationMs, threshold)) 0 else row.positionMs
+        return if (EpisodeQueue.watched(positionMs, durationMs, threshold)) 0 else positionMs
     }
 
     fun togglePlayPause() = controller.togglePlayPause()
@@ -264,7 +282,7 @@ class PlayerViewModel @Inject constructor(
         requested = id to episode
         startJob = viewModelScope.launch {
             val saved = watchStates.observe(id).first()
-            controller.play(PlaybackTarget(id, episode, resumeFrom(saved, episode), translation = track))
+            controller.play(PlaybackTarget(id, episode, resumeFrom(saved, id, episode), translation = track))
         }
     }
 

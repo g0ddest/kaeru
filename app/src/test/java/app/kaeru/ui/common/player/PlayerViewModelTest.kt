@@ -4,6 +4,7 @@ import app.kaeru.domain.error.EpisodeNotAvailable
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
+import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.EpisodeStream
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
@@ -13,6 +14,7 @@ import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.model.WatchState
+import app.kaeru.domain.playback.FakeEpisodeProgressRepository
 import app.kaeru.domain.playback.FakePlaybackPreferences
 import app.kaeru.domain.playback.FakeWatchStateRepository
 import app.kaeru.domain.playback.ResolveEpisodeStream
@@ -31,6 +33,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
@@ -57,6 +60,7 @@ class PlayerViewModelTest {
 
     private val controller = FakePlaybackController()
     private val watchStates = FakeWatchStateRepository()
+    private val episodes = FakeEpisodeProgressRepository()
     private val library = FakeLibraryRepository()
     private val source = FakeEpisodeSource()
     // AniLibria is on the viewer's list, which is what puts it above the other track.
@@ -88,6 +92,7 @@ class PlayerViewModelTest {
             resolve = ResolveEpisodeStream(source, watchStates, prefs, clock, StreamPrefetchCache(clock)),
             library = library,
             watchStates = watchStates,
+            episodeProgress = episodes,
             prefs = prefs,
             io = main.dispatcher,
         )
@@ -109,6 +114,58 @@ class PlayerViewModelTest {
         advanceUntilIdle()
 
         assertEquals(PlaybackTarget(100, 4, 320_000, null), controller.played.single())
+    }
+
+    @Test
+    fun `each episode is resumed from its own position`() = runTest(main.dispatcher) {
+        episodes.seed(EpisodeProgress(100, 6, 300_000, 1_440_000, now))
+        episodes.seed(EpisodeProgress(100, 7, 2_400_000, 2_880_000, now))
+        // The pointer names the seventh, because that is the one that played last.
+        watchStates.seed(WatchState(100, 7, 2_400_000, 2_880_000, translationId = 11, kodikSeason = 1, updatedAt = now))
+
+        // Going back to the sixth picks the sixth up where it was left, not where the seventh is.
+        viewModel.start(animeId = 100, episode = 6)
+        advanceUntilIdle()
+
+        assertEquals(300_000L, controller.played.single().startPositionMs)
+        assertEquals(2_400_000L, episodes.observe(100).first().single { it.episode == 7 }.positionMs)
+    }
+
+    @Test
+    fun `an episode the per-episode table has never heard of starts from the beginning`() =
+        runTest(main.dispatcher) {
+            episodes.seed(EpisodeProgress(100, 7, 2_400_000, 2_880_000, now))
+
+            viewModel.start(animeId = 100, episode = 5)
+            advanceUntilIdle()
+
+            assertEquals(0L, controller.played.single().startPositionMs)
+        }
+
+    @Test
+    fun `choosing an episode from the remote resumes that episode's own position`() = runTest(main.dispatcher) {
+        episodes.seed(EpisodeProgress(100, 9, 700_000, 1_440_000, now))
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+
+        viewModel.playEpisode(9)
+        advanceUntilIdle()
+
+        assertEquals(700_000L, controller.played.last().startPositionMs)
+    }
+
+    @Test
+    fun `the remote control draws a strip on every episode left part-watched`() = runTest(main.dispatcher) {
+        episodes.seed(EpisodeProgress(100, 5, 720_000, 1_440_000, now))
+        episodes.seed(EpisodeProgress(100, 7, 360_000, 1_440_000, now))
+
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+
+        val cells = viewModel.uiState.value.episodes
+        assertEquals(0.5f, cells.single { it.number == 5 }.progress!!, 0.001f)
+        assertEquals(0.25f, cells.single { it.number == 7 }.progress!!, 0.001f)
+        assertNull(cells.single { it.number == 6 }.progress)
     }
 
     // --- coming back to a player that moved on --------------------------------------------------

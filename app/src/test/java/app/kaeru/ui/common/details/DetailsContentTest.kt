@@ -220,7 +220,7 @@ class DetailsContentTest {
         // Twelve announced, sixteen actually out: the grid draws sixteen tiles, so the line has to
         // say «из 16». Reading the announced total instead would print «14 из 12» over them.
         val extended = anime(episodes = 12, aired = 16)
-        val cells = episodeCells(extended, entry(watched = 14).rate, null, 0.9f)
+        val cells = episodeCells(extended, entry(watched = 14).rate, null, emptyList(), 0.9f)
         assertEquals(16, cells.size)
         assertEquals("14 из 16", watchedLine(14, cells.size))
     }

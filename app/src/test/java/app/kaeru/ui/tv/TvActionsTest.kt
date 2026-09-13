@@ -2,6 +2,7 @@ package app.kaeru.ui.tv
 
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
+import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.FeedItem
 import app.kaeru.domain.model.FeedKind
 import app.kaeru.domain.model.HomeFeed
@@ -28,11 +29,16 @@ class TvActionsTest {
         anime: Anime = anime(),
         watchedEpisodes: Int = 4,
         watch: WatchState? = null,
+        progress: List<EpisodeProgress> = emptyList(),
     ) = LibraryEntry(
         anime,
         UserRate(anime.id.toLong(), anime.id, ListStatus.WATCHING, watchedEpisodes, Instant.EPOCH),
         watch,
+        progress,
     )
+
+    private fun stopped(episode: Int, positionMs: Long, durationMs: Long = 1_200_000) =
+        EpisodeProgress(1, episode, positionMs, durationMs, Instant.EPOCH)
 
     private fun item(
         kind: FeedKind,
@@ -102,11 +108,22 @@ class TvActionsTest {
     }
 
     @Test
-    fun `only the episode in progress carries a progress strip`() {
+    fun `the episode being watched carries a progress strip and no other does`() {
         val watch = WatchState(1, episode = 5, positionMs = 300_000, durationMs = 1_200_000, null, null, Instant.EPOCH)
         val grid = tvEpisodeGrid(entry(watchedEpisodes = 4, watch = watch))
         assertEquals(0.25f, grid.single { it.episode == 5 }.progress)
         assertTrue(grid.filter { it.episode != 5 }.all { it.progress == null })
+    }
+
+    @Test
+    fun `every episode left part-watched carries its own strip`() {
+        val grid = tvEpisodeGrid(
+            entry(watchedEpisodes = 4, progress = listOf(stopped(5, 300_000), stopped(7, 600_000))),
+        )
+
+        assertEquals(0.25f, grid.single { it.episode == 5 }.progress)
+        assertEquals(0.5f, grid.single { it.episode == 7 }.progress)
+        assertNull(grid.single { it.episode == 6 }.progress)
     }
 
     @Test
