@@ -358,6 +358,33 @@ class PlayerViewModelTest {
         assertEquals(1, controller.releases)
     }
 
+    @Test
+    fun `a screen that stops while playing pauses and writes the position down`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+        controller.playback.update { it.copy(isPlaying = true) }
+
+        viewModel.pause()
+
+        assertEquals(1, controller.toggles)
+        assertEquals(1, controller.reports)
+        // Still loaded: coming back and pressing play resumes the episode where it stopped.
+        assertEquals(0, controller.releases)
+    }
+
+    @Test
+    fun `a screen that stops on a paused episode only writes the position down`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+        controller.playback.update { it.copy(isPlaying = false) }
+
+        viewModel.pause()
+
+        // Toggling here would start playing an episode the viewer had deliberately stopped.
+        assertEquals(0, controller.toggles)
+        assertEquals(1, controller.reports)
+    }
+
     private inner class FakeEpisodeSource : EpisodeSourceProvider {
         var translationsResult: Result<List<Translation>> = Result.success(listOf(studioBanda, anilibria))
 

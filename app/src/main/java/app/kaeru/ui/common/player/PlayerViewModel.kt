@@ -238,6 +238,19 @@ class PlayerViewModel @Inject constructor(
     /** The screen is going away for a moment: save where the viewer is, keep playing. */
     fun reportProgress() = controller.reportProgress()
 
+    /**
+     * The screen stopped and nothing is left to carry playback — no notification, no media
+     * session, no receiver — so the picture must not go on playing under whatever replaced it.
+     *
+     * Only what is playing is stopped: toggling a paused episode would start one the viewer had
+     * deliberately stopped. Nothing is released, so coming back and pressing play resumes the
+     * episode where it left off rather than resolving it again.
+     */
+    fun pause() {
+        if (controller.state.value.isPlaying) controller.togglePlayPause()
+        controller.reportProgress()
+    }
+
     /** The screen is closing for good. */
     fun release() = controller.release()
 }
