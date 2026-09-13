@@ -3,6 +3,7 @@ package app.kaeru.ui.tv.auth
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,14 +13,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
@@ -31,9 +37,11 @@ import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.design.PrimaryButton
 import app.kaeru.ui.common.design.SecondaryButton
 import app.kaeru.ui.common.design.formatTime
+import app.kaeru.ui.common.design.kaeruFocus
 import app.kaeru.ui.common.theme.KaeruError
 import app.kaeru.ui.common.theme.KaeruSecondary
 import app.kaeru.ui.common.theme.KaeruText
+import app.kaeru.ui.tv.requestFocusOrLog
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
@@ -52,6 +60,7 @@ private const val STATUS_CONFIRMING = "Телефон подтвердил, вх
 private const val STATUS_EXPIRED = "Код устарел"
 
 private const val NEW_QR = "Новый QR"
+private const val QR_LABEL = "QR-код для входа с телефона"
 private const val TYPED_HEADING = "Или введите код"
 private const val TYPED_STEPS = "1. Отсканируйте этот код\n2. Разрешите доступ\n3. Введите код с экрана Shikimori"
 private const val CODE_PLACEHOLDER = "Код авторизации"
@@ -72,6 +81,9 @@ private val QrQuietZone = 12.dp
 private val ColumnGap = 56.dp
 private val ScreenPadding = 48.dp
 
+/** How far the focus ring sits outside the white card, so it never eats into the quiet zone. */
+private val QrFocusInset = KaeruTokens.Space1
+
 /**
  * Signing a television in, without anybody typing anything.
  *
@@ -81,8 +93,11 @@ private val ScreenPadding = 48.dp
  * is waiting for. The right half is the way this used to work and still does when the television
  * has no local network — a Shikimori page, read off the screen, typed back in with a remote.
  *
- * Nothing here asks for focus. On a television, focus landing in a text field brings the system
- * keyboard up over the screen, which would cover the code the screen exists to show.
+ * **Where the D-pad starts, and why it is spelled out.** On a television, focus landing in a text
+ * field brings the system keyboard up — over the very code this screen exists to show. Leaving the
+ * focus unclaimed does not avoid that: the left half had nothing focusable in it while a code was
+ * good, so the first focusable on the screen *was* the typed-code field, and the keyboard opened
+ * itself on arrival. The big code is a focus stop of its own now, and it is the one claimed here.
  */
 @Composable
 fun TvLoginScreen(
@@ -94,11 +109,14 @@ fun TvLoginScreen(
     onSubmit: () -> Unit,
     onNewQr: () -> Unit,
 ) {
+    val qr = remember { FocusRequester() }
+    LaunchedEffect(Unit) { qr.requestFocusOrLog("the pairing code of the television login") }
+
     Row(
         Modifier.fillMaxSize().padding(horizontal = KaeruTokens.GutterTv, vertical = ScreenPadding),
         horizontalArrangement = Arrangement.spacedBy(ColumnGap),
     ) {
-        PairingHalf(pairing, authorizeUrl, onNewQr, Modifier.weight(1f))
+        PairingHalf(pairing, authorizeUrl, onNewQr, qr, Modifier.weight(1f))
         TypedCodeHalf(authorizeUrl, state, code, onCode, onSubmit, Modifier.weight(1f))
     }
 }
@@ -108,11 +126,12 @@ private fun PairingHalf(
     pairing: TvPairingUiState,
     authorizeUrl: String,
     onNewQr: () -> Unit,
+    qr: FocusRequester,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space4)) {
         Text(HEADING, style = MaterialTheme.typography.headlineMedium, color = KaeruText)
-        QrCard(tvLoginQr(pairing, authorizeUrl), PairingQr)
+        QrCard(tvLoginQr(pairing, authorizeUrl), PairingQr, qr, QR_LABEL)
         Text(tvLoginHint(pairing), style = MaterialTheme.typography.bodyMedium, color = KaeruSecondary)
         Text(tvLoginName(pairing), style = MaterialTheme.typography.titleMedium, color = KaeruText)
         StatusLine(pairing)
@@ -197,17 +216,45 @@ private val TypedFieldWidth = 360.dp
  * A code on white, because a camera reads dark modules on a light ground and nothing else
  * reliably. It is the one place in the app where a colour outside the palette is on screen, and it
  * is there for the scanner rather than for the eye.
+ *
+ * Passing a [label] turns the card into a stop for the D-pad: named for a screen reader, ringed
+ * like every other focusable thing on a television, and doing nothing at all when OK is pressed.
+ * That last part is deliberate — the obvious action to hang on it, «fetch a new code», would let
+ * one stray press invalidate the code a phone is halfway through scanning. It exists so that the
+ * remote has somewhere to be that is not the text field beside it; «Новый QR» below is the
+ * labelled way to ask for another one.
  */
 @Composable
-private fun QrCard(payload: String, size: Dp) {
+private fun QrCard(
+    payload: String,
+    size: Dp,
+    focusRequester: FocusRequester? = null,
+    label: String? = null,
+) {
     val bitmap = remember(payload) { qrBitmap(payload).asImageBitmap() }
-    Box(
-        Modifier
-            .clip(KaeruTokens.CardShape)
-            .background(Color.White)
-            .padding(QrQuietZone),
-    ) {
-        Image(bitmap, contentDescription = null, modifier = Modifier.size(size))
+    val card = @Composable {
+        Box(
+            Modifier
+                .clip(KaeruTokens.CardShape)
+                .background(Color.White)
+                .padding(QrQuietZone),
+        ) {
+            Image(bitmap, contentDescription = null, modifier = Modifier.size(size))
+        }
+    }
+    if (label == null) {
+        card()
+    } else {
+        // The ring goes on an outer box rather than on the white one: a border drawn under a
+        // background is a border nobody sees, and an inset one would eat the scanner's quiet zone.
+        Box(
+            Modifier
+                .then(focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
+                .kaeruFocus(KaeruTokens.CardShape)
+                .semantics { contentDescription = label }
+                .focusable()
+                .padding(QrFocusInset),
+        ) { card() }
     }
 }
 
