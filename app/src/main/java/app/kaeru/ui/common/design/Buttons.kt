@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.kaeru.ui.common.theme.KaeruAccent
+import app.kaeru.ui.common.theme.KaeruBackground
 import app.kaeru.ui.common.theme.KaeruDivider
 import app.kaeru.ui.common.theme.KaeruElevated
 import app.kaeru.ui.common.theme.KaeruError
@@ -87,6 +88,11 @@ fun PrimaryButton(
  *
  * Confirm with it; never use it as the way *into* a dialog, where the quiet [SecondaryButton] is
  * the honest affordance.
+ *
+ * Its label is the app's own near-black rather than white: `#F2F3F5` on `#E5484D` measures 3.5:1,
+ * which clears the floor for large text only, while `#0B0C10` measures 5.0:1 and clears 4.5:1 at
+ * any size. The label on the one irreversible control in the app should not be the one label a
+ * viewer has to squint at.
  */
 @Composable
 fun DestructiveButton(
@@ -106,7 +112,7 @@ fun DestructiveButton(
         shape = KaeruTokens.ButtonShape,
         colors = ButtonDefaults.buttonColors(
             containerColor = KaeruError,
-            contentColor = KaeruText,
+            contentColor = KaeruBackground,
             disabledContainerColor = KaeruElevated,
             disabledContentColor = KaeruSecondary,
         ),

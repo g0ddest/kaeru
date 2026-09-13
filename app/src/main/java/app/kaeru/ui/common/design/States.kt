@@ -67,9 +67,13 @@ fun EmptyState(
  * Something failed and the viewer can do something about it.
  *
  * [message] comes from `toUserMessage()`, which already says the cause and the next step, so
- * nothing is added here — no icon, no apology, no second heading. The retry is the amber button
- * because it is what the screen now exists to do; [secondaryLabel] is for the other way out, such
- * as changing the dub when this one will not load.
+ * nothing is added here — no icon, no apology, no second heading.
+ *
+ * The retry is deliberately *not* amber. The accent means «this is the thing to watch» everywhere
+ * else in the app, and an error screen that borrows it teaches the eye to look for playback where
+ * there is none; the button reads as the action because it is the only control on an otherwise
+ * empty screen. [secondaryLabel] is for the other way out, such as changing the dub when this one
+ * will not load, and carries the same weight because both are simply ways forward.
  *
  * Sizing is the caller's, as in [EmptyState]: pass `Modifier.fillMaxSize()` to centre it on a
  * screen of its own.
@@ -98,7 +102,7 @@ fun ErrorState(
             Modifier.padding(top = KaeruTokens.Space6),
             horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space3),
         ) {
-            PrimaryButton("Повторить", onRetry)
+            SecondaryButton("Повторить", onRetry)
             if (secondaryLabel != null && onSecondary != null) {
                 SecondaryButton(secondaryLabel, onSecondary)
             }
