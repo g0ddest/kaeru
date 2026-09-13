@@ -1,4 +1,4 @@
-package app.kaeru.ui.mobile.details
+package app.kaeru.ui.common.details
 
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel

@@ -1,4 +1,4 @@
-package app.kaeru.ui.mobile.search
+package app.kaeru.ui.common.search
 
 /**
  * Which of the five screens search is at this moment.

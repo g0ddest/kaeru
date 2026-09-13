@@ -1,22 +1,25 @@
-package app.kaeru.ui.mobile.home
+package app.kaeru.ui.common.home
 
 import app.kaeru.domain.discover.Season
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.FeedItem
+import app.kaeru.domain.model.FeedKind
 import app.kaeru.domain.model.HomeFeed
 import app.kaeru.ui.common.design.pluralEpisodes
 import app.kaeru.ui.common.design.relativeDay
 import app.kaeru.ui.common.design.remainingLine
-import app.kaeru.ui.common.home.DiscoverUiState
 import java.time.Instant
 import java.time.ZoneId
 
-/** The rows of the phone's home screen, in the order they are read. */
-private const val NEW_EPISODES = "Новые серии"
-private const val CONTINUE = "Продолжить"
-private const val NEXT_UP = "Дальше по списку"
-private const val UPCOMING = "Скоро"
-private const val PLANNED = "В планах"
+/**
+ * The rows of the home screen, in the order they are read — on the phone and on the television
+ * alike, which is why they are not private to either.
+ */
+internal const val NEW_EPISODES = "Новые серии"
+internal const val CONTINUE = "Продолжить"
+internal const val NEXT_UP = "Дальше по списку"
+internal const val UPCOMING = "Скоро"
+internal const val PLANNED = "В планах"
 
 /** The two rows about the catalogue rather than about the viewer, in the order they are read. */
 private const val POPULAR_NOW = "Популярно сейчас"
@@ -46,8 +49,26 @@ data class HomeCard(
 /** A titled row of cards. A row with nothing in it is never built, so the title always has content. */
 data class HomeRow(val title: String, val items: List<HomeCard>)
 
+/** A heading and the feed items under it, before either screen decides what a card says. */
+data class FeedRow(val title: String, val items: List<FeedItem>)
+
 /**
- * The home screen's rows, built from the feed and the clock rather than from the composition.
+ * Which titles sit under which heading, in which order — and nothing about how a card looks.
+ *
+ * Shared with the television, which draws the same five headings in the same order out of the same
+ * feed and only makes different cards from them. An empty bucket is left out rather than added
+ * empty: a heading with a gap under it is a row that says nothing.
+ */
+fun feedRows(feed: HomeFeed): List<FeedRow> = listOf(
+    FeedRow(NEW_EPISODES, feed.newEpisodes),
+    FeedRow(CONTINUE, feed.continueWatching),
+    FeedRow(NEXT_UP, feed.nextUp),
+    FeedRow(UPCOMING, feed.upcoming),
+    FeedRow(PLANNED, feed.planned),
+).filter { it.items.isNotEmpty() }
+
+/**
+ * One card, with every word on it already decided.
  *
  * Two rules live here rather than in the screen:
  *
@@ -57,37 +78,39 @@ data class HomeRow(val title: String, val items: List<HomeCard>)
  * 2. **The strip and the badge talk about the same episode.** Progress is shown only in
  *    «Продолжить», where the badged episode is the one being watched; on an upcoming card the
  *    badge names an episode that has not aired, so a strip there would describe a different one.
+ *
+ * The rule is keyed on the item's own [FeedKind] rather than on which list it came out of, so the
+ * television — which builds its own rows — cannot end up with a card the phone would not draw.
  */
+fun homeCard(
+    item: FeedItem,
+    threshold: Float,
+    now: Instant,
+    zone: ZoneId = ZoneId.systemDefault(),
+): HomeCard = when (item.kind) {
+    FeedKind.NEW_EPISODE -> card(item, badge = episodeBadge(item.episode))
+    FeedKind.CONTINUE -> card(
+        item,
+        badge = episodeBadge(item.episode),
+        subtitle = item.remaining(),
+        progress = item.entry.progressFraction(threshold),
+    )
+    FeedKind.NEXT_UP -> card(item, badge = episodeBadge(item.episode))
+    FeedKind.UPCOMING -> {
+        val day = item.entry.anime.nextEpisodeAt?.let { at -> relativeDay(at, now, zone) } ?: SOON
+        card(item, badge = episodeBadge(item.episode), subtitle = day)
+    }
+    FeedKind.PLANNED -> card(item, subtitle = item.seasonLength())
+}
+
+/** The home screen's rows, built from the feed and the clock rather than from the composition. */
 fun homeRows(
     feed: HomeFeed,
     threshold: Float,
     now: Instant,
     zone: ZoneId = ZoneId.systemDefault(),
-): List<HomeRow> = buildList {
-    row(NEW_EPISODES, feed.newEpisodes) { card(it, badge = episodeBadge(it.episode)) }
-    row(CONTINUE, feed.continueWatching) {
-        card(
-            it,
-            badge = episodeBadge(it.episode),
-            subtitle = it.remaining(),
-            progress = it.entry.progressFraction(threshold),
-        )
-    }
-    row(NEXT_UP, feed.nextUp) { card(it, badge = episodeBadge(it.episode)) }
-    row(UPCOMING, feed.upcoming) {
-        val day = it.entry.anime.nextEpisodeAt?.let { at -> relativeDay(at, now, zone) } ?: SOON
-        card(it, badge = episodeBadge(it.episode), subtitle = day)
-    }
-    row(PLANNED, feed.planned) { card(it, subtitle = it.seasonLength()) }
-}
-
-/** Adds a row, or nothing at all: an empty row is a heading with a gap under it. */
-private fun MutableList<HomeRow>.row(
-    title: String,
-    items: List<FeedItem>,
-    card: (FeedItem) -> HomeCard,
-) {
-    if (items.isNotEmpty()) add(HomeRow(title, items.map(card)))
+): List<HomeRow> = feedRows(feed).map { row ->
+    HomeRow(row.title, row.items.map { homeCard(it, threshold, now, zone) })
 }
 
 private fun card(

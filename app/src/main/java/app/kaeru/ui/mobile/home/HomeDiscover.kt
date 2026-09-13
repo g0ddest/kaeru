@@ -22,6 +22,10 @@ import app.kaeru.ui.common.design.SkeletonCardsRow
 import app.kaeru.ui.common.design.StatusPill
 import app.kaeru.ui.common.design.TextAction
 import app.kaeru.ui.common.design.seasonTitle
+import app.kaeru.ui.common.home.DiscoverContent
+import app.kaeru.ui.common.home.DiscoverRow
+import app.kaeru.ui.common.home.DiscoverRows
+import app.kaeru.ui.common.home.HomeCard
 import app.kaeru.ui.common.theme.KaeruSecondary
 
 /** What a season with nothing indexed in it says, which is the plain truth and no apology. */

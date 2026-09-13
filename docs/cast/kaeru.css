@@ -7,7 +7,7 @@
 }
 
 .logo {
-  background: center / contain no-repeat url(logo.png);
+  background: center / 36% auto no-repeat url(logo.png);
 }
 
 /* While the receiver itself is loading. */
