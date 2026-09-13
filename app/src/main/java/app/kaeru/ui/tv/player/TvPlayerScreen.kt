@@ -48,6 +48,21 @@ private const val TOAST_MS = 4_000L
 private const val WAKE_THROTTLE_MS = 500L
 
 /**
+ * Where the panel's throttle stands after a wake at [atMs], or null when the wake came too soon
+ * after [lastWakeMs] to restart the linger timer. A held button repeats twenty times a second
+ * and every restart recomposes the panel, so twice a second is enough.
+ *
+ * A wake with no key behind it — the autoplay offer — always counts and leaves the reference
+ * point where it was. Standing it on a time no press can ever beat is what used to leave every
+ * later press reading as "too soon", so a held button stopped keeping the panel up.
+ */
+internal fun nextWake(atMs: Long?, lastWakeMs: Long): Long? = when {
+    atMs == null -> lastWakeMs
+    atMs - lastWakeMs >= WAKE_THROTTLE_MS -> atMs
+    else -> null
+}
+
+/**
  * The television player: the picture, and over it a panel that appears at the touch of any
  * button and leaves again on its own.
  *
@@ -100,14 +115,13 @@ fun TvPlayerScreen(
         else -> panelFocus
     }
 
-    // The last key that restarted the linger timer. A held button repeats twenty times a
-    // second, and every restart would recompose the panel; once every half second is enough.
+    // The last key that restarted the linger timer; [nextWake] is the whole rule.
     val lastWake = remember { longArrayOf(0) }
 
-    fun show(atMs: Long = Long.MAX_VALUE) {
+    /** @param atMs the time of the key behind this wake, or null when no key is behind it. */
+    fun show(atMs: Long? = null) {
         panelVisible = true
-        if (atMs - lastWake[0] < WAKE_THROTTLE_MS) return
-        lastWake[0] = atMs
+        lastWake[0] = nextWake(atMs, lastWake[0]) ?: return
         wake += 1
     }
 
