@@ -115,6 +115,31 @@ class HomeFeedBuilderTest {
     }
 
     @Test
+    fun `a tap on the wrong tile does not carry a title to the head of the row`() {
+        // Ten seconds in the fourth episode is the newest row this title has, and it says nothing:
+        // nobody watched it. The title that was genuinely left mid-episode yesterday comes first.
+        val misTapped = anime(1, AnimeStatus.ONGOING, episodes = 24, aired = 10)
+        val watched = anime(2, AnimeStatus.ONGOING, episodes = 24, aired = 10)
+        val feed = builder.build(
+            listOf(
+                entry(
+                    misTapped, watched = 6,
+                    progress = listOf(
+                        stopped(1, 7, 0.4f, now.minus(Duration.ofDays(3))),
+                        stopped(1, 4, 0.005f, now.minus(Duration.ofMinutes(1))),
+                    ),
+                ),
+                entry(watched, watched = 3, progress = listOf(stopped(2, 4, 0.4f, now.minus(Duration.ofDays(1))))),
+            ),
+            now, DEFAULT,
+        )
+
+        assertEquals(listOf(2, 1), feed.continueWatching.map { it.entry.anime.id })
+        // And the card still points at the episode the viewer was really in.
+        assertEquals(7, feed.continueWatching.last().episode)
+    }
+
+    @Test
     fun `a later episode outranks an earlier one still unfinished`() {
         val a = anime(1, AnimeStatus.ONGOING, episodes = 24, aired = 10)
         val feed = builder.build(

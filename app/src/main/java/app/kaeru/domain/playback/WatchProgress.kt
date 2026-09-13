@@ -2,7 +2,7 @@ package app.kaeru.domain.playback
 
 import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.WatchState
-import app.kaeru.domain.repository.EpisodeProgressRepository
+import app.kaeru.domain.repository.PlaybackSampleRepository
 import app.kaeru.domain.repository.WatchStateRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
@@ -25,14 +25,16 @@ import java.time.Instant
  * [report] returns as soon as the sample is accepted, which is immediately unless it is
  * the one that has to do the writing.
  *
- * Each accepted sample lands in two places. `episode_progress` keeps one row per episode and is
- * what «продолжить» is read from, so a viewer who opens another episode still finds this one where
- * they left it. `watch_state` keeps the single row per anime that says which episode played last,
- * in which track and Kodik season.
+ * Each accepted sample lands in two places, in one transaction. `episode_progress` keeps one row
+ * per episode and is what «продолжить» is read from, so a viewer who opens another episode still
+ * finds this one where they left it. `watch_state` keeps the single row per anime that says which
+ * episode played last, in which track and Kodik season. [watchStates] is read from here as well —
+ * a sample carries forward the track and season already remembered — and that read deliberately
+ * does not wait on the account lock the write takes.
  */
 class WatchProgress(
     private val watchStates: WatchStateRepository,
-    private val episodeProgress: EpisodeProgressRepository,
+    private val samples: PlaybackSampleRepository,
     private val clock: Clock,
 ) {
     private data class Sample(
@@ -106,27 +108,17 @@ class WatchProgress(
     }
 
     private suspend fun persist(sample: Sample) {
-        // Two rows, written independently. The per-episode row is where the viewer's place in
-        // this episode lives and is the one that must survive them opening another episode, so a
-        // failure to write the anime's pointer must not take it down with it, or the other way
-        // round.
-        bestEffort {
-            episodeProgress.save(
-                EpisodeProgress(
-                    animeId = sample.animeId,
-                    episode = sample.episode,
-                    positionMs = sample.positionMs,
-                    durationMs = sample.durationMs,
-                    // When the viewer was there, not when the queue got to it.
-                    updatedAt = sample.at,
-                ),
-            )
-        }
+        // Two rows, one write. They used to go down separately so that a failure to write one
+        // could not cost the other — but they are the same fact about the same moment, and while
+        // they were written apart the database could say the episode was at minute one and the
+        // anime's pointer still name the episode before it. One write is also one acquisition of
+        // the account lock, which a library refresh can hold for a second or two, twice every few
+        // seconds.
         bestEffort {
             val previous = watchStates.observe(sample.animeId).first()
             val track = sample.translationId ?: previous?.translationId
-            watchStates.save(
-                WatchState(
+            samples.save(
+                watch = WatchState(
                     animeId = sample.animeId,
                     episode = sample.episode,
                     positionMs = sample.positionMs,
@@ -138,6 +130,13 @@ class WatchProgress(
                     translationTitle = previous?.translationTitle?.takeIf { previous.translationId == track },
                     kodikSeason = sample.kodikSeason ?: previous?.kodikSeason,
                     // When the viewer was there, not when the queue got to it.
+                    updatedAt = sample.at,
+                ),
+                progress = EpisodeProgress(
+                    animeId = sample.animeId,
+                    episode = sample.episode,
+                    positionMs = sample.positionMs,
+                    durationMs = sample.durationMs,
                     updatedAt = sample.at,
                 ),
             )

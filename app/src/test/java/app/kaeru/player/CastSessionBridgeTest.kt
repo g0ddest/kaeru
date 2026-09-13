@@ -6,7 +6,7 @@ import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.PlaybackTarget
 import app.kaeru.domain.model.UserRate
-import app.kaeru.domain.playback.FakeEpisodeProgressRepository
+import app.kaeru.domain.playback.FakePlaybackSampleRepository
 import app.kaeru.domain.playback.FakePlaybackPreferences
 import app.kaeru.domain.playback.FakeWatchStateRepository
 import app.kaeru.domain.playback.MarkEpisodeWatched
@@ -67,7 +67,7 @@ class CastSessionBridgeTest {
         controller = DefaultPlaybackController(
             localEngine = phone,
             resolve = ResolveEpisodeStream(source, watchStates, prefs, clock, StreamPrefetchCache(clock)),
-            progress = WatchProgress(watchStates, FakeEpisodeProgressRepository(), clock),
+            progress = WatchProgress(watchStates, FakePlaybackSampleRepository(watchStates), clock),
             markWatched = MarkEpisodeWatched(library, watchStates, clock),
             library = library,
             prefs = prefs,

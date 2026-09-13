@@ -1,6 +1,7 @@
 package app.kaeru.domain.model
 
 import app.kaeru.domain.playback.ContinueTarget
+import java.time.Instant
 
 data class LibraryEntry(
     val anime: Anime,
@@ -63,6 +64,19 @@ data class LibraryEntry(
 
     /** Where this device stopped inside one episode, or null if it never opened it. */
     fun progressAt(episode: Int): EpisodeProgress? = episodeProgress.firstOrNull { it.episode == episode }
+
+    /**
+     * When this title was last actually watched, or null if it never was.
+     *
+     * Only rows past [EpisodeProgress.started] count, which is what makes this different from the
+     * newest row there is. A tap that lands on the wrong tile writes ten seconds and a timestamp,
+     * and the timestamp is the newest one on the title — so a row sorted on the newest row would
+     * put a title nobody watched at the head of «Продолжить», above the one they left mid-episode
+     * an hour ago. The same cutoff already decides which episode is offered; this is the same
+     * question asked about the title rather than about an episode.
+     */
+    fun lastWatchedAt(): Instant? =
+        episodeProgress.filter { it.started }.maxOfOrNull { it.updatedAt }
 }
 
 private fun withLivePointer(

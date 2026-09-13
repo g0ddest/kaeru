@@ -22,7 +22,8 @@ class WatchProgressTest {
     private val clock = MutableClock(now)
     private val watchStates = FakeWatchStateRepository()
     private val episodes = FakeEpisodeProgressRepository()
-    private val progress = WatchProgress(watchStates, episodes, clock)
+    private val samples = FakePlaybackSampleRepository(watchStates, episodes)
+    private val progress = WatchProgress(watchStates, samples, clock)
 
     @Test
     fun `a sample with nothing in flight is written straight through`() = runTest {
@@ -55,21 +56,15 @@ class WatchProgressTest {
     }
 
     @Test
-    fun `a pointer that cannot be written does not take the episode's position down with it`() = runTest {
-        watchStates.failSaveWith = AccountSessionChanged("signed out")
+    fun `a sample that cannot be written is lost whole rather than half`() = runTest {
+        // Both rows go down together, which is what one transaction buys: there is no moment where
+        // the episode's row says minute one and the anime's pointer still says the episode before.
+        samples.failSaveWith = AccountSessionChanged("signed out")
 
         progress.report(animeId = 100, episode = 4, positionMs = 65_000, durationMs = 1_400_000, translationId = 7)
 
-        assertEquals(65_000L, episodes.saved.single().positionMs)
-    }
-
-    @Test
-    fun `an episode row that cannot be written does not take the pointer down with it`() = runTest {
-        episodes.failSaveWith = AccountSessionChanged("signed out")
-
-        progress.report(animeId = 100, episode = 4, positionMs = 65_000, durationMs = 1_400_000, translationId = 7)
-
-        assertEquals(4, watchStates.saved.single().episode)
+        assertTrue(episodes.saved.isEmpty())
+        assertTrue(watchStates.saved.isEmpty())
     }
 
     @Test
@@ -167,10 +162,10 @@ class WatchProgressTest {
 
     @Test
     fun `a failed save is swallowed and the next sample still gets through`() = runTest {
-        watchStates.failSaveWith = AccountSessionChanged("signed out")
+        samples.failSaveWith = AccountSessionChanged("signed out")
 
         progress.report(100, 4, 5_000, 1_400_000, 7)
-        watchStates.failSaveWith = null
+        samples.failSaveWith = null
         progress.report(100, 4, 10_000, 1_400_000, 7)
 
         assertEquals(listOf(10_000L), watchStates.saved.map { it.positionMs })

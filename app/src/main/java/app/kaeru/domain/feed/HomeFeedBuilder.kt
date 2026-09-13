@@ -33,8 +33,9 @@ class HomeFeedBuilder(private val upcomingWindow: Duration = Duration.ofDays(7))
             // Ordered by when the title itself was last watched, not by the target episode's own
             // row: going back to an earlier episode on purpose leaves the card pointing at the
             // later one, and a row sorted on that stale timestamp would sink the very title the
-            // viewer had open five minutes ago.
-            .sortedByDescending { (entry, _) -> entry.episodeProgress.maxOfOrNull { it.updatedAt } ?: Instant.EPOCH }
+            // viewer had open five minutes ago. Rows nobody really started are left out of the
+            // answer, or a tap on the wrong tile would carry a title to the head of the row.
+            .sortedByDescending { (entry, _) -> entry.lastWatchedAt() ?: Instant.EPOCH }
             .map { (entry, target) -> FeedItem(entry, target.episode, FeedKind.CONTINUE) }
         val inProgressIds = continueWatching.map { it.entry.anime.id }.toSet()
 

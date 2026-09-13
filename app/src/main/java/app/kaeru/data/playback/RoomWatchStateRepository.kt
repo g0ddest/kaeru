@@ -4,16 +4,12 @@ import app.kaeru.data.auth.AccountSession
 import app.kaeru.data.local.WatchStateDao
 import app.kaeru.data.local.toEntity
 import app.kaeru.di.IoDispatcher
-import app.kaeru.domain.error.AccountSessionChanged
-import app.kaeru.domain.error.StorageFailure
 import app.kaeru.domain.model.WatchState
 import app.kaeru.domain.repository.WatchStateRepository
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -45,20 +41,7 @@ class RoomWatchStateRepository @Inject constructor(
         .map { rows -> rows.map { it.toDomain() } }
         .distinctUntilChanged()
 
-    override suspend fun save(state: WatchState) = accountWrite { dao.upsert(state.toEntity()) }
+    override suspend fun save(state: WatchState) = accountWrite(session, io) { dao.upsert(state.toEntity()) }
 
-    override suspend fun clear(animeId: Int) = accountWrite { dao.deleteByAnimeId(animeId) }
-
-    private suspend fun accountWrite(block: suspend () -> Unit) = try {
-        session.withAccount { withContext(io) { block() } }
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (rejected: AccountSessionChanged) {
-        // The account guard already speaks the domain's language.
-        throw rejected
-    } catch (error: Exception) {
-        // Nothing above the data layer knows SQLite, and the copy for a failed disk write is
-        // not the copy for a failed request, so Room's exceptions are wrapped, never passed on.
-        throw StorageFailure(error)
-    }
+    override suspend fun clear(animeId: Int) = accountWrite(session, io) { dao.deleteByAnimeId(animeId) }
 }

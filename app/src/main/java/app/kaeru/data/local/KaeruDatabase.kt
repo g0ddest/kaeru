@@ -22,6 +22,17 @@ abstract class KaeruDatabase : RoomDatabase() {
     abstract fun watchStateDao(): WatchStateDao
     abstract fun episodeProgressDao(): EpisodeProgressDao
 
+    /**
+     * The two rows one progress sample leaves behind, committed together.
+     *
+     * The episode's own row goes first, because it is the one «продолжить» is read from; the order
+     * only matters to a reader that arrives mid-transaction, and inside one there is none.
+     */
+    suspend fun savePlaybackSample(watch: WatchStateEntity, progress: EpisodeProgressEntity) = withTransaction {
+        episodeProgressDao().upsert(progress)
+        watchStateDao().upsert(watch)
+    }
+
     suspend fun clearAccountData() = withTransaction {
         userRateDao().deleteAll()
         watchStateDao().deleteAll()
