@@ -251,8 +251,13 @@ class PlayerActivity : FragmentActivity() {
     /** Hands the launch to the view model, remembering that it has now been made. */
     private fun deliver(explicit: Boolean) {
         val current = launch
-        if (current.animeId <= 0) return
         delivered = current
+        // The Cast framework builds the notification's intent itself, so it carries no anime and
+        // no episode. Whatever is playing is what the viewer tapped it about.
+        if (current.animeId <= 0) {
+            viewModel.attachLive()
+            return
+        }
         viewModel.start(current.animeId, current.episode, explicit)
     }
 

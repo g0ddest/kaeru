@@ -10,6 +10,7 @@ import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.PlaybackTarget
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
+import app.kaeru.domain.model.WatchState
 import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.playback.RankedTranslation
 import app.kaeru.domain.playback.ResolveEpisodeStream
@@ -194,19 +195,41 @@ class PlayerViewModel @Inject constructor(
         requested = animeId to episode
         this.animeId.value = animeId
         startJob = viewModelScope.launch {
-            controller.play(PlaybackTarget(animeId, episode, resumeFrom(animeId, episode), translation = null))
+            val saved = watchStates.observe(animeId).first()
+            // Nothing is loaded — the process was killed while the app was away — and the intent
+            // is a photograph of the episode this screen was first opened with. This anime's own
+            // row is not: autoplay writes it as it goes. So on a launch that is not a choice the
+            // row wins, and the intent is only the answer when there is no row at all.
+            val wanted = if (explicit) episode else saved?.episode ?: episode
+            controller.play(PlaybackTarget(animeId, wanted, resumeFrom(saved, wanted), translation = null))
         }
     }
 
     /**
-     * Where to pick this episode up. A position belongs to the episode it was taken in, and
-     * an episode already watched to its end starts over: resuming on the last frame would
-     * only offer the next episode again.
+     * The screen was opened without an episode: the cast notification names none, because the
+     * Cast framework builds that intent itself.
+     *
+     * Whatever is playing is what the viewer tapped the notification about, so it is adopted
+     * whole — including the anime id, which everything the remote control draws from the
+     * catalogue needs and which the intent does not carry. Nothing is started: a notification
+     * only exists while something is already playing.
      */
-    private suspend fun resumeFrom(animeId: Int, episode: Int): Long {
-        val saved = watchStates.observe(animeId).first()?.takeIf { it.episode == episode } ?: return 0
+    fun attachLive() {
+        val live = controller.state.value.target ?: return
+        controller.attachScreen()
+        requested = live.animeId to live.episode
+        animeId.value = live.animeId
+    }
+
+    /**
+     * Where to pick this episode up, out of the row already read. A position belongs to the
+     * episode it was taken in, and an episode already watched to its end starts over: resuming on
+     * the last frame would only offer the next episode again.
+     */
+    private suspend fun resumeFrom(saved: WatchState?, episode: Int): Long {
+        val row = saved?.takeIf { it.episode == episode } ?: return 0
         val threshold = prefs.watchedThreshold.first()
-        return if (EpisodeQueue.watched(saved.positionMs, saved.durationMs, threshold)) 0 else saved.positionMs
+        return if (EpisodeQueue.watched(row.positionMs, row.durationMs, threshold)) 0 else row.positionMs
     }
 
     fun togglePlayPause() = controller.togglePlayPause()
@@ -235,7 +258,8 @@ class PlayerViewModel @Inject constructor(
         val track = controller.state.value.stream?.translation
         requested = id to episode
         startJob = viewModelScope.launch {
-            controller.play(PlaybackTarget(id, episode, resumeFrom(id, episode), translation = track))
+            val saved = watchStates.observe(id).first()
+            controller.play(PlaybackTarget(id, episode, resumeFrom(saved, episode), translation = track))
         }
     }
 

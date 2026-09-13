@@ -183,6 +183,65 @@ class PlayerViewModelTest {
         }
 
     @Test
+    fun `a player killed and relaunched comes back to the episode this anime remembers`() =
+        runTest(main.dispatcher) {
+            // Nothing is loaded — the process died — and the intent still names the episode the
+            // viewer opened hours and three episodes ago.
+            watchStates.seed(WatchState(100, 7, 300_000, 1_440_000, translationId = 11, kodikSeason = 1, updatedAt = now))
+
+            viewModel.start(100, 4, explicit = false)
+            advanceUntilIdle()
+
+            assertEquals(PlaybackTarget(100, 7, 300_000, null), controller.played.single())
+        }
+
+    @Test
+    fun `with nothing remembered the intent is all there is to go on`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4, explicit = false)
+        advanceUntilIdle()
+
+        assertEquals(PlaybackTarget(100, 4, 0, null), controller.played.single())
+    }
+
+    @Test
+    fun `an episode chosen by hand outranks what the row remembers`() = runTest(main.dispatcher) {
+        watchStates.seed(WatchState(100, 7, 300_000, 1_440_000, translationId = 11, kodikSeason = 1, updatedAt = now))
+
+        viewModel.start(100, 4, explicit = true)
+        advanceUntilIdle()
+
+        assertEquals(4, controller.played.single().episode)
+    }
+
+    @Test
+    fun `a screen opened with no episode named adopts the session that is playing`() =
+        runTest(main.dispatcher) {
+            playingOn(episode = 7, positionMs = 420_000)
+            val attached = controller.attaches
+
+            viewModel.attachLive()
+            advanceUntilIdle()
+
+            assertTrue(controller.played.isEmpty())
+            assertEquals(attached + 1, controller.attaches)
+            // The catalogue fields the remote control draws from need the anime id, which the
+            // notification's intent does not carry.
+            assertEquals("Фрирен", viewModel.uiState.value.title)
+            assertEquals(7, viewModel.uiState.value.episode)
+            assertEquals(420_000L, viewModel.uiState.value.positionMs)
+        }
+
+    @Test
+    fun `a screen opened with no episode named and nothing playing starts nothing`() =
+        runTest(main.dispatcher) {
+            viewModel.attachLive()
+            advanceUntilIdle()
+
+            assertTrue(controller.played.isEmpty())
+            assertEquals("", viewModel.uiState.value.title)
+        }
+
+    @Test
     fun `a session for another anime does not capture the screen coming back`() = runTest(main.dispatcher) {
         playingOn(episode = 7, animeId = 200)
 
