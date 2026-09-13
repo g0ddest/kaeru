@@ -145,6 +145,30 @@ class DetailsContentTest {
     }
 
     @Test
+    fun `the dub pill names the remembered studio before the list is asked for`() {
+        assertEquals(
+            "Озвучка: Студийная банда",
+            translationLabel(emptyList(), currentId = 22, rememberedTitle = "Студийная банда"),
+        )
+    }
+
+    @Test
+    fun `a loaded list outranks the remembered name, which may be out of date`() {
+        val anilibria = RankedTranslation(Translation(11, "AniLibria.TV", TranslationKind.VOICE, 12), oftenChosen = false)
+
+        assertEquals(
+            "Озвучка: AniLibria.TV",
+            translationLabel(listOf(anilibria), currentId = 11, rememberedTitle = "Что-то другое"),
+        )
+    }
+
+    @Test
+    fun `a remembered name with no dub behind it is not shown`() {
+        assertEquals("Озвучка", translationLabel(emptyList(), currentId = null, rememberedTitle = "Студийная банда"))
+        assertEquals("Озвучка", translationLabel(emptyList(), currentId = 22, rememberedTitle = "  "))
+    }
+
+    @Test
     fun `the watch button offers the first episode of an anime nobody has started`() {
         val released = anime(episodes = 12, aired = 12, status = AnimeStatus.RELEASED)
         assertEquals("Смотреть 1 серию", detailsAction(released, null, 0.9f, now).label)

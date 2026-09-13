@@ -100,13 +100,18 @@ class WatchProgress(
     private suspend fun persist(sample: Sample) {
         try {
             val previous = watchStates.observe(sample.animeId).first()
+            val track = sample.translationId ?: previous?.translationId
             watchStates.save(
                 WatchState(
                     animeId = sample.animeId,
                     episode = sample.episode,
                     positionMs = sample.positionMs,
                     durationMs = sample.durationMs,
-                    translationId = sample.translationId ?: previous?.translationId,
+                    translationId = track,
+                    // A sample never sees the catalogue, so it cannot name a track — it can only
+                    // carry forward the name already stored, and only while it is still the same
+                    // track. A changed one is left nameless until the next resolve names it.
+                    translationTitle = previous?.translationTitle?.takeIf { previous.translationId == track },
                     kodikSeason = sample.kodikSeason ?: previous?.kodikSeason,
                     // When the viewer was there, not when the queue got to it.
                     updatedAt = sample.at,

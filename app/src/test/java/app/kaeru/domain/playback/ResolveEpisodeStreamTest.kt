@@ -47,6 +47,7 @@ class ResolveEpisodeStreamTest {
     private lateinit var store: DataStore<Preferences>
     private lateinit var prefs: AppPreferences
     private lateinit var resolve: ResolveEpisodeStream
+    private val prefetch = StreamPrefetchCache(clock)
 
     private val anilibria = Translation(11, "AniLibria.TV", TranslationKind.VOICE, episodesCount = 12)
     private val studioBanda = Translation(22, "Студийная банда", TranslationKind.VOICE, episodesCount = 24)
@@ -56,7 +57,7 @@ class ResolveEpisodeStreamTest {
     fun setUp() {
         store = PreferenceDataStoreFactory.create(scope = storeScope) { File(tmp.root, "prefs.preferences_pb") }
         prefs = AppPreferences(store)
-        resolve = ResolveEpisodeStream(source, watchStates, prefs, clock)
+        resolve = ResolveEpisodeStream(source, watchStates, prefs, clock, prefetch)
         source.translations = Result.success(listOf(studioBanda, anilibria, subtitles))
     }
 
@@ -159,7 +160,10 @@ class ResolveEpisodeStreamTest {
         resolve(animeId = 100, episode = 3).getOrThrow()
 
         assertEquals(
-            WatchState(100, 3, positionMs = 0, durationMs = 0, translationId = anilibria.id, kodikSeason = 2, updatedAt = now),
+            WatchState(
+                100, 3, positionMs = 0, durationMs = 0, translationId = anilibria.id, kodikSeason = 2,
+                updatedAt = now, translationTitle = anilibria.title,
+            ),
             watchStates.saved.single(),
         )
     }
@@ -172,7 +176,10 @@ class ResolveEpisodeStreamTest {
         resolve(animeId = 100, episode = 3).getOrThrow()
 
         assertEquals(
-            WatchState(100, 3, 500_000, 1_400_000, anilibria.id, kodikSeason = 1, updatedAt = now.plusSeconds(60)),
+            WatchState(
+                100, 3, 500_000, 1_400_000, anilibria.id, kodikSeason = 1,
+                updatedAt = now.plusSeconds(60), translationTitle = anilibria.title,
+            ),
             watchStates.saved.single(),
         )
     }
@@ -284,6 +291,54 @@ class ResolveEpisodeStreamTest {
         source.translations = Result.failure(failure)
 
         assertSame(failure, resolve.translations(animeId = 100).exceptionOrNull())
+    }
+
+    // --- the prefetched stream ---------------------------------------------------------------
+
+    @Test
+    fun `an episode already resolved for the home screen is not resolved again`() = runTest(dispatcher) {
+        watchStates.seed(row(episode = 4, translationId = anilibria.id))
+        val prepared = EpisodeStream(100, 4, anilibria, mapOf(Quality.P720 to "https://cdn/prepared"), now)
+        prefetch.put(prepared)
+
+        val stream = resolve(animeId = 100, episode = 4).getOrThrow()
+
+        assertSame(prepared, stream)
+        assertTrue(source.resolveCalls.isEmpty())
+        assertTrue(source.translationCalls.isEmpty())
+    }
+
+    @Test
+    fun `a prefetched stream in a voice the viewer has since changed is ignored`() = runTest(dispatcher) {
+        watchStates.seed(row(episode = 4, translationId = studioBanda.id))
+        prefetch.put(EpisodeStream(100, 4, anilibria, mapOf(Quality.P720 to "https://cdn/prepared"), now))
+
+        val stream = resolve(animeId = 100, episode = 4).getOrThrow()
+
+        assertEquals(studioBanda.id, stream.translation.id)
+        assertEquals(1, source.resolveCalls.size)
+    }
+
+    @Test
+    fun `a prefetched stream still becomes this anime's memory when it is played`() = runTest(dispatcher) {
+        watchStates.seed(row(episode = 3, positionMs = 90_000, durationMs = 1_440_000, translationId = anilibria.id))
+        prefetch.put(EpisodeStream(100, 4, anilibria, mapOf(Quality.P720 to "https://cdn/prepared"), now))
+
+        resolve(animeId = 100, episode = 4).getOrThrow()
+
+        val saved = watchStates.saved.last()
+        assertEquals(4, saved.episode)
+        assertEquals(anilibria.id, saved.translationId)
+    }
+
+    @Test
+    fun `a resolve that is only preparing leaves the memory alone`() = runTest(dispatcher) {
+        watchStates.seed(row(episode = 3, positionMs = 90_000, durationMs = 1_440_000, translationId = anilibria.id))
+        val before = watchStates.saved.size
+
+        resolve(animeId = 100, episode = 4, persist = false).getOrThrow()
+
+        assertEquals(before, watchStates.saved.size)
     }
 
     @Test

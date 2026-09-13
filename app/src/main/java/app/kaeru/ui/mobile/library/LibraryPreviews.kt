@@ -55,7 +55,7 @@ private fun entry(
     anime = anime,
     rate = UserRate(anime.id.toLong(), anime.id, status, watched, now.minusSeconds(anime.id * 3600L)),
     watch = minutesIn?.let {
-        WatchState(anime.id, watched + 1, it * 60_000, 24 * 60_000, null, null, now)
+        WatchState(anime.id, watched + 1, it * 60_000, 24 * 60_000, translationId = null, kodikSeason = null, updatedAt = now)
     },
 )
 

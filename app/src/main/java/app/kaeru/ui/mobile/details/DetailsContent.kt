@@ -89,13 +89,24 @@ private fun airStatusLabel(status: AnimeStatus): String = when (status) {
 /**
  * What the dub control says.
  *
- * The remembered choice is an id; the studio behind it is only known once the source has been
- * asked, which happens the first time the chooser is opened. Until then the control says what it
- * opens and nothing more — a label that guessed a studio name would be a label that lies.
+ * The remembered choice is an id, and the studio behind it used to be known only once the source
+ * had been asked — which happens the first time the chooser is opened, so the pill said the
+ * generic word on every visit before that. The name is now stored beside the id when the choice is
+ * made, so [rememberedTitle] answers straight away.
+ *
+ * A loaded list still wins: it is what the source says today, where the stored name is what it
+ * said when the viewer chose. Neither is shown without an id behind it — a name with no current
+ * dub is a label that lies.
  */
-fun translationLabel(translations: List<RankedTranslation>, currentId: Int?): String {
-    val current = currentId?.let { id -> translations.firstOrNull { it.translation.id == id } } ?: return DUB
-    return "$DUB: ${current.translation.title}"
+fun translationLabel(
+    translations: List<RankedTranslation>,
+    currentId: Int?,
+    rememberedTitle: String? = null,
+): String {
+    if (currentId == null) return DUB
+    val listed = translations.firstOrNull { it.translation.id == currentId }?.translation?.title
+    val title = listed ?: rememberedTitle?.takeIf { it.isNotBlank() } ?: return DUB
+    return "$DUB: $title"
 }
 
 /**

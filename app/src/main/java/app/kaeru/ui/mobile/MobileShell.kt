@@ -94,8 +94,12 @@ fun MobileShell(onLogout: () -> Unit, nav: NavHostController = rememberNavContro
                 // The catalogue rows are the phone's; the television shares this view model and
                 // draws none of them, so nothing fetches them until this screen asks.
                 LaunchedEffect(vm) { vm.loadDiscover() }
+                val state = vm.uiState.collectAsStateWithLifecycle().value
+                // Once the hero is on screen, resolve what it offers: the viewer spends a few
+                // seconds reading it, and that is exactly what the press after it used to cost.
+                LaunchedEffect(state.feed.top) { vm.prefetchTopCard() }
                 HomeScreen(
-                    state = vm.uiState.collectAsStateWithLifecycle().value,
+                    state = state,
                     onRefresh = vm::refresh,
                     onPlay = play,
                     onAnime = openAnime,

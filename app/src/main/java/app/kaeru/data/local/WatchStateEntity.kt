@@ -14,6 +14,8 @@ data class WatchStateEntity(
     val translationId: Int?,
     val kodikSeason: Int?,
     val updatedAt: Instant,
+    /** Added in version 2; null for every row written before it. */
+    val translationTitle: String? = null,
 ) {
     fun toDomain() = WatchState(
         animeId = animeId,
@@ -21,6 +23,7 @@ data class WatchStateEntity(
         positionMs = positionMs,
         durationMs = durationMs,
         translationId = translationId,
+        translationTitle = translationTitle,
         kodikSeason = kodikSeason,
         updatedAt = updatedAt,
     )
@@ -34,4 +37,5 @@ fun WatchState.toEntity() = WatchStateEntity(
     translationId = translationId,
     kodikSeason = kodikSeason,
     updatedAt = updatedAt,
+    translationTitle = translationTitle,
 )

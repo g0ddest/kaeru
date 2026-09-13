@@ -12,6 +12,7 @@ import app.kaeru.domain.playback.FakePlaybackPreferences
 import app.kaeru.domain.playback.FakeWatchStateRepository
 import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.ResolveEpisodeStream
+import app.kaeru.domain.playback.StreamPrefetchCache
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.player.FakeEpisodeSource
 import app.kaeru.test.MainDispatcherRule
@@ -40,7 +41,7 @@ class DetailsViewModelTest {
     private val watchStates = FakeWatchStateRepository()
     private val source = FakeEpisodeSource()
     private val clock = Clock.fixed(Instant.parse("2026-09-13T20:00:00Z"), ZoneOffset.UTC)
-    private val streams = ResolveEpisodeStream(source, watchStates, prefs, clock)
+    private val streams = ResolveEpisodeStream(source, watchStates, prefs, clock, StreamPrefetchCache(clock))
     private val item = LibraryEntry(
         Anime(7, "Фрирен", "Frieren", null, emptyList(), AnimeStatus.ONGOING, 28, 24, null, 9.1, 2023, "Madhouse", "Описание"),
         UserRate(1, 7, ListStatus.WATCHING, 20, Instant.EPOCH),
@@ -188,6 +189,18 @@ class DetailsViewModelTest {
         assertEquals(1_400_000, saved.durationMs)
         assertEquals(source.studioBanda.id, saved.translationId)
         assertEquals(2, saved.kodikSeason)
+    }
+
+    @Test
+    fun `a picked dub is remembered by name as well as by number`() = runTest(main.dispatcher) {
+        val vm = viewModel(FakeRepository(item))
+        advanceUntilIdle()
+
+        vm.pickTranslation(source.studioBanda)
+        advanceUntilIdle()
+
+        // The pill on this screen has no other way to name the dub without asking Kodik again.
+        assertEquals(source.studioBanda.title, watchStates.saved.last().translationTitle)
     }
 
     @Test

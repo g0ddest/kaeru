@@ -400,7 +400,7 @@ private fun DubPill(
     val currentId = entry.watch?.translationId
     val saving = state.savingTranslation
     StatusPill(
-        text = translationLabel(state.translations, currentId),
+        text = translationLabel(state.translations, currentId, entry.watch?.translationTitle),
         selected = false,
         onClick = {
             open = true

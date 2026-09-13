@@ -6,11 +6,14 @@ import app.kaeru.domain.discover.Season
 import app.kaeru.domain.feed.HomeFeedBuilder
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.HomeFeed
+import app.kaeru.di.IoDispatcher
 import app.kaeru.domain.playback.PlaybackPreferences
+import app.kaeru.domain.playback.PrefetchTopCardStream
 import app.kaeru.domain.repository.DiscoverRepository
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.ui.common.errorMessageOrNull
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -19,6 +22,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.Clock
 import java.time.ZoneId
 import javax.inject.Inject
@@ -59,6 +63,8 @@ class HomeViewModel @Inject constructor(
     private val feedBuilder: HomeFeedBuilder,
     private val clock: Clock,
     prefs: PlaybackPreferences,
+    private val prefetchStream: PrefetchTopCardStream,
+    @param:IoDispatcher private val io: CoroutineDispatcher,
 ) : ViewModel() {
     private val refreshState = MutableStateFlow(RefreshState())
     private var refreshJob: Job? = null
@@ -70,6 +76,10 @@ class HomeViewModel @Inject constructor(
     private val discoverState = MutableStateFlow(DiscoverState(season = openedIn))
     private var nowJob: Job? = null
     private val seasonJobs = mutableMapOf<Season, Job>()
+
+    /** The card already prepared, so a screen that renders again costs the source nothing. */
+    private var prepared: Pair<Int, Int>? = null
+    private var prefetchJob: Job? = null
 
     val uiState: StateFlow<HomeUiState> = combine(
         repository.observeLibrary(),
@@ -122,6 +132,29 @@ class HomeViewModel @Inject constructor(
         val showing = discoverState.value.season
         discoverState.update { state -> state.copy(seasonal = state.seasonal.filterKeys { it == showing }) }
         loadSeason(showing, force = true)
+    }
+
+    /**
+     * Resolves the episode the top card offers, while the viewer is still reading it.
+     *
+     * Called by the screen once it has something to draw, because that is when the card exists.
+     * At most one Kodik round trip per card: the same card asked for again does nothing, and a
+     * card offering an episode that has not aired asks for nothing at all — the button under it
+     * is unpressable, so there is nothing to be ready for.
+     *
+     * Everything about it is invisible. It writes nothing down, shows nothing and reports nothing;
+     * a failure simply means the press that follows resolves the way it always did.
+     */
+    fun prefetchTopCard() {
+        val top = uiState.value.feed.top ?: return
+        val animeId = top.entry.anime.id
+        if (top.episode <= 0 || top.episode > top.entry.anime.availableEpisodes) return
+        val card = animeId to top.episode
+        if (prepared == card || prefetchJob?.isActive == true) return
+        prepared = card
+        prefetchJob = viewModelScope.launch {
+            withContext(io) { prefetchStream(animeId, top.episode) }
+        }
     }
 
     /** A chip was pressed. A season already read is shown at once; a new one is fetched. */

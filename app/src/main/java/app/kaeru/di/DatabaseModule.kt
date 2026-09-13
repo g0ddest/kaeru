@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import app.kaeru.data.local.AnimeDao
 import app.kaeru.data.local.KaeruDatabase
+import app.kaeru.data.local.MIGRATION_1_2
 import app.kaeru.data.local.UserRateDao
 import app.kaeru.data.local.WatchStateDao
 import dagger.Module
@@ -20,6 +21,10 @@ object DatabaseModule {
     @Singleton
     fun database(@ApplicationContext context: Context): KaeruDatabase =
         Room.databaseBuilder(context, KaeruDatabase::class.java, "kaeru.db")
+            .addMigrations(MIGRATION_1_2)
+            // Still the backstop for a version this build has no path from — a downgrade, or a
+            // database left by a branch that never shipped. Everything the app can produce has a
+            // migration, so nothing a viewer owns is dropped.
             .fallbackToDestructiveMigration(dropAllTables = true)
             .build()
 

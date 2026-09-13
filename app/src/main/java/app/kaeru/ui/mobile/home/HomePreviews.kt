@@ -62,7 +62,7 @@ private fun entry(anime: Anime, watched: Int, watch: WatchState? = null, status:
 private val frieren = entry(
     anime(1, FRIEREN, episodes = 28, aired = 24),
     watched = 6,
-    watch = WatchState(1, 7, 860_000, 1_440_000, null, null, now),
+    watch = WatchState(1, 7, 860_000, 1_440_000, translationId = null, kodikSeason = null, updatedAt = now),
 )
 private val dandadan = entry(anime(2, DANDADAN, episodes = 12, aired = 9), watched = 8)
 private val jujutsu = entry(anime(3, JUJUTSU, episodes = 24, aired = 4), watched = 3)

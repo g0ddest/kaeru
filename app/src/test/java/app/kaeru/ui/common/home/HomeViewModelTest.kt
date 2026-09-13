@@ -10,10 +10,20 @@ import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.UserRate
+import app.kaeru.domain.model.EpisodeStream
+import app.kaeru.domain.model.Quality
+import app.kaeru.domain.model.Translation
+import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.playback.FakePlaybackPreferences
+import app.kaeru.domain.playback.FakeWatchStateRepository
+import app.kaeru.domain.playback.PrefetchTopCardStream
+import app.kaeru.domain.playback.ResolveEpisodeStream
+import app.kaeru.domain.playback.StreamPrefetchCache
 import app.kaeru.domain.repository.DiscoverRepository
 import app.kaeru.domain.repository.LibraryRepository
+import app.kaeru.domain.source.EpisodeSourceProvider
 import app.kaeru.test.MainDispatcherRule
+import app.kaeru.test.MutableClock
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -80,11 +90,42 @@ class HomeViewModelTest {
         id, "Тайтл $id", "Title $id", null, emptyList(), AnimeStatus.ONGOING, 12, 5, null, 8.0, 2026, "MAPPA", null,
     )
 
+    /** Kodik, only counting. Everything it is asked for it answers, so only the asking matters. */
+    private class RecordingSource : EpisodeSourceProvider {
+        val resolves = mutableListOf<Pair<Int, Int>>()
+        private val track = Translation(11, "AniLibria.TV", TranslationKind.VOICE, 24)
+
+        override suspend fun translations(shikimoriId: Int) = Result.success(listOf(track))
+
+        override suspend fun resolve(shikimoriId: Int, episode: Int, translation: Translation?): Result<EpisodeStream> {
+            resolves += shikimoriId to episode
+            return Result.success(
+                EpisodeStream(
+                    shikimoriId, episode, translation ?: track,
+                    mapOf(Quality.P720 to "https://cdn/$shikimoriId/$episode"),
+                    Instant.parse("2026-09-12T12:00:00Z"),
+                ),
+            )
+        }
+    }
+
+    private val source = RecordingSource()
+    private val watchStates = FakeWatchStateRepository()
+
+    private fun prefetching(prefs: FakePlaybackPreferences): PrefetchTopCardStream {
+        val clock = MutableClock(now)
+        val cache = StreamPrefetchCache(clock)
+        return PrefetchTopCardStream(ResolveEpisodeStream(source, watchStates, prefs, clock, cache), cache)
+    }
+
     private fun viewModel(
         library: FakeLibraryRepository = FakeLibraryRepository(),
         discover: FakeDiscoverRepository = FakeDiscoverRepository(),
         prefs: FakePlaybackPreferences = FakePlaybackPreferences(),
-    ) = HomeViewModel(library, discover, HomeFeedBuilder(), Clock.fixed(now, ZoneOffset.UTC), prefs)
+    ) = HomeViewModel(
+        library, discover, HomeFeedBuilder(), Clock.fixed(now, ZoneOffset.UTC), prefs,
+        prefetching(prefs), main.dispatcher,
+    )
 
     /** The phone's home screen asks for the catalogue; nothing else does. */
     private fun TestScope.openedHome(
@@ -106,7 +147,7 @@ class HomeViewModelTest {
     @Test
     fun `cached room content is exposed before refresh completes`() = runTest(main.dispatcher) {
         val repo = FakeLibraryRepository().also { it.entries.value = listOf(entry()) }
-        val vm = HomeViewModel(repo, FakeDiscoverRepository(), HomeFeedBuilder(), Clock.fixed(now, ZoneOffset.UTC), FakePlaybackPreferences())
+        val vm = viewModel(repo)
         advanceUntilIdle()
         assertFalse(vm.uiState.value.isLoading)
         assertEquals(7, vm.uiState.value.feed.top?.entry?.anime?.id)
@@ -119,7 +160,7 @@ class HomeViewModelTest {
             it.entries.value = listOf(entry())
             it.refreshResult = Result.failure(NetworkUnavailable(UnknownHostException("shikimori.io")))
         }
-        val vm = HomeViewModel(repo, FakeDiscoverRepository(), HomeFeedBuilder(), Clock.fixed(now, ZoneOffset.UTC), FakePlaybackPreferences())
+        val vm = viewModel(repo)
         advanceUntilIdle()
         assertEquals(7, vm.uiState.value.feed.top?.entry?.anime?.id)
         assertEquals("Нет соединения. Проверьте интернет", vm.uiState.value.errorMessage)
@@ -129,7 +170,7 @@ class HomeViewModelTest {
     @Test
     fun `the watched threshold reaches the screen from settings`() = runTest(main.dispatcher) {
         val repo = FakeLibraryRepository().also { it.entries.value = listOf(entry()) }
-        val vm = HomeViewModel(repo, FakeDiscoverRepository(), HomeFeedBuilder(), Clock.fixed(now, ZoneOffset.UTC), FakePlaybackPreferences(threshold = 0.95f))
+        val vm = viewModel(repo, prefs = FakePlaybackPreferences(threshold = 0.95f))
         advanceUntilIdle()
         assertEquals(0.95f, vm.uiState.value.watchedThreshold, 0f)
     }
@@ -137,7 +178,7 @@ class HomeViewModelTest {
     @Test
     fun `manual refresh clears previous error`() = runTest(main.dispatcher) {
         val repo = FakeLibraryRepository().also { it.refreshResult = Result.failure(HttpError(500)) }
-        val vm = HomeViewModel(repo, FakeDiscoverRepository(), HomeFeedBuilder(), Clock.fixed(now, ZoneOffset.UTC), FakePlaybackPreferences())
+        val vm = viewModel(repo)
         advanceUntilIdle()
         assertEquals("Shikimori недоступен, попробуйте позже", vm.uiState.value.errorMessage)
         repo.refreshResult = Result.success(Unit)
@@ -368,5 +409,59 @@ class HomeViewModelTest {
         vm.selectSeason(summer)
         advanceUntilIdle()
         assertEquals(listOf("now", "summer_2026"), discover.reads)
+    }
+
+    // --- preparing the top card ---------------------------------------------------------------
+
+    @Test
+    fun `the card at the top of the screen is resolved before it is pressed`() = runTest(main.dispatcher) {
+        val repo = FakeLibraryRepository().also { it.entries.value = listOf(entry()) }
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+
+        vm.prefetchTopCard()
+        advanceUntilIdle()
+
+        // Twenty of twenty-eight counted, twenty-four aired: the card offers the twenty-first.
+        assertEquals(listOf(7 to 21), source.resolves)
+    }
+
+    @Test
+    fun `a screen that renders again does not ask Kodik again`() = runTest(main.dispatcher) {
+        val repo = FakeLibraryRepository().also { it.entries.value = listOf(entry()) }
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+
+        vm.prefetchTopCard()
+        advanceUntilIdle()
+        vm.prefetchTopCard()
+        vm.prefetchTopCard()
+        advanceUntilIdle()
+
+        assertEquals(1, source.resolves.size)
+    }
+
+    @Test
+    fun `a card offering an episode that has not aired is not prepared`() = runTest(main.dispatcher) {
+        val waiting = entry().let { it.copy(anime = it.anime.copy(episodesAired = 20)) }
+        val repo = FakeLibraryRepository().also { it.entries.value = listOf(waiting) }
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+
+        vm.prefetchTopCard()
+        advanceUntilIdle()
+
+        assertTrue(source.resolves.isEmpty())
+    }
+
+    @Test
+    fun `an empty screen has nothing to prepare`() = runTest(main.dispatcher) {
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        vm.prefetchTopCard()
+        advanceUntilIdle()
+
+        assertTrue(source.resolves.isEmpty())
     }
 }

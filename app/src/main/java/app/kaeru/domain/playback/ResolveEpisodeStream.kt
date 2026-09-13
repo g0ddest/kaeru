@@ -23,17 +23,29 @@ class ResolveEpisodeStream(
     private val watchStates: WatchStateRepository,
     private val prefs: PlaybackPreferences,
     private val clock: Clock,
+    private val prefetch: StreamPrefetchCache,
 ) {
     /**
      * @param translationOverride a track the viewer picked by hand. It is taken as given —
      *   including its season — and becomes the new memory, so no catalogue call is needed.
+     * @param persist whether what is resolved becomes this anime's memory. False for a resolve
+     *   done ahead of time, on the chance the viewer presses play: preparing an episode must not
+     *   move the row that says where they actually are.
      */
     suspend operator fun invoke(
         animeId: Int,
         episode: Int,
         translationOverride: Translation? = null,
+        persist: Boolean = true,
     ): Result<EpisodeStream> {
         val remembered = watchStates.observe(animeId).first()
+        // Looked for here rather than in the controller, because only here is it known which
+        // voice is about to be asked for: an anime whose remembered voice has changed since the
+        // links were prepared must not be handed the ones prepared for the old one.
+        prefetch.take(animeId, episode, translationOverride?.id ?: remembered?.translationId)?.let { ready ->
+            if (persist) remember(ready, remembered)
+            return Result.success(ready)
+        }
         val chosen = if (translationOverride != null) {
             translationOverride
         } else {
@@ -49,7 +61,7 @@ class ResolveEpisodeStream(
         // A source with nothing listed is still asked: only it can say whether this is an
         // unknown anime, an episode that has not aired, or a page that stopped parsing.
         val stream = source.resolve(animeId, episode, chosen).getOrElse { return Result.failure(it) }
-        remember(stream, remembered)
+        if (persist) remember(stream, remembered)
         return Result.success(stream)
     }
 
@@ -114,6 +126,7 @@ class ResolveEpisodeStream(
                     positionMs = if (sameEpisode) previous.positionMs else 0,
                     durationMs = if (sameEpisode) previous.durationMs else 0,
                     translationId = stream.translation.id,
+                    translationTitle = stream.translation.title,
                     kodikSeason = stream.translation.season,
                     updatedAt = clock.instant(),
                 ),

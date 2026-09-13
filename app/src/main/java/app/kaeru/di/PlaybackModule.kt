@@ -7,7 +7,9 @@ import app.kaeru.data.playback.RoomWatchStateRepository
 import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.PlaybackNotificationPrompt
 import app.kaeru.domain.playback.PlaybackPreferences
+import app.kaeru.domain.playback.PrefetchTopCardStream
 import app.kaeru.domain.playback.ResolveEpisodeStream
+import app.kaeru.domain.playback.StreamPrefetchCache
 import app.kaeru.domain.playback.WatchProgress
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.repository.WatchStateRepository
@@ -63,7 +65,23 @@ object PlaybackModule {
         watchStates: WatchStateRepository,
         prefs: PlaybackPreferences,
         clock: Clock,
-    ): ResolveEpisodeStream = ResolveEpisodeStream(source, watchStates, prefs, clock)
+        prefetch: StreamPrefetchCache,
+    ): ResolveEpisodeStream = ResolveEpisodeStream(source, watchStates, prefs, clock, prefetch)
+
+    /**
+     * One for the process: the home screen fills it and the player empties it, and two instances
+     * would mean the press still waited for a resolve that had already happened.
+     */
+    @Provides
+    @Singleton
+    fun streamPrefetchCache(clock: Clock): StreamPrefetchCache = StreamPrefetchCache(clock)
+
+    @Provides
+    @Singleton
+    fun prefetchTopCardStream(
+        resolve: ResolveEpisodeStream,
+        cache: StreamPrefetchCache,
+    ): PrefetchTopCardStream = PrefetchTopCardStream(resolve, cache)
 
     /**
      * A single instance on purpose: the coalescing queue that keeps one position write in

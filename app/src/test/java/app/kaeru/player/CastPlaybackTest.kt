@@ -12,6 +12,7 @@ import app.kaeru.domain.playback.FakePlaybackPreferences
 import app.kaeru.domain.playback.FakeWatchStateRepository
 import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.ResolveEpisodeStream
+import app.kaeru.domain.playback.StreamPrefetchCache
 import app.kaeru.domain.playback.WatchProgress
 import app.kaeru.test.MutableClock
 import kotlinx.coroutines.CompletableDeferred
@@ -77,7 +78,7 @@ class CastPlaybackTest {
         )
         controller = DefaultPlaybackController(
             localEngine = phone,
-            resolve = ResolveEpisodeStream(source, watchStates, prefs, clock),
+            resolve = ResolveEpisodeStream(source, watchStates, prefs, clock, StreamPrefetchCache(clock)),
             progress = WatchProgress(watchStates, clock),
             markWatched = MarkEpisodeWatched(library, watchStates, clock),
             library = library,

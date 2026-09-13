@@ -16,6 +16,7 @@ import app.kaeru.domain.model.WatchState
 import app.kaeru.domain.playback.FakePlaybackPreferences
 import app.kaeru.domain.playback.FakeWatchStateRepository
 import app.kaeru.domain.playback.ResolveEpisodeStream
+import app.kaeru.domain.playback.StreamPrefetchCache
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.source.EpisodeSourceProvider
 import app.kaeru.player.EpisodeQueue
@@ -84,7 +85,7 @@ class PlayerViewModelTest {
         viewModel = PlayerViewModel(
             controller = controller,
             cast = cast,
-            resolve = ResolveEpisodeStream(source, watchStates, prefs, clock),
+            resolve = ResolveEpisodeStream(source, watchStates, prefs, clock, StreamPrefetchCache(clock)),
             library = library,
             watchStates = watchStates,
             prefs = prefs,

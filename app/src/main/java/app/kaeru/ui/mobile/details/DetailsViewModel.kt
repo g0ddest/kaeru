@@ -126,6 +126,7 @@ class DetailsViewModel @Inject constructor(
             val remembered = watchStates.observe(animeId).first()
             val row = remembered?.copy(
                 translationId = translation.id,
+                translationTitle = translation.title,
                 kodikSeason = translation.season,
                 updatedAt = clock.instant(),
             ) ?: WatchState(
@@ -134,6 +135,7 @@ class DetailsViewModel @Inject constructor(
                 positionMs = 0,
                 durationMs = 0,
                 translationId = translation.id,
+                translationTitle = translation.title,
                 kodikSeason = translation.season,
                 updatedAt = clock.instant(),
             )
