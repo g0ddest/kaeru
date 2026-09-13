@@ -22,6 +22,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -126,8 +127,84 @@ class CastSessionBridgeTest {
     }
 
     @Test
+    fun `a framework still starting up is waited for, not given up on`() = runTest(dispatcher) {
+        val framework = FakeCastFramework(available = false, castEngine = receiver)
+        val bridge = bridge(framework)
+        bridge.start()
+        playing()
+        advanceUntilIdle()
+
+        // Cast init is a Play services round trip off the main thread, so the first screen sees
+        // a framework that is not up yet. Deciding "no cast" there would be deciding too early.
+        assertEquals(1, framework.initializations)
+        assertEquals(0, framework.subscriptions)
+
+        framework.becomeAvailable()
+        advanceUntilIdle()
+        framework.connect()
+        advanceUntilIdle()
+
+        assertEquals(1, framework.subscriptions)
+        assertEquals(300_000L, receiver.prepared.single().startPositionMs)
+        assertTrue(controller.state.value.isCasting)
+    }
+
+    @Test
+    fun `a session that ends gives the receiver's player back`() = runTest(dispatcher) {
+        val framework = FakeCastFramework(castEngine = receiver)
+        bridge(framework).start()
+        playing()
+        advanceUntilIdle()
+        framework.connect()
+        advanceUntilIdle()
+        assertEquals(0, framework.releasedEngines)
+
+        framework.disconnect()
+        advanceUntilIdle()
+
+        assertEquals(1, framework.releasedEngines)
+    }
+
+    @Test
+    fun `the receiver's name is published while it has the picture`() = runTest(dispatcher) {
+        val framework = FakeCastFramework(castEngine = receiver)
+        val bridge = bridge(framework)
+        bridge.start()
+        playing()
+        advanceUntilIdle()
+        assertNull(bridge.receiverName.value)
+
+        framework.connect()
+        advanceUntilIdle()
+        assertEquals("Телевизор в гостиной", bridge.receiverName.value)
+
+        framework.disconnect()
+        advanceUntilIdle()
+        assertNull(bridge.receiverName.value)
+    }
+
+    @Test
+    fun `disconnecting asks the framework to end the session and nothing else`() = runTest(dispatcher) {
+        val framework = FakeCastFramework(castEngine = receiver)
+        val bridge = bridge(framework)
+        bridge.start()
+        playing()
+        advanceUntilIdle()
+        framework.connect()
+        advanceUntilIdle()
+
+        bridge.disconnect()
+        advanceUntilIdle()
+
+        assertEquals(1, framework.endedSessions)
+        // Switching back is the framework's announcement to make, so the button and the system
+        // output switcher behave identically.
+        assertTrue(controller.state.value.isCasting)
+    }
+
+    @Test
     fun `a phone that cannot cast never listens and never touches playback`() = runTest(dispatcher) {
-        val framework = FakeCastFramework(isAvailable = false, castEngine = receiver)
+        val framework = FakeCastFramework(available = false, castEngine = receiver)
         bridge(framework).start()
         playing()
         advanceUntilIdle()

@@ -87,9 +87,11 @@ fun RemoteControlScreen(
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад", tint = KaeruText)
             }
             Text(
-                "Идёт трансляция",
+                state.receiverName?.let { "Идёт трансляция на $it" } ?: "Идёт трансляция",
                 style = MaterialTheme.typography.labelLarge,
                 color = KaeruAccent,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).padding(start = 4.dp),
             )
             CastButton()

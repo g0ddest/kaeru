@@ -19,12 +19,16 @@ import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.source.EpisodeSourceProvider
 import app.kaeru.player.EpisodeQueue
+import app.kaeru.player.CastSessionBridge
 import app.kaeru.player.FakeCastFramework
+import app.kaeru.player.FakePlaybackEngine
 import app.kaeru.player.PlaybackEvent
 import app.kaeru.player.PlaybackState
 import app.kaeru.test.MainDispatcherRule
 import app.kaeru.test.MutableClock
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -64,7 +68,15 @@ class PlayerViewModelTest {
         score = 9.1, year = 2023, studio = "Madhouse", description = null,
     )
 
-    private val cast = FakeCastFramework()
+    private val castFramework = FakeCastFramework()
+
+    /** The real bridge over a fake framework: the screen talks to it, so the test does too. */
+    private val cast = CastSessionBridge(
+        framework = castFramework,
+        controller = controller,
+        local = FakePlaybackEngine(),
+        scope = CoroutineScope(main.dispatcher + SupervisorJob()),
+    )
 
     @Before
     fun setUp() {
@@ -395,7 +407,36 @@ class PlayerViewModelTest {
         viewModel.stopCasting()
         advanceUntilIdle()
 
-        assertEquals(1, cast.endedSessions)
+        assertEquals(1, castFramework.endedSessions)
         assertTrue(controller.switches.isEmpty())
+    }
+
+    @Test
+    fun `coming back to a screen while the receiver is still playing does not start over`() = runTest(main.dispatcher) {
+        // A receiver keeps the episode when the player screen closes, so the controller is
+        // still loaded. Playing it again would interrupt a television for nothing — and with a
+        // new view model there is no `requested` left to notice.
+        controller.playback.value = PlaybackState(
+            target = PlaybackTarget(100, 4, 0, null),
+            isCasting = true,
+            positionMs = 400_000,
+        )
+
+        viewModel.start(animeId = 100, episode = 4)
+        advanceUntilIdle()
+
+        assertTrue(controller.played.isEmpty())
+        assertTrue(viewModel.uiState.value.isCasting)
+        assertEquals("Фрирен", viewModel.uiState.value.title)
+    }
+
+    @Test
+    fun `a different episode asked for while casting is played, not ignored`() = runTest(main.dispatcher) {
+        controller.playback.value = PlaybackState(target = PlaybackTarget(100, 4, 0, null), isCasting = true)
+
+        viewModel.start(animeId = 100, episode = 7)
+        advanceUntilIdle()
+
+        assertEquals(7, controller.played.single().episode)
     }
 }

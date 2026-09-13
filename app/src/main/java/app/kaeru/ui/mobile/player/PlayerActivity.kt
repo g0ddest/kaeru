@@ -55,9 +55,9 @@ class PlayerActivity : FragmentActivity() {
         // Idempotent, and armed from every screen that can cast: whichever the viewer reaches
         // first is the one that starts listening for receivers.
         castSessions.start()
-        val castAvailable = cast.isAvailable
         setContent {
             KaeruTheme {
+                val castAvailable by cast.isAvailable.collectAsStateWithLifecycle()
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
                 val player by viewModel.videoPlayer.collectAsStateWithLifecycle()
                 val view = LocalView.current

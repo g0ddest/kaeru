@@ -52,7 +52,10 @@ fun HomeScreen(
     PullToRefreshBox(isRefreshing = state.isRefreshing, onRefresh = onRefresh) {
         // Over the feed rather than in a bar of its own: the home screen has no top bar, and
         // the button hides itself whenever there is no receiver on the network.
-        CastButton(Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 12.dp).zIndex(1f))
+        CastButton(
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 12.dp).zIndex(1f),
+            overArtwork = true,
+        )
         when {
             state.isLoading -> HomeSkeleton()
             state.feed.isEmpty -> EmptyHome(onRefresh)

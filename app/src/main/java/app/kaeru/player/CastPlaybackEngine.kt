@@ -5,6 +5,7 @@ import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import app.kaeru.domain.error.CastLoadFailed
 import app.kaeru.domain.error.SourceUnavailable
 import app.kaeru.domain.error.SourceUnavailableReason
 import com.google.android.gms.cast.framework.CastContext
@@ -55,6 +56,7 @@ class CastPlaybackEngine(
     override val videoPlayer: StateFlow<Player?> = MutableStateFlow(null)
 
     private var poll: Job? = null
+    private var loadWatchdog: Job? = null
 
     private val listener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) = push()
@@ -78,6 +80,7 @@ class CastPlaybackEngine(
         // the previous episode's numbers must not linger on the remote control.
         _state.value = EngineState(isBuffering = true, positionMs = startPositionMs)
         startPolling()
+        armLoadWatchdog()
     }
 
     override fun play() = player.play()
@@ -96,9 +99,35 @@ class CastPlaybackEngine(
      */
     override fun release() {
         stopPolling()
+        loadWatchdog?.cancel()
+        loadWatchdog = null
         player.stop()
         player.clearMediaItems()
         _state.value = EngineState()
+    }
+
+    /**
+     * Gives the [CastPlayer] itself back, not just the episode: the session is over and the
+     * connection behind it is gone. Done by [PlayServicesCastFramework] when a session ends;
+     * the next one builds another engine.
+     */
+    fun shutdown() {
+        release()
+        player.removeListener(listener)
+        player.release()
+    }
+
+    /**
+     * A receiver that refuses a stream usually says so. One that simply never starts — no
+     * error, no first frame — would otherwise leave a spinner up for as long as the viewer
+     * is willing to watch it, so silence gets a deadline and a name of its own.
+     */
+    private fun armLoadWatchdog() {
+        loadWatchdog?.cancel()
+        loadWatchdog = scope.launch {
+            delay(LOAD_TIMEOUT_MS)
+            if (player.playbackState != Player.STATE_READY) push(CastLoadFailed())
+        }
     }
 
     /** A receiver reports its position on request, not on its own; twice a second is enough. */
@@ -119,10 +148,16 @@ class CastPlaybackEngine(
 
     private fun push(error: Throwable? = _state.value.error) {
         val duration = player.duration
+        val playbackState = player.playbackState
+        // Anything that is playing or has played is proof the receiver took the stream.
+        if (playbackState == Player.STATE_READY || playbackState == Player.STATE_ENDED) {
+            loadWatchdog?.cancel()
+            loadWatchdog = null
+        }
         _state.value = EngineState(
             isPlaying = player.isPlaying,
-            isBuffering = player.playbackState == Player.STATE_BUFFERING,
-            ended = player.playbackState == Player.STATE_ENDED,
+            isBuffering = playbackState == Player.STATE_BUFFERING,
+            ended = playbackState == Player.STATE_ENDED,
             positionMs = player.currentPosition.coerceAtLeast(0),
             durationMs = if (duration == C.TIME_UNSET || duration < 0) 0 else duration,
             error = error,
@@ -140,5 +175,8 @@ class CastPlaybackEngine(
 
     private companion object {
         const val POLL_INTERVAL_MS = 500L
+
+        /** How long a receiver may say nothing at all before that counts as a refusal. */
+        const val LOAD_TIMEOUT_MS = 20_000L
     }
 }

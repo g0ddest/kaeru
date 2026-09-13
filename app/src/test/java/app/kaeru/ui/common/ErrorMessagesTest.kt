@@ -2,6 +2,7 @@ package app.kaeru.ui.common
 
 import app.kaeru.domain.error.AccountSessionChanged
 import app.kaeru.domain.error.AuthCallbackRejected
+import app.kaeru.domain.error.CastLoadFailed
 import app.kaeru.domain.error.EpisodeNotAvailable
 import app.kaeru.domain.error.HttpError
 import app.kaeru.domain.error.NetworkUnavailable
@@ -102,5 +103,16 @@ class ErrorMessagesTest {
     fun `result helper maps only failures`() {
         assertNull(Result.success(Unit).errorMessageOrNull())
         assertEquals("Нет соединения. Проверьте интернет", Result.failure<Unit>(NetworkUnavailable(UnknownHostException("x"))).errorMessageOrNull())
+    }
+
+    @Test
+    fun `a receiver that will not load the stream is not a Kodik outage`() {
+        assertEquals("Chromecast не смог загрузить видео", CastLoadFailed().toUserMessage())
+        assertEquals(
+            "Chromecast не смог загрузить видео",
+            CastLoadFailed(IllegalStateException("receiver timed out")).toUserMessage(),
+        )
+        // The distinction is the point: one is the television, the other is the source.
+        assertEquals("Kodik временно недоступен, попробуйте позже", SourceUnavailable(SourceUnavailableReason.REJECTED).toUserMessage())
     }
 }

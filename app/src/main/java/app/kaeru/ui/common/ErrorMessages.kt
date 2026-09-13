@@ -2,6 +2,7 @@ package app.kaeru.ui.common
 
 import app.kaeru.domain.error.AccountSessionChanged
 import app.kaeru.domain.error.AuthCallbackRejected
+import app.kaeru.domain.error.CastLoadFailed
 import app.kaeru.domain.error.EpisodeNotAvailable
 import app.kaeru.domain.error.HttpError
 import app.kaeru.domain.error.NetworkUnavailable
@@ -19,6 +20,7 @@ private const val CALLBACK_REJECTED = "Не удалось подтвердит�
 private const val SOURCE_NO_KEY = "Kodik недоступен: не удалось получить ключ"
 private const val SOURCE_REJECTED = "Kodik временно недоступен, попробуйте позже"
 private const val EPISODE_MISSING = "Серия ещё не появилась в Kodik"
+private const val CAST_LOAD_FAILED = "Chromecast не смог загрузить видео"
 private const val SOURCE_CHANGED = "Источник обновился, ждите обновления приложения"
 private const val STORAGE_FAILED = "Не удалось сохранить прогресс просмотра"
 private const val UNKNOWN = "Что-то пошло не так. Повторите попытку"
@@ -36,6 +38,7 @@ fun Throwable.toUserMessage(): String = when {
     this is SourceUnavailable && reason == SourceUnavailableReason.NO_KEY -> SOURCE_NO_KEY
     this is SourceUnavailable -> SOURCE_REJECTED
     this is EpisodeNotAvailable -> EPISODE_MISSING
+    this is CastLoadFailed -> CAST_LOAD_FAILED
     this is SourceFormatChanged -> SOURCE_CHANGED
     this is AccountSessionChanged -> SESSION_CHANGED
     this is StorageFailure -> STORAGE_FAILED

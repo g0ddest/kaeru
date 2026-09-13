@@ -38,6 +38,17 @@ class EpisodeNotAvailable(val animeId: Int, val episode: Int? = null) :
     Exception("No source for anime $animeId episode ${episode ?: "-"}")
 
 /**
+ * A Chromecast took the episode and never started playing it — no error from the receiver,
+ * no first frame, nothing.
+ *
+ * Separate from [SourceUnavailable] on purpose: a receiver that will not take a stream and a
+ * source that is down are the same silence from the phone's point of view, but only one of them
+ * is fixed by trying again later, and telling a viewer their source is down when their
+ * television is the problem sends them looking in the wrong place.
+ */
+class CastLoadFailed(cause: Throwable? = null) : Exception("Cast receiver did not load the stream", cause)
+
+/**
  * The source's pages or responses no longer look the way the scrapers expect.
  * Only a new app build fixes it, so the copy says so instead of offering a retry.
  */

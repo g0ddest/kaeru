@@ -1,5 +1,6 @@
 package app.kaeru.ui.mobile.player
 
+import android.graphics.drawable.GradientDrawable
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -30,20 +31,33 @@ val LocalCastAvailable = staticCompositionLocalOf { false }
  * Tapping it opens the route chooser, which is an AppCompat dialog hosted by the activity's
  * fragment manager: both hosting activities are `FragmentActivity` and `Theme.Kaeru` descends
  * from `Theme.AppCompat` for exactly this.
+ *
+ * @param overArtwork draws a dark disc behind the icon, for the one place it sits on a poster
+ *   rather than on the app's own background and its contrast is otherwise whatever the artwork
+ *   happens to be. The disc is the button's own view background, so it comes and goes with it.
  */
 @Composable
-fun CastButton(modifier: Modifier = Modifier) {
+fun CastButton(modifier: Modifier = Modifier, overArtwork: Boolean = false) {
     if (!LocalCastAvailable.current) return
     AndroidView(
         modifier = modifier.size(BUTTON_SIZE),
         factory = { context ->
-            MediaRouteButton(context).also {
+            MediaRouteButton(context).also { button ->
+                if (overArtwork) {
+                    button.background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(SCRIM)
+                    }
+                }
                 // Never fatal: a framework that will not wire the button costs casting, and
                 // an app that crashes on its home screen costs everything.
-                runCatching { CastButtonFactory.setUpMediaRouteButton(context.applicationContext, it) }
+                runCatching { CastButtonFactory.setUpMediaRouteButton(context.applicationContext, button) }
             }
         },
     )
 }
+
+/** Black at 32 %, the same scrim the player's own controls sit on. */
+private const val SCRIM = 0x52000000
 
 private val BUTTON_SIZE = 40.dp

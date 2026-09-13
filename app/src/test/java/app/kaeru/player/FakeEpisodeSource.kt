@@ -8,6 +8,7 @@ import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.source.EpisodeSourceProvider
+import kotlinx.coroutines.CompletableDeferred
 import java.time.Instant
 
 /**
@@ -29,6 +30,9 @@ class FakeEpisodeSource : EpisodeSourceProvider {
     /** Runs the moment a resolve starts, so a test can look at what is already on disk. */
     var onResolve: ((Int) -> Unit)? = null
 
+    /** While set, every resolve parks here — a Kodik round trip caught in the act. */
+    var gate: CompletableDeferred<Unit>? = null
+
     override suspend fun translations(shikimoriId: Int): Result<List<Translation>> =
         Result.success(listOf(anilibria, studioBanda))
 
@@ -39,6 +43,7 @@ class FakeEpisodeSource : EpisodeSourceProvider {
     ): Result<EpisodeStream> {
         resolves += episode
         onResolve?.invoke(episode)
+        gate?.await()
         if (episode in rejects) {
             return Result.failure(SourceUnavailable(SourceUnavailableReason.REJECTED))
         }

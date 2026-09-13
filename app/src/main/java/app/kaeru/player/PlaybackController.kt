@@ -138,6 +138,19 @@ class DefaultPlaybackController @Inject constructor(
         val season: Int?,
     )
 
+    /**
+     * One episode on its way to an engine: what was asked for, and how.
+     *
+     * Kept because a resolve takes seconds and a transition can be cancelled inside them — an
+     * engine switch always is. Whoever cancels it inherits the job of finishing it, and only
+     * this says which episode and whether it was a fresh one.
+     */
+    private data class Opening(
+        val target: PlaybackTarget,
+        val freshEpisode: Boolean,
+        val preferQuality: Quality?,
+    )
+
     /** Settings are read once per episode: changing them mid-episode should not move the goalposts. */
     private data class Settings(
         val threshold: Float = 0.9f,
@@ -177,6 +190,9 @@ class DefaultPlaybackController @Inject constructor(
 
     /** The progress write that owns [WatchProgress]'s queue, or the last one that did. */
     private var writing: Job? = null
+
+    /** The episode a running transition is still resolving, or null when nothing is on its way. */
+    private var opening: Opening? = null
 
     // Last, not as a property initializer: following an engine starts reading its reports, and
     // on the main dispatcher that happens at once — before the fields those reports touch exist.
@@ -264,16 +280,37 @@ class DefaultPlaybackController @Inject constructor(
             val target = current.target
             val stream = current.stream
             val quality = current.quality
+            val unfinished = opening
             _state.value = current.copy(
                 isCasting = casting,
                 isPlaying = false,
                 // Nothing loaded is not "loading": a session that starts before the first
                 // episode only decides where the next one will play.
-                isBuffering = target != null,
+                isBuffering = target != null || unfinished != null,
                 positionMs = carryPositionMs,
                 error = null,
             )
-            if (target == null || stream == null || quality == null) return@transition
+            // An episode still being resolved when the engine changed was never handed to
+            // anything, so there is nothing to carry: the new engine has to finish the job.
+            // Giving up here would leave a screen buffering with no error to retry from and no
+            // way back in, which is what a disconnect during autoplay's resolve used to do.
+            //
+            // `opening` is the authority on what to resolve, not the state: mid-track-change the
+            // state still carries the old voice, and mid-autoplay it still carries the episode
+            // that just finished. Its own start position is right for the same reasons. The
+            // state is only fallen back on when a resolve already failed, where re-opening the
+            // episode on screen is the retry the viewer would have pressed.
+            val unopened = unfinished
+                ?: target?.takeIf { stream == null || quality == null }
+                    ?.let { Opening(it.copy(startPositionMs = carryPositionMs), freshEpisode = false, preferQuality = null) }
+            if (unopened != null) {
+                open(unopened.target, unopened.freshEpisode, unopened.preferQuality).onFailure(::fail)
+                return@transition
+            }
+            if (target == null || stream == null || quality == null) {
+                opening = null
+                return@transition
+            }
             next.prepare(stream.urls.getValue(quality), headers, carryPositionMs, describe(target, stream))
             next.play()
             onEngineState(next.state.value, force = true)
@@ -302,13 +339,20 @@ class DefaultPlaybackController @Inject constructor(
     override fun reportProgress() = flushProgress()
 
     override fun release() {
+        // A screen closing is not a reason to stop a television in another room. While a
+        // receiver has the picture this writes the position down and lets go of nothing else:
+        // the episode plays on, and coming back to the player finds the remote where it was.
+        // «Отключить» — ending the session — is the control that stops it.
+        if (casting) {
+            flushProgress()
+            return
+        }
         transition?.cancel()
         transition = null
+        opening = null
         flushProgress()
         engine.release()
-        // The receiver is still the receiver: the session outlives this screen, so the next
-        // episode played from anywhere in the app goes where the viewer put the last one.
-        _state.value = PlaybackState(isCasting = casting)
+        _state.value = PlaybackState()
         markedEpisode = false
         reResolved = false
         autoplayCancelled = false
@@ -325,11 +369,17 @@ class DefaultPlaybackController @Inject constructor(
         freshEpisode: Boolean,
         preferQuality: Quality? = null,
     ): Result<Unit> {
+        // Recorded before the first suspension, so a switch that cancels this halfway through
+        // knows exactly what it has to finish.
+        opening = Opening(target, freshEpisode, preferQuality)
         settings = readSettings()
         // Resolving reads a player page and picks it apart. That is not main-thread work, and
         // everything after it is: the state, the player and its surface all live there.
         val stream = withContext(io) { resolve(target.animeId, target.episode, target.translation) }
-            .getOrElse { return Result.failure(it) }
+            .getOrElse {
+                opening = null
+                return Result.failure(it)
+            }
         val quality = preferQuality?.takeIf { stream.urls.containsKey(it) }
             ?: EpisodeQueue.startQuality(stream.urls.keys, settings.quality)
             ?: stream.urls.keys.first()
@@ -352,6 +402,7 @@ class DefaultPlaybackController @Inject constructor(
         )
         engine.prepare(stream.urls.getValue(quality), headers, target.startPositionMs, describe(target, stream))
         engine.play()
+        opening = null
         // Everything the engine said while this transition ran was ignored on purpose. Take its
         // word now, or a player that reports nothing further would leave the screen mid-swap.
         onEngineState(engine.state.value, force = true)

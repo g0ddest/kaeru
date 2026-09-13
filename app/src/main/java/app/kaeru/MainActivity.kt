@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.kaeru.player.CastFramework
 import app.kaeru.player.CastSessionBridge
 import app.kaeru.ui.mobile.MobileApp
@@ -37,8 +38,10 @@ class MainActivity : FragmentActivity() {
         // Listening from here too, so a session that ends while the player is closed still
         // brings playback back to the phone.
         castSessions.start()
-        val castAvailable = cast.isAvailable
         setContent {
+            // Observed, not read: the framework comes up a moment after launch, and the button
+            // has to appear then rather than never.
+            val castAvailable by cast.isAvailable.collectAsStateWithLifecycle()
             CompositionLocalProvider(LocalCastAvailable provides castAvailable) {
                 MobileApp(callback = pendingCallback, onCallbackConsumed = { pendingCallback = null })
             }

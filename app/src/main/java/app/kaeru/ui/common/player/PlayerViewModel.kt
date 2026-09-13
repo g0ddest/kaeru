@@ -13,7 +13,7 @@ import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.repository.WatchStateRepository
-import app.kaeru.player.CastFramework
+import app.kaeru.player.CastSessionBridge
 import app.kaeru.player.EpisodeQueue
 import app.kaeru.player.PlaybackController
 import app.kaeru.player.PlaybackEvent
@@ -48,7 +48,7 @@ import javax.inject.Inject
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
     private val controller: PlaybackController,
-    private val cast: CastFramework,
+    private val cast: CastSessionBridge,
     private val resolve: ResolveEpisodeStream,
     private val library: LibraryRepository,
     private val watchStates: WatchStateRepository,
@@ -81,7 +81,8 @@ class PlayerViewModel @Inject constructor(
         controller.state,
         anime,
         screen,
-    ) { playback, anime, screen ->
+        cast.receiverName,
+    ) { playback, anime, screen, receiverName ->
         PlayerUiState(
             title = anime?.title.orEmpty(),
             posterUrl = anime?.posterUrl,
@@ -101,6 +102,7 @@ class PlayerViewModel @Inject constructor(
             autoplayCountdownSec = playback.autoplayCountdownSec,
             errorMessage = playback.error?.toUserMessage(),
             isCasting = playback.isCasting,
+            receiverName = receiverName,
             completedPrompt = screen.completedPrompt,
             toast = screen.toast,
         )
@@ -130,8 +132,17 @@ class PlayerViewModel @Inject constructor(
      * one from the lifecycle, one from composition — are one playback.
      */
     fun start(animeId: Int, episode: Int) {
+        val loaded = controller.state.value.target
+        // Already playing this very episode. That includes a receiver that kept going while the
+        // screen was away, where starting again would interrupt a television for nothing — and a
+        // screen recreated without its view model, which used to rewind to the last saved second.
+        if (loaded?.animeId == animeId && loaded.episode == episode) {
+            requested = animeId to episode
+            this.animeId.value = animeId
+            return
+        }
         val same = requested == animeId to episode
-        if (same && (startJob?.isActive == true || controller.state.value.target != null)) return
+        if (same && startJob?.isActive == true) return
         requested = animeId to episode
         this.animeId.value = animeId
         startJob = viewModelScope.launch {
@@ -218,7 +229,7 @@ class PlayerViewModel @Inject constructor(
      * announced by the framework, and the session bridge is the one that answers it, so the
      * same thing happens whether the viewer used this button or the system output switcher.
      */
-    fun stopCasting() = cast.endSession()
+    fun stopCasting() = cast.disconnect()
 
     /** The screen is going away for a moment: save where the viewer is, keep playing. */
     fun reportProgress() = controller.reportProgress()

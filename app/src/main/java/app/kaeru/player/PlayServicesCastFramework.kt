@@ -2,44 +2,70 @@ package app.kaeru.player
 
 import android.content.Context
 import androidx.media3.common.util.UnstableApi
+import app.kaeru.di.IoDispatcher
 import app.kaeru.di.PlaybackScope
 import com.google.android.gms.cast.framework.CastContext
 import com.google.android.gms.cast.framework.CastSession
 import com.google.android.gms.cast.framework.SessionManagerListener
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Google Cast, behind the guard the rest of the app relies on.
+ * Google Cast, started off the main thread and behind the guard the rest of the app relies on.
  *
- * `CastContext.getSharedInstance` throws on a phone with no Google Play services, with Play
- * services too old for the Cast framework, or with the framework disabled — and that must cost
- * the cast button and nothing else. So it is asked for lazily, once, inside a `runCatching`,
- * and everything else here answers "no" when it did not work out.
+ * Starting the framework loads a Play services module and reads from disk, and it throws
+ * outright on a phone that has no Play services or a version too old for Cast. Both of those
+ * belong off the launch path, so [initialize] hands the work to the `Executor` overload Google
+ * added for exactly this and returns immediately; [isAvailable] flips when the task comes back,
+ * and stays false when it does not. Nothing before the first frame waits on any of it.
  *
- * The Cast framework insists on the main thread. So does the playback scope this collects on,
- * and so is every caller: the player screen, the home screen and the session bridge.
+ * Everything after the task completes runs on the main thread: the task's callbacks land there
+ * by default, and so does every caller.
  */
 @UnstableApi
 @Singleton
 class PlayServicesCastFramework @Inject constructor(
     @param:ApplicationContext private val context: Context,
     @param:PlaybackScope private val scope: CoroutineScope,
+    @param:IoDispatcher private val io: CoroutineDispatcher,
 ) : CastFramework {
 
-    private val castContext: CastContext? by lazy {
-        runCatching { CastContext.getSharedInstance(context) }.getOrNull()
-    }
+    private val _isAvailable = MutableStateFlow(false)
+    override val isAvailable: StateFlow<Boolean> = _isAvailable.asStateFlow()
 
-    override val isAvailable: Boolean get() = castContext != null
+    /** Written by the task's callback on the main thread, read there too; volatile for honesty. */
+    @Volatile
+    private var castContext: CastContext? = null
 
-    /** One per process: the receiver is one device, and a second player would fight the first. */
+    private var starting = false
+
+    /** One at a time: the receiver is one device, and a second player would fight the first. */
     private var castEngine: CastPlaybackEngine? = null
+
+    override fun initialize() {
+        if (starting) return
+        starting = true
+        // Never fatal, at any stage: a phone that cannot cast keeps `isAvailable` false and
+        // loses a button, which is the whole point of putting a seam here.
+        runCatching {
+            CastContext.getSharedInstance(context, io.asExecutor())
+                .addOnSuccessListener { framework ->
+                    castContext = framework
+                    _isAvailable.value = true
+                }
+                .addOnFailureListener { castContext = null }
+        }
+    }
 
     override val connections: Flow<CastConnection> = callbackFlow {
         val sessions = castContext?.sessionManager ?: return@callbackFlow
@@ -83,6 +109,14 @@ class PlayServicesCastFramework @Inject constructor(
     override fun engine(): PlaybackEngine? {
         val framework = castContext ?: return null
         return castEngine ?: CastPlaybackEngine(framework, scope).also { castEngine = it }
+    }
+
+    override fun receiverName(): String? =
+        runCatching { castContext?.sessionManager?.currentCastSession?.castDevice?.friendlyName }.getOrNull()
+
+    override fun releaseEngine() {
+        castEngine?.shutdown()
+        castEngine = null
     }
 
     /** Never throws: a disconnect that fails leaves the session up, which the viewer can see. */

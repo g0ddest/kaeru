@@ -1,5 +1,6 @@
 package app.kaeru.player
 
+import app.kaeru.domain.error.CastLoadFailed
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.LibraryEntry
@@ -13,16 +14,19 @@ import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.playback.WatchProgress
 import app.kaeru.test.MutableClock
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -316,5 +320,134 @@ class CastPlaybackTest {
         assertEquals(1, phone.prepared.size)
         assertEquals(0, phone.releases)
         assertFalse(controller.state.value.isCasting)
+    }
+
+    @Test
+    fun `a receiver that connects while the episode is still resolving still gets it`() = runTest(dispatcher) {
+        source.gate = CompletableDeferred()
+        val starting = launch { controller.play(target(episode = 4, startPositionMs = 90_000)) }
+        advanceUntilIdle()
+        assertTrue(phone.prepared.isEmpty())
+
+        // The resolve the phone started is cut short by the switch; the receiver has to finish
+        // the job, or the screen spins forever with no error to retry from.
+        source.gate = null
+        controller.switchEngine(receiver, controller.state.value.positionMs)
+        advanceUntilIdle()
+        starting.join()
+
+        val handed = receiver.prepared.single()
+        assertEquals("https://cdn/100/4/11/720", handed.url)
+        assertEquals(90_000L, handed.startPositionMs)
+        assertTrue(phone.prepared.isEmpty())
+        assertTrue(controller.state.value.isCasting)
+        assertNull(controller.state.value.error)
+        assertNotNull(controller.state.value.stream)
+    }
+
+    @Test
+    fun `a session that ends while the next episode is resolving starts it on the phone`() = runTest(dispatcher) {
+        playOnPhone()
+        advanceUntilIdle()
+        castNow()
+        receiver.ready(episodeLength)
+        advanceUntilIdle()
+
+        // Autoplay is several seconds of Kodik round trip, and a viewer who disconnects inside
+        // that window must still get the next episode — the brief's own acceptance criterion.
+        source.gate = CompletableDeferred()
+        receiver.end()
+        advanceUntilIdle()
+        assertEquals(listOf(4, 5), source.resolves)
+
+        source.gate = null
+        controller.switchEngine(phone, controller.state.value.positionMs)
+        advanceUntilIdle()
+
+        val started = phone.prepared.last()
+        assertEquals("https://cdn/100/5/11/720", started.url)
+        assertEquals(0L, started.startPositionMs)
+        assertEquals(5, controller.state.value.target?.episode)
+        assertFalse(controller.state.value.isCasting)
+        assertNull(controller.state.value.error)
+    }
+
+    @Test
+    fun `an episode resolved again after an interrupted start can still be counted as watched`() =
+        runTest(dispatcher) {
+            playOnPhone()
+            phone.moveTo(1_300_000)
+            advanceUntilIdle()
+            assertEquals(1, library.episodeWrites.size)
+
+            // Episode 5 is a new episode: the counting the interrupted start never got to reset
+            // has to be reset by whoever finishes it.
+            source.gate = CompletableDeferred()
+            phone.end()
+            advanceUntilIdle()
+            source.gate = null
+            castNow()
+            receiver.ready(episodeLength)
+            advanceUntilIdle()
+
+            assertEquals(5, controller.state.value.target?.episode)
+            receiver.moveTo(1_300_000)
+            advanceUntilIdle()
+
+            assertEquals(listOf(100 to 4, 100 to 5), library.episodeWrites)
+        }
+
+    @Test
+    fun `leaving the screen while casting stops nothing in the other room`() = runTest(dispatcher) {
+        playOnPhone()
+        advanceUntilIdle()
+        castNow()
+        receiver.ready(episodeLength)
+        receiver.moveTo(400_000)
+        advanceUntilIdle()
+
+        controller.release()
+        advanceUntilIdle()
+
+        assertEquals(0, receiver.releases)
+        assertTrue(receiver.state.value.isPlaying)
+        assertTrue(controller.state.value.isCasting)
+        assertEquals(4, controller.state.value.target?.episode)
+        assertEquals(400_000L, watchStates.saved.last().positionMs)
+    }
+
+    @Test
+    fun `leaving the screen while the phone is playing still stops it`() = runTest(dispatcher) {
+        playOnPhone()
+        phone.moveTo(400_000)
+        advanceUntilIdle()
+
+        controller.release()
+        advanceUntilIdle()
+
+        assertEquals(1, phone.releases)
+        assertNull(controller.state.value.target)
+        assertFalse(controller.state.value.isCasting)
+        assertEquals(400_000L, watchStates.saved.last().positionMs)
+    }
+
+    @Test
+    fun `a receiver that never loads the episode says so, after one try in silence`() = runTest(dispatcher) {
+        playOnPhone()
+        advanceUntilIdle()
+        castNow()
+        receiver.ready(episodeLength)
+        advanceUntilIdle()
+
+        receiver.fail(CastLoadFailed())
+        advanceUntilIdle()
+        // The first one is answered by resolving again, on the chance the link simply expired.
+        assertNull(controller.state.value.error)
+        assertEquals(2, source.resolves.size)
+
+        receiver.fail(CastLoadFailed())
+        advanceUntilIdle()
+
+        assertTrue(controller.state.value.error is CastLoadFailed)
     }
 }

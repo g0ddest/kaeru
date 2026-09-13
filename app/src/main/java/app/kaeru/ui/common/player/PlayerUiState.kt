@@ -30,6 +30,8 @@ data class PlayerUiState(
     val errorMessage: String? = null,
     /** The picture is on a Chromecast: the screen is a remote control, not a player. */
     val isCasting: Boolean = false,
+    /** What the receiver calls itself, so the remote can say where the picture went. */
+    val receiverName: String? = null,
     /** The finale was counted as watched and the show is waiting to be closed. */
     val completedPrompt: Boolean = false,
     /** Something worth one line and no decision, shown and then forgotten. */
