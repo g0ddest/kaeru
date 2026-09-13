@@ -34,6 +34,7 @@ import app.kaeru.ui.common.design.PosterCard
 import app.kaeru.ui.common.design.SkeletonGrid
 import app.kaeru.ui.common.design.StatusPill
 import app.kaeru.ui.common.library.LibrarySort
+import app.kaeru.ui.common.library.emptyTabCopy
 import app.kaeru.ui.common.library.LibraryUiState
 import app.kaeru.ui.common.library.libraryCardSubtitle
 import app.kaeru.ui.common.library.libraryTabs
@@ -202,36 +203,5 @@ private fun EmptyTab(status: ListStatus, onSearch: () -> Unit) {
         modifier = Modifier.fillMaxSize(),
         actionLabel = FIND_ANIME.takeIf { copy.offersSearch },
         onAction = onSearch.takeIf { copy.offersSearch },
-    )
-}
-
-private data class EmptyTabCopy(val title: String, val text: String, val offersSearch: Boolean = false)
-
-private fun emptyTabCopy(status: ListStatus): EmptyTabCopy = when (status) {
-    ListStatus.WATCHING -> EmptyTabCopy(
-        title = "Вы ничего не смотрите",
-        text = "Начните любой тайтл — он окажется здесь вместе с серией, на которой вы остановились.",
-        offersSearch = true,
-    )
-    ListStatus.PLANNED -> EmptyTabCopy(
-        title = "В планах пока пусто",
-        text = "Складывайте сюда всё, что хотите посмотреть потом. Kaeru покажет, когда выйдут новые серии.",
-        offersSearch = true,
-    )
-    ListStatus.COMPLETED -> EmptyTabCopy(
-        title = "Завершённых тайтлов пока нет",
-        text = "Здесь соберётся всё, что вы досмотрели до конца.",
-    )
-    ListStatus.REWATCHING -> EmptyTabCopy(
-        title = "Вы ничего не пересматриваете",
-        text = "Отметьте тайтл как «Пересматриваю» — он появится здесь.",
-    )
-    ListStatus.ON_HOLD -> EmptyTabCopy(
-        title = "Ничего не отложено",
-        text = "Тайтлы на паузе ждут здесь. Вернуться к ним можно в любой вечер.",
-    )
-    ListStatus.DROPPED -> EmptyTabCopy(
-        title = "Ничего не брошено",
-        text = "Тайтлы, которые не пошли, собираются здесь, чтобы не мешать остальным.",
     )
 }

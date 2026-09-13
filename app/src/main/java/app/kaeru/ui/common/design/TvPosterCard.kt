@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.MaterialTheme
@@ -33,6 +34,10 @@ import app.kaeru.ui.common.theme.KaeruText
  * Only the artwork is inside the focusable surface, so the name under it stays put while the
  * picture lifts. [onLongClick] is the quick menu the spec asks for on a long press of OK.
  *
+ * [width] is the row pitch the design system fixes, which is what a horizontally scrolling row
+ * wants: every card the same width whatever is beside it. A grid wants the opposite — the cell
+ * decides — so pass `Dp.Unspecified` there along with `Modifier.fillMaxWidth()`.
+ *
  * [titleMaxLines] is one on a screen where the row's height has to be known in advance — the
  * immersive home, where the hero above the rows is already showing the focused title in full and a
  * card that ran to a second line would push its own caption off the bottom of the panel.
@@ -50,7 +55,7 @@ fun TvPosterCard(
     width: Dp = KaeruTokens.PosterWidthTv,
     titleMaxLines: Int = 2,
 ) {
-    Column(modifier.width(width)) {
+    Column(modifier.then(if (width.isSpecified) Modifier.width(width) else Modifier)) {
         Surface(
             onClick = onClick,
             onLongClick = onLongClick,
