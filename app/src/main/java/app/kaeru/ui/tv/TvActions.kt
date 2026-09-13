@@ -4,6 +4,7 @@ import app.kaeru.domain.model.FeedItem
 import app.kaeru.domain.model.FeedKind
 import app.kaeru.domain.model.HomeFeed
 import app.kaeru.domain.model.LibraryEntry
+import app.kaeru.ui.common.details.episodeCells
 
 /**
  * The share of an episode that counts as watched, when nothing on this screen has read the
@@ -43,28 +44,21 @@ data class TvEpisodeCell(
 )
 
 /**
- * The season as a grid: every episode the show has announced, marked with what is behind the
- * viewer, what they are in the middle of, and what has not arrived yet.
+ * The season as a grid, as the television draws it.
  *
- * Two different numbers decide the shape. What can be played is what has aired; how long the
- * grid runs is what the season was announced to hold — so an episode still to come is drawn as
- * waiting rather than missing. Progress the viewer actually has always wins over both, because
- * a watched episode plainly exists whatever the catalogue says about it.
+ * The rule itself lives in `ui.common.details`, shared with the phone: this is only the shape
+ * change between the two cell types. Two implementations of «which episodes exist, which are
+ * behind the viewer, which one is in progress» would drift the day one of them is fixed.
  */
-fun tvEpisodeGrid(entry: LibraryEntry, watchedThreshold: Float = TV_WATCHED_THRESHOLD): List<TvEpisodeCell> {
-    val watched = maxOf(entry.rate.episodes, entry.watch?.episode ?: 0)
-    val playable = maxOf(entry.anime.availableEpisodes, watched)
-    val announced = maxOf(entry.anime.episodes, playable)
-    val inProgress = entry.progressFraction(watchedThreshold)
-    return (1..announced).map { episode ->
+fun tvEpisodeGrid(entry: LibraryEntry, watchedThreshold: Float = TV_WATCHED_THRESHOLD): List<TvEpisodeCell> =
+    episodeCells(entry.anime, entry.rate, entry.watch, watchedThreshold).map { cell ->
         TvEpisodeCell(
-            episode = episode,
-            aired = episode <= playable,
-            watched = episode <= entry.rate.episodes,
-            progress = inProgress?.takeIf { entry.watch?.episode == episode },
+            episode = cell.number,
+            aired = cell.aired,
+            watched = cell.watched,
+            progress = cell.progress,
         )
     }
-}
 
 /**
  * The feed entry for one anime, wherever it sits. The television remembers which title card was

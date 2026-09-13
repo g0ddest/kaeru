@@ -18,6 +18,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -62,27 +63,49 @@ fun RowHeader(
             modifier = Modifier.weight(1f),
         )
         if (action != null) {
-            TextButton(
-                onClick = action.onClick,
-                modifier = Modifier
-                    .defaultMinSize(minHeight = KaeruTokens.MinTouchTarget)
-                    .kaeruFocus(KaeruTokens.ButtonShape),
-                colors = ButtonDefaults.textButtonColors(contentColor = KaeruSecondary),
-                contentPadding = PaddingValues(horizontal = KaeruTokens.Space3),
-            ) {
-                Text(
-                    action.label,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.width(KaeruTokens.Space1))
-                Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = null,
-                    modifier = Modifier.size(ChevronSize),
-                )
-            }
+            TextAction(
+                action.label,
+                action.onClick,
+                trailingIcon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            )
+        }
+    }
+}
+
+/**
+ * The quiet control that leads somewhere or unfolds something: «Всё», «Ещё», «Показать ещё».
+ *
+ * Deliberately not amber. The accent belongs to «Смотреть», to progress, to focus on a television
+ * and to the active tab; a screen with a hero and four of these would otherwise put five ambers on
+ * one page and none of them would mean anything. It reads as a control because it is a step
+ * quieter than the text it sits under and, where it leads somewhere, carries a chevron.
+ *
+ * It is a full 48dp tall whatever its label, so a thumb can reach it.
+ */
+@Composable
+fun TextAction(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    trailingIcon: ImageVector? = null,
+) {
+    TextButton(
+        onClick = onClick,
+        modifier = modifier
+            .defaultMinSize(minHeight = KaeruTokens.MinTouchTarget)
+            .kaeruFocus(KaeruTokens.ButtonShape),
+        colors = ButtonDefaults.textButtonColors(contentColor = KaeruSecondary),
+        contentPadding = PaddingValues(horizontal = KaeruTokens.Space3),
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.titleSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (trailingIcon != null) {
+            Spacer(Modifier.width(KaeruTokens.Space1))
+            Icon(trailingIcon, contentDescription = null, modifier = Modifier.size(ChevronSize))
         }
     }
 }

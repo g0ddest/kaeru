@@ -43,7 +43,7 @@ import app.kaeru.ui.common.design.RowHeader
 import app.kaeru.ui.common.design.SkeletonHero
 import app.kaeru.ui.common.design.SkeletonRow
 import app.kaeru.ui.common.design.episodeLine
-import app.kaeru.ui.common.design.primaryActionLabel
+import app.kaeru.ui.common.design.primaryAction
 import app.kaeru.ui.common.home.HomeUiState
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruBackground
@@ -197,7 +197,10 @@ private fun Hero(
         statusLine = episodeLine(item, now),
         // A screenshot is the show in motion; the poster is the fallback, cropped to the same shape.
         backdropUrl = anime.screenshotUrls.firstOrNull() ?: anime.posterUrl,
-        primaryLabel = primaryActionLabel(item.entry, threshold),
+        // Routed through the same decision the title screen uses, so a hero and a title
+        // screen can never name different episodes. The feed only ever raises a playable
+        // item to the top, so this one is always enabled.
+        primaryLabel = primaryAction(item.entry, threshold, now).label,
         onPrimary = { onPlay(anime.id, item.episode) },
         secondaryLabel = DETAILS,
         onSecondary = { onAnime(anime.id) },

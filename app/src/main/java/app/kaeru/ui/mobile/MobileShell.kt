@@ -138,7 +138,7 @@ fun MobileShell(onLogout: () -> Unit, nav: NavHostController = rememberNavContro
                 DetailsScreen(
                     state = vm.uiState.collectAsStateWithLifecycle().value,
                     onBack = { nav.popBackStack() },
-                    onRetry = vm::refresh,
+                    onRetry = vm::retry,
                     onStatus = vm::setStatus,
                     onPlay = play,
                     onLoadTranslations = vm::loadTranslations,

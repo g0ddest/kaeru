@@ -32,9 +32,10 @@ val LocalCastAvailable = staticCompositionLocalOf { false }
  * fragment manager: both hosting activities are `FragmentActivity` and `Theme.Kaeru` descends
  * from `Theme.AppCompat` for exactly this.
  *
- * @param overArtwork draws a dark disc behind the icon, for the one place it sits on a poster
+ * @param overArtwork draws a dark disc behind the icon, for the places it sits on a screenshot
  *   rather than on the app's own background and its contrast is otherwise whatever the artwork
- *   happens to be. The disc is the button's own view background, so it comes and goes with it.
+ *   happens to be. The disc is the button's own view background, so it comes and goes with it,
+ *   and it is applied on every change rather than only when the view is created.
  */
 @Composable
 fun CastButton(modifier: Modifier = Modifier, overArtwork: Boolean = false) {
@@ -43,15 +44,23 @@ fun CastButton(modifier: Modifier = Modifier, overArtwork: Boolean = false) {
         modifier = modifier.size(BUTTON_SIZE),
         factory = { context ->
             MediaRouteButton(context).also { button ->
-                if (overArtwork) {
-                    button.background = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(SCRIM)
-                    }
-                }
                 // Never fatal: a framework that will not wire the button costs casting, and
                 // an app that crashes on its home screen costs everything.
                 runCatching { CastButtonFactory.setUpMediaRouteButton(context.applicationContext, button) }
+            }
+        },
+        // The disc is set here rather than in the factory, which runs once. A screen that only
+        // learns it is over artwork after its first frame — the title screen, whose backdrop
+        // arrives with the anime — would otherwise keep a bare glyph beside a back arrow that
+        // has its disc, which is the mismatch this parameter exists to prevent.
+        update = { button ->
+            button.background = if (overArtwork) {
+                GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(SCRIM)
+                }
+            } else {
+                null
             }
         },
     )

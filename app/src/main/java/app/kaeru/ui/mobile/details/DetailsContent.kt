@@ -5,14 +5,22 @@ import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.Translation
+import app.kaeru.domain.model.UserRate
 import app.kaeru.ui.common.design.pluralEpisodes
-import app.kaeru.ui.common.design.primaryActionLabel
+import app.kaeru.ui.common.design.PrimaryAction
+import app.kaeru.ui.common.design.episodesLabel
+import app.kaeru.ui.common.design.primaryAction
+import java.time.Instant
+import java.time.ZoneId
 import java.util.Locale
 
 /** Said when the anime could not be read and the failure itself left no message behind. */
 private const val UNREADABLE = "Не удалось загрузить аниме. Проверьте соединение и повторите"
 
 private const val DUB = "Озвучка"
+
+/** Folds a description or a long season back up. One word, said the same way in both places. */
+internal const val COLLAPSE = "Свернуть"
 
 /**
  * Which of the three screens the title screen is at this moment.
@@ -101,10 +109,32 @@ fun translationLabel(translations: List<Translation>, currentId: Int?): String {
 }
 
 /**
- * What the watch button says it will do.
+ * The watch button on this screen.
  *
- * A title in no list has nothing remembered about it, so the button offers the beginning rather
- * than the bare verb `primaryActionLabel` falls back to when it is handed nothing.
+ * A title in no list has nothing remembered about it, so it borrows an empty rate and asks the
+ * same question the library's [primaryAction] answers everywhere else: is there an episode to
+ * start, and which one. That is how an announcement with nothing aired gets «Ещё не вышло» here
+ * rather than an offer to play an episode that does not exist.
  */
-fun detailsActionLabel(entry: LibraryEntry?, watchedThreshold: Float): String =
-    if (entry == null) "Смотреть 1 серию" else primaryActionLabel(entry, watchedThreshold)
+fun detailsAction(
+    anime: Anime,
+    entry: LibraryEntry?,
+    watchedThreshold: Float,
+    now: Instant,
+    zone: ZoneId = ZoneId.systemDefault(),
+): PrimaryAction = primaryAction(entry ?: LibraryEntry(anime, emptyRate(anime.id), null), watchedThreshold, now, zone)
+
+/** Stands in for «this anime is in no list», which is the same thing as nothing watched. */
+private fun emptyRate(animeId: Int) =
+    UserRate(id = 0, animeId = animeId, status = ListStatus.PLANNED, episodes = 0, updatedAt = Instant.EPOCH)
+
+/**
+ * «20 из 28» under the episode grid.
+ *
+ * Shikimori's count can run past the length the catalogue announced — a season extended, a
+ * catalogue not caught up — and «30 из 28» over a grid that correctly draws thirty cells is the
+ * screen contradicting itself. The announced total gives way to the count in that case. A season
+ * whose length nobody has announced still prints «?» rather than inventing one.
+ */
+fun watchedLine(watched: Int, announced: Int): String =
+    episodesLabel(watched, if (announced > 0) maxOf(announced, watched) else 0)

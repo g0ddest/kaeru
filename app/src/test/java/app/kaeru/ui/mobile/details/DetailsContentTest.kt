@@ -9,6 +9,8 @@ import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.model.WatchState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
@@ -36,6 +38,8 @@ class DetailsContentTest {
         studio = studio,
         description = null,
     )
+
+    private val now: Instant = Instant.parse("2026-09-13T20:00:00Z")
 
     private fun entry(watched: Int, watch: WatchState? = null) = LibraryEntry(
         anime(),
@@ -149,18 +153,48 @@ class DetailsContentTest {
 
     @Test
     fun `the watch button offers the first episode of an anime nobody has started`() {
-        assertEquals("Смотреть 1 серию", detailsActionLabel(null, 0.9f))
-        assertEquals("Смотреть 1 серию", detailsActionLabel(entry(watched = 0), 0.9f))
+        val released = anime(episodes = 12, aired = 12, status = AnimeStatus.RELEASED)
+        assertEquals("Смотреть 1 серию", detailsAction(released, null, 0.9f, now).label)
+        assertEquals("Смотреть 1 серию", detailsAction(anime(), entry(watched = 0), 0.9f, now).label)
+    }
+
+    @Test
+    fun `an announcement outside the list offers nothing to press rather than episode one`() {
+        val anons = anime(episodes = 0, aired = 0, status = AnimeStatus.ANONS)
+        val action = detailsAction(anons, null, 0.9f, now)
+        assertEquals("Ещё не вышло", action.label)
+        assertFalse(action.enabled)
+        assertNull(action.episode)
     }
 
     @Test
     fun `the watch button names the episode it will continue`() {
-        assertEquals("Продолжить 21 серию", detailsActionLabel(entry(watched = 20), 0.9f))
+        val action = detailsAction(anime(), entry(watched = 20), 0.9f, now)
+        assertEquals("Продолжить 21 серию", action.label)
+        assertEquals(21, action.episode)
     }
 
     @Test
     fun `the watch button offers the position it remembers`() {
         val watch = WatchState(7, 21, 860_000, 1_400_000, 11, 1, Instant.EPOCH)
-        assertEquals("Продолжить с 14:20", detailsActionLabel(entry(watched = 20, watch = watch), 0.9f))
+        assertEquals("Продолжить с 14:20", detailsAction(anime(), entry(watched = 20, watch = watch), 0.9f, now).label)
+    }
+
+    @Test
+    fun `the watch button will not offer an episode the season has not reached`() {
+        // Twenty-four of twenty-eight are out and the viewer has all twenty-four behind them.
+        val action = detailsAction(anime(), entry(watched = 24), 0.9f, now)
+        assertEquals("Ждём 25 серию", action.label)
+        assertFalse(action.enabled)
+        assertNull(action.episode)
+    }
+
+    // --- the count under the grid ----------------------------------------------------------
+
+    @Test
+    fun `the count under the grid never claims more watched than the season holds`() {
+        assertEquals("20 из 28", watchedLine(20, 28))
+        assertEquals("30 из 30", watchedLine(30, 28))
+        assertEquals("20 из ?", watchedLine(20, 0))
     }
 }

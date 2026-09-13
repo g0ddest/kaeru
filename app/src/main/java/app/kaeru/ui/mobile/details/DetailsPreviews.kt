@@ -11,6 +11,7 @@ import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.model.WatchState
 import app.kaeru.ui.common.theme.KaeruTheme
+import java.time.Duration
 import java.time.Instant
 
 private const val DARK = 0xFF0B0C10
@@ -68,6 +69,28 @@ private fun DetailsInListPreview() = KaeruTheme {
             anime = frieren,
             refreshing = false,
             translations = listOf(anilibria),
+        ),
+        onBack = {},
+        onRetry = {},
+        onStatus = {},
+        onPlay = { _, _ -> },
+        onLoadTranslations = {},
+        onPickTranslation = {},
+        onMarkWatched = {},
+    )
+}
+
+/** Everything watched, the next episode not out yet: the one case that must not offer a play. */
+@Preview(showBackground = true, backgroundColor = DARK, heightDp = 900)
+@Composable
+private fun DetailsWaitingPreview() = KaeruTheme {
+    val waiting = anime(1, FRIEREN, "Sousou no Frieren", episodes = 28, aired = 24)
+        .copy(nextEpisodeAt = now.plus(Duration.ofDays(1)))
+    DetailsScreen(
+        state = DetailsUiState(
+            entry = LibraryEntry(waiting, UserRate(1, 1, ListStatus.WATCHING, 24, now), null),
+            anime = waiting,
+            refreshing = false,
         ),
         onBack = {},
         onRetry = {},

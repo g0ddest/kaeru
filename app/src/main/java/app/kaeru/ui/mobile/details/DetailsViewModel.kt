@@ -35,11 +35,18 @@ data class DetailsUiState(
     /** A write to the viewer's list is in flight, whichever control started it. */
     val updatingStatus: Boolean = false,
     val errorMessage: String? = null,
+    /**
+     * The dub whose save produced [errorMessage], so «Повторить» repeats that pick rather than
+     * reloading the anime, which is not what failed.
+     */
+    val failedPick: Translation? = null,
     /** How much of an episode counts as watched; decides which episode the main button offers. */
     val watchedThreshold: Float = 0.9f,
     /** The dubs this anime has, ranked, once the chooser has asked for them. */
     val translations: List<Translation> = emptyList(),
     val loadingTranslations: Boolean = false,
+    /** A dub is being written; the dub control says so and the chooser stops accepting taps. */
+    val savingTranslation: Boolean = false,
     /** Why the dub list could not be read; shown inside the chooser, not over the screen. */
     val translationsError: String? = null,
 )
@@ -66,7 +73,7 @@ class DetailsViewModel @Inject constructor(
 
     fun refresh() {
         viewModelScope.launch {
-            work.value = work.value.copy(refreshing = true, errorMessage = null)
+            work.value = work.value.copy(refreshing = true, errorMessage = null, failedPick = null)
             val result = repository.refreshAnime(animeId)
             work.value = work.value.copy(refreshing = false, errorMessage = result.errorMessageOrNull())
         }
@@ -74,7 +81,7 @@ class DetailsViewModel @Inject constructor(
 
     fun setStatus(status: ListStatus) {
         viewModelScope.launch {
-            work.value = work.value.copy(updatingStatus = true, errorMessage = null)
+            work.value = work.value.copy(updatingStatus = true, errorMessage = null, failedPick = null)
             val result = repository.setStatus(animeId, status)
             work.value = work.value.copy(updatingStatus = false, errorMessage = result.errorMessageOrNull())
         }
@@ -111,6 +118,7 @@ class DetailsViewModel @Inject constructor(
      */
     fun pickTranslation(translation: Translation) {
         viewModelScope.launch {
+            work.value = work.value.copy(savingTranslation = true, errorMessage = null, failedPick = null)
             val remembered = watchStates.observe(animeId).first()
             val row = remembered?.copy(
                 translationId = translation.id,
@@ -125,8 +133,25 @@ class DetailsViewModel @Inject constructor(
                 kodikSeason = translation.season,
                 updatedAt = clock.instant(),
             )
-            work.value = work.value.copy(errorMessage = save(row))
+            val failure = save(row)
+            work.value = work.value.copy(
+                savingTranslation = false,
+                errorMessage = failure,
+                failedPick = translation.takeIf { failure != null },
+            )
         }
+    }
+
+    /**
+     * «Повторить» on the message the screen is showing.
+     *
+     * Not everything that lands in [DetailsUiState.errorMessage] is a failed load: a dub that
+     * could not be written leaves one too, and reloading the anime would report success while
+     * quietly leaving the dub unchanged. So the retry repeats whatever actually failed.
+     */
+    fun retry() {
+        val pick = work.value.failedPick
+        if (pick != null) pickTranslation(pick) else refresh()
     }
 
     /**
@@ -138,7 +163,7 @@ class DetailsViewModel @Inject constructor(
      */
     fun markWatched(episode: Int) {
         viewModelScope.launch {
-            work.value = work.value.copy(updatingStatus = true, errorMessage = null)
+            work.value = work.value.copy(updatingStatus = true, errorMessage = null, failedPick = null)
             val result = markEpisodeWatched(animeId, episode)
             work.value = work.value.copy(updatingStatus = false, errorMessage = result.errorMessageOrNull())
         }

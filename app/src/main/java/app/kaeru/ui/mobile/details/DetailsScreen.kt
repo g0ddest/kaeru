@@ -4,17 +4,14 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,7 +25,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -37,7 +33,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,13 +40,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -67,16 +58,13 @@ import app.kaeru.ui.common.design.KaeruTopBar
 import app.kaeru.ui.common.design.MetaChip
 import app.kaeru.ui.common.design.PosterImage
 import app.kaeru.ui.common.design.PrimaryButton
-import app.kaeru.ui.common.design.ProgressStrip
 import app.kaeru.ui.common.design.RowHeader
 import app.kaeru.ui.common.design.SecondaryButton
 import app.kaeru.ui.common.design.Skeleton
 import app.kaeru.ui.common.design.SkeletonGroup
 import app.kaeru.ui.common.design.SkeletonHero
 import app.kaeru.ui.common.design.StatusPill
-import app.kaeru.ui.common.design.episodesLabel
-import app.kaeru.ui.common.design.kaeruFocus
-import app.kaeru.ui.common.details.EpisodeCell
+import app.kaeru.ui.common.design.TextAction
 import app.kaeru.ui.common.details.episodeCells
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruBackground
@@ -86,12 +74,12 @@ import app.kaeru.ui.common.theme.KaeruText
 import app.kaeru.ui.mobile.KaeruSnackbarHost
 import app.kaeru.ui.mobile.RetrySnackbar
 import app.kaeru.ui.mobile.player.CastButton
+import java.time.Instant
 private const val BACK = "Назад"
 private const val EPISODES = "Серии"
 private const val DESCRIPTION = "Описание"
 private const val PLAN_IT = "Добавить в планы"
 private const val MORE = "Ещё"
-private const val LESS = "Свернуть"
 private const val CURRENT_STATUS = "Текущий статус"
 
 /** The header artwork: wider than the hero, because here the poster and the title carry the screen. */
@@ -192,6 +180,9 @@ private fun TitlePage(
     val cells = remember(anime, entry, state.watchedThreshold) {
         episodeCells(anime, entry?.rate, entry?.watch, state.watchedThreshold)
     }
+    // One clock per anime. «9 серия выйдет завтра» is read against it, and a label that rewrote
+    // itself on every recomposition would be a label nobody could finish reading.
+    val now = remember(anime) { Instant.now() }
     Column(
         Modifier
             .fillMaxSize()
@@ -203,7 +194,7 @@ private fun TitlePage(
         Spacer(Modifier.height(PosterOverhang + KaeruTokens.Space4))
         Title(anime)
         MetaRow(anime)
-        Actions(anime, state, onStatus, onPlay, onLoadTranslations, onPickTranslation)
+        Actions(anime, state, now, onStatus, onPlay, onLoadTranslations, onPickTranslation)
         EpisodeSection(
             cells = cells,
             watched = entry?.rate?.episodes ?: 0,
@@ -289,25 +280,34 @@ private fun MetaRow(anime: Anime) {
  * What the screen is for, and the two things that change how it behaves.
  *
  * The amber button is the full width of the page because it is the answer to the question the
- * viewer arrived with. The controls under it are quiet on purpose: the list status and the dub are
- * settings, and a screen with three loud controls has none.
+ * viewer arrived with. It is also the one control that can be unpressable: an episode that has not
+ * aired is named and disabled rather than offered, because pressing it would only reach
+ * «Серия ещё не появилась в Kodik».
+ *
+ * The controls under it are quiet on purpose: the list status and the dub are settings, and a
+ * screen with three loud controls has none.
  */
 @Composable
 private fun Actions(
     anime: Anime,
     state: DetailsUiState,
+    now: Instant,
     onStatus: (ListStatus) -> Unit,
     onPlay: (Int, Int) -> Unit,
     onLoadTranslations: () -> Unit,
     onPickTranslation: (Translation) -> Unit,
 ) {
     val entry = state.entry
+    val action = remember(anime, entry, state.watchedThreshold, now) {
+        detailsAction(anime, entry, state.watchedThreshold, now)
+    }
     Column(Modifier.padding(horizontal = KaeruTokens.GutterPhone, vertical = KaeruTokens.Space4)) {
         PrimaryButton(
-            text = detailsActionLabel(entry, state.watchedThreshold),
-            onClick = { onPlay(anime.id, entry?.nextEpisode(state.watchedThreshold) ?: 1) },
+            text = action.label,
+            onClick = { action.episode?.let { episode -> onPlay(anime.id, episode) } },
             modifier = Modifier.fillMaxWidth(),
             icon = Icons.Default.PlayArrow,
+            enabled = action.enabled,
         )
         FlowRow(
             Modifier.padding(top = KaeruTokens.Space3),
@@ -315,7 +315,7 @@ private fun Actions(
             verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space2),
         ) {
             if (entry == null) {
-                SecondaryButton(PLAN_IT, { onStatus(ListStatus.PLANNED) })
+                SecondaryButton(PLAN_IT, { onStatus(ListStatus.PLANNED) }, enabled = !state.updatingStatus)
             } else {
                 StatusMenu(entry.rate.status, state.updatingStatus, onStatus)
                 DubPill(state, entry, onLoadTranslations, onPickTranslation)
@@ -337,13 +337,7 @@ private fun StatusMenu(current: ListStatus, busy: Boolean, onStatus: (ListStatus
             onClick = { if (!busy) open = true },
             role = Role.DropdownList,
             trailing = if (busy) {
-                {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(BusySize),
-                        color = KaeruText,
-                        strokeWidth = BusyStroke,
-                    )
-                }
+                { BusySpinner() }
             } else {
                 null
             },
@@ -384,6 +378,16 @@ private fun StatusMenu(current: ListStatus, busy: Boolean, onStatus: (ListStatus
 private val BusySize = 16.dp
 private val BusyStroke = 2.dp
 
+/** A write is in flight, in the smallest form that still reads: inside the pill that started it. */
+@Composable
+private fun BusySpinner() {
+    CircularProgressIndicator(
+        modifier = Modifier.size(BusySize),
+        color = KaeruText,
+        strokeWidth = BusyStroke,
+    )
+}
+
 /** Which voice this anime plays in, and the sheet that changes it. */
 @Composable
 private fun DubPill(
@@ -394,6 +398,7 @@ private fun DubPill(
 ) {
     var open by remember { mutableStateOf(false) }
     val currentId = entry.watch?.translationId
+    val saving = state.savingTranslation
     StatusPill(
         text = translationLabel(state.translations, currentId),
         selected = false,
@@ -403,6 +408,13 @@ private fun DubPill(
             onLoadTranslations()
         },
         role = Role.DropdownList,
+        // The same spinner the status pill shows while the list is being written: picking a dub is
+        // a write too, and until now it was the one that gave no sign of itself.
+        trailing = if (saving) {
+            { BusySpinner() }
+        } else {
+            null
+        },
     )
     if (open) {
         TranslationPickerSheet(
@@ -410,6 +422,9 @@ private fun DubPill(
             currentId = currentId,
             loading = state.loadingTranslations,
             errorMessage = state.translationsError,
+            // A sheet reopened while the last pick is still being written takes no taps, so the
+            // same row cannot be sent twice.
+            enabled = !saving,
             onRetry = onLoadTranslations,
             onPick = {
                 open = false
@@ -441,16 +456,22 @@ private fun Description(text: String) {
                 .animateContentSize(tween(KaeruTokens.DurationNormal)),
         )
         if (clipped) {
-            QuietTextButton(if (expanded) LESS else MORE, { expanded = !expanded })
+            TextAction(
+                if (expanded) COLLAPSE else MORE,
+                { expanded = !expanded },
+                Modifier.padding(start = KaeruTokens.GutterPhone - KaeruTokens.Space3),
+            )
         }
     }
 }
 
 /** The shape of the screen before the anime arrives, so nothing jumps when it does. */
 @Composable
-private fun DetailsSkeleton() = SkeletonGroup {
-    Column(Modifier.fillMaxSize()) {
-        SkeletonHero(aspect = BACKDROP_ASPECT)
+private fun DetailsSkeleton() = Column(Modifier.fillMaxSize()) {
+    // The hero carries its own group; wrapping it in a second one would start a second clock and
+    // put the two halves of the screen out of phase.
+    SkeletonHero(aspect = BACKDROP_ASPECT)
+    SkeletonGroup {
         Column(
             Modifier.padding(horizontal = KaeruTokens.GutterPhone, vertical = KaeruTokens.Space6),
             verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space3),
@@ -460,8 +481,8 @@ private fun DetailsSkeleton() = SkeletonGroup {
             Skeleton(Modifier.fillMaxWidth().height(KaeruTokens.ButtonHeight))
             repeat(SKELETON_ROWS) {
                 Row(horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space2)) {
-                    repeat(EPISODE_COLUMNS) {
-                        Skeleton(Modifier.weight(1f).height(EpisodeCellHeight))
+                    repeat(SKELETON_COLUMNS) {
+                        Skeleton(Modifier.weight(1f).height(SkeletonCellHeight))
                     }
                 }
             }
@@ -471,184 +492,6 @@ private fun DetailsSkeleton() = SkeletonGroup {
 
 private val TitleBlock = 32.dp
 private val LineBlock = 16.dp
+private val SkeletonCellHeight = 56.dp
 private const val SKELETON_ROWS = 2
-
-// --- the season -------------------------------------------------------------------------------
-
-private const val EPISODE_COLUMNS = 5
-
-/** Past this many, the grid is longer than the screen and is folded until asked for. */
-private const val EPISODE_LIMIT = 60
-
-private val EpisodeCellHeight = 56.dp
-private val CheckSize = 14.dp
-
-private const val SHOW_ALL = "Показать все"
-private const val MARK_WATCHED = "Отметить просмотренной"
-private const val WATCHED = "Просмотрено"
-private const val NOT_AIRED = "не вышла"
-private const val WATCH = "Смотреть"
-
-/**
- * The season as a grid rather than a list.
- *
- * Twenty-eight numbers in six rows can be read at a glance — which ones are behind you, which one
- * you are in the middle of, where the season stops; twenty-eight list rows cannot. A very long
- * season folds at sixty, because past that the page below it stops being reachable.
- */
-@Composable
-private fun EpisodeSection(
-    cells: List<EpisodeCell>,
-    watched: Int,
-    announced: Int,
-    onPlay: (Int) -> Unit,
-    onMarkWatched: (Int) -> Unit,
-) {
-    if (cells.isEmpty()) return
-    var expanded by remember { mutableStateOf(false) }
-    val folded = cells.size > EPISODE_LIMIT
-    val shown = if (folded && !expanded) cells.take(EPISODE_LIMIT) else cells
-    Column(Modifier.padding(top = KaeruTokens.Space6)) {
-        RowHeader(EPISODES)
-        Text(
-            episodesLabel(watched, announced),
-            style = MaterialTheme.typography.labelMedium,
-            color = KaeruSecondary,
-            modifier = Modifier.padding(horizontal = KaeruTokens.GutterPhone, vertical = KaeruTokens.Space1),
-        )
-        Column(
-            Modifier.padding(horizontal = KaeruTokens.GutterPhone, vertical = KaeruTokens.Space2),
-            verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space2),
-        ) {
-            shown.chunked(EPISODE_COLUMNS).forEach { row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space2)) {
-                    row.forEach { cell ->
-                        EpisodeTile(cell, Modifier.weight(1f), { onPlay(cell.number) }, { onMarkWatched(cell.number) })
-                    }
-                    // The last row keeps the pitch of the ones above it rather than stretching.
-                    repeat(EPISODE_COLUMNS - row.size) { Spacer(Modifier.weight(1f)) }
-                }
-            }
-        }
-        if (folded) {
-            QuietTextButton(if (expanded) LESS else SHOW_ALL, { expanded = !expanded })
-        }
-    }
-}
-
-/**
- * One episode, saying three different things three different ways.
- *
- * The check is Shikimori's count, the strip is where this device stopped, and a dimmed tile is an
- * episode that has not aired. A long press on one still to come does nothing — there is nothing
- * honest to mark — and neither does one already counted.
- */
-@Composable
-private fun EpisodeTile(
-    cell: EpisodeCell,
-    modifier: Modifier,
-    onPlay: () -> Unit,
-    onMarkWatched: () -> Unit,
-) {
-    var menu by remember { mutableStateOf(false) }
-    Box(modifier) {
-        Column(
-            Modifier
-                .height(EpisodeCellHeight)
-                .clip(KaeruTokens.CardShape)
-                .background(if (cell.aired) KaeruElevated else KaeruElevated.copy(alpha = 0.45f))
-                .combinedClickable(
-                    enabled = cell.aired,
-                    onClick = onPlay,
-                    onClickLabel = WATCH,
-                    onLongClick = if (cell.watched) null else ({ menu = true }),
-                    onLongClickLabel = MARK_WATCHED,
-                )
-                // One spoken sentence instead of a number and a fragment read separately.
-                .then(
-                    if (cell.aired) {
-                        Modifier
-                    } else {
-                        Modifier.clearAndSetSemantics { contentDescription = "${cell.number} серия, $NOT_AIRED" }
-                    },
-                ),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        cell.number.toString(),
-                        style = MaterialTheme.typography.titleMedium,
-                        textAlign = TextAlign.Center,
-                        color = when {
-                            !cell.aired -> KaeruSecondary.copy(alpha = 0.6f)
-                            cell.watched -> KaeruSecondary
-                            else -> KaeruText
-                        },
-                    )
-                    if (!cell.aired) {
-                        Text(
-                            NOT_AIRED,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = KaeruSecondary.copy(alpha = 0.6f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-                if (cell.watched) {
-                    Icon(
-                        Icons.Default.Check,
-                        contentDescription = WATCHED,
-                        tint = KaeruAccent,
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(top = KaeruTokens.Space1, end = KaeruTokens.Space1)
-                            .size(CheckSize),
-                    )
-                }
-            }
-            cell.progress?.let { ProgressStrip(it) }
-        }
-        DropdownMenu(
-            expanded = menu,
-            onDismissRequest = { menu = false },
-            shape = KaeruTokens.CardShape,
-            containerColor = KaeruElevated,
-            shadowElevation = 0.dp,
-            tonalElevation = 0.dp,
-        ) {
-            DropdownMenuItem(
-                text = { Text(MARK_WATCHED, style = MaterialTheme.typography.titleSmall) },
-                onClick = {
-                    menu = false
-                    onMarkWatched()
-                },
-                colors = MenuDefaults.itemColors(textColor = KaeruText),
-            )
-        }
-    }
-}
-
-/**
- * The quiet control that unfolds something: «Ещё», «Показать все».
- *
- * Secondary colour and title weight, never amber — it reveals text that is already on the page,
- * which is not the kind of thing the accent is for. The start padding lines its label up with the
- * gutter, past the button's own content padding.
- */
-@Composable
-private fun QuietTextButton(text: String, onClick: () -> Unit) {
-    TextButton(
-        onClick = onClick,
-        modifier = Modifier
-            .padding(start = KaeruTokens.GutterPhone - KaeruTokens.Space3)
-            .defaultMinSize(minHeight = KaeruTokens.MinTouchTarget)
-            .kaeruFocus(KaeruTokens.ButtonShape),
-        colors = ButtonDefaults.textButtonColors(contentColor = KaeruSecondary),
-        contentPadding = PaddingValues(horizontal = KaeruTokens.Space3),
-    ) {
-        Text(text, style = MaterialTheme.typography.titleSmall)
-    }
-}
+private const val SKELETON_COLUMNS = 5

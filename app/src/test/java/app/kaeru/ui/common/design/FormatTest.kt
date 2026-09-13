@@ -11,6 +11,7 @@ import app.kaeru.domain.model.WatchState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
 import java.time.LocalDate
@@ -185,33 +186,113 @@ class FormatTest {
         lines.forEach { line -> assertFalse(line, line.contains("·")) }
     }
 
-    // --- primaryActionLabel ----------------------------------------------------------------
+    // --- primaryAction ---------------------------------------------------------------------
 
     @Test
     fun `nothing in the library gets the bare verb`() {
-        assertEquals("Смотреть", primaryActionLabel(null, 0.9f))
+        val action = primaryAction(null, 0.9f, now, zone)
+        assertEquals("Смотреть", action.label)
+        assertTrue(action.enabled)
     }
 
     @Test
     fun `an untouched title starts at the first episode`() {
-        assertEquals("Смотреть 1 серию", primaryActionLabel(entry(watched = 0), 0.9f))
+        val action = primaryAction(entry(watched = 0), 0.9f, now, zone)
+        assertEquals("Смотреть 1 серию", action.label)
+        assertTrue(action.enabled)
+        assertEquals(1, action.episode)
     }
 
     @Test
     fun `a title in progress continues at the next episode`() {
-        assertEquals("Продолжить 7 серию", primaryActionLabel(entry(watched = 6), 0.9f))
+        val action = primaryAction(entry(watched = 6), 0.9f, now, zone)
+        assertEquals("Продолжить 7 серию", action.label)
+        assertEquals(7, action.episode)
     }
 
     @Test
     fun `a half-watched episode continues from its timecode`() {
         val started = entry(watched = 6, watch = watch(7, 860_000))
-        assertEquals("Продолжить с 14:20", primaryActionLabel(started, 0.9f))
+        val action = primaryAction(started, 0.9f, now, zone)
+        assertEquals("Продолжить с 14:20", action.label)
+        assertTrue(action.enabled)
+        assertEquals(7, action.episode)
     }
 
     @Test
     fun `an episode watched past the threshold moves on to the next one`() {
         val finished = entry(watched = 6, watch = watch(7, 1_400_000))
-        assertEquals("Продолжить 8 серию", primaryActionLabel(finished, 0.9f))
+        assertEquals("Продолжить 8 серию", primaryAction(finished, 0.9f, now, zone).label)
+    }
+
+    @Test
+    fun `the last episode that aired is still offered`() {
+        // The boundary: eight of twelve are out and seven are behind the viewer.
+        val action = primaryAction(entry(watched = 7), 0.9f, now, zone)
+        assertEquals("Продолжить 8 серию", action.label)
+        assertTrue(action.enabled)
+        assertEquals(8, action.episode)
+    }
+
+    @Test
+    fun `an episode that has not aired is named with its date and cannot be pressed`() {
+        val waiting = entry(anime = anime(aired = 8, nextEpisodeAt = at(2026, 4, 13, 18, 0)), watched = 8)
+        val action = primaryAction(waiting, 0.9f, now, zone)
+        assertEquals("9 серия выйдет завтра", action.label)
+        assertFalse(action.enabled)
+        assertNull(action.episode)
+    }
+
+    @Test
+    fun `an episode further out counts the days`() {
+        val waiting = entry(anime = anime(aired = 8, nextEpisodeAt = at(2026, 4, 15, 18, 0)), watched = 8)
+        assertEquals("9 серия выйдет через 3 дня", primaryAction(waiting, 0.9f, now, zone).label)
+    }
+
+    @Test
+    fun `an episode with no date, and one whose date has already gone by, are simply awaited`() {
+        val undated = entry(anime = anime(aired = 8, nextEpisodeAt = null), watched = 8)
+        assertEquals("Ждём 9 серию", primaryAction(undated, 0.9f, now, zone).label)
+
+        // The catalogue says it aired yesterday and still reports eight; promising a date would lie.
+        val overdue = entry(anime = anime(aired = 8, nextEpisodeAt = at(2026, 4, 11, 18, 0)), watched = 8)
+        val action = primaryAction(overdue, 0.9f, now, zone)
+        assertEquals("Ждём 9 серию", action.label)
+        assertFalse(action.enabled)
+    }
+
+    @Test
+    fun `an announcement with nothing aired offers nothing to press`() {
+        val anons = entry(anime = anime(AnimeStatus.ANONS, episodes = 0, aired = 0), watched = 0)
+        val action = primaryAction(anons, 0.9f, now, zone)
+        assertEquals("Ещё не вышло", action.label)
+        assertFalse(action.enabled)
+        assertNull(action.episode)
+    }
+
+    @Test
+    fun `an announcement with a date names the day it arrives`() {
+        val anons = entry(
+            anime = anime(AnimeStatus.ANONS, episodes = 12, aired = 0, nextEpisodeAt = at(2026, 4, 13, 18, 0)),
+            watched = 0,
+        )
+        val action = primaryAction(anons, 0.9f, now, zone)
+        assertEquals("1 серия выйдет завтра", action.label)
+        assertFalse(action.enabled)
+    }
+
+    @Test
+    fun `a button that cannot be pressed never names an episode to play`() {
+        val cases = listOf(
+            entry(anime = anime(aired = 8, nextEpisodeAt = at(2026, 4, 13, 18, 0)), watched = 8),
+            entry(anime = anime(aired = 8), watched = 8),
+            entry(anime = anime(AnimeStatus.ANONS, episodes = 0, aired = 0), watched = 0),
+            entry(watched = 6),
+        )
+        cases.forEach { case ->
+            val action = primaryAction(case, 0.9f, now, zone)
+            assertEquals(action.label, action.enabled, action.episode != null)
+        }
     }
 
     // --- formatTime ------------------------------------------------------------------------

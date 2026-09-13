@@ -1,5 +1,7 @@
 package app.kaeru.ui.common.design
 
+import app.kaeru.domain.model.Anime
+import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.FeedItem
 import app.kaeru.domain.model.FeedKind
 import app.kaeru.domain.model.LibraryEntry
@@ -122,18 +124,68 @@ fun episodeLine(item: FeedItem, now: Instant, zone: ZoneId = ZoneId.systemDefaul
 }
 
 /**
- * What the watch button says it will do. The label always names the thing that happens, so the
- * viewer can tell a resume from a restart without reading anything else on the screen.
+ * The watch button, decided in one place: what it says, whether it can be pressed, and which
+ * episode it would start.
+ *
+ * A label alone is not enough, which is what this replaces. «Смотреть 11 серию» under a season
+ * that has aired ten is a button that promises something the source cannot give, and pressing it
+ * ends at «Серия ещё не появилась в Kodik». So the answer carries [enabled] with the label, and
+ * [episode] is non-null exactly when there is something to start.
+ *
+ * The order of the cases is the order of what the viewer most wants to know:
+ *
+ * 1. a position inside an episode — that episode is on this device, so it is offered first;
+ * 2. an episode that has aired — «Смотреть 1 серию» or «Продолжить 7 серию»;
+ * 3. an episode that has not, with a date still ahead — «9 серия выйдет завтра»;
+ * 4. nothing aired at all — «Ещё не вышло», which is the whole truth about an announcement;
+ * 5. anything else still to come — «Ждём 9 серию».
+ *
+ * Case 3 is deliberately ahead of case 4: an announcement with a broadcast date is better served
+ * by that date than by a shrug, and both are equally unpressable. A date already in the past is
+ * ignored — the catalogue has simply not caught up, and repeating it would be a promise about
+ * yesterday.
  */
-fun primaryActionLabel(entry: LibraryEntry?, threshold: Float): String {
-    if (entry == null) return "Смотреть"
-    val next = entry.nextEpisode(threshold)
+/**
+ * Episodes that exist to play right now.
+ *
+ * `Anime.availableEpisodes` answers the announced length for anything that is not ongoing, which
+ * is right for a finished show — catalogues routinely report `episodesAired = 0` for one — and
+ * wrong for an announcement, where twelve episodes are promised and none have been made. Reading
+ * it through here is what keeps a button from offering, and a grid from opening, an episode that
+ * does not exist yet.
+ */
+fun Anime.airedEpisodes(): Int = if (status == AnimeStatus.ANONS) 0 else availableEpisodes
+
+data class PrimaryAction(
+    val label: String,
+    val enabled: Boolean,
+    /** The episode this would start, or null when there is nothing to start. */
+    val episode: Int?,
+)
+
+fun primaryAction(
+    entry: LibraryEntry?,
+    watchedThreshold: Float,
+    now: Instant,
+    zone: ZoneId = ZoneId.systemDefault(),
+): PrimaryAction {
+    if (entry == null) return PrimaryAction("Смотреть", enabled = true, episode = 1)
+    val next = entry.nextEpisode(watchedThreshold)
     val position = entry.watch
-        ?.takeIf { entry.progressFraction(threshold) != null && it.positionMs > 0 }
+        ?.takeIf { entry.progressFraction(watchedThreshold) != null && it.positionMs > 0 }
         ?.positionMs
-    return when {
-        position != null -> "Продолжить с ${formatTime(position)}"
-        next <= 1 -> "Смотреть 1 серию"
-        else -> "Продолжить $next серию"
+    if (position != null) return PrimaryAction("Продолжить с ${formatTime(position)}", true, next)
+
+    val aired = entry.anime.airedEpisodes()
+    if (next <= aired) {
+        val label = if (next <= 1) "Смотреть 1 серию" else "Продолжить $next серию"
+        return PrimaryAction(label, enabled = true, episode = next)
     }
+    val date = entry.anime.nextEpisodeAt?.takeIf { !it.isBefore(now) }
+    val label = when {
+        date != null -> "$next серия выйдет ${relativeDay(date, now, zone)}"
+        aired <= 0 -> "Ещё не вышло"
+        else -> "Ждём $next серию"
+    }
+    return PrimaryAction(label, enabled = false, episode = null)
 }

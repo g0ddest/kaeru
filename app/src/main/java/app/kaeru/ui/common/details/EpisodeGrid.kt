@@ -5,6 +5,7 @@ import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.model.WatchState
+import app.kaeru.ui.common.design.airedEpisodes
 import java.time.Instant
 
 /**
@@ -26,8 +27,9 @@ data class EpisodeCell(
  * The season as a grid: every episode the show has announced, marked with what is behind the
  * viewer, what they are in the middle of, and what has not arrived yet.
  *
- * Two different numbers decide the shape. What can be played is what has aired; how far the grid
- * runs is what the season was announced to hold — so an episode still to come is drawn as waiting
+ * Two different numbers decide the shape. What can be played is what has aired — read through
+ * `airedEpisodes()`, so an announcement's promised episodes are drawn as waiting rather than
+ * offered; how far the grid runs is what the season was announced to hold — so an episode still to come is drawn as waiting
  * rather than missing. Progress the viewer actually has wins over both, because an episode they
  * watched plainly exists whatever the catalogue says about it.
  *
@@ -41,7 +43,7 @@ data class EpisodeCell(
 fun episodeCells(anime: Anime, rate: UserRate?, watch: WatchState?, watchedThreshold: Float): List<EpisodeCell> {
     val seen = rate?.episodes ?: 0
     val reached = maxOf(seen, watch?.episode ?: 0)
-    val playable = maxOf(anime.availableEpisodes, reached)
+    val playable = maxOf(anime.airedEpisodes(), reached)
     val announced = maxOf(anime.episodes, playable)
     // The rule for "is there a position worth showing" lives on LibraryEntry and is the same rule
     // the watch button obeys; a title outside the list borrows an empty rate to ask it, rather

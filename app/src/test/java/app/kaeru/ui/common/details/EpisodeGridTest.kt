@@ -107,6 +107,22 @@ class EpisodeGridTest {
     }
 
     @Test
+    fun `an ongoing season nobody has announced the length of runs to what is out`() {
+        val cells = episodeCells(anime(episodes = 0, aired = 24), rate(20), null, threshold)
+        assertEquals(24, cells.size)
+        assertTrue(cells.all { it.aired })
+        assertEquals(20, cells.count { it.watched })
+    }
+
+    @Test
+    fun `an announcement lists the episodes it promised as still to come`() {
+        // Twelve announced, none made: the grid shows the season without opening any of it.
+        val cells = episodeCells(anime(episodes = 12, aired = 0, AnimeStatus.ANONS), null, null, threshold)
+        assertEquals(12, cells.size)
+        assertTrue(cells.none { it.aired })
+    }
+
+    @Test
     fun `a released season with no aired count still lists what it announced`() {
         val cells = episodeCells(anime(episodes = 12, aired = 0, AnimeStatus.RELEASED), null, null, threshold)
         assertEquals(12, cells.size)

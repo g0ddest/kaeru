@@ -65,6 +65,8 @@ fun TranslationPickerSheet(
     currentId: Int?,
     loading: Boolean,
     errorMessage: String?,
+    /** False while the last pick is still being written, so the same row cannot be sent twice. */
+    enabled: Boolean,
     onRetry: () -> Unit,
     onPick: (Translation) -> Unit,
     onDismiss: () -> Unit,
@@ -89,7 +91,12 @@ fun TranslationPickerSheet(
             )
             else -> LazyColumn(Modifier.heightIn(max = ListHeight)) {
                 items(translations, key = { it.id }) { track ->
-                    TrackRow(track, selected = track.id == currentId, onClick = { onPick(track) })
+                    TrackRow(
+                        track,
+                        selected = track.id == currentId,
+                        enabled = enabled,
+                        onClick = { onPick(track) },
+                    )
                 }
             }
         }
@@ -108,13 +115,13 @@ private fun LoadingTracks() = SkeletonGroup {
 }
 
 @Composable
-private fun TrackRow(track: Translation, selected: Boolean, onClick: () -> Unit) {
+private fun TrackRow(track: Translation, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
             .defaultMinSize(minHeight = KaeruTokens.MinTouchTarget)
             .kaeruFocus(KaeruTokens.CardShape)
-            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = KaeruTokens.GutterPhone, vertical = KaeruTokens.Space3),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
@@ -123,7 +130,7 @@ private fun TrackRow(track: Translation, selected: Boolean, onClick: () -> Unit)
             Text(
                 track.title,
                 style = MaterialTheme.typography.titleSmall,
-                color = KaeruText,
+                color = if (enabled) KaeruText else KaeruSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

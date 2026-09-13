@@ -16,6 +16,7 @@ import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.player.FakeEpisodeSource
 import app.kaeru.test.MainDispatcherRule
 import java.io.IOException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -201,6 +202,69 @@ class DetailsViewModelTest {
             advanceUntilIdle()
             assertNotNull(vm.uiState.value.errorMessage)
         }
+
+    @Test
+    fun `the chooser shows it is reading the catalogue while it reads it`() = runTest(main.dispatcher) {
+        source.translationsGate = CompletableDeferred()
+        val vm = viewModel(FakeRepository(item))
+        advanceUntilIdle()
+
+        vm.loadTranslations()
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.loadingTranslations)
+
+        source.translationsGate?.complete(Unit)
+        advanceUntilIdle()
+        assertFalse(vm.uiState.value.loadingTranslations)
+        assertEquals(2, vm.uiState.value.translations.size)
+    }
+
+    @Test
+    fun `the dub control shows the write in flight`() = runTest(main.dispatcher) {
+        val vm = viewModel(FakeRepository(item))
+        advanceUntilIdle()
+
+        watchStates.block()
+        vm.pickTranslation(source.anilibria)
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.savingTranslation)
+
+        watchStates.release()
+        advanceUntilIdle()
+        assertFalse(vm.uiState.value.savingTranslation)
+    }
+
+    @Test
+    fun `retrying a failed dub repeats the dub, not the load`() = runTest(main.dispatcher) {
+        val repo = FakeRepository(item)
+        watchStates.failSaveWith = IllegalStateException("disk")
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+
+        vm.pickTranslation(source.studioBanda)
+        advanceUntilIdle()
+        assertNotNull(vm.uiState.value.errorMessage)
+
+        watchStates.failSaveWith = null
+        repo.refreshed = null
+        vm.retry()
+        advanceUntilIdle()
+        assertEquals(source.studioBanda.id, watchStates.saved.last().translationId)
+        assertNull("the load was not repeated", repo.refreshed)
+        assertNull(vm.uiState.value.errorMessage)
+    }
+
+    @Test
+    fun `retrying anything else repeats the load`() = runTest(main.dispatcher) {
+        val repo = FakeRepository(item)
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+
+        repo.refreshed = null
+        vm.retry()
+        advanceUntilIdle()
+        assertEquals(7, repo.refreshed)
+    }
 
     // --- marking an episode watched --------------------------------------------------------------
 
