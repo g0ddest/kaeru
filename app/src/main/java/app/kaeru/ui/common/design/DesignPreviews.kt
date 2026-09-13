@@ -84,6 +84,24 @@ private fun HeroBannerPreview() = KaeruTheme {
 }
 
 /**
+ * A hero about something nobody can press yet: the label says why, and the button says so too.
+ */
+@Preview(showBackground = true, backgroundColor = DARK, heightDp = 560)
+@Composable
+private fun HeroBannerWaitingPreview() = KaeruTheme {
+    HeroBanner(
+        title = FRIEREN,
+        statusLine = "Вышло 8 серий",
+        backdropUrl = null,
+        primaryLabel = "9 серия выйдет завтра",
+        onPrimary = {},
+        primaryEnabled = false,
+        secondaryLabel = "Подробнее",
+        onSecondary = {},
+    )
+}
+
+/**
  * The narrow phone, where «Продолжить с 14:20» and «Подробнее» together are wider than the screen.
  * Neither label is allowed to truncate, so the pair wraps.
  */

@@ -32,6 +32,11 @@ import app.kaeru.ui.common.theme.KaeruText
  * as the same card showing a different title.
  *
  * [statusLine] is a sentence, not a joined meta string; build it with `episodeLine`.
+ *
+ * [primaryEnabled] is the other half of what `primaryAction` decides, and it travels with the
+ * label rather than being assumed from it: «9 серия выйдет завтра» is a sentence about why
+ * nothing can start, and a hero that rendered it as a pressable button would promise an episode
+ * that does not exist.
  */
 @Composable
 fun HeroBanner(
@@ -41,6 +46,7 @@ fun HeroBanner(
     primaryLabel: String,
     onPrimary: () -> Unit,
     modifier: Modifier = Modifier,
+    primaryEnabled: Boolean = true,
     secondaryLabel: String? = null,
     onSecondary: (() -> Unit)? = null,
 ) {
@@ -87,7 +93,7 @@ fun HeroBanner(
                 horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space3),
                 verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space3),
             ) {
-                PrimaryButton(primaryLabel, onPrimary, icon = Icons.Default.PlayArrow)
+                PrimaryButton(primaryLabel, onPrimary, icon = Icons.Default.PlayArrow, enabled = primaryEnabled)
                 if (secondaryLabel != null && onSecondary != null) {
                     SecondaryButton(secondaryLabel, onSecondary)
                 }

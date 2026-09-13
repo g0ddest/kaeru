@@ -218,16 +218,20 @@ private fun Hero(
     onAnime: (Int) -> Unit,
 ) {
     val anime = item.entry.anime
+    // Routed through the same decision the title screen uses, so a hero and a title screen can
+    // never name different episodes — and both halves of that decision are used. The feed raises
+    // only playable items to the top today, which makes `enabled` look like a formality; it is one
+    // feed rule away from not being, and a hero that ignored it would offer an episode nobody can
+    // play.
+    val action = primaryAction(item.entry, threshold, now)
     HeroBanner(
         title = anime.title,
         statusLine = episodeLine(item, now),
         // A screenshot is the show in motion; the poster is the fallback, cropped to the same shape.
         backdropUrl = anime.screenshotUrls.firstOrNull() ?: anime.posterUrl,
-        // Routed through the same decision the title screen uses, so a hero and a title
-        // screen can never name different episodes. The feed only ever raises a playable
-        // item to the top, so this one is always enabled.
-        primaryLabel = primaryAction(item.entry, threshold, now).label,
-        onPrimary = { onPlay(anime.id, item.episode) },
+        primaryLabel = action.label,
+        onPrimary = { onPlay(anime.id, action.episode ?: item.episode) },
+        primaryEnabled = action.enabled,
         secondaryLabel = DETAILS,
         onSecondary = { onAnime(anime.id) },
     )
