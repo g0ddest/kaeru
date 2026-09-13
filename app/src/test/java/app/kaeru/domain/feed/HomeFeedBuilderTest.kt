@@ -2,6 +2,7 @@ package app.kaeru.domain.feed
 
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
+import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.FeedKind
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
@@ -26,10 +27,80 @@ class HomeFeedBuilderTest {
     private fun entry(
         anime: Anime, status: ListStatus = ListStatus.WATCHING, watched: Int = 0,
         updatedAt: Instant = now, watch: WatchState? = null,
-    ) = LibraryEntry(anime, UserRate(anime.id.toLong(), anime.id, status, watched, updatedAt), watch)
+        progress: List<EpisodeProgress> = emptyList(),
+    ) = LibraryEntry(anime, UserRate(anime.id.toLong(), anime.id, status, watched, updatedAt), watch, progress)
 
     private fun watching(animeId: Int, episode: Int, fraction: Float, at: Instant = now) =
         WatchState(animeId, episode, (fraction * 1_000_000).toLong(), 1_000_000, null, null, at)
+
+    private fun stopped(animeId: Int, episode: Int, fraction: Float, at: Instant = now) =
+        EpisodeProgress(animeId, episode, (fraction * 1_000_000).toLong(), 1_000_000, at)
+
+    // --- positions kept per episode ---------------------------------------------------------
+
+    @Test
+    fun `a mis-tap on an earlier episode leaves the card on the episode being watched`() {
+        val a = anime(1, AnimeStatus.ONGOING, episodes = 24, aired = 10)
+        val feed = builder.build(
+            listOf(
+                entry(
+                    a, watched = 6,
+                    // The sixth was opened last and holds ten seconds; the seventh holds forty
+                    // minutes. The card belongs to the seventh.
+                    watch = watching(1, 6, 0.01f),
+                    progress = listOf(stopped(1, 7, 0.4f, now.minus(Duration.ofHours(2))), stopped(1, 6, 0.01f)),
+                ),
+            ),
+            now,
+        )
+
+        assertEquals(FeedKind.CONTINUE, feed.top?.kind)
+        assertEquals(7, feed.top?.episode)
+    }
+
+    @Test
+    fun `an episode nobody really started is no card at all`() {
+        val a = anime(1, AnimeStatus.ONGOING, episodes = 24, aired = 10)
+        val feed = builder.build(
+            listOf(entry(a, watched = 6, watch = watching(1, 7, 0.01f), progress = listOf(stopped(1, 7, 0.01f)))),
+            now,
+        )
+
+        assertTrue(feed.continueWatching.isEmpty())
+        assertEquals(FeedKind.NEW_EPISODE, feed.top?.kind)
+        assertEquals(7, feed.top?.episode)
+    }
+
+    @Test
+    fun `the row is ordered by when each continued episode was last touched`() {
+        val older = anime(1, AnimeStatus.ONGOING, episodes = 24, aired = 10)
+        val fresher = anime(2, AnimeStatus.ONGOING, episodes = 24, aired = 10)
+        val feed = builder.build(
+            listOf(
+                entry(older, watched = 6, progress = listOf(stopped(1, 7, 0.4f, now.minus(Duration.ofDays(2))))),
+                entry(fresher, watched = 3, progress = listOf(stopped(2, 4, 0.4f, now.minus(Duration.ofMinutes(5))))),
+            ),
+            now,
+        )
+
+        assertEquals(listOf(2, 1), feed.continueWatching.map { it.entry.anime.id })
+    }
+
+    @Test
+    fun `a later episode outranks an earlier one still unfinished`() {
+        val a = anime(1, AnimeStatus.ONGOING, episodes = 24, aired = 10)
+        val feed = builder.build(
+            listOf(
+                entry(
+                    a, watched = 3,
+                    progress = listOf(stopped(1, 4, 0.4f), stopped(1, 9, 0.2f)),
+                ),
+            ),
+            now,
+        )
+
+        assertEquals(9, feed.continueWatching.single().episode)
+    }
 
     @Test
     fun `continue watching comes first and points at unfinished episode`() {

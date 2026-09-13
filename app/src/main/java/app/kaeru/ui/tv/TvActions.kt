@@ -10,7 +10,7 @@ data class TvEpisodeCell(
     /** Out already, so there is something to play. Anything watched counts, whatever the catalogue says. */
     val aired: Boolean,
     val watched: Boolean,
-    /** How far into this episode the viewer got, or null when it is not the one in progress. */
+    /** How far into this episode the viewer got, or null when they have not really started it. */
     val progress: Float?,
 )
 
@@ -25,7 +25,7 @@ data class TvEpisodeCell(
  * it is reached from search or from the catalogue rows: everything is then simply unwatched.
  */
 fun tvEpisodeGrid(anime: Anime, entry: LibraryEntry?, watchedThreshold: Float): List<TvEpisodeCell> =
-    episodeCells(anime, entry?.rate, entry?.watch, watchedThreshold).map { cell ->
+    episodeCells(anime, entry?.rate, entry?.watch, entry?.progress ?: emptyList(), watchedThreshold).map { cell ->
         TvEpisodeCell(
             episode = cell.number,
             aired = cell.aired,

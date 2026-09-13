@@ -1,6 +1,7 @@
 package app.kaeru.ui.common.details
 
 import app.kaeru.domain.model.Anime
+import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.UserRate
@@ -18,7 +19,7 @@ import java.time.Instant
 data class EpisodeCell(
     val number: Int,
     val watched: Boolean,
-    /** How far into this episode the viewer got, or null when it is not the one in progress. */
+    /** How far into this episode the viewer got, or null when they have not really started it. */
     val progress: Float?,
     val aired: Boolean,
 )
@@ -37,23 +38,34 @@ data class EpisodeCell(
  * episodes has no season to draw, and a lone placeholder tile would be an invitation to press
  * something that does not exist.
  *
+ * Every episode with a position of its own carries a strip, not only the one being continued: a
+ * viewer who left the fourth half-watched and went on to the ninth has two episodes to come back
+ * to, and a grid that drew only one of them would be hiding the other.
+ *
  * [rate] and [watch] are nullable because this screen also opens on an anime that is in no list:
  * everything is then simply unwatched.
  */
-fun episodeCells(anime: Anime, rate: UserRate?, watch: WatchState?, watchedThreshold: Float): List<EpisodeCell> {
+fun episodeCells(
+    anime: Anime,
+    rate: UserRate?,
+    watch: WatchState?,
+    progress: List<EpisodeProgress>,
+    watchedThreshold: Float,
+): List<EpisodeCell> {
+    // The rules for "which episodes does this device know about" and "is there a position worth
+    // showing" live on LibraryEntry and are the ones the watch button obeys; a title outside the
+    // list borrows an empty rate to ask them, rather than this file growing a second copy that
+    // can drift from the first.
+    val entry = LibraryEntry(anime, rate ?: emptyRate(anime.id), watch, progress)
     val seen = rate?.episodes ?: 0
-    val reached = maxOf(seen, watch?.episode ?: 0)
+    val reached = maxOf(seen, entry.episodeProgress.maxOfOrNull { it.episode } ?: 0)
     val playable = maxOf(anime.airedEpisodes(), reached)
     val announced = maxOf(anime.episodes, playable)
-    // The rule for "is there a position worth showing" lives on LibraryEntry and is the same rule
-    // the watch button obeys; a title outside the list borrows an empty rate to ask it, rather
-    // than this file growing a second copy that can drift from the first.
-    val inProgress = LibraryEntry(anime, rate ?: emptyRate(anime.id), watch).progressFraction(watchedThreshold)
     return (1..announced).map { episode ->
         EpisodeCell(
             number = episode,
             watched = episode <= seen,
-            progress = inProgress?.takeIf { watch?.episode == episode },
+            progress = entry.episodeFraction(episode, watchedThreshold),
             aired = episode <= playable,
         )
     }

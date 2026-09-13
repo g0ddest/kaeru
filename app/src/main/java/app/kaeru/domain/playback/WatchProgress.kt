@@ -1,6 +1,8 @@
 package app.kaeru.domain.playback
 
+import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.WatchState
+import app.kaeru.domain.repository.EpisodeProgressRepository
 import app.kaeru.domain.repository.WatchStateRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
@@ -22,9 +24,15 @@ import java.time.Instant
  *
  * [report] returns as soon as the sample is accepted, which is immediately unless it is
  * the one that has to do the writing.
+ *
+ * Each accepted sample lands in two places. `episode_progress` keeps one row per episode and is
+ * what «продолжить» is read from, so a viewer who opens another episode still finds this one where
+ * they left it. `watch_state` keeps the single row per anime that says which episode played last,
+ * in which track and Kodik season.
  */
 class WatchProgress(
     private val watchStates: WatchStateRepository,
+    private val episodeProgress: EpisodeProgressRepository,
     private val clock: Clock,
 ) {
     private data class Sample(
@@ -98,7 +106,23 @@ class WatchProgress(
     }
 
     private suspend fun persist(sample: Sample) {
-        try {
+        // Two rows, written independently. The per-episode row is where the viewer's place in
+        // this episode lives and is the one that must survive them opening another episode, so a
+        // failure to write the anime's pointer must not take it down with it, or the other way
+        // round.
+        bestEffort {
+            episodeProgress.save(
+                EpisodeProgress(
+                    animeId = sample.animeId,
+                    episode = sample.episode,
+                    positionMs = sample.positionMs,
+                    durationMs = sample.durationMs,
+                    // When the viewer was there, not when the queue got to it.
+                    updatedAt = sample.at,
+                ),
+            )
+        }
+        bestEffort {
             val previous = watchStates.observe(sample.animeId).first()
             val track = sample.translationId ?: previous?.translationId
             watchStates.save(
@@ -117,11 +141,20 @@ class WatchProgress(
                     updatedAt = sample.at,
                 ),
             )
+        }
+    }
+
+    /**
+     * A dropped position is worth nothing to say: the next sample is seconds away, and playback
+     * must not fail because a write did.
+     */
+    private suspend fun bestEffort(block: suspend () -> Unit) {
+        try {
+            block()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            // A dropped position is worth nothing to say: the next sample is seconds away,
-            // and playback must not fail because a write did.
+            // Deliberately silent; see above.
         }
     }
 }

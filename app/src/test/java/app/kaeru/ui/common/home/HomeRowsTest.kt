@@ -4,6 +4,7 @@ import app.kaeru.domain.discover.Season
 import app.kaeru.domain.discover.SeasonKind
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
+import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.FeedItem
 import app.kaeru.domain.model.FeedKind
 import app.kaeru.domain.model.HomeFeed
@@ -56,14 +57,19 @@ class HomeRowsTest {
         aired: Int = 8,
         nextAt: Instant? = null,
         status: AnimeStatus = AnimeStatus.ONGOING,
+        progress: List<EpisodeProgress> = emptyList(),
     ) = LibraryEntry(
         anime = anime(id, episodes, aired, nextAt, status),
         rate = UserRate(id.toLong(), id, ListStatus.WATCHING, watched, now),
         watch = watch,
+        progress = progress,
     )
 
     private fun watch(id: Int, episode: Int, positionMs: Long, durationMs: Long) =
         WatchState(id, episode, positionMs, durationMs, null, null, now)
+
+    private fun stopped(id: Int, episode: Int, positionMs: Long, durationMs: Long = 1_440_000) =
+        EpisodeProgress(id, episode, positionMs, durationMs, now)
 
     private fun item(entry: LibraryEntry, episode: Int, kind: FeedKind) = FeedItem(entry, episode, kind)
 
@@ -129,6 +135,23 @@ class HomeRowsTest {
     fun `a continued card shows how far in it is and how much is left`() {
         val entry = entry(2, watch = watch(2, 7, 600_000, 1_440_000))
         val card = rows(feed(continueWatching = listOf(item(entry, 7, FeedKind.CONTINUE)))).single().items.single()
+        assertEquals("7 серия", card.badge)
+        assertEquals("осталось 14 мин", card.subtitle)
+        assertEquals(600_000f / 1_440_000f, card.progress!!, 0.001f)
+    }
+
+    @Test
+    fun `the strip and the time left describe the badged episode, not the one opened last`() {
+        // Ten seconds of the sixth by mistake, ten minutes of the seventh. The card is about the
+        // seventh, and so is every word and pixel on it.
+        val entry = entry(
+            2,
+            watch = watch(2, 6, 10_000, 1_440_000),
+            progress = listOf(stopped(2, 7, 600_000), stopped(2, 6, 10_000)),
+        )
+
+        val card = rows(feed(continueWatching = listOf(item(entry, 7, FeedKind.CONTINUE)))).single().items.single()
+
         assertEquals("7 серия", card.badge)
         assertEquals("осталось 14 мин", card.subtitle)
         assertEquals(600_000f / 1_440_000f, card.progress!!, 0.001f)

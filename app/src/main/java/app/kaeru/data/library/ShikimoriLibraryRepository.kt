@@ -2,6 +2,7 @@ package app.kaeru.data.library
 
 import app.kaeru.data.auth.AccountSession
 import app.kaeru.data.local.AnimeDao
+import app.kaeru.data.local.EpisodeProgressDao
 import app.kaeru.data.local.UserRateDao
 import app.kaeru.data.local.WatchStateDao
 import app.kaeru.data.local.mergeShort
@@ -41,6 +42,7 @@ class ShikimoriLibraryRepository @Inject constructor(
     private val animeDao: AnimeDao,
     private val userRateDao: UserRateDao,
     private val watchStateDao: WatchStateDao,
+    private val episodeProgressDao: EpisodeProgressDao,
     private val prefs: AppPreferences,
     private val session: AccountSession,
     private val posters: PosterEnricher,
@@ -61,13 +63,21 @@ class ShikimoriLibraryRepository @Inject constructor(
     }
 
     private fun observeAccountLibrary(): Flow<List<LibraryEntry>> = combine(
-        animeDao.observeAll(), userRateDao.observeAll(), watchStateDao.observeAll(),
-    ) { animes, rates, watches ->
+        animeDao.observeAll(), userRateDao.observeAll(), watchStateDao.observeAll(), episodeProgressDao.observeAll(),
+    ) { animes, rates, watches, progress ->
         val animeById = animes.associateBy { it.id }
         val watchById = watches.associateBy { it.animeId }
+        // Grouped once for the whole library rather than filtered per entry: the table holds a row
+        // per episode ever started, so a scan per anime would be the library squared.
+        val progressByAnime = progress.groupBy { it.animeId }
         rates.mapNotNull { rate ->
             val anime = animeById[rate.animeId] ?: return@mapNotNull null
-            LibraryEntry(anime.toDomain(), rate.toDomain(), watchById[rate.animeId]?.toDomain())
+            LibraryEntry(
+                anime.toDomain(),
+                rate.toDomain(),
+                watchById[rate.animeId]?.toDomain(),
+                progressByAnime[rate.animeId].orEmpty().map { it.toDomain() },
+            )
         }
     }
 

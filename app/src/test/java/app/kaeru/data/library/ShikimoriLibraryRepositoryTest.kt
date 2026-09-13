@@ -69,7 +69,7 @@ class ShikimoriLibraryRepositoryTest {
     }
 
     private fun repositoryAt(at: Instant) = ShikimoriLibraryRepository(
-        api, db.animeDao(), db.userRateDao(), db.watchStateDao(), prefs, session,
+        api, db.animeDao(), db.userRateDao(), db.watchStateDao(), db.episodeProgressDao(), prefs, session,
         PosterEnricher(api), dispatcher, Clock.fixed(at, ZoneOffset.UTC),
     )
 

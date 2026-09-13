@@ -93,7 +93,7 @@ fun homeCard(
         item,
         badge = episodeBadge(item.episode),
         subtitle = item.remaining(),
-        progress = item.entry.progressFraction(threshold),
+        progress = item.entry.episodeFraction(item.episode, threshold),
     )
     FeedKind.NEXT_UP -> card(item, badge = episodeBadge(item.episode))
     FeedKind.UPCOMING -> {
@@ -131,8 +131,7 @@ private fun card(
 private fun episodeBadge(episode: Int): String = "$episode серия"
 
 /** How much of the badged episode is left, and nothing at all about any other episode. */
-private fun FeedItem.remaining(): String? = entry.watch
-    ?.takeIf { it.episode == episode }
+private fun FeedItem.remaining(): String? = entry.progressAt(episode)
     ?.let { remainingLine(it.positionMs, it.durationMs) }
 
 /** «24 серии» for a planned title, or nothing when the catalogue does not know the length yet. */
