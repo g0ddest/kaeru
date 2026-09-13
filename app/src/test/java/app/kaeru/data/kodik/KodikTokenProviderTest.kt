@@ -52,6 +52,8 @@ class KodikTokenProviderTest {
         configuredToken = configuredToken,
         clock = clock,
         addPlayersUrl = server.url("/add-players.min.js?v=2").toString(),
+        // The real thing: this call blocks on a socket, and MockWebServer is a socket.
+        io = Dispatchers.IO,
     )
 
     private fun script(token: String) =

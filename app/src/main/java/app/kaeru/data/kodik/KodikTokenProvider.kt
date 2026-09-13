@@ -5,8 +5,9 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import app.kaeru.di.IoDispatcher
 import app.kaeru.di.KodikPlayerClient
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -62,6 +63,7 @@ class DefaultKodikTokenProvider @Inject constructor(
     @param:Named("kodikConfiguredToken") private val configuredToken: String,
     private val clock: Clock,
     @param:Named("kodikAddPlayersUrl") private val addPlayersUrl: String,
+    @param:IoDispatcher private val io: CoroutineDispatcher,
 ) : KodikTokenProvider {
 
     private val overrideKey = KodikTokenKeys.override
@@ -103,7 +105,7 @@ class DefaultKodikTokenProvider @Inject constructor(
         return token
     }
 
-    private suspend fun download(url: String): String = withContext(Dispatchers.IO) {
+    private suspend fun download(url: String): String = withContext(io) {
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", KodikConstants.BROWSER_UA)

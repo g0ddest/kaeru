@@ -9,6 +9,7 @@ import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
 import app.kaeru.test.MutableClock
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -61,6 +62,8 @@ class KodikSourceProviderTest {
             extractor = KodikLinkExtractor(
                 client = OkHttpClient(),
                 playerHost = server.url("/").toString().removeSuffix("/"),
+                // The real thing: these calls block on a socket, and MockWebServer is a socket.
+                io = Dispatchers.IO,
             ),
             clock = clock,
         )

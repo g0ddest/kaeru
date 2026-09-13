@@ -1,5 +1,6 @@
 package app.kaeru.data.kodik
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
@@ -34,6 +35,8 @@ class KodikLinkExtractorTest {
         extractor = KodikLinkExtractor(
             client = OkHttpClient(),
             playerHost = server.url("/").toString().removeSuffix("/"),
+            // The real thing: these calls block on a socket, and MockWebServer is a socket.
+            io = Dispatchers.IO,
         )
     }
 

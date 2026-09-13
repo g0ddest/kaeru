@@ -1,7 +1,8 @@
 package app.kaeru.data.kodik
 
+import app.kaeru.di.IoDispatcher
 import app.kaeru.di.KodikPlayerClient
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
 import okhttp3.HttpUrl
@@ -27,6 +28,7 @@ import javax.inject.Singleton
 class KodikLinkExtractor @Inject constructor(
     @param:KodikPlayerClient private val client: OkHttpClient,
     @param:Named("kodikPlayerHost") private val playerHost: String,
+    @param:IoDispatcher private val io: CoroutineDispatcher,
 ) {
 
     /**
@@ -117,7 +119,7 @@ class KodikLinkExtractor @Inject constructor(
         return KodikHtmlParser.parse(execute(request)).copy(sourceUrl = url.toString())
     }
 
-    private suspend fun execute(request: Request): String = withContext(Dispatchers.IO) {
+    private suspend fun execute(request: Request): String = withContext(io) {
         try {
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) throw KodikError.Rejected(response.code)
