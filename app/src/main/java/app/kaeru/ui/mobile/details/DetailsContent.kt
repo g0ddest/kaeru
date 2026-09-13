@@ -86,16 +86,6 @@ private fun airStatusLabel(status: AnimeStatus): String = when (status) {
     AnimeStatus.ANONS -> "Анонс"
 }
 
-/** Where this title sits in the viewer's list, in the words Shikimori uses for it. */
-fun statusLabel(status: ListStatus): String = when (status) {
-    ListStatus.WATCHING -> "Смотрю"
-    ListStatus.PLANNED -> "В планах"
-    ListStatus.COMPLETED -> "Завершено"
-    ListStatus.ON_HOLD -> "Отложено"
-    ListStatus.DROPPED -> "Брошено"
-    ListStatus.REWATCHING -> "Пересматриваю"
-}
-
 /**
  * What the dub control says.
  *

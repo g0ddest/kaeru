@@ -4,7 +4,7 @@ import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.ui.common.design.episodesLabel
 import app.kaeru.ui.common.design.pluralEpisodes
-import app.kaeru.ui.mobile.details.statusLabel
+import app.kaeru.ui.common.design.statusLabel
 
 /**
  * The order the tabs sit in, which is the order a viewer reaches for them rather than the order

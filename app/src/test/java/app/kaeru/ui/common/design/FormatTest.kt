@@ -13,6 +13,7 @@ import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.model.WatchState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -353,5 +354,26 @@ class FormatTest {
         val titles = seasonChoices(Season(SeasonKind.FALL, 2026)).map(::seasonTitle)
         assertEquals(listOf("Лето 2026", "Осень 2026", "Зима 2027"), titles)
         assertTrue(titles.none { it.contains("·") || it == it.uppercase() })
+    }
+
+    // --- statusLabel ---------------------------------------------------------------------------
+
+    @Test
+    fun `every list status has a Russian label in sentence case`() {
+        assertEquals("Смотрю", statusLabel(ListStatus.WATCHING))
+        assertEquals("В планах", statusLabel(ListStatus.PLANNED))
+        assertEquals("Завершено", statusLabel(ListStatus.COMPLETED))
+        assertEquals("Отложено", statusLabel(ListStatus.ON_HOLD))
+        assertEquals("Брошено", statusLabel(ListStatus.DROPPED))
+        assertEquals("Пересматриваю", statusLabel(ListStatus.REWATCHING))
+    }
+
+    /** The tabs and the title screen's menu both read these, so neither may shout or use a dot. */
+    @Test
+    fun `no status label shouts or carries a separator`() {
+        ListStatus.entries.map(::statusLabel).forEach { label ->
+            assertFalse(label, label.contains("·"))
+            assertNotEquals(label, label.uppercase())
+        }
     }
 }
