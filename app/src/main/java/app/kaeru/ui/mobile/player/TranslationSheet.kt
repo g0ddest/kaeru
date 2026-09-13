@@ -92,6 +92,8 @@ fun QualitySheet(
                 title = "${quality.height}p",
                 caption = null,
                 selected = quality == current,
+                // A quality rung is not something a viewer has a habit about; only tracks are.
+                oftenChosen = false,
                 onClick = { onPick(quality) },
             )
         }
@@ -113,7 +115,7 @@ private fun SheetRow(
     title: String,
     caption: String?,
     selected: Boolean,
-    oftenChosen: Boolean = false,
+    oftenChosen: Boolean,
     onClick: () -> Unit,
 ) {
     Row(
