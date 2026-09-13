@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruDivider
@@ -52,7 +53,10 @@ fun PrimaryButton(
     Button(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.heightIn(min = KaeruTokens.ButtonHeight),
+        modifier = modifier
+            // A ring in text colour, not amber: an amber ring around an amber button is invisible.
+            .kaeruFocus(KaeruTokens.ButtonShape, borderColor = KaeruText)
+            .heightIn(min = KaeruTokens.ButtonHeight),
         shape = KaeruTokens.ButtonShape,
         colors = ButtonDefaults.buttonColors(
             containerColor = KaeruAccent,
@@ -67,7 +71,7 @@ fun PrimaryButton(
             Icon(icon, contentDescription = null, modifier = Modifier.size(IconSize))
             Spacer(Modifier.width(KaeruTokens.Space2))
         }
-        Text(text, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+        Text(text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -86,7 +90,9 @@ fun SecondaryButton(
     OutlinedButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.heightIn(min = KaeruTokens.ButtonHeight),
+        modifier = modifier
+            .kaeruFocus(KaeruTokens.ButtonShape)
+            .heightIn(min = KaeruTokens.ButtonHeight),
         shape = KaeruTokens.ButtonShape,
         border = BorderStroke(1.dp, KaeruDivider),
         colors = ButtonDefaults.outlinedButtonColors(
@@ -101,7 +107,7 @@ fun SecondaryButton(
             Icon(icon, contentDescription = null, modifier = Modifier.size(IconSize))
             Spacer(Modifier.width(KaeruTokens.Space2))
         }
-        Text(text, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+        Text(text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -125,7 +131,9 @@ fun IconAction(
     enabled: Boolean = true,
 ) {
     Box(
-        modifier.defaultMinSize(KaeruTokens.MinTouchTarget, KaeruTokens.MinTouchTarget),
+        modifier
+            .defaultMinSize(KaeruTokens.MinTouchTarget, KaeruTokens.MinTouchTarget)
+            .kaeruFocus(CircleShape),
         contentAlignment = Alignment.Center,
     ) {
         if (overArtwork) {

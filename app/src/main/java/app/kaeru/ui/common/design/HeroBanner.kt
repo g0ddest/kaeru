@@ -5,7 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -78,9 +78,14 @@ fun HeroBanner(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = KaeruTokens.Space2),
             )
-            Row(
+            // «Продолжить с 14:20» beside «Подробнее» is about 358dp of buttons against the
+            // 328dp inside the gutters of a 360dp phone, and the plan's own sketch puts exactly
+            // those two side by side. Squeezing the primary would truncate the one label that
+            // says what the press does, so the pair wraps to a second line instead.
+            FlowRow(
                 Modifier.padding(top = KaeruTokens.Space4),
                 horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space3),
+                verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space3),
             ) {
                 PrimaryButton(primaryLabel, onPrimary, icon = Icons.Default.PlayArrow)
                 if (secondaryLabel != null && onSecondary != null) {

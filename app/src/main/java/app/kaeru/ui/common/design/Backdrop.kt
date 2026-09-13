@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
 import app.kaeru.ui.common.theme.KaeruBackground
 import app.kaeru.ui.common.theme.KaeruSurface
@@ -31,9 +32,11 @@ fun Backdrop(
     Box(modifier.background(KaeruSurface)) {
         if (url != null) {
             AsyncImage(
-                model = url,
+                model = kaeruImage(url),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
+                placeholder = ColorPainter(KaeruSurface),
+                error = ColorPainter(KaeruSurface),
                 modifier = Modifier.matchParentSize(),
             )
         }

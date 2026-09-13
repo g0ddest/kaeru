@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -115,6 +116,33 @@ private fun TvControlsPreview() = KaeruTvTheme {
     }
 }
 
+/**
+ * The focus treatment on the controls a television shares with the phone. A static preview cannot
+ * move focus, so every control here is forced into its focused state at once; on a real screen
+ * exactly one of them is.
+ */
+@Preview(showBackground = true, backgroundColor = DARK, device = Devices.TV_1080p)
+@Composable
+private fun TvFocusedControlsPreview() = KaeruTvTheme {
+    CompositionLocalProvider(LocalFocusPreview provides true) {
+        Column(
+            Modifier.fillMaxSize().padding(KaeruTokens.GutterTv),
+            verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space8),
+        ) {
+            RowHeader("Продолжить", gutter = 0.dp, action = RowAction("Всё") {})
+            Row(horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space6)) {
+                PrimaryButton("Смотреть 1 серию", {}, icon = Icons.Default.PlayArrow)
+                SecondaryButton("Подробнее", {})
+                IconAction(Icons.Default.Search, "Поиск", {})
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space6)) {
+                StatusPill("Смотрю", selected = true, onClick = {})
+                StatusPill("В планах", selected = false, onClick = {})
+            }
+        }
+    }
+}
+
 @Preview(showBackground = true, backgroundColor = DARK, device = Devices.TV_1080p)
 @Composable
 private fun TvEmptyStatePreview() = KaeruTvTheme {
@@ -144,6 +172,11 @@ private fun TvErrorStatePreview() = KaeruTvTheme {
 private fun TvSkeletonPreview() = KaeruTvTheme {
     Column(Modifier.fillMaxSize()) {
         SkeletonHero(aspect = 16f / 5f)
-        SkeletonRow(count = 4, modifier = Modifier.padding(top = KaeruTokens.Space6))
+        SkeletonRow(
+            modifier = Modifier.padding(top = KaeruTokens.Space6),
+            count = 4,
+            gutter = KaeruTokens.GutterTv,
+            posterWidth = KaeruTokens.PosterWidthTv,
+        )
     }
 }

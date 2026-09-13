@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
@@ -77,6 +78,24 @@ private fun HeroBannerPreview() = KaeruTheme {
     )
 }
 
+/**
+ * The narrow phone, where «Продолжить с 14:20» and «Подробнее» together are wider than the screen.
+ * Neither label is allowed to truncate, so the pair wraps.
+ */
+@Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 560)
+@Composable
+private fun HeroBannerNarrowPreview() = KaeruTheme {
+    HeroBanner(
+        title = DEMON_SLAYER,
+        statusLine = "7 серия, осталось 14 мин",
+        backdropUrl = null,
+        primaryLabel = "Продолжить с 14:20",
+        onPrimary = {},
+        secondaryLabel = "Подробнее",
+        onSecondary = {},
+    )
+}
+
 @Preview(showBackground = true, backgroundColor = DARK, heightDp = 300)
 @Composable
 private fun PosterCardPreview() = KaeruTheme {
@@ -99,6 +118,31 @@ private fun RowHeaderPreview() = KaeruTheme {
     Column(verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space2)) {
         RowHeader("Продолжить", action = RowAction("Всё") {})
         RowHeader("Дальше по списку")
+    }
+}
+
+/** What a hardware keyboard, and every television screen, shows: scale plus a ring, no glow. */
+@Preview(showBackground = true, backgroundColor = DARK, heightDp = 200)
+@Composable
+private fun FocusedControlsPreview() = KaeruTheme {
+    CompositionLocalProvider(LocalFocusPreview provides true) {
+        Column(
+            Modifier.padding(KaeruTokens.GutterPhone),
+            verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space4)) {
+                PrimaryButton("Смотреть 1 серию", {}, icon = Icons.Default.PlayArrow)
+                SecondaryButton("Подробнее", {})
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
+            ) {
+                StatusPill("Смотрю", selected = true, onClick = {})
+                StatusPill("В планах", selected = false, onClick = {})
+                IconAction(Icons.Default.Cast, "Транслировать на телевизор", {})
+            }
+        }
     }
 }
 

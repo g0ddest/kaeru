@@ -25,6 +25,10 @@ private val TextColumn = 320.dp
  *
  * The title names what is missing and the text says how to get some; an empty screen with only a
  * shrug on it wastes the one moment the app has the viewer's whole attention.
+ *
+ * Sizing is the caller's: this fills the width and wraps its height, so pass `Modifier.fillMaxSize()`
+ * for a state that owns the screen (which is what centres it vertically), and nothing at all to drop
+ * it into a scrolling list.
  */
 @Composable
 fun EmptyState(
@@ -66,6 +70,9 @@ fun EmptyState(
  * nothing is added here — no icon, no apology, no second heading. The retry is the amber button
  * because it is what the screen now exists to do; [secondaryLabel] is for the other way out, such
  * as changing the dub when this one will not load.
+ *
+ * Sizing is the caller's, as in [EmptyState]: pass `Modifier.fillMaxSize()` to centre it on a
+ * screen of its own.
  */
 @Composable
 fun ErrorState(

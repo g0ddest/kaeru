@@ -2,9 +2,16 @@ package app.kaeru.ui.common.design
 
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -13,8 +20,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import app.kaeru.ui.common.theme.KaeruAccent
+import androidx.compose.ui.unit.dp
+import app.kaeru.ui.common.theme.KaeruSecondary
 import app.kaeru.ui.common.theme.KaeruText
+
+private val ChevronSize = 18.dp
 
 /** What the control at the end of a row header says, and what it does. */
 data class RowAction(val label: String, val onClick: () -> Unit)
@@ -24,6 +34,11 @@ data class RowAction(val label: String, val onClick: () -> Unit)
  *
  * There is no eyebrow above it and no rule under it: the row of artwork below is what separates
  * one section from the next, and a line would only repeat that.
+ *
+ * The action is deliberately not amber. The accent belongs to «Смотреть», to progress, to focus on
+ * a television and to the active tab; a home screen with a hero and four rows would otherwise put
+ * five ambers on one screen and none of them would mean anything. It reads as a control because it
+ * is a step quieter than the title and carries a chevron, not because it is coloured.
  */
 @Composable
 fun RowHeader(
@@ -49,10 +64,24 @@ fun RowHeader(
         if (action != null) {
             TextButton(
                 onClick = action.onClick,
-                modifier = Modifier.defaultMinSize(minHeight = KaeruTokens.MinTouchTarget),
+                modifier = Modifier
+                    .defaultMinSize(minHeight = KaeruTokens.MinTouchTarget)
+                    .kaeruFocus(KaeruTokens.ButtonShape),
+                colors = ButtonDefaults.textButtonColors(contentColor = KaeruSecondary),
                 contentPadding = PaddingValues(horizontal = KaeruTokens.Space3),
             ) {
-                Text(action.label, style = MaterialTheme.typography.titleMedium, color = KaeruAccent, maxLines = 1)
+                Text(
+                    action.label,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.width(KaeruTokens.Space1))
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    modifier = Modifier.size(ChevronSize),
+                )
             }
         }
     }

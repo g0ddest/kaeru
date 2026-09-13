@@ -17,36 +17,69 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.State
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.kaeru.ui.common.theme.KaeruSurface
 
 private val HeaderBlock = 20.dp
 private val TitleBlock = 14.dp
 private const val GRID_COLUMNS = 3
+private const val PULSE_MIN = 0.10f
+private const val PULSE_MAX = 0.24f
+private const val PULSE_MS = 700
+
+/**
+ * The pulse a group of skeleton blocks shares.
+ *
+ * One transition for the whole group rather than one per block: twelve blocks in a grid, each with
+ * its own transition started whenever it happened to be composed, drift out of phase and read as
+ * twelve things loading instead of one screen loading.
+ */
+private val LocalSkeletonPulse = compositionLocalOf<State<Float>?> { null }
+
+@Composable
+private fun rememberSkeletonPulse(): State<Float> {
+    val transition = rememberInfiniteTransition(label = "skeleton")
+    return transition.animateFloat(
+        initialValue = PULSE_MIN,
+        targetValue = PULSE_MAX,
+        animationSpec = infiniteRepeatable(tween(PULSE_MS), RepeatMode.Reverse),
+        label = "skeletonAlpha",
+    )
+}
+
+/** Puts every [Skeleton] below it on one clock. */
+@Composable
+private fun SkeletonGroup(content: @Composable () -> Unit) {
+    CompositionLocalProvider(LocalSkeletonPulse provides rememberSkeletonPulse(), content = content)
+}
 
 /**
  * A block standing in for content that has not arrived.
  *
  * It breathes rather than sweeps: a slow alpha pulse reads as waiting, while a shimmer travelling
- * across three rows of blocks reads as a second thing happening on the screen.
+ * across three rows of blocks reads as a second thing happening on the screen. The pulse is read
+ * inside `graphicsLayer`, so it animates in the draw phase and never recomposes the block.
  */
 @Composable
 fun Skeleton(modifier: Modifier = Modifier, shape: Shape = KaeruTokens.CardShape) {
-    val transition = rememberInfiniteTransition(label = "skeleton")
-    val alpha by transition.animateFloat(
-        initialValue = 0.10f,
-        targetValue = 0.24f,
-        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
-        label = "skeletonAlpha",
+    val pulse = LocalSkeletonPulse.current ?: rememberSkeletonPulse()
+    Box(
+        modifier
+            .clip(shape)
+            .graphicsLayer { alpha = pulse.value }
+            .background(Color.White),
     )
-    Box(modifier.clip(shape).background(Color.White.copy(alpha = alpha)))
 }
 
 /**
@@ -56,24 +89,29 @@ fun Skeleton(modifier: Modifier = Modifier, shape: Shape = KaeruTokens.CardShape
  * rather than half the screen, passes its own.
  */
 @Composable
-fun SkeletonHero(modifier: Modifier = Modifier, aspect: Float = KaeruTokens.HeroAspect) {
+fun SkeletonHero(modifier: Modifier = Modifier, aspect: Float = KaeruTokens.HeroAspect) = SkeletonGroup {
     Skeleton(
         modifier.fillMaxWidth().aspectRatio(aspect).background(KaeruSurface),
         shape = RectangleShape,
     )
 }
 
-/** One row of poster cards, header included, at the width the real row will have. */
+/** One row of poster cards, header included, at the width and gutter the real row will have. */
 @Composable
-fun SkeletonRow(modifier: Modifier = Modifier, count: Int = 3) {
+fun SkeletonRow(
+    modifier: Modifier = Modifier,
+    count: Int = 3,
+    gutter: Dp = KaeruTokens.GutterPhone,
+    posterWidth: Dp = KaeruTokens.PosterWidthPhone,
+) = SkeletonGroup {
     Column(modifier.fillMaxWidth().clipToBounds()) {
-        Skeleton(Modifier.padding(horizontal = KaeruTokens.GutterPhone).width(140.dp).height(HeaderBlock))
+        Skeleton(Modifier.padding(horizontal = gutter).width(140.dp).height(HeaderBlock))
         Row(
-            Modifier.padding(horizontal = KaeruTokens.GutterPhone, vertical = KaeruTokens.Space3),
+            Modifier.padding(horizontal = gutter, vertical = KaeruTokens.Space3),
             horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space3),
         ) {
             repeat(count) {
-                Column(Modifier.width(KaeruTokens.PosterWidthPhone)) {
+                Column(Modifier.width(posterWidth)) {
                     Skeleton(Modifier.fillMaxWidth().aspectRatio(KaeruTokens.PosterAspect))
                     Skeleton(Modifier.padding(top = KaeruTokens.Space2).fillMaxWidth(0.85f).height(TitleBlock))
                 }
@@ -84,12 +122,17 @@ fun SkeletonRow(modifier: Modifier = Modifier, count: Int = 3) {
 
 /** The library and search grid, three posters across, at the same pitch as the real one. */
 @Composable
-fun SkeletonGrid(modifier: Modifier = Modifier, count: Int = 6) {
+fun SkeletonGrid(
+    modifier: Modifier = Modifier,
+    count: Int = 6,
+    gutter: Dp = KaeruTokens.GutterPhone,
+    columns: Int = GRID_COLUMNS,
+) = SkeletonGroup {
     Column(
-        modifier.fillMaxWidth().padding(horizontal = KaeruTokens.GutterPhone),
+        modifier.fillMaxWidth().padding(horizontal = gutter),
         verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
     ) {
-        (0 until count).chunked(GRID_COLUMNS).forEach { row ->
+        (0 until count).chunked(columns).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space3)) {
                 row.forEach { _ ->
                     Column(Modifier.weight(1f)) {
@@ -97,7 +140,7 @@ fun SkeletonGrid(modifier: Modifier = Modifier, count: Int = 6) {
                         Skeleton(Modifier.padding(top = KaeruTokens.Space2).fillMaxWidth(0.85f).height(TitleBlock))
                     }
                 }
-                repeat(GRID_COLUMNS - row.size) { Spacer(Modifier.weight(1f)) }
+                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }

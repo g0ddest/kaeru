@@ -1,7 +1,7 @@
 package app.kaeru.ui.common.design
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
@@ -17,8 +17,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.kaeru.ui.common.theme.KaeruAccent
@@ -64,15 +62,20 @@ fun StatusPill(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    role: Role = Role.Tab,
     trailing: @Composable (() -> Unit)? = null,
 ) {
     Row(
         modifier
             .defaultMinSize(minHeight = KaeruTokens.MinTouchTarget)
+            .kaeruFocus(
+                shape = KaeruTokens.ChipShape,
+                // Amber on amber would not read; a selected pill rings in text colour instead.
+                borderColor = if (selected) KaeruText else KaeruAccent,
+            )
             .clip(KaeruTokens.ChipShape)
             .background(if (selected) KaeruAccent else KaeruElevated)
-            .clickable(onClick = onClick, role = Role.Button)
-            .semantics { this.selected = selected }
+            .selectable(selected = selected, role = role, onClick = onClick)
             .padding(horizontal = KaeruTokens.Space4),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space1),

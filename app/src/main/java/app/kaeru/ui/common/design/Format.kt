@@ -133,7 +133,7 @@ fun primaryActionLabel(entry: LibraryEntry?, threshold: Float): String {
         ?.positionMs
     return when {
         position != null -> "Продолжить с ${formatTime(position)}"
-        next <= 1 && entry.rate.episodes == 0 -> "Смотреть 1 серию"
+        next <= 1 -> "Смотреть 1 серию"
         else -> "Продолжить $next серию"
     }
 }
