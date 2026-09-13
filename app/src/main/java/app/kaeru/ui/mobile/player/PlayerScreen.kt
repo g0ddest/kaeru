@@ -83,218 +83,220 @@ fun PlayerScreen(
     isInPictureInPicture: Boolean = false,
     onEnterPictureInPicture: (() -> Unit)? = null,
 ) {
-    // A floating window is a few centimetres of picture with the system's own two buttons under
-    // it. Everything this screen draws would cover the episode rather than explain it, and the
-    // state behind it is remembered afresh when the window is expanded, which is what puts the
-    // controls back for the viewer who just asked to see them.
-    if (isInPictureInPicture) {
-        Box(Modifier.fillMaxSize().background(Color.Black)) {
-            if (player != null) ContentFrame(player, Modifier.fillMaxSize())
-        }
-        return
-    }
-
-    var controlsVisible by remember { mutableStateOf(true) }
-    var pulse by remember { mutableStateOf<SeekPulse?>(null) }
-    var pulseKey by remember { mutableIntStateOf(0) }
-    // The last swipe, kept after it ends so the strip has something to fade out.
-    var swipe by remember { mutableStateOf<SwipeLevel?>(null) }
-    var swipeVisible by remember { mutableStateOf(false) }
-    var swipeEnded by remember { mutableIntStateOf(0) }
-    val hardware = rememberPlayerHardware()
-    val failed = state.errorMessage != null
-    val snackbar = remember { SnackbarHostState() }
-    // Taken once per episode: the only thing measured against it is which day the next one airs.
-    val now = remember(state.episode) { Instant.now() }
-
-    // Controls linger for three seconds of uninterrupted playback. Anything that asks for a
-    // decision — a failure, a countdown, an open sheet — keeps them up.
-    LaunchedEffect(controlsVisible, state.isPlaying, failed, state.sheet, state.autoplayCountdownSec, state.completedPrompt) {
-        val asking = state.sheet != null || state.autoplayCountdownSec != null || state.completedPrompt
-        if (controlsVisible && state.isPlaying && !failed && !asking) {
-            delay(CONTROLS_LINGER_MS)
-            controlsVisible = false
-        }
-    }
-    LaunchedEffect(failed) { if (failed) controlsVisible = true }
-    LaunchedEffect(pulseKey) {
-        if (pulse != null) {
-            delay(PULSE_MS)
-            pulse = null
-        }
-    }
-    LaunchedEffect(swipeEnded) {
-        if (swipeEnded == 0) return@LaunchedEffect
-        delay(SWIPE_LINGER_MS)
-        swipeVisible = false
-    }
-    LaunchedEffect(state.toast) {
-        val message = state.toast ?: return@LaunchedEffect
-        snackbar.showSnackbar(message)
-        onToastShown()
-    }
-
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        if (state.isCasting) {
-            // Nothing is decoded here while a receiver has the picture, so there is no surface
-            // to attach and nothing worth hiding after three seconds: the screen is a remote.
-            RemoteControlScreen(
-                state = state,
-                onBack = onBack,
-                onTogglePlayPause = onTogglePlayPause,
-                onSeekTo = onSeekTo,
-                onSeekBy = onSeekBy,
-                onNext = onNext,
-                onCancelAutoplay = onCancelAutoplay,
-                onOpenTranslations = onOpenTranslations,
-                onOpenQualities = onOpenQualities,
-                onPickEpisode = onPickEpisode,
-                onRetry = onRetry,
-                onStopCasting = onStopCasting,
-            )
-        } else {
-            if (player != null) ContentFrame(player, Modifier.fillMaxSize())
+        // One call site for the surface, so it is the same node full screen and in a floating
+        // window. Two would be two composition groups, and flipping between them disposes one
+        // and creates the other — detaching and re-attaching the player's video output, which
+        // is the picture blinking on the way into the window and again on the way out.
+        if (!state.isCasting && player != null) ContentFrame(player, Modifier.fillMaxSize())
 
-            Box(
-                Modifier.fillMaxSize().playerGestures(
-                    onTap = { controlsVisible = !controlsVisible },
-                    onSeek = { forward ->
-                        onSeekBy(if (forward) EpisodeQueue.SEEK_STEP_MS else -EpisodeQueue.SEEK_STEP_MS)
-                        pulse = SeekPulse(forward = forward)
-                        pulseKey += 1
-                    },
-                    onSwipeStart = { side ->
-                        when (side) {
-                            PlayerSide.LEFT -> hardware.brightness()
-                            PlayerSide.RIGHT -> hardware.volume()
-                        }
-                    },
-                    onSwipe = { side, level ->
-                        when (side) {
-                            PlayerSide.LEFT -> hardware.setBrightness(level)
-                            PlayerSide.RIGHT -> hardware.setVolume(level)
-                        }
-                        swipe = SwipeLevel(side, level)
-                        swipeVisible = true
-                    },
-                    onSwipeEnd = { swipeEnded += 1 },
-                ),
-            )
+        // A floating window is a few centimetres of picture with the system's own two buttons
+        // under it, and everything below would cover the episode rather than explain it. The
+        // state behind it is remembered inside this branch, so it goes with the branch: leaving
+        // the window puts the controls back for the viewer who just asked to see the episode.
+        if (!isInPictureInPicture) {
+            var controlsVisible by remember { mutableStateOf(true) }
+            var pulse by remember { mutableStateOf<SeekPulse?>(null) }
+            var pulseKey by remember { mutableIntStateOf(0) }
+            // The last swipe, kept after it ends so the strip has something to fade out.
+            var swipe by remember { mutableStateOf<SwipeLevel?>(null) }
+            var swipeVisible by remember { mutableStateOf(false) }
+            var swipeEnded by remember { mutableIntStateOf(0) }
+            val hardware = rememberPlayerHardware()
+            val failed = state.errorMessage != null
+            val snackbar = remember { SnackbarHostState() }
+            // Taken once per episode: the only thing measured against it is which day the next one airs.
+            val now = remember(state.episode) { Instant.now() }
 
-            pulse?.let { SeekPulseBadge(it) }
-
-            swipe?.let { level ->
-                AnimatedVisibility(
-                    visible = swipeVisible,
-                    enter = fadeIn(),
-                    exit = fadeOut(),
-                    modifier = Modifier
-                        .align(if (level.side == PlayerSide.LEFT) Alignment.CenterStart else Alignment.CenterEnd)
-                        .safeDrawingPadding()
-                        .padding(horizontal = 24.dp),
-                ) {
-                    SwipeIndicator(level.side, level.level)
+            // Controls linger for three seconds of uninterrupted playback. Anything that asks for a
+            // decision — a failure, a countdown, an open sheet — keeps them up.
+            LaunchedEffect(controlsVisible, state.isPlaying, failed, state.sheet, state.autoplayCountdownSec, state.completedPrompt) {
+                val asking = state.sheet != null || state.autoplayCountdownSec != null || state.completedPrompt
+                if (controlsVisible && state.isPlaying && !failed && !asking) {
+                    delay(CONTROLS_LINGER_MS)
+                    controlsVisible = false
                 }
             }
-
-            if (failed) {
-                PlaybackFailure(
-                    message = state.errorMessage.orEmpty(),
-                    onRetry = onRetry,
-                    onChangeTranslation = onOpenTranslations,
-                )
+            LaunchedEffect(failed) { if (failed) controlsVisible = true }
+            LaunchedEffect(pulseKey) {
+                if (pulse != null) {
+                    delay(PULSE_MS)
+                    pulse = null
+                }
+            }
+            LaunchedEffect(swipeEnded) {
+                if (swipeEnded == 0) return@LaunchedEffect
+                delay(SWIPE_LINGER_MS)
+                swipeVisible = false
+            }
+            LaunchedEffect(state.toast) {
+                val message = state.toast ?: return@LaunchedEffect
+                snackbar.showSnackbar(message)
+                onToastShown()
             }
 
-            AnimatedVisibility(visible = controlsVisible, enter = fadeIn(), exit = fadeOut()) {
-                Box(Modifier.fillMaxSize()) {
-                    Box(
-                        Modifier.fillMaxWidth().height(140.dp)
-                            .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.72f), Color.Transparent))),
-                    )
-                    if (!failed) {
-                        Box(
-                            Modifier.fillMaxWidth().height(190.dp).align(Alignment.BottomCenter)
-                                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f)))),
-                        )
+            if (state.isCasting) {
+                // Nothing is decoded here while a receiver has the picture, so there is no surface
+                // to attach and nothing worth hiding after three seconds: the screen is a remote.
+                RemoteControlScreen(
+                    state = state,
+                    onBack = onBack,
+                    onTogglePlayPause = onTogglePlayPause,
+                    onSeekTo = onSeekTo,
+                    onSeekBy = onSeekBy,
+                    onNext = onNext,
+                    onCancelAutoplay = onCancelAutoplay,
+                    onOpenTranslations = onOpenTranslations,
+                    onOpenQualities = onOpenQualities,
+                    onPickEpisode = onPickEpisode,
+                    onRetry = onRetry,
+                    onStopCasting = onStopCasting,
+                )
+            } else {
+                Box(
+                    Modifier.fillMaxSize().playerGestures(
+                        onTap = { controlsVisible = !controlsVisible },
+                        onSeek = { forward ->
+                            onSeekBy(if (forward) EpisodeQueue.SEEK_STEP_MS else -EpisodeQueue.SEEK_STEP_MS)
+                            pulse = SeekPulse(forward = forward)
+                            pulseKey += 1
+                        },
+                        onSwipeStart = { side ->
+                            when (side) {
+                                PlayerSide.LEFT -> hardware.brightness()
+                                PlayerSide.RIGHT -> hardware.volume()
+                            }
+                        },
+                        onSwipe = { side, level ->
+                            when (side) {
+                                PlayerSide.LEFT -> hardware.setBrightness(level)
+                                PlayerSide.RIGHT -> hardware.setVolume(level)
+                            }
+                            swipe = SwipeLevel(side, level)
+                            swipeVisible = true
+                        },
+                        onSwipeEnd = { swipeEnded += 1 },
+                    ),
+                )
+
+                pulse?.let { SeekPulseBadge(it) }
+
+                swipe?.let { level ->
+                    AnimatedVisibility(
+                        visible = swipeVisible,
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                        modifier = Modifier
+                            .align(if (level.side == PlayerSide.LEFT) Alignment.CenterStart else Alignment.CenterEnd)
+                            .safeDrawingPadding()
+                            .padding(horizontal = 24.dp),
+                    ) {
+                        SwipeIndicator(level.side, level.level)
                     }
-                    Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-                        PlayerTopBar(
-                            title = state.title,
-                            episode = state.episode,
-                            translationTitle = state.translationTitle,
-                            qualityLabel = state.quality?.let { "${it.height}p" },
-                            onBack = onBack,
-                            onTranslations = onOpenTranslations,
-                            onQualities = onOpenQualities,
-                            // Only where there is a picture on this device to put in a window.
-                            onEnterPictureInPicture = onEnterPictureInPicture?.takeIf { !state.isCasting },
+                }
+
+                if (failed) {
+                    PlaybackFailure(
+                        message = state.errorMessage.orEmpty(),
+                        onRetry = onRetry,
+                        onChangeTranslation = onOpenTranslations,
+                    )
+                }
+
+                AnimatedVisibility(visible = controlsVisible, enter = fadeIn(), exit = fadeOut()) {
+                    Box(Modifier.fillMaxSize()) {
+                        Box(
+                            Modifier.fillMaxWidth().height(140.dp)
+                                .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.72f), Color.Transparent))),
                         )
-                        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        if (!failed) {
+                            Box(
+                                Modifier.fillMaxWidth().height(190.dp).align(Alignment.BottomCenter)
+                                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f)))),
+                            )
+                        }
+                        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+                            PlayerTopBar(
+                                title = state.title,
+                                episode = state.episode,
+                                translationTitle = state.translationTitle,
+                                qualityLabel = state.quality?.let { "${it.height}p" },
+                                onBack = onBack,
+                                onTranslations = onOpenTranslations,
+                                onQualities = onOpenQualities,
+                                // Only where there is a picture on this device to put in a window.
+                                onEnterPictureInPicture = onEnterPictureInPicture?.takeIf { !state.isCasting },
+                            )
+                            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                if (!failed) {
+                                    PlayerCenterControl(
+                                        isBuffering = state.isBuffering,
+                                        isPlaying = state.isPlaying,
+                                        onToggle = onTogglePlayPause,
+                                    )
+                                }
+                            }
                             if (!failed) {
-                                PlayerCenterControl(
-                                    isBuffering = state.isBuffering,
-                                    isPlaying = state.isPlaying,
-                                    onToggle = onTogglePlayPause,
+                                PlayerBottomBar(
+                                    positionMs = state.positionMs,
+                                    bufferedPositionMs = state.bufferedPositionMs,
+                                    durationMs = state.durationMs,
+                                    // While the card is counting down it carries the same action; two
+                                    // buttons for one decision is one button too many.
+                                    // Only where there is something to move on to, and not while
+                                    // the card below is already offering the same move.
+                                    showNext = state.nextEpisodeAvailable && state.autoplayCountdownSec == null,
+                                    onSeekTo = onSeekTo,
+                                    onSeekBy = onSeekBy,
+                                    onSkipIntro = onSkipIntro,
+                                    onNext = onNext,
                                 )
                             }
                         }
-                        if (!failed) {
-                            PlayerBottomBar(
-                                positionMs = state.positionMs,
-                                bufferedPositionMs = state.bufferedPositionMs,
-                                durationMs = state.durationMs,
-                                // While the card is counting down it carries the same action; two
-                                // buttons for one decision is one button too many.
-                                // Only where there is something to move on to, and not while
-                                // the card below is already offering the same move.
-                                showNext = state.nextEpisodeAvailable && state.autoplayCountdownSec == null,
-                                onSeekTo = onSeekTo,
-                                onSeekBy = onSeekBy,
-                                onSkipIntro = onSkipIntro,
-                                onNext = onNext,
-                            )
-                        }
                     }
+                }
+
+                // Buffering has to be visible even after the controls have gone.
+                if (!controlsVisible && state.isBuffering && !failed) {
+                    PlayerCenterControl(isBuffering = true, isPlaying = false, onToggle = {}, modifier = Modifier.align(Alignment.Center))
                 }
             }
 
-            // Buffering has to be visible even after the controls have gone.
-            if (!controlsVisible && state.isBuffering && !failed) {
-                PlayerCenterControl(isBuffering = true, isPlaying = false, onToggle = {}, modifier = Modifier.align(Alignment.Center))
-            }
-        }
-
-        // Both live in the same corner and answer the same question: what happens when this
-        // episode runs out. The remote control carries its own, in the row the decision belongs to.
-        val endOfEpisode = Modifier.align(Alignment.BottomEnd).safeDrawingPadding()
-            .padding(end = 24.dp, bottom = if (controlsVisible) 148.dp else 24.dp)
-        when {
-            state.isCasting || failed -> Unit
-            state.autoplayCountdownSec != null && state.nextEpisodeAvailable -> NextEpisodeCard(
-                episode = state.episode + 1,
-                countdownSec = state.autoplayCountdownSec,
-                onNow = onNext,
-                onCancel = onCancelAutoplay,
-                modifier = endOfEpisode,
-            )
-            // Nothing is said about a show this device has no catalogue entry for: with no aired
-            // count there is no way to tell «that was the last one» from «we simply do not know».
-            // Nor about a finished one, where the end of the last episode is the end of the story
-            // and «Перевести в завершённые?» is already asking the only question worth asking.
-            state.episodeEnding && !state.nextEpisodeAvailable &&
-                state.availableEpisodes > 0 && state.moreEpisodesComing -> LastEpisodeCard(
-                waiting = waitingLabel(
+            // Both live in the same corner and answer the same question: what happens when this
+            // episode runs out. The remote control carries its own, in the row the decision belongs to.
+            val endOfEpisode = Modifier.align(Alignment.BottomEnd).safeDrawingPadding()
+                .padding(end = 24.dp, bottom = if (controlsVisible) 148.dp else 24.dp)
+            when {
+                state.isCasting || failed -> Unit
+                state.autoplayCountdownSec != null && state.nextEpisodeAvailable -> NextEpisodeCard(
                     episode = state.episode + 1,
-                    nextEpisodeAt = state.nextEpisodeAt,
-                    aired = state.availableEpisodes,
-                    now = now,
-                ),
-                modifier = endOfEpisode,
-            )
-        }
+                    countdownSec = state.autoplayCountdownSec,
+                    onNow = onNext,
+                    onCancel = onCancelAutoplay,
+                    modifier = endOfEpisode,
+                )
+                // Nothing is said about a show this device has no catalogue entry for: with no aired
+                // count there is no way to tell «that was the last one» from «we simply do not know».
+                // Nor about a finished one, where the end of the last episode is the end of the story
+                // and «Перевести в завершённые?» is already asking the only question worth asking.
+                state.episodeEnding && !state.nextEpisodeAvailable &&
+                    state.availableEpisodes > 0 && state.moreEpisodesComing -> LastEpisodeCard(
+                    waiting = waitingLabel(
+                        episode = state.episode + 1,
+                        nextEpisodeAt = state.nextEpisodeAt,
+                        aired = state.availableEpisodes,
+                        now = now,
+                    ),
+                    modifier = endOfEpisode,
+                )
+            }
 
-        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = 24.dp))
+            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = 24.dp))
+        }
     }
+
+    // Sheets and dialogs are windows of their own; a floating player is no place to open one.
+    if (isInPictureInPicture) return
 
     when (state.sheet) {
         // The same sheet the title screen opens: one question, one answer, one look.

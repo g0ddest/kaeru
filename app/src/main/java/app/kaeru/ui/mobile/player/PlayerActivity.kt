@@ -21,6 +21,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.annotation.OptIn
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +36,8 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import app.kaeru.domain.playback.PlaybackNotificationPrompt
 import app.kaeru.player.CastFramework
@@ -81,8 +84,22 @@ class PlayerActivity : FragmentActivity() {
         packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
     }
 
+    /**
+     * The shape of the picture, which decides the shape of the floating window.
+     *
+     * Held here rather than read from the player when the window is asked for: on Android 12 and
+     * later the system reads the parameters it was last given, at the moment the viewer swipes
+     * home, so anything computed lazily then is computed too late. Media3 announces this through
+     * a listener and nothing else, hence the field.
+     */
+    private var videoSize by mutableStateOf(VideoSize.UNKNOWN)
+
     private val windowMode = Consumer<PictureInPictureModeChangedInfo> { info ->
         inPictureInPicture = info.isInPictureInPictureMode
+        // Expanding back to full screen is not a change the activity is rebuilt for, and the
+        // hidden state of the system bars does not reliably survive the transition on every
+        // build. Idempotent, so saying it again on the way out costs nothing.
+        if (!info.isInPictureInPictureMode) goImmersive()
     }
 
     /**
@@ -146,9 +163,37 @@ class PlayerActivity : FragmentActivity() {
                 LaunchedEffect(state.isPlaying, state.isCasting) {
                     view.keepScreenOn = state.isPlaying && !state.isCasting
                 }
+                // The one thing Media3 announces rather than publishes: without a listener the
+                // video's shape is whatever it was before the first frame was decoded, and the
+                // window folds 4:3 episodes into a 16:9 box.
+                DisposableEffect(player) {
+                    val listening = player
+                    if (listening == null) {
+                        videoSize = VideoSize.UNKNOWN
+                        onDispose {}
+                    } else {
+                        videoSize = listening.videoSize
+                        val listener = object : Player.Listener {
+                            override fun onVideoSizeChanged(size: VideoSize) {
+                                videoSize = size
+                            }
+                        }
+                        listening.addListener(listener)
+                        onDispose { listening.removeListener(listener) }
+                    }
+                }
                 // The system holds these until the window is asked for, which on Android 12 and
                 // later is the moment the viewer swipes home — far too late to be computing them.
-                LaunchedEffect(state.isPlaying, state.isCasting, state.nextEpisodeAvailable, state.errorMessage, state.episode) {
+                // The video's shape is a key, so the window is re-described the moment it is known;
+                // the decor's own bounds settle at the first layout, which is inside that.
+                LaunchedEffect(
+                    state.isPlaying,
+                    state.isCasting,
+                    state.nextEpisodeAvailable,
+                    state.errorMessage,
+                    state.episode,
+                    videoSize,
+                ) {
                     describeWindow()
                 }
 
@@ -263,10 +308,10 @@ class PlayerActivity : FragmentActivity() {
     }
 
     private fun windowParams(plan: PipPlan): PictureInPictureParams {
-        val size = viewModel.videoPlayer.value?.videoSize
-        val aspect = pipAspect(size?.width ?: 0, size?.height ?: 0)
+        val size = videoSize
+        val aspect = pipAspect(size.width, size.height)
         val decor = window.decorView
-        val bounds = pipSourceBounds(decor.width, decor.height, size?.width ?: 0, size?.height ?: 0)
+        val bounds = pipSourceBounds(decor.width, decor.height, size.width, size.height)
         val builder = PictureInPictureParams.Builder()
             .setAspectRatio(Rational(aspect.width, aspect.height))
             // Where the window animates out of. Without it the picture appears to jump from the
