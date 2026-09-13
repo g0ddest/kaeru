@@ -21,6 +21,8 @@ data class PlayerUiState(
     val isPlaying: Boolean = false,
     val isBuffering: Boolean = true,
     val positionMs: Long = 0,
+    /** How far ahead of [positionMs] the media is downloaded, for the pale head on the timeline. */
+    val bufferedPositionMs: Long = 0,
     val durationMs: Long = 0,
     val quality: Quality? = null,
     val qualities: List<Quality> = emptyList(),

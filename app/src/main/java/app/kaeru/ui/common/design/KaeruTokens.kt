@@ -80,6 +80,17 @@ object KaeruTokens {
 
     val ProgressHeight = 4.dp
 
+    /**
+     * How far the seek bar's track is held back from both edges of the control.
+     *
+     * The row of timecodes above the bar uses the same value, so «0:00» starts where the track
+     * does; the gap it leaves is what the thumb overhangs into at either end.
+     */
+    val SeekInset = Space3
+
+    /** Tall enough for a thumb and a thumb-sized target, and fixed so a press moves nothing. */
+    val SeekBarHeight = MinTouchTarget
+
     // --- focus, on the television ---------------------------------------------------------------
 
     /** A focused card grows just enough to lift off the row. No glow: the border says it already. */

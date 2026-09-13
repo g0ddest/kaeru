@@ -198,6 +198,7 @@ fun PlayerScreen(
                         if (!failed) {
                             PlayerBottomBar(
                                 positionMs = state.positionMs,
+                                bufferedPositionMs = state.bufferedPositionMs,
                                 durationMs = state.durationMs,
                                 // While the card is counting down it carries the same action; two
                                 // buttons for one decision is one button too many.

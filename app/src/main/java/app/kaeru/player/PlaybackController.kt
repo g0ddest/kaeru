@@ -539,12 +539,14 @@ class DefaultPlaybackController @Inject constructor(
         val lengthKnown = engineState.durationMs > 0
         val duration = if (lengthKnown) engineState.durationMs else current.durationMs
         val position = if (lengthKnown) engineState.positionMs else current.positionMs
+        val buffered = if (lengthKnown) engineState.bufferedPositionMs else current.bufferedPositionMs
         val ended = engineState.ended && lengthKnown
         val countdown = if (lengthKnown) countdownFor(position, duration, ended) else current.autoplayCountdownSec
         _state.value = current.copy(
             isPlaying = engineState.isPlaying,
             isBuffering = engineState.isBuffering,
             positionMs = position,
+            bufferedPositionMs = buffered,
             durationMs = duration,
             nextEpisodeAvailable =
                 if (lengthKnown) EpisodeQueue.nextEpisodeDue(position, duration, ended) else current.nextEpisodeAvailable,

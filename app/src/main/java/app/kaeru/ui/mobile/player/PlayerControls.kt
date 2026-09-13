@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.kaeru.ui.common.design.KaeruSeekBar
+import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.design.formatTime
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruElevated
@@ -120,6 +121,7 @@ fun PlayerCenterControl(isBuffering: Boolean, isPlaying: Boolean, onToggle: () -
 @Composable
 fun PlayerBottomBar(
     positionMs: Long,
+    bufferedPositionMs: Long,
     durationMs: Long,
     showNext: Boolean,
     onSeekTo: (Long) -> Unit,
@@ -129,10 +131,12 @@ fun PlayerBottomBar(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-        // While a finger is on the slider the timeline follows the finger, not the video.
+        // While a finger is on the bar the timeline follows the finger, not the video.
         var scrubbing by remember { mutableStateOf<Float?>(null) }
         val shown = scrubbing?.roundToLong() ?: positionMs
-        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
+        // The same inset the track keeps, so «0:00» stands over the start of the track and the
+        // duration over its end rather than over the thumb's overhang.
+        Row(Modifier.fillMaxWidth().padding(horizontal = KaeruTokens.SeekInset)) {
             Text(formatTime(shown), style = MaterialTheme.typography.labelMedium, color = OnVideo)
             Spacer(Modifier.weight(1f))
             Text(formatTime(durationMs), style = MaterialTheme.typography.labelMedium, color = OnVideoMuted)
@@ -146,6 +150,7 @@ fun PlayerBottomBar(
                 scrubbing = null
             },
             enabled = durationMs > 0,
+            buffered = bufferedPositionMs.coerceIn(0, maxOf(durationMs, 0)).toFloat() / durationSafe.toFloat(),
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             DiscButton(Icons.Default.Replay10, "Назад на 10 секунд") { onSeekBy(-EpisodeQueue.SEEK_STEP_MS) }

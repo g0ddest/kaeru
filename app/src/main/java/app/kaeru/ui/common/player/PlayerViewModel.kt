@@ -94,6 +94,7 @@ class PlayerViewModel @Inject constructor(
             isPlaying = playback.isPlaying,
             isBuffering = playback.isBuffering,
             positionMs = playback.positionMs,
+            bufferedPositionMs = playback.bufferedPositionMs,
             durationMs = playback.durationMs,
             quality = playback.quality,
             qualities = playback.stream?.urls?.keys.orEmpty().sortedBy { it.height },

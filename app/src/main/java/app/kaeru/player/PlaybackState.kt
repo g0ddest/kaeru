@@ -17,6 +17,8 @@ data class PlaybackState(
     val isPlaying: Boolean = false,
     val isBuffering: Boolean = false,
     val positionMs: Long = 0,
+    /** How far ahead of [positionMs] the media is already downloaded. */
+    val bufferedPositionMs: Long = 0,
     val durationMs: Long = 0,
     val nextEpisodeAvailable: Boolean = false,
     val autoplayCountdownSec: Int? = null,
