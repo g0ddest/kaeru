@@ -60,8 +60,9 @@ import app.kaeru.ui.common.theme.KaeruTvTheme
 
 private const val PAUSE = "Пауза"
 private const val RESUME = "Продолжить"
-/** The jump itself; which way it goes is the arrow beside it. */
-private const val TEN_SECONDS = "10 с"
+/** The two jumps. Signed rather than left to the arrow: one glance, and one spoken phrase. */
+private const val BACK_TEN = "−10 с"
+private const val FORWARD_TEN = "+10 с"
 private const val SKIP_INTRO = "+85 с"
 private const val NEXT_EPISODE = "Следующая серия"
 private const val BUFFERING = "Загружаем"
@@ -266,13 +267,13 @@ private fun TvTransportRow(
                 compact = true,
             )
             SecondaryButton(
-                text = TEN_SECONDS,
+                text = BACK_TEN,
                 onClick = { onSeekBy(-EpisodeQueue.SEEK_STEP_MS) },
                 icon = Icons.Default.FastRewind,
                 compact = true,
             )
             SecondaryButton(
-                text = TEN_SECONDS,
+                text = FORWARD_TEN,
                 onClick = { onSeekBy(EpisodeQueue.SEEK_STEP_MS) },
                 icon = Icons.Default.FastForward,
                 compact = true,
