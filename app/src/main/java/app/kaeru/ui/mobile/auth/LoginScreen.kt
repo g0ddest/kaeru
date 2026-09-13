@@ -1,6 +1,5 @@
 package app.kaeru.ui.mobile.auth
 
-import android.net.Uri
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import app.kaeru.ui.common.auth.AuthUiState
 
 /** [authorizeUrl] arms a fresh OAuth `state`, so it is called per sign-in attempt. */
@@ -33,7 +33,13 @@ fun LoginScreen(authorizeUrl: () -> String, state: AuthUiState) {
             modifier = Modifier.padding(vertical = 24.dp),
         )
         Button(
-            onClick = { CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(authorizeUrl())) },
+            // Nowhere to send this on a device with no browser and no Custom Tabs provider. The
+            // press does nothing rather than crashing on the one screen that has no way forward.
+            onClick = {
+                runCatching {
+                    CustomTabsIntent.Builder().build().launchUrl(context, authorizeUrl().toUri())
+                }
+            },
             enabled = !state.exchanging,
         ) { Text(if (state.exchanging) "Проверяем код…" else "Войти через Shikimori") }
         state.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 16.dp)) }
