@@ -20,11 +20,12 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Why a sign-in attempt failed, in the only two ways the person in front of the screen can act on.
+ * Why a sign-in attempt failed, in the ways the person in front of the screen can act on.
  *
- * The difference matters on a television: one of them means «fetch another code», the other means
+ * The difference matters on a television: one of them means «fetch another code», the others mean
  * «try the same thing again in a moment», and a single generic line sends half the viewers down
- * the wrong path.
+ * the wrong path. Only the first leaves the code spent — which is why this decides what happens to
+ * the field as well as what is printed under it.
  */
 enum class AuthFailure {
     /** Shikimori was reached and turned the code away: wrong, expired, or already spent. */
@@ -32,6 +33,9 @@ enum class AuthFailure {
 
     /** Shikimori was never reached, or answered that it is having a bad day. */
     NO_CONNECTION,
+
+    /** Shikimori was reached and asked to be left alone for a moment. The code is untouched. */
+    THROTTLED,
 }
 
 data class AuthUiState(
@@ -106,23 +110,29 @@ class AuthViewModel @Inject constructor(private val repository: AuthRepository) 
             error.value = null
             failure.value = null
             val result = block()
+            val kind = result.exceptionOrNull()?.let(::classify)
             error.value = result.errorMessageOrNull()
-            failure.value = result.exceptionOrNull()?.let(::classify)
-            // An authorization code is worth one attempt whatever became of it. Leaving the spent
-            // one in the field invites pressing the button on it again, which cannot work and says
-            // nothing new when it does not.
-            code.value = ""
+            failure.value = kind
+            // A code Shikimori refused is spent: leaving it in the field invites pressing the
+            // button on it again, which cannot work and says nothing new when it does not. A code
+            // that never got as far as being judged — no network, or a Shikimori asking to be left
+            // alone for a minute — is not spent, and «Повторить» has to have something to try
+            // again with. A code that worked is gone with the screen, and is cleared so that
+            // signing out and back in does not find a spent one waiting in the field.
+            if (kind == null || kind == AuthFailure.CODE_REJECTED) code.value = ""
             exchanging.value = false
         }
     }
 
     /**
      * A failure the viewer can do something about. Anything that means Shikimori was not reached —
-     * including Shikimori answering that it is broken — is the connection; everything else is the
-     * code, because that is the half of this the viewer can replace.
+     * including Shikimori answering that it is broken — is the connection; `429` is Shikimori
+     * saying the code was never looked at, so it gets a line of its own rather than being reported
+     * as a bad code; everything else is the code, because that is the half the viewer can replace.
      */
     private fun classify(error: Throwable): AuthFailure = when {
         error is NetworkUnavailable -> AuthFailure.NO_CONNECTION
+        error is HttpError && error.code == 429 -> AuthFailure.THROTTLED
         error is HttpError && error.code in 500..599 -> AuthFailure.NO_CONNECTION
         else -> AuthFailure.CODE_REJECTED
     }

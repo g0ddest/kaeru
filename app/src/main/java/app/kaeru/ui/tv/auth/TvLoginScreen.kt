@@ -32,7 +32,6 @@ import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.design.PrimaryButton
 import app.kaeru.ui.common.design.SecondaryButton
 import app.kaeru.ui.common.design.formatTime
-import app.kaeru.ui.common.theme.KaeruDivider
 import app.kaeru.ui.common.theme.KaeruError
 import app.kaeru.ui.common.theme.KaeruSecondary
 import app.kaeru.ui.common.theme.KaeruText
@@ -63,6 +62,7 @@ private const val CODE_CHECKING = "Входим…"
 private const val CODE_REJECTED =
     "Код не подошёл или уже использован. Получите новый код и попробуйте ещё раз"
 private const val CODE_OFFLINE = "Нет связи с Shikimori. Повторить"
+private const val CODE_THROTTLED = "Shikimori просит подождать. Повторите через минуту"
 
 private val PairingQr = 224.dp
 private val TypedQr = 132.dp
@@ -263,15 +263,20 @@ internal fun tvLoginOffersNewQr(pairing: TvPairingUiState): Boolean =
 /**
  * The one line under the typed-code field.
  *
- * A refused code and a refused connection are the same red text to look at and two different
- * things to do, so they are never collapsed into one message. Nothing is said before the first
- * attempt: an untouched field with a warning under it reads as an error the viewer already made.
+ * A refused code, a refused connection and a Shikimori asking to be left alone are the same red
+ * text to look at and three different things to do, so they are never collapsed into one message.
+ * Nothing is said before the first attempt: an untouched field with a warning under it reads as an
+ * error the viewer already made. Written over the whole enum rather than as a chain of `==`, so a
+ * fourth kind of failure fails to compile instead of quietly printing nothing.
  */
 internal fun tvCodeStatus(state: AuthUiState): String? = when {
     state.exchanging -> CODE_CHECKING
-    state.failure == AuthFailure.NO_CONNECTION -> CODE_OFFLINE
-    state.failure == AuthFailure.CODE_REJECTED -> CODE_REJECTED
-    else -> null
+    else -> when (state.failure) {
+        AuthFailure.CODE_REJECTED -> CODE_REJECTED
+        AuthFailure.NO_CONNECTION -> CODE_OFFLINE
+        AuthFailure.THROTTLED -> CODE_THROTTLED
+        null -> null
+    }
 }
 
 /** Nothing is typed into a field whose contents are already on their way to Shikimori. */

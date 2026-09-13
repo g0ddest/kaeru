@@ -174,6 +174,61 @@ class AuthViewModelTest {
         }
 
     @Test
+    fun `a code that never reached Shikimori stays put, because it is the one to try again`() =
+        runTest(main.dispatcher) {
+            val repo = FakeAuthRepository().also {
+                it.exchangeResult = Result.failure(NetworkUnavailable(UnknownHostException("shikimori.io")))
+            }
+            val vm = AuthViewModel(repo)
+            vm.setTvCode("good-code")
+            vm.exchangeTvCode()
+            advanceUntilIdle()
+
+            assertEquals("good-code", vm.tvCode.value)
+            assertEquals(AuthFailure.NO_CONNECTION, vm.uiState.value.failure)
+
+            // And «Повторить» is then a second attempt at the same code, not a trip back to the QR.
+            repo.exchangeResult = Result.success(Unit)
+            vm.exchangeTvCode()
+            advanceUntilIdle()
+            assertEquals(listOf("good-code", "good-code"), repo.typedExchanges)
+            assertTrue(vm.uiState.value.loggedIn == true)
+        }
+
+    @Test
+    fun `a Shikimori asking to be left alone keeps the code and says to wait`() =
+        runTest(main.dispatcher) {
+            val repo = FakeAuthRepository().also { it.exchangeResult = Result.failure(HttpError(429)) }
+            val vm = AuthViewModel(repo)
+            vm.setTvCode("good-code")
+            vm.exchangeTvCode()
+            advanceUntilIdle()
+
+            // 429 means the code was never looked at, so it is neither spent nor at fault.
+            assertEquals(AuthFailure.THROTTLED, vm.uiState.value.failure)
+            assertEquals("good-code", vm.tvCode.value)
+
+            repo.exchangeResult = Result.success(Unit)
+            vm.exchangeTvCode()
+            advanceUntilIdle()
+            assertEquals(listOf("good-code", "good-code"), repo.typedExchanges)
+            assertTrue(vm.uiState.value.loggedIn == true)
+        }
+
+    @Test
+    fun `a code that worked leaves nothing behind for the next time this screen appears`() =
+        runTest(main.dispatcher) {
+            val repo = FakeAuthRepository()
+            val vm = AuthViewModel(repo)
+            vm.setTvCode("good-code")
+            vm.exchangeTvCode()
+            advanceUntilIdle()
+
+            assertEquals("", vm.tvCode.value)
+            assertNull(vm.uiState.value.failure)
+        }
+
+    @Test
     fun `a Shikimori that is down reads as a connection problem, not as a bad code`() =
         runTest(main.dispatcher) {
             val repo = FakeAuthRepository().also { it.exchangeResult = Result.failure(HttpError(503)) }

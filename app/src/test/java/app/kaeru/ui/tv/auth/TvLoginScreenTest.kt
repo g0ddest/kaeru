@@ -100,6 +100,22 @@ class TvLoginScreenTest {
     }
 
     @Test
+    fun `a throttled Shikimori is told apart from a code that was actually refused`() {
+        assertEquals(
+            "Shikimori просит подождать. Повторите через минуту",
+            tvCodeStatus(AuthUiState(loggedIn = false, failure = AuthFailure.THROTTLED)),
+        )
+    }
+
+    @Test
+    fun `every kind of failure gets a line of its own`() {
+        val lines = AuthFailure.entries.map { failure ->
+            tvCodeStatus(AuthUiState(loggedIn = false, failure = failure))
+        }
+        assertEquals(AuthFailure.entries.size, lines.toSet().size)
+    }
+
+    @Test
     fun `an exchange in flight says so instead of leaving the last failure on screen`() {
         val busy = AuthUiState(loggedIn = false, exchanging = true, failure = AuthFailure.CODE_REJECTED)
         assertEquals("Входим…", tvCodeStatus(busy))
