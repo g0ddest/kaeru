@@ -1,5 +1,8 @@
 package app.kaeru.ui.mobile
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
@@ -31,6 +34,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.home.HomeViewModel
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruElevated
@@ -80,6 +84,13 @@ fun MobileShell(onLogout: () -> Unit, nav: NavHostController = rememberNavContro
             nav,
             startDestination = Routes.HOME,
             modifier = Modifier.padding(bottom = padding.calculateBottomPadding()),
+            // A fade-through at the app's own speed, in place of navigation's 700ms default. The
+            // spec asks for a shared-element poster into the title screen; that needs the whole
+            // host wrapped in a SharedTransitionLayout and the scope threaded through every screen
+            // that draws a poster, which is a change to four screens rather than to this one, so it
+            // waits for the television pass that touches them all.
+            enterTransition = { fadeIn(tween(KaeruTokens.DurationNormal)) },
+            exitTransition = { fadeOut(tween(KaeruTokens.DurationNormal)) },
         ) {
             composable(Routes.HOME) {
                 val vm: HomeViewModel = hiltViewModel()
@@ -122,15 +133,18 @@ fun MobileShell(onLogout: () -> Unit, nav: NavHostController = rememberNavContro
             }
             composable(Routes.DETAILS, arguments = listOf(navArgument("animeId") { type = NavType.IntType })) { entry ->
                 val vm: DetailsViewModel = hiltViewModel(entry)
-                UnderStatusBar {
-                    DetailsScreen(
-                        vm.uiState.collectAsStateWithLifecycle().value,
-                        { nav.popBackStack() },
-                        vm::refresh,
-                        vm::setStatus,
-                        play,
-                    )
-                }
+                // No status-bar wrapper: the title screen runs its artwork under the status bar and
+                // carries that inset in its own floating top bar, as the home screen does.
+                DetailsScreen(
+                    state = vm.uiState.collectAsStateWithLifecycle().value,
+                    onBack = { nav.popBackStack() },
+                    onRetry = vm::refresh,
+                    onStatus = vm::setStatus,
+                    onPlay = play,
+                    onLoadTranslations = vm::loadTranslations,
+                    onPickTranslation = vm::pickTranslation,
+                    onMarkWatched = vm::markWatched,
+                )
             }
         }
     }

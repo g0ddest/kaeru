@@ -58,9 +58,15 @@ private fun rememberSkeletonPulse(): State<Float> {
     )
 }
 
-/** Puts every [Skeleton] below it on one clock. */
+/**
+ * Puts every [Skeleton] below it on one clock.
+ *
+ * Wrap a screen's own arrangement of blocks in this rather than scattering bare [Skeleton]s: each
+ * one outside a group starts an infinite transition of its own, and a dozen of them drifting out
+ * of phase reads as a dozen things happening instead of one screen waiting.
+ */
 @Composable
-private fun SkeletonGroup(content: @Composable () -> Unit) {
+fun SkeletonGroup(content: @Composable () -> Unit) {
     CompositionLocalProvider(LocalSkeletonPulse provides rememberSkeletonPulse(), content = content)
 }
 

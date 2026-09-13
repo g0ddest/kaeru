@@ -19,19 +19,12 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Snackbar
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -55,14 +48,14 @@ import app.kaeru.ui.common.home.HomeUiState
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruBackground
 import app.kaeru.ui.common.theme.KaeruElevated
-import app.kaeru.ui.common.theme.KaeruText
+import app.kaeru.ui.mobile.KaeruSnackbarHost
+import app.kaeru.ui.mobile.RetrySnackbar
 import app.kaeru.ui.mobile.player.CastButton
 import java.time.Instant
 
 private const val WORDMARK = "Kaeru"
 private const val SETTINGS = "Настройки"
 private const val DETAILS = "Подробнее"
-private const val RETRY = "Повторить"
 private const val EMPTY_TITLE = "Здесь появятся тайтлы из списка «Смотрю»"
 private const val EMPTY_TEXT =
     "Отметьте аниме как «Смотрю» на Shikimori или найдите его здесь. " +
@@ -131,35 +124,7 @@ fun HomeScreen(
             }
         }
         HomeBar(listState, onSettings)
-        SnackbarHost(
-            snackbar,
-            Modifier.align(Alignment.BottomCenter).padding(KaeruTokens.Space4),
-        ) { data ->
-            // The default snackbar is a pale slab in a dark app. This one is the app's own
-            // elevated surface, and its action stays in text colour: the amber belongs to the
-            // watch button behind it, which is still the thing this screen is for.
-            Snackbar(
-                snackbarData = data,
-                shape = KaeruTokens.CardShape,
-                containerColor = KaeruElevated,
-                contentColor = KaeruText,
-                actionColor = KaeruText,
-            )
-        }
-    }
-}
-
-/**
- * A failed refresh over a feed that still has content in it: the message explains itself and the
- * action repeats what failed. Keyed on the message, so the same failure twice does not nag.
- */
-@Composable
-private fun RetrySnackbar(message: String?, host: SnackbarHostState, onRetry: () -> Unit) {
-    val retry by rememberUpdatedState(onRetry)
-    LaunchedEffect(message) {
-        if (message == null) return@LaunchedEffect
-        val result = host.showSnackbar(message, actionLabel = RETRY, duration = SnackbarDuration.Long)
-        if (result == SnackbarResult.ActionPerformed) retry()
+        KaeruSnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(KaeruTokens.Space4))
     }
 }
 
