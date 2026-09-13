@@ -155,25 +155,37 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
-     * Starts [episode] of [animeId], or does nothing if that is already what is playing —
-     * the screen calls this every time it comes forward, and coming back from the background
-     * must not rewind anything.
+     * Starts [episode] of [animeId], or attaches to the session already under way.
      *
-     * A player with nothing loaded is started again even when it is the same episode: a screen
-     * that was released while buried in the back stack would otherwise come back to black. A
-     * start still on its way counts as loaded, so the two calls a screen makes on the way in —
-     * one from the lifecycle, one from composition — are one playback.
+     * The screen calls this every time it comes forward, and what it is allowed to do depends on
+     * why it came forward. [explicit] is true only when the viewer chose an episode — a press on
+     * a watch button, a tap on an episode tile — and false when the same screen is merely coming
+     * back into view: the app minimised and reopened, a relaunch out of recents, an activity
+     * rebuilt from its own saved state.
+     *
+     * That distinction is the whole of this method. The episode a screen was *opened* with goes
+     * stale the moment autoplay moves on, and a screen that came back an hour and three episodes
+     * later used to hand that stale number to the controller — rewinding a viewer on episode
+     * seven to episode six at 0:00, or interrupting a television to do it. So a launch that is
+     * not a choice never overrules what is playing: if anything at all is loaded for this anime,
+     * that is the episode, at the position it is actually at.
+     *
+     * A player with nothing loaded is started even on that path — a screen released while buried
+     * in the back stack would otherwise come back to black, and the intent is then the only thing
+     * that knows what to play. A start still on its way counts as loaded, so the two calls a
+     * screen makes on the way in — one from the lifecycle, one from composition — are one
+     * playback.
      */
-    fun start(animeId: Int, episode: Int) {
+    fun start(animeId: Int, episode: Int, explicit: Boolean = true) {
         // Said every time, including on the path that starts nothing: it is how playback left on
         // a receiver learns that somebody is looking at it again.
         controller.attachScreen()
         val loaded = controller.state.value.target
-        // Already playing this very episode. That includes a receiver that kept going while the
-        // screen was away, where starting again would interrupt a television for nothing — and a
-        // screen recreated without its view model, which used to rewind to the last saved second.
-        if (loaded?.animeId == animeId && loaded.episode == episode) {
-            requested = animeId to episode
+        val live = loaded != null && loaded.animeId == animeId
+        // Attach rather than start: either this is the very episode asked for, or it is not a
+        // choice at all and whatever the session reached outranks the number the intent carries.
+        if (live && (!explicit || loaded.episode == episode)) {
+            requested = animeId to loaded.episode
             this.animeId.value = animeId
             return
         }

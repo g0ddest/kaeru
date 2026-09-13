@@ -111,6 +111,114 @@ class PlayerViewModelTest {
         assertEquals(PlaybackTarget(100, 4, 320_000, null), controller.played.single())
     }
 
+    // --- coming back to a player that moved on --------------------------------------------------
+
+    /** Autoplay moved the session on while the screen was away; the intent still names episode 4. */
+    private fun playingOn(episode: Int, positionMs: Long = 300_000, animeId: Int = 100) {
+        controller.playback.value = PlaybackState(
+            target = PlaybackTarget(animeId, episode, startPositionMs = 0, translation = null),
+            stream = stream(episode = episode),
+            quality = Quality.P720,
+            isPlaying = true,
+            positionMs = positionMs,
+            durationMs = 1_440_000,
+            airedEpisodes = 12,
+        )
+    }
+
+    @Test
+    fun `coming back finds the episode the session reached, not the one it was opened with`() =
+        runTest(main.dispatcher) {
+            viewModel.start(100, 4)
+            advanceUntilIdle()
+            val started = controller.played.size
+            playingOn(episode = 7, positionMs = 300_000)
+
+            viewModel.start(100, 4, explicit = false)
+            advanceUntilIdle()
+
+            assertEquals(started, controller.played.size)
+            assertEquals(7, viewModel.uiState.value.episode)
+            assertEquals(300_000L, viewModel.uiState.value.positionMs)
+        }
+
+    @Test
+    fun `coming back attaches the screen so a receiver knows it is being watched again`() =
+        runTest(main.dispatcher) {
+            viewModel.start(100, 4)
+            advanceUntilIdle()
+            playingOn(episode = 7)
+            val attached = controller.attaches
+
+            viewModel.start(100, 4, explicit = false)
+            advanceUntilIdle()
+
+            assertEquals(attached + 1, controller.attaches)
+        }
+
+    @Test
+    fun `a failed session is come back to, not replaced by the episode the intent names`() =
+        runTest(main.dispatcher) {
+            viewModel.start(100, 4)
+            advanceUntilIdle()
+            playingOn(episode = 7)
+            controller.playback.update { it.copy(isPlaying = false, error = NetworkUnavailable(IOException("offline"))) }
+            val started = controller.played.size
+
+            viewModel.start(100, 4, explicit = false)
+            advanceUntilIdle()
+
+            assertEquals(started, controller.played.size)
+            assertEquals(7, viewModel.uiState.value.episode)
+            assertEquals("Нет соединения. Проверьте интернет", viewModel.uiState.value.errorMessage)
+        }
+
+    @Test
+    fun `coming back to a player with nothing in it starts what the intent names`() =
+        runTest(main.dispatcher) {
+            viewModel.start(100, 4, explicit = false)
+            advanceUntilIdle()
+
+            assertEquals(4, controller.played.single().episode)
+        }
+
+    @Test
+    fun `a session for another anime does not capture the screen coming back`() = runTest(main.dispatcher) {
+        playingOn(episode = 7, animeId = 200)
+
+        viewModel.start(100, 4, explicit = false)
+        advanceUntilIdle()
+
+        assertEquals(PlaybackTarget(100, 4, 0, null), controller.played.single())
+    }
+
+    @Test
+    fun `asking for another episode by hand plays it, whatever the session reached`() =
+        runTest(main.dispatcher) {
+            viewModel.start(100, 4)
+            advanceUntilIdle()
+            playingOn(episode = 7)
+
+            viewModel.start(100, 9, explicit = true)
+            advanceUntilIdle()
+
+            assertEquals(9, controller.played.last().episode)
+        }
+
+    @Test
+    fun `asking by hand for the episode already playing changes nothing`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+        playingOn(episode = 7)
+        val started = controller.played.size
+
+        viewModel.start(100, 7, explicit = true)
+        advanceUntilIdle()
+
+        assertEquals(started, controller.played.size)
+        assertEquals(7, viewModel.uiState.value.episode)
+    }
+
     @Test
     fun `another episode than the saved one starts from the beginning`() = runTest(main.dispatcher) {
         watchStates.seed(WatchState(100, 4, 320_000, 1_440_000, translationId = 11, kodikSeason = 1, updatedAt = now))

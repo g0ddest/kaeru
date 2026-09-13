@@ -68,7 +68,10 @@ class PlayerActivity : FragmentActivity() {
     @Inject lateinit var notificationPrompt: PlaybackNotificationPrompt
 
     private val viewModel: PlayerViewModel by viewModels()
-    private var target by mutableStateOf(0 to 1)
+    private var launch by mutableStateOf(Launch())
+
+    /** The launch already handed over, so a second delivery of it is a return rather than a choice. */
+    private var delivered: Launch? = null
 
     /** Whether the picture is in a floating window right now, which is all the screen needs to know. */
     private var inPictureInPicture by mutableStateOf(false)
@@ -110,7 +113,7 @@ class PlayerActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         goImmersive()
-        target = read(intent)
+        launch = read(intent, isExplicitLaunch(recreated = savedInstanceState != null, intentFlags = intent.flags))
         // Asked before the service is started, so a phone that says yes has the notification
         // from the first episode; nothing waits on the answer.
         askForNotifications()
@@ -133,9 +136,12 @@ class PlayerActivity : FragmentActivity() {
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
                 val player by viewModel.videoPlayer.collectAsStateWithLifecycle()
                 val view = LocalView.current
-                val (animeId, episode) = target
+                val opened = launch
 
-                LaunchedEffect(animeId, episode) { if (animeId > 0) viewModel.start(animeId, episode) }
+                // Keyed on the launch itself, never on what is playing: an episode that changes
+                // under the screen — autoplay moving on — must not look like a new launch and
+                // start the old one again.
+                LaunchedEffect(opened) { deliver(opened.explicit) }
                 // A remote control does not need the screen awake for twenty-four minutes.
                 LaunchedEffect(state.isPlaying, state.isCasting) {
                     view.keepScreenOn = state.isPlaying && !state.isCasting
@@ -180,14 +186,29 @@ class PlayerActivity : FragmentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        target = read(intent)
+        launch = read(intent, isExplicitLaunch(recreated = false, intentFlags = intent.flags))
     }
 
-    /** Whatever happened while this screen was away, it is the one asking now. */
+    /**
+     * Back into view. Never a choice, whatever brought this screen here the first time: the
+     * episode named by the intent may be three episodes and an hour behind what is playing, and
+     * only a session with nothing in it is started from it.
+     */
     override fun onStart() {
         super.onStart()
-        val (animeId, episode) = target
-        if (animeId > 0) viewModel.start(animeId, episode)
+        // A choice not yet handed over belongs to the effect above, which knows it was one; this
+        // runs first on the way in, and delivering it here would start the session the viewer is
+        // leaving before starting the episode they asked for.
+        if (launch.explicit && delivered != launch) return
+        deliver(explicit = false)
+    }
+
+    /** Hands the launch to the view model, remembering that it has now been made. */
+    private fun deliver(explicit: Boolean) {
+        val current = launch
+        if (current.animeId <= 0) return
+        delivered = current
+        viewModel.start(current.animeId, current.episode, explicit)
     }
 
     /** Backgrounding is not stopping: the position is written down, the video carries on. */
@@ -284,8 +305,11 @@ class PlayerActivity : FragmentActivity() {
         return RemoteAction(Icon.createWithResource(this, icon), label, label, pending)
     }
 
-    private fun read(intent: Intent?): Pair<Int, Int> =
-        (intent?.getIntExtra(EXTRA_ANIME_ID, 0) ?: 0) to (intent?.getIntExtra(EXTRA_EPISODE, 1) ?: 1)
+    private fun read(intent: Intent?, explicit: Boolean) = Launch(
+        animeId = intent?.getIntExtra(EXTRA_ANIME_ID, 0) ?: 0,
+        episode = intent?.getIntExtra(EXTRA_EPISODE, 1) ?: 1,
+        explicit = explicit,
+    )
 
     private fun goImmersive() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -347,6 +371,25 @@ class PlayerActivity : FragmentActivity() {
                 .putExtra(EXTRA_EPISODE, episode)
     }
 }
+
+/**
+ * What this screen was opened with, and whether opening it was a choice.
+ *
+ * The episode is what the intent said at the moment it was built; [explicit] is what says whether
+ * that number is still allowed to overrule a session that has moved on since.
+ */
+private data class Launch(val animeId: Int = 0, val episode: Int = 1, val explicit: Boolean = false)
+
+/**
+ * Whether a launch of the player is the viewer asking for an episode, or the same session coming
+ * back into view.
+ *
+ * Two things mean «came back»: the system rebuilt the activity from its own saved state, and the
+ * launch came out of recents rather than from a screen. Both arrive carrying the intent the player
+ * was first opened with, whose episode may be several behind what is actually playing.
+ */
+internal fun isExplicitLaunch(recreated: Boolean, intentFlags: Int): Boolean =
+    !recreated && (intentFlags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0
 
 /**
  * Whether to put the notification permission to the viewer: only where the platform withholds
