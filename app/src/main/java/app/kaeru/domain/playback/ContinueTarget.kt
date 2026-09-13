@@ -1,6 +1,7 @@
 package app.kaeru.domain.playback
 
 import app.kaeru.domain.model.EpisodeProgress
+import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.UserRate
 
 /**
@@ -32,21 +33,27 @@ data class ContinueTarget(val episode: Int, val positionMs: Long) {
          * never across a gap. The gap is the point: a viewer who taps the finale out of the grid
          * and watches it whole has not watched the four episodes before it, and jumping the
          * pointer to the end would leave them with a button that names an episode that does not
-         * exist. The same walk is what puts a rewatcher back at the beginning rather than at the
-         * end, because their count is zero and the first episode is where the walk starts.
+         * exist.
+         *
+         * A rewatcher does not get the walk at all. Their finished rows are from the last time
+         * round and say nothing about where this time round has reached, so the counter they reset
+         * is the whole answer: «Пересматриваю» with the count back at zero starts at the first
+         * episode. The position inside the episode they are actually watching still wins, because
+         * that is a resume and resumes are decided above.
          *
          * The answer is deliberately *not* clamped to [aired]: naming an episode that has not come
          * out is how the watch button knows to say «9 серия выйдет завтра» rather than offering
-         * the eighth again. It is clamped at the end of the show — when the walk runs past
-         * everything there is and this device has finished episodes to show for it, the offer
-         * becomes the last episode there is, from the top. A show the viewer can play must never
-         * leave them with a button they cannot press.
+         * the eighth again. It is clamped only at the end of a show whose end is known — an
+         * [announced] length that the walk has run past, with episodes finished here to show for
+         * it. Then the offer becomes the last episode there is, from the top, because a show the
+         * viewer can play must never leave them with a button they cannot press.
          *
          * @param rate the viewer's list entry, or null when the anime is in no list at all.
          * @param aired how many episodes exist to play right now.
-         * @param announced how long the season was said to run, or 0 when nobody has said. Only
-         *   the end of the show is read off it, so an ongoing season whose next episode is still
-         *   to come is never mistaken for one that has run out.
+         * @param announced how long the season was said to run, or 0 when nobody has said — which
+         *   is Shikimori's answer for most ongoing shows. Nothing is clamped without it: a season
+         *   whose length is unknown has not run out, it has only run out of aired episodes, and
+         *   the next one is what the viewer is waiting for.
          */
         fun of(
             rate: UserRate?,
@@ -62,12 +69,17 @@ data class ContinueTarget(val episode: Int, val positionMs: Long) {
                 .maxByOrNull { it.episode }
             if (resume != null) return ContinueTarget(resume.episode, resume.positionMs)
 
-            val finishedHere = started.filterNot { it.unfinished(watchedThreshold) }
-                .mapTo(mutableSetOf()) { it.episode }
+            val finishedHere = if (rate?.status == ListStatus.REWATCHING) {
+                emptySet()
+            } else {
+                started.filterNot { it.unfinished(watchedThreshold) }.mapTo(mutableSetOf()) { it.episode }
+            }
             var next = counted + 1
             while (next in finishedHere) next++
             val lastEpisode = maxOf(announced, aired)
-            if (aired > 0 && finishedHere.isNotEmpty() && next > lastEpisode) return ContinueTarget(aired, 0)
+            if (aired > 0 && announced > 0 && finishedHere.isNotEmpty() && next > lastEpisode) {
+                return ContinueTarget(aired, 0)
+            }
             return ContinueTarget(next, 0)
         }
     }

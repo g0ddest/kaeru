@@ -367,7 +367,9 @@ class FormatTest {
     }
 
     @Test
-    fun `a rewatch that has reset the count still has something to press`() {
+    fun `a rewatch that has reset the count starts the show over`() {
+        // Twelve finished rows from the first time through. Pressing the main button on a show
+        // somebody has just chosen to restart plays the first episode, not the finale.
         val rewatching = entry(
             anime = anime(AnimeStatus.RELEASED, episodes = 12, aired = 12),
             watched = 0,
@@ -377,8 +379,25 @@ class FormatTest {
 
         val action = primaryAction(rewatching, 0.9f, now, zone)
 
-        assertEquals("Смотреть 12 серию", action.label)
+        assertEquals("Смотреть 1 серию", action.label)
         assertTrue(action.enabled)
+        assertEquals(1, action.episode)
+    }
+
+    @Test
+    fun `a caught-up show of unannounced length waits for the next episode`() {
+        // Shikimori leaves the length at zero for most ongoing shows; finishing the eighth here
+        // must not turn into an offer to watch the eighth again.
+        val caughtUp = entry(
+            anime = anime(episodes = 0, aired = 8, nextEpisodeAt = at(2026, 4, 13, 18, 0)),
+            watched = 8,
+            progress = listOf(stopped(8, 1_400_000)),
+        )
+
+        val action = primaryAction(caughtUp, 0.9f, now, zone)
+
+        assertEquals("9 серия выйдет завтра", action.label)
+        assertFalse(action.enabled)
     }
 
     @Test

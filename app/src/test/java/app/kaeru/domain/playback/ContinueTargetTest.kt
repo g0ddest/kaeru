@@ -13,7 +13,8 @@ private const val EPISODE_MS = 1_440_000L
 class ContinueTargetTest {
     private val threshold = 0.9f
 
-    private fun rate(episodes: Int) = UserRate(1L, 100, ListStatus.WATCHING, episodes, Instant.EPOCH)
+    private fun rate(episodes: Int, status: ListStatus = ListStatus.WATCHING) =
+        UserRate(1L, 100, status, episodes, Instant.EPOCH)
 
     private fun progress(episode: Int, positionMs: Long, durationMs: Long = EPISODE_MS) =
         EpisodeProgress(100, episode, positionMs, durationMs, Instant.EPOCH)
@@ -174,10 +175,10 @@ class ContinueTargetTest {
 
     @Test
     fun `a show finished to the last episode offers that episode again rather than nothing`() {
-        // A rewatch: the count on the server is back to zero and every episode is finished here.
-        // Walking forward runs off the end of the show, and the button must still press.
+        // Twelve of twelve, all finished here. Walking forward runs off the end of the show, and
+        // the button must still press: there is an episode to play, so there is something to say.
         val target = ContinueTarget.of(
-            rate(0),
+            rate(12),
             aired = 12,
             announced = 12,
             progress = (1..12).map { progress(it, 1_400_000) },
@@ -185,6 +186,50 @@ class ContinueTargetTest {
         )
 
         assertEquals(ContinueTarget(12, 0), target)
+    }
+
+    @Test
+    fun `a season nobody has measured is never a season that has run out`() {
+        // Shikimori leaves `episodes` at zero for most ongoing shows. Finishing the latest episode
+        // there is means waiting for the next one, not watching this one again.
+        val target = ContinueTarget.of(
+            rate(8),
+            aired = 8,
+            announced = 0,
+            progress = listOf(progress(8, 1_400_000)),
+            watchedThreshold = threshold,
+        )
+
+        assertEquals(ContinueTarget(9, 0), target)
+    }
+
+    @Test
+    fun `a rewatcher starts where their own counter says, not where the last time round ended`() {
+        // Every episode is finished — from the first time through. Those rows say nothing about
+        // where this time through has got to, and the counter they reset says the beginning.
+        val target = ContinueTarget.of(
+            rate(0, ListStatus.REWATCHING),
+            aired = 12,
+            announced = 12,
+            progress = (1..12).map { progress(it, 1_400_000) },
+            watchedThreshold = threshold,
+        )
+
+        assertEquals(ContinueTarget(1, 0), target)
+    }
+
+    @Test
+    fun `a rewatcher part-way through an episode is still returned to it`() {
+        // The old rows are ignored, but the one being watched right now is not.
+        val target = ContinueTarget.of(
+            rate(2, ListStatus.REWATCHING),
+            aired = 12,
+            announced = 12,
+            progress = listOf(progress(1, 1_400_000), progress(2, 1_400_000), progress(3, 600_000)),
+            watchedThreshold = threshold,
+        )
+
+        assertEquals(ContinueTarget(3, 600_000), target)
     }
 
     @Test
