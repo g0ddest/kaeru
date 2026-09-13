@@ -7,6 +7,8 @@ import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.feed.HomeFeedBuilder
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
+import app.kaeru.domain.model.EpisodeProgress
+import app.kaeru.domain.model.FeedKind
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.UserRate
@@ -23,6 +25,7 @@ import app.kaeru.domain.playback.StreamPrefetchCache
 import app.kaeru.domain.repository.DiscoverRepository
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.source.EpisodeSourceProvider
+import app.kaeru.ui.common.design.primaryAction
 import app.kaeru.test.MainDispatcherRule
 import app.kaeru.test.MutableClock
 import kotlinx.coroutines.CompletableDeferred
@@ -154,6 +157,24 @@ class HomeViewModelTest {
         watch = null,
     )
 
+    /**
+     * An ongoing show with ten episodes aired, five counted on Shikimori, and the sixth stopped
+     * at [fraction] of the way through.
+     *
+     * The one fixture where the viewer's threshold changes the answer rather than the wording: at
+     * 0.85 the sixth episode is behind them at a threshold of 0.8 and still in front of them at
+     * 0.9, and the feed and the button have to agree about which.
+     */
+    private fun partway(fraction: Float = 0.85f) = LibraryEntry(
+        anime = Anime(7, "Фрирен", "Sousou no Frieren", null, emptyList(), AnimeStatus.ONGOING, 24, 10, null, 9.1, 2023, "Madhouse", null),
+        rate = UserRate(11, 7, ListStatus.WATCHING, 5, now),
+        watch = null,
+        progress = listOf(EpisodeProgress(7, 6, (fraction * 1_440_000).toLong(), 1_440_000, now)),
+    )
+
+    private fun library(vararg entries: LibraryEntry) =
+        FakeLibraryRepository().also { it.entries.value = entries.toList() }
+
     @Test
     fun `cached room content is exposed before refresh completes`() = runTest(main.dispatcher) {
         val repo = FakeLibraryRepository().also { it.entries.value = listOf(entry()) }
@@ -184,6 +205,74 @@ class HomeViewModelTest {
         advanceUntilIdle()
         assertEquals(0.95f, vm.uiState.value.watchedThreshold, 0f)
     }
+
+    // --- the threshold the viewer chose decides the feed, not only the words over it -----------
+
+    @Test
+    fun `a lower threshold moves the feed on to the next episode`() = runTest(main.dispatcher) {
+        // Eighty-five percent of the sixth is behind a viewer whose threshold is 0.8, so the show
+        // is not something to continue — it is a show with a new episode waiting.
+        val vm = viewModel(library(partway()), prefs = FakePlaybackPreferences(threshold = 0.8f))
+        advanceUntilIdle()
+
+        val top = vm.uiState.value.feed.top!!
+        assertEquals(FeedKind.NEW_EPISODE, top.kind)
+        assertEquals(7, top.episode)
+        assertTrue(vm.uiState.value.feed.continueWatching.isEmpty())
+    }
+
+    @Test
+    fun `the hero's label names the episode the hero starts`() = runTest(main.dispatcher) {
+        // The button's words come from `primaryAction` at the viewer's threshold and the press
+        // plays `feed.top.episode`. A feed built at some other threshold makes the two disagree,
+        // and the disagreement is a wrong episode starting rather than a wrong word.
+        val prefs = FakePlaybackPreferences(threshold = 0.8f)
+        val vm = viewModel(library(partway()), prefs = prefs)
+        advanceUntilIdle()
+
+        val low = vm.uiState.value
+        val lowTop = low.feed.top!!
+        assertEquals("Продолжить 7 серию", primaryAction(lowTop.entry, low.watchedThreshold, now).label)
+        assertEquals(7, lowTop.episode)
+
+        // The same eighty-five percent is a place to come back to once the viewer asks for 0.9,
+        // and both halves say six.
+        prefs.watchedThreshold.value = 0.9f
+        advanceUntilIdle()
+
+        val high = vm.uiState.value
+        val highTop = high.feed.top!!
+        assertEquals(6, primaryAction(highTop.entry, high.watchedThreshold, now).episode)
+        assertEquals(6, highTop.episode)
+    }
+
+    @Test
+    fun `a title unfinished only by the viewer's own threshold keeps its place in the row`() =
+        runTest(main.dispatcher) {
+            // Ninety-two percent is finished at 0.9 and unfinished at 0.95. Built at 0.9, the row
+            // drops the title the screen around it is still drawing a progress strip over.
+            val vm = viewModel(library(partway(fraction = 0.92f)), prefs = FakePlaybackPreferences(threshold = 0.95f))
+            advanceUntilIdle()
+
+            assertEquals(listOf(6), vm.uiState.value.feed.continueWatching.map { it.episode })
+        }
+
+    @Test
+    fun `the card prepared ahead of the press is the one the press will play`() =
+        runTest(main.dispatcher) {
+            // The prefetch resolves `feed.top.episode`; the button starts the same number. Prepare
+            // the wrong one and the press pays the resolve it was supposed to have skipped.
+            remembering(episode = 6)
+            val vm = viewModel(library(partway()), prefs = FakePlaybackPreferences(threshold = 0.8f))
+            advanceUntilIdle()
+
+            vm.prefetchTopCard()
+            advanceUntilIdle()
+
+            // Anime 7, episode 7 — the number the button is about to name.
+            assertEquals(listOf(7 to 7), source.resolves)
+            assertEquals(7, vm.uiState.value.feed.top!!.episode)
+        }
 
     @Test
     fun `manual refresh clears previous error`() = runTest(main.dispatcher) {
