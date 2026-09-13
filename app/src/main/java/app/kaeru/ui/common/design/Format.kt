@@ -220,13 +220,6 @@ fun primaryAction(
 }
 
 /**
- * Where a title sits in the viewer's list, in the words Shikimori uses for it.
- *
- * Here rather than on any one screen: the title screen's menu, the library's tabs and anything
- * later that names a status all have to say the same six words, and a screen that owned them would
- * make every other screen import it.
- */
-/**
  * The mark on a track the viewer keeps coming back to.
  *
  * One string for three surfaces: the title screen's chooser and the phone player render it as a
@@ -236,6 +229,13 @@ fun primaryAction(
  */
 internal const val OFTEN_CHOSEN = "Часто выбираете"
 
+/**
+ * Where a title sits in the viewer's list, in the words Shikimori uses for it.
+ *
+ * Here rather than on any one screen: the title screen's menu, the library's tabs and anything
+ * later that names a status all have to say the same six words, and a screen that owned them would
+ * make every other screen import it.
+ */
 fun statusLabel(status: ListStatus): String = when (status) {
     ListStatus.WATCHING -> "Смотрю"
     ListStatus.PLANNED -> "В планах"
