@@ -75,9 +75,22 @@ fun tvHero(
     threshold: Float,
     now: Instant,
     zone: ZoneId = ZoneId.systemDefault(),
+): TvHero = tvHero(item, primaryAction(item.entry, threshold, now, zone), now, zone)
+
+/**
+ * The same hero, for a caller that has already worked out the action.
+ *
+ * Deriving it is not free — it reads the entry, the threshold and the clock — and a card needs the
+ * same answer to decide what one press of OK starts. Handing it over rather than asking twice is
+ * the difference between one derivation per card and two.
+ */
+fun tvHero(
+    item: FeedItem,
+    action: PrimaryAction,
+    now: Instant,
+    zone: ZoneId = ZoneId.systemDefault(),
 ): TvHero {
     val anime = item.entry.anime
-    val action = primaryAction(item.entry, threshold, now, zone)
     val playable = tvPlayableEpisode(item, action) != null
     return TvHero(
         title = anime.title,
@@ -159,6 +172,6 @@ private fun tvCard(item: FeedItem, threshold: Float, now: Instant, zone: ZoneId)
         badge = card.badge,
         progress = card.progress,
         playEpisode = tvPlayableEpisode(item, action),
-        hero = tvHero(item, threshold, now, zone),
+        hero = tvHero(item, action, now, zone),
     )
 }
