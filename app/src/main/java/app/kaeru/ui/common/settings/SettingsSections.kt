@@ -1,4 +1,4 @@
-package app.kaeru.ui.mobile.settings
+package app.kaeru.ui.common.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.kaeru.domain.model.Account
 import app.kaeru.ui.common.design.Avatar
@@ -60,11 +61,16 @@ private val SkeletonSourceHeight = 14.dp
  * borders.
  */
 @Composable
-fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space3)) {
-        RowHeader(title)
+fun SettingsSection(
+    title: String,
+    modifier: Modifier = Modifier,
+    gutter: Dp = KaeruTokens.GutterPhone,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space3)) {
+        RowHeader(title, gutter = gutter)
         Column(
-            Modifier.padding(horizontal = KaeruTokens.GutterPhone),
+            Modifier.padding(horizontal = gutter),
             verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space3),
             content = content,
         )
