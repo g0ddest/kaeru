@@ -47,3 +47,26 @@ fun thresholdChosen(option: Float, current: Float): Boolean = abs(option - curre
 
 /** A non-breaking space before the sign: «80 %» is one word in Russian and never wraps. */
 private fun percent(fraction: Float): String = "${(fraction * 100).roundToInt()}\u00A0%"
+
+/**
+ * A stable key per studio row, for a list that draws its rows lazily.
+ *
+ * The name itself is the key, and that is the point: moving «AniDUB» up has to carry the row — and
+ * the remote sitting on it — up with it, which keying by position would not do. Keying by name has
+ * one hazard, a lazy list throwing on a key it has already seen, so a repeat gets a numbered key
+ * rather than a duplicate. Nothing in the app writes a list with a name twice (`shown` hands over
+ * either the viewer's own order or the app's, and the editor refuses a name already in the list),
+ * so this is a guard against a stored list from an older build, not an expected shape.
+ */
+fun studioKeys(studios: List<String>): List<String> {
+    val used = HashSet<String>(studios.size)
+    return studios.map { name ->
+        var key = name
+        var seen = 1
+        while (!used.add(key)) {
+            seen++
+            key = "$name#$seen"
+        }
+        key
+    }
+}

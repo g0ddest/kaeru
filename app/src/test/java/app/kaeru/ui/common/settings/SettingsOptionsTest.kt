@@ -76,4 +76,38 @@ class SettingsOptionsTest {
         assertTrue(thresholdChosen(0.9f, 0.9001f))
         assertFalse(thresholdChosen(0.85f, 0.9f))
     }
+
+    @Test
+    fun `each studio is its own key, in the order the list has them`() {
+        assertEquals(
+            listOf("AniLibria", "AniDUB", "Crunchyroll"),
+            studioKeys(listOf("AniLibria", "AniDUB", "Crunchyroll")),
+        )
+    }
+
+    @Test
+    fun `a name that appears twice gets a second key rather than the same one`() {
+        assertEquals(
+            listOf("AniDUB", "JAM", "AniDUB#2", "AniDUB#3"),
+            studioKeys(listOf("AniDUB", "JAM", "AniDUB", "AniDUB")),
+        )
+    }
+
+    @Test
+    fun `names differing only in capitals are two names and keep two keys`() {
+        assertEquals(listOf("AniDUB", "anidub"), studioKeys(listOf("AniDUB", "anidub")))
+    }
+
+    @Test
+    fun `a suffix a name already carries does not collide with a generated one`() {
+        assertEquals(
+            listOf("JAM", "JAM#2", "JAM#2#2"),
+            studioKeys(listOf("JAM", "JAM#2", "JAM#2")),
+        )
+    }
+
+    @Test
+    fun `no list, no keys`() {
+        assertEquals(emptyList<String>(), studioKeys(emptyList()))
+    }
 }
