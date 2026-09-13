@@ -94,6 +94,10 @@ fun TextAction(
         modifier = modifier
             .defaultMinSize(minHeight = KaeruTokens.MinTouchTarget)
             .kaeruFocus(KaeruTokens.ButtonShape),
+        // Material's text button is a stadium, and the focus ring around it is the app's 12dp
+        // corner: on a television the ripple and the ring were two different shapes on one
+        // control. The ring is the one the design system fixes, so the button takes its corner.
+        shape = KaeruTokens.ButtonShape,
         colors = ButtonDefaults.textButtonColors(contentColor = KaeruSecondary),
         contentPadding = PaddingValues(horizontal = KaeruTokens.Space3),
     ) {

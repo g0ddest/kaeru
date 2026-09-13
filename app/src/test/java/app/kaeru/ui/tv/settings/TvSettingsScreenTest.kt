@@ -3,10 +3,20 @@ package app.kaeru.ui.tv.settings
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.isFocused
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import app.kaeru.domain.model.Account
 import app.kaeru.domain.model.Quality
 import app.kaeru.ui.common.settings.SettingsUiState
@@ -80,5 +90,31 @@ class TvSettingsScreenTest {
             compose.onNode(hasScrollAction()).performScrollToNode(hasText(studio))
             compose.onNodeWithText(studio).assertIsDisplayed()
         }
+    }
+
+    @Test
+    fun `the D-pad walks the whole page, down to the last line of it`() {
+        // The fault the viewer reported: the rows below the fold could not be reached. A D-pad
+        // scrolls by moving focus and nothing else, so every row has to be a stop — including the
+        // version at the bottom, which is why that one is focusable.
+        show()
+
+        repeat(40) { compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) } }
+
+        compose.onNodeWithText("Kaeru", substring = true).assertIsDisplayed().assertIsFocused()
+    }
+
+    @Test
+    fun `the list has scrolled by the time the D-pad reaches the bottom`() {
+        show()
+
+        repeat(40) { compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) } }
+
+        compose.onNode(hasScrollAction()).assert(
+            SemanticsMatcher("the list has scrolled away from the top") { node ->
+                val range = node.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange)
+                range != null && range.value() > 0f
+            },
+        )
     }
 }
