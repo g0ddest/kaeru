@@ -1,4 +1,4 @@
-package app.kaeru.ui.mobile.details
+package app.kaeru.ui.common.design
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -29,14 +29,6 @@ import androidx.compose.ui.unit.dp
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.playback.RankedTranslation
-import app.kaeru.ui.common.design.ErrorState
-import app.kaeru.ui.common.design.KaeruTokens
-import app.kaeru.ui.common.design.OftenChosenChip
-import app.kaeru.ui.common.design.RowHeader
-import app.kaeru.ui.common.design.Skeleton
-import app.kaeru.ui.common.design.SkeletonGroup
-import app.kaeru.ui.common.design.kaeruFocus
-import app.kaeru.ui.common.design.pluralEpisodes
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruSecondary
 import app.kaeru.ui.common.theme.KaeruSurface
@@ -59,19 +51,27 @@ private const val SKELETON_ROWS = 3
  * of their settings, then the ones they keep choosing elsewhere — so the order is itself the
  * recommendation and the first row is almost always the right one. Picking a track writes it
  * against this anime and nothing else: the episode and the position stay where they were.
+ *
+ * One sheet for the title screen and the player, in the design library rather than beside either
+ * of them: the two screens ask the same question and the answer should not look like two different
+ * questions. The player opens it with the list already in hand, hence the defaults — there is
+ * nothing to load and nothing to retry by the time it is on screen.
+ *
+ * @param loading the list is still being read; the rows are skeletons.
+ * @param errorMessage why it could not be read, shown inside the sheet rather than over the screen.
+ * @param enabled false while the last pick is still being written, so the same row cannot be sent twice.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TranslationPickerSheet(
     translations: List<RankedTranslation>,
     currentId: Int?,
-    loading: Boolean,
-    errorMessage: String?,
-    /** False while the last pick is still being written, so the same row cannot be sent twice. */
-    enabled: Boolean,
-    onRetry: () -> Unit,
     onPick: (Translation) -> Unit,
     onDismiss: () -> Unit,
+    loading: Boolean = false,
+    errorMessage: String? = null,
+    enabled: Boolean = true,
+    onRetry: () -> Unit = {},
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,

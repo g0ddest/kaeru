@@ -39,6 +39,7 @@ import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.player.EpisodeQueue
 import app.kaeru.ui.common.design.ErrorState
+import app.kaeru.ui.common.design.TranslationPickerSheet
 import app.kaeru.ui.common.design.waitingLabel
 import app.kaeru.ui.common.player.PlayerSheet
 import app.kaeru.ui.common.player.PlayerUiState
@@ -293,7 +294,8 @@ fun PlayerScreen(
     }
 
     when (state.sheet) {
-        PlayerSheet.TRANSLATIONS -> TranslationSheet(
+        // The same sheet the title screen opens: one question, one answer, one look.
+        PlayerSheet.TRANSLATIONS -> TranslationPickerSheet(
             translations = state.translations,
             currentId = state.translationId,
             onPick = onPickTranslation,
