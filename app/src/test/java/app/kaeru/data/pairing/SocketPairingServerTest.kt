@@ -40,6 +40,9 @@ class SocketPairingServerTest {
     private val exchanges = mutableListOf<Pair<String, String>>()
     private var exchangeResult: Result<Unit> = Result.success(Unit)
 
+    /** Thrown by the exchange rather than returned by it, for the one test about a handler that blows up. */
+    private var exchangeThrows: Throwable? = null
+
     @After
     fun tearDown() {
         server.stop()
@@ -52,6 +55,7 @@ class SocketPairingServerTest {
     private suspend fun listen(session: PairingSession = PairingSession("nonce-1", now, Duration.ofMinutes(5))) =
         server.start(session) { code, redirect ->
             synchronized(exchanges) { exchanges += code to redirect }
+            exchangeThrows?.let { throw it }
             exchangeResult
         }.getOrThrow()
 
@@ -122,6 +126,21 @@ class SocketPairingServerTest {
         assertEquals(410, code)
         assertTrue(answer, answer.contains("expired"))
         assertTrue(exchanges.isEmpty())
+    }
+
+    @Test
+    fun `an exchange that throws does not take the offer down with it`() = runTest {
+        // Anything escaping the handler used to end the accept loop and leave the port bound with
+        // nothing listening on it — a QR on screen pointing at a socket that would never answer.
+        val port = listen().port
+        exchangeThrows = IllegalStateException("something nobody anticipated")
+        runCatching { post(port, body()) }
+        assertEquals(1, exchanges.size)
+
+        // The same offer, still live: the nonce was never spent, so the next phone is served.
+        exchangeThrows = null
+        assertEquals(200 to """{"ok":true}""", post(port, body(code = "second-code")))
+        assertEquals(listOf("fresh-code", "second-code"), exchanges.map { it.first })
     }
 
     @Test

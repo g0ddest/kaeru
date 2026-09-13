@@ -1,10 +1,12 @@
 package app.kaeru.data.pairing
 
+import android.util.Log
 import app.kaeru.di.IoDispatcher
 import app.kaeru.domain.error.PairingFailed
 import app.kaeru.domain.error.PairingFailureReason
 import app.kaeru.domain.pairing.PairingSession
 import app.kaeru.domain.pairing.TvPairingServer
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -145,10 +147,22 @@ class SocketPairingServer @Inject constructor(
             val client = runCatching { server.accept() }.getOrNull() ?: return
             try {
                 handle(generationAtStart, client, session, onCode)
-            } catch (_: IOException) {
-                // A phone that hung up mid-request is not a failure anyone needs to hear about,
-                // and neither is a caller the watchdog below closed the socket on. Either way the
-                // loop goes back to accepting: one slow connection must not end the offer.
+            } catch (cancelled: CancellationException) {
+                // The offer itself is being taken down. That is the one throw that belongs to the
+                // loop rather than to the connection, and it has to reach the coroutine machinery.
+                throw cancelled
+            } catch (failure: Throwable) {
+                // Everything else is one connection's problem and is kept to that connection.
+                //
+                // An IOException is the ordinary case and says nothing worth hearing: a phone that
+                // hung up mid-request, or a caller the watchdog closed the socket on. Anything else
+                // is a bug — in parsing, in the token exchange, in a callback — and used to end the
+                // `while` below, leaving the port bound with nobody accepting on it: a QR still on
+                // screen pointing at a socket that would never answer again, until the viewer left
+                // the login screen and came back. So the loop survives it, and says so in the log.
+                if (failure !is IOException) {
+                    Log.w(TAG, "A pairing connection failed; still listening for the next one", failure)
+                }
             } finally {
                 runCatching { client.close() }
             }
@@ -206,7 +220,16 @@ class SocketPairingServer @Inject constructor(
         // Claimed before the exchange rather than after it, so two phones racing the same nonce
         // cannot both get as far as spending a code.
         if (!paired.compareAndSet(false, true)) return refused(410, PairingErrors.ALREADY_PAIRED)
-        val exchanged = onCode(payload.code, payload.redirectUri)
+        val exchanged = try {
+            onCode(payload.code, payload.redirectUri)
+        } catch (failure: Throwable) {
+            // A claim is only worth holding while something is being done with it. An exchange that
+            // threw spent nothing, so the nonce goes back on offer and the throw goes up to the
+            // accept loop, which logs it and keeps listening. Without this the first unexpected
+            // failure would leave a code on screen that no phone could ever use.
+            paired.set(false)
+            throw failure
+        }
         if (exchanged.isFailure) {
             paired.set(false)
             return refused(409, PairingErrors.EXCHANGE_FAILED)
@@ -261,6 +284,7 @@ class SocketPairingServer @Inject constructor(
     private data class Answer(val status: Int, val body: String)
 
     private companion object {
+        const val TAG = "KaeruPairing"
         const val ANY_FREE_PORT = 0
         const val BACKLOG = 4
         const val PAIR_PATH = "/pair"

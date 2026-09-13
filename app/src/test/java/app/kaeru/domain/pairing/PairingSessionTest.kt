@@ -15,24 +15,10 @@ class PairingSessionTest {
     private val session = PairingSession("nonce", start, Duration.ofMinutes(5))
 
     @Test
-    fun `the nonce the television handed out is the only one accepted`() {
-        assertTrue(session.isValid(start, "nonce"))
-        assertFalse(session.isValid(start, "Nonce"))
-        assertFalse(session.isValid(start, "nonce "))
-        assertFalse(session.isValid(start, ""))
-    }
-
-    @Test
-    fun `the nonce stops working five minutes after it appeared`() {
-        assertTrue(session.isValid(start.plus(Duration.ofMinutes(4).plusSeconds(59)), "nonce"))
-        assertFalse(session.isValid(start.plus(Duration.ofMinutes(5)), "nonce"))
-        assertFalse(session.isValid(start.plus(Duration.ofHours(1)), "nonce"))
-    }
-
-    @Test
-    fun `the nonce can be checked without asking whether the offer is still open`() {
+    fun `the nonce the television handed out is the only one that matches`() {
         assertTrue(session.matches("nonce"))
         assertFalse(session.matches("Nonce"))
+        assertFalse(session.matches("nonce "))
         assertFalse(session.matches(""))
         // Still this session's nonce an hour later, even though the offer is long gone — which is
         // what lets a stranger's guess be turned away before anything describes the offer.
@@ -41,8 +27,11 @@ class PairingSessionTest {
     }
 
     @Test
-    fun `expiry is the same question asked without a nonce`() {
+    fun `the offer stops being open five minutes after it appeared`() {
         assertFalse(session.isExpired(start))
+        assertFalse(session.isExpired(start.plus(Duration.ofMinutes(4).plusSeconds(59))))
+        assertTrue(session.isExpired(start.plus(Duration.ofMinutes(5))))
+        assertTrue(session.isExpired(start.plus(Duration.ofHours(1))))
         assertTrue(session.isExpired(session.expiresAt))
         assertEquals(start.plus(Duration.ofMinutes(5)), session.expiresAt)
     }

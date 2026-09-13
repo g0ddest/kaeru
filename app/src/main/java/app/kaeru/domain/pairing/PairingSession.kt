@@ -36,12 +36,13 @@ data class PairingSession(
      * Compared without short-circuiting: the comparison runs against a value a caller on the
      * network chose, and telling it how many leading characters it got right is free information
      * it should not have.
+     *
+     * There is deliberately no helper that asks this and [isExpired] together. The server composes
+     * them in a fixed order for a reason — wrong nonce before anything about the offer's state —
+     * and a combined answer would be an invitation to give that order away.
      */
     fun matches(nonce: String): Boolean =
         MessageDigest.isEqual(this.nonce.toByteArray(Charsets.UTF_8), nonce.toByteArray(Charsets.UTF_8))
-
-    /** Whether [nonce] is this session's, and the session is still open. */
-    fun isValid(now: Instant, nonce: String): Boolean = !isExpired(now) && matches(nonce)
 
     companion object {
         /** Long enough to find the phone and unlock it; short enough that a photograph goes stale. */
