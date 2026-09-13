@@ -26,6 +26,14 @@ data class DiscoverUiState(
     val seasonal: List<Anime>? = null,
     val loadingNow: Boolean = false,
     val loadingSeasonal: Boolean = false,
+    /**
+     * Whether any season has answered this session, empty-handed or not.
+     *
+     * The switcher outlives its cards once it has. Before that there has never been a seasonal
+     * block at all, so a first read that fails takes the heading and the chips with it rather than
+     * leaving a control that has never worked.
+     */
+    val anySeasonLoaded: Boolean = false,
 ) {
     /**
      * The three chips, derived rather than stored: a stored copy could disagree with [season]

@@ -1,5 +1,7 @@
 package app.kaeru.ui.mobile.home
 
+import app.kaeru.domain.discover.Season
+import app.kaeru.domain.discover.SeasonKind
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.FeedItem
@@ -9,6 +11,7 @@ import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.model.WatchState
+import app.kaeru.ui.common.home.DiscoverUiState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -195,6 +198,8 @@ class HomeRowsTest {
 
     // --- discovery ----------------------------------------------------------------------------
 
+    private val summer = Season(SeasonKind.SUMMER, 2026)
+
     private fun catalogue(
         id: Int,
         episodes: Int = 12,
@@ -203,94 +208,146 @@ class HomeRowsTest {
         studio: String? = "Madhouse",
     ) = anime(id, episodes, aired, null, status).copy(studio = studio)
 
-    @Test
-    fun `the popular row is titled for what is airing rather than for the catalogue`() {
-        val row = popularNowRow(listOf(catalogue(1)), loading = false)!!
-        assertEquals("Популярно сейчас", row.title)
-        assertEquals(listOf(1), row.cards.map { it.animeId })
-        assertFalse(row.loading)
-    }
+    private fun discover(
+        popularNow: List<Anime>? = null,
+        seasonal: List<Anime>? = null,
+        loadingNow: Boolean = false,
+        loadingSeasonal: Boolean = false,
+        anySeasonLoaded: Boolean = false,
+    ) = discoverRows(
+        DiscoverUiState(summer, popularNow, seasonal, loadingNow, loadingSeasonal, anySeasonLoaded),
+    )
+
+    private fun cardsOf(row: DiscoverRow?) = (row?.content as DiscoverContent.Titles).cards
+
+    // --- «Популярно сейчас» ---------------------------------------------------------------------
 
     @Test
-    fun `the seasonal row is titled for the season, which the chips then name`() {
-        assertEquals("Популярное в сезоне", seasonalRow(listOf(catalogue(1)), loading = false)!!.title)
+    fun `the popular row is titled for what is airing rather than for the catalogue`() {
+        val row = discover(popularNow = listOf(catalogue(1))).popularNow!!
+        assertEquals("Популярно сейчас", row.title)
+        assertEquals(listOf(1), cardsOf(row).map { it.animeId })
     }
 
     @Test
     fun `a discovery card says how much of the show there is to watch`() {
-        val card = popularNowRow(listOf(catalogue(1, episodes = 12, aired = 8)), loading = false)!!.cards.single()
-        assertEquals("8 серий", card.subtitle)
+        val row = discover(popularNow = listOf(catalogue(1, episodes = 12, aired = 8))).popularNow
+        assertEquals("8 серий", cardsOf(row).single().subtitle)
     }
 
     @Test
     fun `a finished show counts the whole season rather than what aired`() {
-        val card = popularNowRow(
-            listOf(catalogue(1, episodes = 24, aired = 24, status = AnimeStatus.RELEASED)),
-            loading = false,
-        )!!.cards.single()
-        assertEquals("24 серии", card.subtitle)
+        val row = discover(
+            popularNow = listOf(catalogue(1, episodes = 24, aired = 24, status = AnimeStatus.RELEASED)),
+        ).popularNow
+        assertEquals("24 серии", cardsOf(row).single().subtitle)
     }
 
     @Test
     fun `a title that has not started says who is making it`() {
-        val card = seasonalRow(
-            listOf(catalogue(1, episodes = 12, aired = 0, status = AnimeStatus.ANONS)),
-            loading = false,
-        )!!.cards.single()
-        assertEquals("Madhouse", card.subtitle)
+        val row = discover(
+            seasonal = listOf(catalogue(1, episodes = 12, aired = 0, status = AnimeStatus.ANONS)),
+        ).seasonal
+        assertEquals("Madhouse", cardsOf(row).single().subtitle)
     }
 
     @Test
     fun `a title with nothing aired and nobody named says nothing at all`() {
-        val card = seasonalRow(
-            listOf(catalogue(1, aired = 0, status = AnimeStatus.ANONS, studio = null)),
-            loading = false,
-        )!!.cards.single()
-        assertNull(card.subtitle)
+        val row = discover(
+            seasonal = listOf(catalogue(1, aired = 0, status = AnimeStatus.ANONS, studio = null)),
+        ).seasonal
+        assertNull(cardsOf(row).single().subtitle)
     }
 
     @Test
     fun `a discovery card carries no episode badge and no progress`() {
-        val card = popularNowRow(listOf(catalogue(1)), loading = false)!!.cards.single()
+        val card = cardsOf(discover(popularNow = listOf(catalogue(1))).popularNow).single()
         assertNull(card.badge)
         assertNull(card.progress)
     }
 
     @Test
-    fun `a row that could not be read is absent rather than empty`() {
-        assertNull(popularNowRow(null, loading = false))
-        assertNull(seasonalRow(null, loading = false))
+    fun `the popular row that could not be read is absent rather than empty`() {
+        assertNull(discover(popularNow = null).popularNow)
     }
 
     @Test
-    fun `a row the catalogue had nothing for is absent too`() {
-        assertNull(popularNowRow(emptyList(), loading = false))
-        assertNull(seasonalRow(emptyList(), loading = false))
+    fun `the popular row the catalogue had nothing for is absent too`() {
+        assertNull(discover(popularNow = emptyList()).popularNow)
     }
 
     @Test
-    fun `a row still loading keeps its place with nothing in it`() {
-        val row = popularNowRow(null, loading = true)!!
-        assertTrue(row.loading)
-        assertTrue(row.cards.isEmpty())
+    fun `a row still loading keeps its place with a skeleton`() {
+        val row = discover(loadingNow = true).popularNow!!
         assertEquals("Популярно сейчас", row.title)
+        assertEquals(DiscoverContent.Loading, row.content)
     }
 
     @Test
     fun `titles already on screen are not replaced by a skeleton while they reload`() {
-        val row = popularNowRow(listOf(catalogue(1)), loading = true)!!
-        assertFalse(row.loading)
-        assertEquals(listOf(1), row.cards.map { it.animeId })
+        val row = discover(popularNow = listOf(catalogue(1)), loadingNow = true).popularNow
+        assertEquals(listOf(1), cardsOf(row).map { it.animeId })
+    }
+
+    // --- «Популярное в сезоне» ------------------------------------------------------------------
+
+    @Test
+    fun `the seasonal row is titled for the season, which the chips then name`() {
+        assertEquals("Популярное в сезоне", discover(seasonal = listOf(catalogue(1))).seasonal!!.title)
     }
 
     @Test
+    fun `the very first seasonal load failing takes the whole block away`() {
+        assertNull(discover(seasonal = null, anySeasonLoaded = false).seasonal)
+    }
+
+    @Test
+    fun `the first seasonal load keeps the block up while it is running`() {
+        assertEquals(DiscoverContent.Loading, discover(loadingSeasonal = true).seasonal?.content)
+    }
+
+    @Test
+    fun `a season with nothing in it keeps the switcher and says so`() {
+        val row = discover(seasonal = emptyList(), anySeasonLoaded = true).seasonal
+        assertEquals(DiscoverContent.Empty, row?.content)
+    }
+
+    @Test
+    fun `a season that failed after another one worked keeps the switcher and offers a retry`() {
+        val row = discover(seasonal = null, anySeasonLoaded = true).seasonal
+        assertEquals(DiscoverContent.Failed, row?.content)
+    }
+
+    @Test
+    fun `an empty season is empty however the session got there`() {
+        // A 200 with nothing in it is an answer, so it never reads as a failure.
+        assertEquals(DiscoverContent.Empty, discover(seasonal = emptyList()).seasonal?.content)
+    }
+
+    @Test
+    fun `switching to a season that is loading shows a skeleton, not the season before it`() {
+        val row = discover(seasonal = null, loadingSeasonal = true, anySeasonLoaded = true).seasonal
+        assertEquals(DiscoverContent.Loading, row?.content)
+    }
+
+    // --- the rules that hold across both --------------------------------------------------------
+
+    @Test
     fun `no discovery card joins its facts with a middle dot`() {
-        val rows = listOfNotNull(
-            popularNowRow(listOf(catalogue(1), catalogue(2, aired = 0, status = AnimeStatus.ANONS)), loading = false),
-            seasonalRow(listOf(catalogue(3, episodes = 0, aired = 0, status = AnimeStatus.ANONS)), loading = false),
+        val rows = discover(
+            popularNow = listOf(catalogue(1), catalogue(2, aired = 0, status = AnimeStatus.ANONS)),
+            seasonal = listOf(catalogue(3, episodes = 0, aired = 0, status = AnimeStatus.ANONS)),
         )
-        val text = rows.flatMap { it.cards }.flatMap { listOfNotNull(it.title, it.subtitle) }
+        val cards = cardsOf(rows.popularNow) + cardsOf(rows.seasonal)
+        val text = cards.flatMap { listOfNotNull(it.title, it.subtitle) }
         assertTrue(text.isNotEmpty())
-        assertTrue(text.none { it.contains("·") })
+        assertTrue(text.none { it.contains("\u00B7") })
+    }
+
+    @Test
+    fun `a home with no catalogue at all asks the screen to draw nothing`() {
+        val rows = discover()
+        assertNull(rows.popularNow)
+        assertNull(rows.seasonal)
     }
 }

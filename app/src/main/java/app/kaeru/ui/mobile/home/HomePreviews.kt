@@ -109,6 +109,7 @@ private val discovered = DiscoverUiState(
     season = summer,
     popularNow = popularNow,
     seasonal = seasonal,
+    anySeasonLoaded = true,
 )
 
 @Composable
@@ -121,6 +122,7 @@ private fun Home(state: HomeUiState) = KaeruTheme {
         onSettings = {},
         onSearch = {},
         onSeason = {},
+        onRetrySeason = {},
     )
 }
 
@@ -155,7 +157,17 @@ private fun HomeWithDiscoveryPreview() = Home(
     HomeUiState(feed = loadedFeed, isLoading = false, discover = discovered),
 )
 
-/** The catalogue rows before they arrive: headings and the switcher are up, the cards are not. */
+/**
+ * A brand-new account: the invitation, and directly under it the two rows it has nothing else to
+ * offer instead. The invitation is sized to its own words, so the first posters are on screen.
+ */
+@Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 1000)
+@Composable
+private fun HomeEmptyWithDiscoveryPreview() = Home(
+    HomeUiState(isLoading = false, discover = discovered),
+)
+
+/** The catalogue rows before they arrive: the real headings and the switcher are up, the cards are not. */
 @Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 1200)
 @Composable
 private fun HomeDiscoveryLoadingPreview() = Home(
@@ -166,7 +178,39 @@ private fun HomeDiscoveryLoadingPreview() = Home(
     ),
 )
 
-/** Shikimori was unreachable: both rows are simply not there, and the list above still works. */
+/** A season nobody has indexed yet: the switcher stays, so the viewer can press their way back. */
+@Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 900)
+@Composable
+private fun HomeSeasonEmptyPreview() = Home(
+    HomeUiState(
+        feed = plannedOnlyFeed,
+        isLoading = false,
+        discover = DiscoverUiState(
+            season = summer.next(),
+            popularNow = popularNow,
+            seasonal = emptyList(),
+            anySeasonLoaded = true,
+        ),
+    ),
+)
+
+/** A season that would not load, with the one line that says so and the way to ask again. */
+@Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 900)
+@Composable
+private fun HomeSeasonFailedPreview() = Home(
+    HomeUiState(
+        feed = plannedOnlyFeed,
+        isLoading = false,
+        discover = DiscoverUiState(
+            season = summer.previous(),
+            popularNow = popularNow,
+            seasonal = null,
+            anySeasonLoaded = true,
+        ),
+    ),
+)
+
+/** Shikimori was unreachable from the start: both rows are simply not there. */
 @Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 800)
 @Composable
 private fun HomeDiscoveryUnavailablePreview() = Home(

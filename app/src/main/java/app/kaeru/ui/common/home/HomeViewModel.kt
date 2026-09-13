@@ -36,9 +36,11 @@ private data class RefreshState(val active: Boolean = false, val error: String? 
 private data class DiscoverState(
     val season: Season,
     val popularNow: List<Anime>? = null,
-    val loadingNow: Boolean = true,
+    val loadingNow: Boolean = false,
     val seasonal: Map<Season, List<Anime>> = emptyMap(),
     val loading: Set<Season> = emptySet(),
+    /** Sticky: once a season has answered, the switcher has earned its place for the session. */
+    val anySeasonLoaded: Boolean = false,
 ) {
     fun toUiState() = DiscoverUiState(
         season = season,
@@ -46,6 +48,7 @@ private data class DiscoverState(
         seasonal = seasonal[season],
         loadingNow = loadingNow,
         loadingSeasonal = season in loading,
+        anySeasonLoaded = anySeasonLoaded,
     )
 }
 
@@ -64,8 +67,7 @@ class HomeViewModel @Inject constructor(
     // living in, and on four evenings a year that differs from the one in UTC.
     private val openedIn: Season = Season.current(clock.instant(), ZoneId.systemDefault())
 
-    // Both rows start out loading, so the first frame is the shape of the screen rather than a gap.
-    private val discoverState = MutableStateFlow(DiscoverState(season = openedIn, loading = setOf(openedIn)))
+    private val discoverState = MutableStateFlow(DiscoverState(season = openedIn))
     private var nowJob: Job? = null
     private val seasonJobs = mutableMapOf<Season, Job>()
 
@@ -89,11 +91,21 @@ class HomeViewModel @Inject constructor(
         initialValue = HomeUiState(feed = HomeFeed.EMPTY, discover = discoverState.value.toUiState()),
     )
 
-    init {
-        syncLibrary()
-        // Not forced: reopening the home screen should cost the catalogue nothing for six hours.
+    init { syncLibrary() }
+
+    /**
+     * Start the catalogue rows. Called by the screen that draws them, once.
+     *
+     * Not in `init`, because the television shares this view model and draws none of this: it would
+     * otherwise spend four requests on rows nobody sees, queued by the rate limiter ahead of the
+     * library sync it actually needs. Both loads are guarded, so calling this again — coming back
+     * to the home screen, a recomposition — costs nothing.
+     *
+     * Unforced: reopening the screen should cost the catalogue nothing for six hours.
+     */
+    fun loadDiscover() {
         loadPopularNow(force = false)
-        loadSeason(openedIn, force = false)
+        loadSeason(discoverState.value.season, force = false)
     }
 
     /**
@@ -119,6 +131,15 @@ class HomeViewModel @Inject constructor(
         loadSeason(season, force = false)
     }
 
+    /**
+     * «Повторить» under a season that would not load.
+     *
+     * Unforced on purpose: the repository does not cache failures, so there is no stale answer to
+     * step around, and an unforced read still reaches the network. Forcing would also throw away a
+     * perfectly good cached answer if the failure turned out to be somewhere else.
+     */
+    fun retrySeason() = loadSeason(discoverState.value.season, force = false)
+
     private fun syncLibrary() {
         if (refreshJob?.isActive == true) return
         refreshJob = viewModelScope.launch {
@@ -129,7 +150,10 @@ class HomeViewModel @Inject constructor(
     }
 
     private fun loadPopularNow(force: Boolean) {
-        if (!force && nowJob?.isActive == true) return
+        // Titles already in hand, or on their way, are the answer to an unforced ask — which is
+        // what returning to the home screen is. A read that failed left this null, so coming back
+        // after one is a retry.
+        if (!force && (discoverState.value.popularNow != null || nowJob?.isActive == true)) return
         nowJob?.cancel()
         nowJob = viewModelScope.launch {
             discoverState.update { it.copy(loadingNow = true) }
@@ -137,7 +161,10 @@ class HomeViewModel @Inject constructor(
             // above answer the question the viewer opened the app with, and a banner about the
             // catalogue would be about something they did not ask for.
             val titles = discover.popularNow(force).getOrNull()
-            discoverState.update { it.copy(popularNow = titles, loadingNow = false) }
+            // A failure never takes away titles the viewer is already reading. Pull to refresh
+            // going into a tunnel and the row would otherwise vanish from both layers at once,
+            // since the repository does not cache failures either.
+            discoverState.update { it.copy(popularNow = titles ?: it.popularNow, loadingNow = false) }
         }
     }
 
@@ -150,12 +177,19 @@ class HomeViewModel @Inject constructor(
             val titles = discover.seasonal(season, force).getOrNull()
             discoverState.update {
                 it.copy(
-                    // A season that could not be read is left out rather than remembered empty,
-                    // so pressing its chip again is a retry.
-                    seasonal = if (titles != null) it.seasonal + (season to titles) else it.seasonal - season,
+                    seasonal = when {
+                        titles != null -> it.seasonal + (season to titles)
+                        // A failed refresh keeps the row that is on screen, the same way the
+                        // popular row does; only a read with nothing behind it drops the key.
+                        force -> it.seasonal
+                        // Left out rather than remembered empty, so pressing the chip is a retry.
+                        else -> it.seasonal - season
+                    },
                     loading = it.loading - season,
+                    anySeasonLoaded = it.anySeasonLoaded || titles != null,
                 )
             }
+            seasonJobs -= season
         }
     }
 }

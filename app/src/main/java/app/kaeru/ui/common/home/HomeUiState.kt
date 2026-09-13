@@ -1,9 +1,6 @@
 package app.kaeru.ui.common.home
 
-import app.kaeru.domain.discover.Season
 import app.kaeru.domain.model.HomeFeed
-import java.time.Instant
-import java.time.ZoneId
 
 data class HomeUiState(
     val feed: HomeFeed = HomeFeed.EMPTY,
@@ -19,11 +16,12 @@ data class HomeUiState(
      */
     val watchedThreshold: Float = 0.9f,
     /**
-     * The catalogue rows under the personal ones.
+     * The catalogue rows under the personal ones, or null for a screen that has none.
      *
-     * The default reads the clock because a season is a fact about today and there is no honest
-     * placeholder for it; the view model always passes its own, so this is only what a preview or
-     * a screen with no discovery of its own gets.
+     * Null rather than a default, because the only honest default needs today's date and a data
+     * class whose default reads the wall clock is a trap for the next reader. The view model always
+     * supplies one from its injected [java.time.Clock]; a preview, or a television that draws no
+     * catalogue, simply leaves it out.
      */
-    val discover: DiscoverUiState = DiscoverUiState(Season.current(Instant.now(), ZoneId.systemDefault())),
+    val discover: DiscoverUiState? = null,
 )

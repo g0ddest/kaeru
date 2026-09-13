@@ -20,6 +20,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -94,6 +95,9 @@ fun MobileShell(onLogout: () -> Unit, nav: NavHostController = rememberNavContro
         ) {
             composable(Routes.HOME) {
                 val vm: HomeViewModel = hiltViewModel()
+                // The catalogue rows are the phone's; the television shares this view model and
+                // draws none of them, so nothing fetches them until this screen asks.
+                LaunchedEffect(vm) { vm.loadDiscover() }
                 HomeScreen(
                     state = vm.uiState.collectAsStateWithLifecycle().value,
                     onRefresh = vm::refresh,
@@ -102,6 +106,7 @@ fun MobileShell(onLogout: () -> Unit, nav: NavHostController = rememberNavContro
                     onSettings = { nav.navigate(Routes.SETTINGS) { launchSingleTop = true } },
                     onSearch = { openTab(Routes.SEARCH) },
                     onSeason = vm::selectSeason,
+                    onRetrySeason = vm::retrySeason,
                 )
             }
             composable(Routes.LIBRARY) {

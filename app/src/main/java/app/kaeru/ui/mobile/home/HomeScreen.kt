@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
@@ -67,6 +68,7 @@ private const val FIND_ANIME = "Найти аниме"
 private const val HERO = "hero"
 private const val BAR_SPACE = "bar"
 private const val ROW = "row"
+private const val INVITATION = "invitation"
 
 /** The height of [KaeruTopBar], which floats over this screen instead of taking space in it. */
 private val BarHeight = 56.dp
@@ -91,6 +93,7 @@ fun HomeScreen(
     onSettings: () -> Unit,
     onSearch: () -> Unit,
     onSeason: (Season) -> Unit,
+    onRetrySeason: () -> Unit,
 ) {
     val content = homeContentState(state)
     val snackbar = remember { SnackbarHostState() }
@@ -102,6 +105,9 @@ fun HomeScreen(
     // One clock per feed. «осталось 14 мин» and «завтра» are read against it, and a line that
     // rewrote itself on every recomposition would be a line nobody could finish reading.
     val now = remember(state.feed) { Instant.now() }
+    // Built here rather than inside a list content lambda: it allocates a card per title and
+    // formats a line per card, and that lambda re-runs on every recomposition of the screen.
+    val catalogue = remember(state.discover) { state.discover?.let(::discoverRows) }
     Box(Modifier.fillMaxSize()) {
         PullToRefreshBox(
             isRefreshing = state.isRefreshing,
@@ -121,8 +127,9 @@ fun HomeScreen(
             when (content) {
                 HomeContent.Loading -> HomeLoading()
                 is HomeContent.Error -> HomeError(content.message, onRefresh)
-                HomeContent.Empty -> HomeEmpty(onSearch)
-                HomeContent.Feed -> FeedList(state, now, listState, onPlay, onAnime, onSeason)
+                HomeContent.Empty -> HomeEmpty(onSearch, catalogue, onAnime, onSeason, onRetrySeason)
+                HomeContent.Feed ->
+                    FeedList(state, catalogue, now, listState, onPlay, onAnime, onSeason, onRetrySeason)
             }
         }
         HomeBar(listState, onSettings)
@@ -156,11 +163,13 @@ private fun HomeBar(listState: LazyListState, onSettings: () -> Unit) {
 @Composable
 private fun FeedList(
     state: HomeUiState,
+    catalogue: DiscoverRows?,
     now: Instant,
     listState: LazyListState,
     onPlay: (Int, Int) -> Unit,
     onAnime: (Int) -> Unit,
     onSeason: (Season) -> Unit,
+    onRetrySeason: () -> Unit,
 ) {
     // `now` is remembered on the same feed, so keying on it as well would buy nothing.
     val rows = remember(state.feed, state.watchedThreshold) {
@@ -184,7 +193,7 @@ private fun FeedList(
             item(key = row.title, contentType = ROW) { FeedRow(row, onAnime) }
         }
         // Below everything the viewer already owns: what everyone else is watching.
-        discoverSections(state.discover, onAnime, onSeason)
+        catalogue?.let { discoverSections(it, onAnime, onSeason, onRetrySeason) }
     }
 }
 
@@ -260,18 +269,38 @@ private fun HomeError(message: String, onRetry: () -> Unit) = LazyColumn(Modifie
 /**
  * Nothing in the list yet, which is a moment to point somewhere rather than shrug.
  *
- * It is a lazy list with one screen-sized item: there is nothing to scroll, but pull-to-refresh
- * listens through nested scroll, and an empty home is exactly where a viewer pulls.
+ * The invitation is the first block of a scrolling page, not the page: under it are «Популярно
+ * сейчас» and «Популярное в сезоне», and a brand-new account — the viewer those rows are most for
+ * — should meet them without scrolling past a screen-high placeholder first. That is why the
+ * [EmptyState] is sized to its own content; `fillParentMaxSize` here would obey the letter of
+ * having the rows and still put them below the fold.
+ *
+ * It stays a lazy list: pull-to-refresh listens through nested scroll, and an empty home is
+ * exactly where a viewer pulls.
  */
 @Composable
-private fun HomeEmpty(onSearch: () -> Unit) = LazyColumn(Modifier.fillMaxSize()) {
-    item {
+private fun HomeEmpty(
+    onSearch: () -> Unit,
+    catalogue: DiscoverRows?,
+    onAnime: (Int) -> Unit,
+    onSeason: (Season) -> Unit,
+    onRetrySeason: () -> Unit,
+) = LazyColumn(
+    Modifier.fillMaxSize(),
+    contentPadding = PaddingValues(bottom = KaeruTokens.Space8),
+) {
+    item(key = "invitation", contentType = INVITATION) {
         EmptyState(
             title = EMPTY_TITLE,
             text = EMPTY_TEXT,
-            modifier = Modifier.fillParentMaxSize(),
+            // Clear of the floating bar, which has no hero to float over on this screen.
+            modifier = Modifier
+                .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .padding(top = BarHeight),
             actionLabel = FIND_ANIME,
             onAction = onSearch,
         )
     }
+    catalogue?.let { discoverSections(it, onAnime, onSeason, onRetrySeason) }
 }

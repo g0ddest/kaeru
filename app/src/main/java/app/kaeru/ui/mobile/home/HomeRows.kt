@@ -1,11 +1,13 @@
 package app.kaeru.ui.mobile.home
 
+import app.kaeru.domain.discover.Season
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.FeedItem
 import app.kaeru.domain.model.HomeFeed
 import app.kaeru.ui.common.design.pluralEpisodes
 import app.kaeru.ui.common.design.relativeDay
 import app.kaeru.ui.common.design.remainingLine
+import app.kaeru.ui.common.home.DiscoverUiState
 import java.time.Instant
 import java.time.ZoneId
 
@@ -117,35 +119,105 @@ private fun FeedItem.seasonLength(): String? {
 }
 
 /**
+ * What sits under a discovery row's heading.
+ *
+ * Four states rather than a list and a flag, because the seasonal row genuinely has four and the
+ * invariant «cards are empty exactly when loading» stopped being true the moment a season could
+ * answer with nothing. Exhaustive `when`s in the screen are the point.
+ */
+sealed interface DiscoverContent {
+    /** Titles to draw. Never empty: an empty answer is [Empty]. */
+    data class Titles(val cards: List<HomeCard>) : DiscoverContent
+
+    /** A skeleton under a heading that is already readable. */
+    data object Loading : DiscoverContent
+
+    /** The catalogue answered and had nothing. Said out loud only where a switcher can act on it. */
+    data object Empty : DiscoverContent
+
+    /**
+     * There is nothing and nothing is coming.
+     *
+     * Almost always a read that failed, which is what the seasonal row says out loud. It also
+     * covers the frame before anything has been asked for at all — a state both rows hide, so the
+     * word «failed» never reaches a screen while it is true.
+     */
+    data object Failed : DiscoverContent
+}
+
+/**
  * A row of titles the viewer has not added to anything.
  *
  * Kept apart from [HomeRow] because the two answer different questions and are drawn differently.
  * A personal row is built from a list already on the device, so it either exists or does not; a
- * discovery row arrives from the network after the screen is up, which is why this one has a
- * [loading] shape and [HomeRow] does not. [cards] is empty exactly when [loading] is true.
+ * discovery row arrives from the network after the screen is up, which is why this one carries
+ * [DiscoverContent] and [HomeRow] does not.
  */
-data class DiscoverRow(val title: String, val cards: List<HomeCard>, val loading: Boolean)
-
-/** «Популярно сейчас» — what is airing, most watched first. */
-fun popularNowRow(titles: List<Anime>?, loading: Boolean): DiscoverRow? =
-    discoverRow(POPULAR_NOW, titles, loading)
-
-/** «Популярное в сезоне» — the season the chips have selected says which one. */
-fun seasonalRow(titles: List<Anime>?, loading: Boolean): DiscoverRow? =
-    discoverRow(POPULAR_IN_SEASON, titles, loading)
+data class DiscoverRow(val title: String, val content: DiscoverContent)
 
 /**
- * The row, the skeleton, or nothing at all.
+ * Everything the catalogue part of the screen draws: two rows, each null when it has nothing at
+ * all to stand on, and the switcher that belongs to the second one.
+ *
+ * The chips travel with the rows rather than being read off the state again at draw time, so the
+ * screen has one thing to remember and one thing to check for null.
+ */
+data class DiscoverRows(
+    val popularNow: DiscoverRow?,
+    val seasonal: DiscoverRow?,
+    val season: Season,
+    val seasons: List<Season>,
+)
+
+/**
+ * The catalogue part of the home screen, decided where it can be read in a test.
+ *
+ * The two rows are quiet in different amounts, and that is deliberate. «Популярно сейчас» has no
+ * controls, so it has nothing to say about its own failure and simply goes away. The seasonal row
+ * owns the season switcher, so once that switcher has been useful it stays: a chip press that
+ * comes back empty, or fails, leaves the viewer able to press their way somewhere else instead of
+ * deleting the thing they pressed.
+ */
+fun discoverRows(discover: DiscoverUiState): DiscoverRows = DiscoverRows(
+    popularNow = popularNowRow(discover.popularNow, discover.loadingNow),
+    seasonal = seasonalRow(discover.seasonal, discover.loadingSeasonal, discover.anySeasonLoaded),
+    season = discover.season,
+    seasons = discover.seasons,
+)
+
+/** «Популярно сейчас» — what is airing, most watched first. It has no controls, so it says nothing. */
+private fun popularNowRow(titles: List<Anime>?, loading: Boolean): DiscoverRow? {
+    val content = content(titles, loading)
+    if (content == DiscoverContent.Empty || content == DiscoverContent.Failed) return null
+    return DiscoverRow(POPULAR_NOW, content)
+}
+
+/**
+ * «Популярное в сезоне» — the chips say which season.
+ *
+ * [anySeasonLoaded] is what keeps the switcher alive. The very first read failing means there has
+ * never been anything here, so the whole block goes; a later one failing means the viewer has a
+ * switcher on screen, and pressing it is the way out — taking it away would be a dead end.
+ */
+private fun seasonalRow(titles: List<Anime>?, loading: Boolean, anySeasonLoaded: Boolean): DiscoverRow? {
+    val content = content(titles, loading)
+    if (content == DiscoverContent.Failed && !anySeasonLoaded) return null
+    return DiscoverRow(POPULAR_IN_SEASON, content)
+}
+
+/**
+ * Titles, a skeleton, an empty answer, or nothing.
  *
  * Titles win over [loading]: a pull-to-refresh reloads a row that is already on screen, and
- * blanking it to a skeleton would take away something the viewer can read in exchange for
- * nothing. Nothing at all is the answer to both failure and an empty catalogue — neither is a
- * problem the viewer can fix, and the rows above still answer what they opened the app for.
+ * blanking it to a skeleton would take away something readable in exchange for nothing. A non-null
+ * empty list is an answer and never reads as a failure; a null with nothing on its way is the one
+ * that does.
  */
-private fun discoverRow(title: String, titles: List<Anime>?, loading: Boolean): DiscoverRow? = when {
-    !titles.isNullOrEmpty() -> DiscoverRow(title, titles.map(::discoverCard), loading = false)
-    loading -> DiscoverRow(title, emptyList(), loading = true)
-    else -> null
+private fun content(titles: List<Anime>?, loading: Boolean): DiscoverContent = when {
+    !titles.isNullOrEmpty() -> DiscoverContent.Titles(titles.map(::discoverCard))
+    loading -> DiscoverContent.Loading
+    titles != null -> DiscoverContent.Empty
+    else -> DiscoverContent.Failed
 }
 
 /**

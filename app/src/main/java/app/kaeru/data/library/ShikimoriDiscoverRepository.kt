@@ -64,9 +64,6 @@ class ShikimoriDiscoverRepository @Inject constructor(
     override suspend fun seasonal(season: Season, force: Boolean): Result<List<Anime>> =
         read(season.apiValue, force) { api.animes(season = season.apiValue, limit = ROW_LIMIT) }
 
-    /** Forgets everything, so the next read of every row goes out to the catalogue again. */
-    suspend fun invalidate() = lock.withLock { cached.clear() }
-
     private suspend fun read(
         key: String,
         force: Boolean,

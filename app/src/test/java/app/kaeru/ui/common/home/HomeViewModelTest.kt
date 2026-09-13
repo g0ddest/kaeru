@@ -18,6 +18,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -85,6 +86,17 @@ class HomeViewModelTest {
         prefs: FakePlaybackPreferences = FakePlaybackPreferences(),
     ) = HomeViewModel(library, discover, HomeFeedBuilder(), Clock.fixed(now, ZoneOffset.UTC), prefs)
 
+    /** The phone's home screen asks for the catalogue; nothing else does. */
+    private fun TestScope.openedHome(
+        library: FakeLibraryRepository = FakeLibraryRepository(),
+        discover: FakeDiscoverRepository = FakeDiscoverRepository(),
+    ): HomeViewModel = viewModel(library, discover).also {
+        it.loadDiscover()
+        advanceUntilIdle()
+    }
+
+    private fun HomeViewModel.discovered() = uiState.value.discover!!
+
     private fun entry(id: Int = 7) = LibraryEntry(
         anime = Anime(id, "Фрирен", "Sousou no Frieren", null, emptyList(), AnimeStatus.ONGOING, 28, 24, null, 9.1, 2023, "Madhouse", null),
         rate = UserRate(11, id, ListStatus.WATCHING, 20, now),
@@ -138,14 +150,23 @@ class HomeViewModelTest {
     // --- discovery ---------------------------------------------------------------------------
 
     @Test
-    fun `both discovery rows are read once the screen opens`() = runTest(main.dispatcher) {
+    fun `a screen that never asks for the catalogue never pays for it`() = runTest(main.dispatcher) {
+        // The television shares this view model and draws no catalogue rows. Four requests it does
+        // not use would sit in the rate limiter ahead of the library sync it does.
+        val discover = FakeDiscoverRepository()
+        viewModel(discover = discover)
+        advanceUntilIdle()
+        assertTrue(discover.reads.isEmpty())
+    }
+
+    @Test
+    fun `both discovery rows are read once the home screen asks`() = runTest(main.dispatcher) {
         val discover = FakeDiscoverRepository().also {
             it.now = Result.success(listOf(anime(1)))
             it.bySeason[summer] = Result.success(listOf(anime(2)))
         }
-        val vm = viewModel(discover = discover)
-        advanceUntilIdle()
-        val state = vm.uiState.value.discover
+        val vm = openedHome(discover = discover)
+        val state = vm.discovered()
         assertEquals(summer, state.season)
         assertEquals(listOf(1), state.popularNow?.map { it.id })
         assertEquals(listOf(2), state.seasonal?.map { it.id })
@@ -156,16 +177,22 @@ class HomeViewModelTest {
     @Test
     fun `opening the screen reads the catalogue through its cache, not past it`() = runTest(main.dispatcher) {
         val discover = FakeDiscoverRepository()
-        viewModel(discover = discover)
+        openedHome(discover = discover)
+        assertEquals(listOf("now", "summer_2026"), discover.reads)
+    }
+
+    @Test
+    fun `coming back to the home screen does not read the catalogue again`() = runTest(main.dispatcher) {
+        val discover = FakeDiscoverRepository()
+        val vm = openedHome(discover = discover)
+        vm.loadDiscover()
         advanceUntilIdle()
         assertEquals(listOf("now", "summer_2026"), discover.reads)
     }
 
     @Test
     fun `the chips offer the season before, the one airing and the one coming`() = runTest(main.dispatcher) {
-        val vm = viewModel()
-        advanceUntilIdle()
-        assertEquals(listOf(spring, summer, fall), vm.uiState.value.discover.seasons)
+        assertEquals(listOf(spring, summer, fall), openedHome().discovered().seasons)
     }
 
     @Test
@@ -174,19 +201,26 @@ class HomeViewModelTest {
             it.now = Result.failure(NetworkUnavailable(UnknownHostException("shikimori.io")))
             it.fallback = Result.failure(HttpError(503))
         }
-        val vm = viewModel(discover = discover)
-        advanceUntilIdle()
-        assertNull(vm.uiState.value.discover.popularNow)
-        assertNull(vm.uiState.value.discover.seasonal)
-        assertFalse(vm.uiState.value.discover.loadingNow)
+        val vm = openedHome(discover = discover)
+        assertNull(vm.discovered().popularNow)
+        assertNull(vm.discovered().seasonal)
+        assertFalse(vm.discovered().loadingNow)
+        // Nothing ever came back, so the switcher has never been useful and goes with the row.
+        assertFalse(vm.discovered().anySeasonLoaded)
     }
 
     @Test
     fun `a discovery failure never becomes the screen's error`() = runTest(main.dispatcher) {
         val discover = FakeDiscoverRepository().also { it.now = Result.failure(HttpError(503)) }
-        val vm = viewModel(discover = discover)
-        advanceUntilIdle()
-        assertNull(vm.uiState.value.errorMessage)
+        assertNull(openedHome(discover = discover).uiState.value.errorMessage)
+    }
+
+    @Test
+    fun `a season that answers, even with nothing, earns the switcher its place`() = runTest(main.dispatcher) {
+        val discover = FakeDiscoverRepository().also { it.fallback = Result.success(emptyList()) }
+        val vm = openedHome(discover = discover)
+        assertTrue(vm.discovered().anySeasonLoaded)
+        assertEquals(emptyList<Anime>(), vm.discovered().seasonal)
     }
 
     @Test
@@ -195,33 +229,30 @@ class HomeViewModelTest {
             it.bySeason[summer] = Result.success(listOf(anime(2)))
             it.bySeason[spring] = Result.success(listOf(anime(3)))
         }
-        val vm = viewModel(discover = discover)
-        advanceUntilIdle()
+        val vm = openedHome(discover = discover)
         vm.selectSeason(spring)
         advanceUntilIdle()
-        assertEquals(spring, vm.uiState.value.discover.season)
-        assertEquals(listOf(3), vm.uiState.value.discover.seasonal?.map { it.id })
+        assertEquals(spring, vm.discovered().season)
+        assertEquals(listOf(3), vm.discovered().seasonal?.map { it.id })
         assertEquals(listOf("now", "summer_2026", "spring_2026"), discover.reads)
     }
 
     @Test
     fun `a season already on the screen comes back without another read`() = runTest(main.dispatcher) {
         val discover = FakeDiscoverRepository()
-        val vm = viewModel(discover = discover)
-        advanceUntilIdle()
+        val vm = openedHome(discover = discover)
         vm.selectSeason(spring)
         advanceUntilIdle()
         vm.selectSeason(summer)
         advanceUntilIdle()
         assertEquals(listOf("now", "summer_2026", "spring_2026"), discover.reads)
-        assertFalse(vm.uiState.value.discover.loadingSeasonal)
+        assertFalse(vm.discovered().loadingSeasonal)
     }
 
     @Test
     fun `a season that failed is read again when it is chosen again`() = runTest(main.dispatcher) {
         val discover = FakeDiscoverRepository().also { it.bySeason[spring] = Result.failure(HttpError(503)) }
-        val vm = viewModel(discover = discover)
-        advanceUntilIdle()
+        val vm = openedHome(discover = discover)
         vm.selectSeason(spring)
         advanceUntilIdle()
         vm.selectSeason(summer)
@@ -232,10 +263,27 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `a season that failed after another one worked keeps the switcher and can be retried`() =
+        runTest(main.dispatcher) {
+            val discover = FakeDiscoverRepository().also { it.bySeason[spring] = Result.failure(HttpError(503)) }
+            val vm = openedHome(discover = discover)
+            vm.selectSeason(spring)
+            advanceUntilIdle()
+            assertNull(vm.discovered().seasonal)
+            assertTrue(vm.discovered().anySeasonLoaded)
+
+            discover.bySeason[spring] = Result.success(listOf(anime(3)))
+            vm.retrySeason()
+            advanceUntilIdle()
+
+            assertEquals(listOf(3), vm.discovered().seasonal?.map { it.id })
+            assertEquals(listOf("now", "summer_2026", "spring_2026", "spring_2026"), discover.reads)
+        }
+
+    @Test
     fun `pulling to refresh asks the catalogue again instead of repeating its answer`() = runTest(main.dispatcher) {
         val discover = FakeDiscoverRepository()
-        val vm = viewModel(discover = discover)
-        advanceUntilIdle()
+        val vm = openedHome(discover = discover)
         vm.refresh()
         advanceUntilIdle()
         assertEquals(listOf("now", "summer_2026", "now!", "summer_2026!"), discover.reads)
@@ -244,8 +292,7 @@ class HomeViewModelTest {
     @Test
     fun `a refresh forgets the other seasons so a later chip is fresh too`() = runTest(main.dispatcher) {
         val discover = FakeDiscoverRepository()
-        val vm = viewModel(discover = discover)
-        advanceUntilIdle()
+        val vm = openedHome(discover = discover)
         vm.selectSeason(spring)
         advanceUntilIdle()
         // The pull forces the season on screen; summer was read before it and must not survive.
@@ -262,8 +309,7 @@ class HomeViewModelTest {
     @Test
     fun `a pull leaves the season on screen in place until the new titles land`() = runTest(main.dispatcher) {
         val discover = FakeDiscoverRepository().also { it.bySeason[summer] = Result.success(listOf(anime(2))) }
-        val vm = viewModel(discover = discover)
-        advanceUntilIdle()
+        val vm = openedHome(discover = discover)
         val request = CompletableDeferred<Unit>()
         discover.hold = request
 
@@ -271,19 +317,54 @@ class HomeViewModelTest {
         advanceUntilIdle()
 
         // Mid-request: the row is still the row, not a hole where it used to be.
-        assertEquals(listOf(2), vm.uiState.value.discover.seasonal?.map { it.id })
-        assertTrue(vm.uiState.value.discover.loadingSeasonal)
+        assertEquals(listOf(2), vm.discovered().seasonal?.map { it.id })
+        assertTrue(vm.discovered().loadingSeasonal)
         request.complete(Unit)
         advanceUntilIdle()
-        assertEquals(listOf(2), vm.uiState.value.discover.seasonal?.map { it.id })
-        assertFalse(vm.uiState.value.discover.loadingSeasonal)
+        assertEquals(listOf(2), vm.discovered().seasonal?.map { it.id })
+        assertFalse(vm.discovered().loadingSeasonal)
     }
+
+    @Test
+    fun `a failed refresh keeps the popular row the viewer was reading`() = runTest(main.dispatcher) {
+        val discover = FakeDiscoverRepository().also { it.now = Result.success(listOf(anime(1))) }
+        val vm = openedHome(discover = discover)
+
+        discover.now = Result.failure(NetworkUnavailable(UnknownHostException("shikimori.io")))
+        vm.refresh()
+        advanceUntilIdle()
+
+        assertEquals(listOf(1), vm.discovered().popularNow?.map { it.id })
+        assertFalse(vm.discovered().loadingNow)
+    }
+
+    @Test
+    fun `a failed refresh keeps the seasonal row the viewer was reading`() = runTest(main.dispatcher) {
+        val discover = FakeDiscoverRepository().also { it.bySeason[summer] = Result.success(listOf(anime(2))) }
+        val vm = openedHome(discover = discover)
+
+        discover.bySeason[summer] = Result.failure(HttpError(503))
+        vm.refresh()
+        advanceUntilIdle()
+
+        assertEquals(listOf(2), vm.discovered().seasonal?.map { it.id })
+        assertFalse(vm.discovered().loadingSeasonal)
+    }
+
+    @Test
+    fun `a first read that fails still leaves the season absent, so pressing it retries`() =
+        runTest(main.dispatcher) {
+            val discover = FakeDiscoverRepository().also { it.bySeason[spring] = Result.failure(HttpError(503)) }
+            val vm = openedHome(discover = discover)
+            vm.selectSeason(spring)
+            advanceUntilIdle()
+            assertNull(vm.discovered().seasonal)
+        }
 
     @Test
     fun `pressing the chip already selected does nothing`() = runTest(main.dispatcher) {
         val discover = FakeDiscoverRepository()
-        val vm = viewModel(discover = discover)
-        advanceUntilIdle()
+        val vm = openedHome(discover = discover)
         vm.selectSeason(summer)
         advanceUntilIdle()
         assertEquals(listOf("now", "summer_2026"), discover.reads)
