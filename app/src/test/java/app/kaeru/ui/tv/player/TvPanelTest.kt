@@ -27,7 +27,11 @@ class TvPanelTest {
         episodes: List<EpisodeCell> = emptyList(),
         translations: List<RankedTranslation> = emptyList(),
         qualities: List<Quality> = emptyList(),
-    ) = PlayerUiState(episodes = episodes, translations = translations, qualities = qualities)
+        nextEpisodeAvailable: Boolean = false,
+    ) = PlayerUiState(
+        episodes = episodes, translations = translations, qualities = qualities,
+        nextEpisodeAvailable = nextEpisodeAvailable,
+    )
 
     private fun cell(number: Int, aired: Boolean = true, progress: Float? = null, watched: Boolean = false) =
         EpisodeCell(number = number, watched = watched, progress = progress, aired = aired)
@@ -135,6 +139,27 @@ class TvPanelTest {
         // Every tile would be unpressable, and a rung the D-pad lands on with nothing to press
         // is a dead end on a remote.
         assertEquals(listOf(TRANSPORT), tvPanelRungs(state(episodes = listOf(cell(1, aired = false)))))
+    }
+
+    // --- what the content carries over from the state -------------------------------------------
+
+    @Test
+    fun `the panel's answer about a next episode is the state's, not its own default`() {
+        // `TvPanelContent` exists to stop a position tick rebuilding the panel four times a
+        // second, so every field on it is a copy — and a copy defaulted to `false` that nobody
+        // assigns is the shape that quietly loses the «Следующая» button on the transport row
+        // while the rest of the suite stays green.
+        assertTrue(tvPanelContent(state(nextEpisodeAvailable = true)).nextEpisodeAvailable)
+        assertFalse(tvPanelContent(state(nextEpisodeAvailable = false)).nextEpisodeAvailable)
+    }
+
+    @Test
+    fun `the episode and the chosen voice come over with it`() {
+        val full = PlayerUiState(episode = 7, translations = listOf(track(3)), translationId = 3)
+        val content = tvPanelContent(full)
+
+        assertEquals(7, content.episode)
+        assertEquals(3, content.translationId)
     }
 
     // --- walking them -------------------------------------------------------------------------
