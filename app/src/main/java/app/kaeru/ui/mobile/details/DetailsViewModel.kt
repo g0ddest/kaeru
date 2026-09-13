@@ -67,6 +67,14 @@ class DetailsViewModel @Inject constructor(
 ) : ViewModel() {
     private val animeId: Int = checkNotNull(savedStateHandle["animeId"])
     private val work = MutableStateFlow(DetailsUiState())
+
+    /**
+     * The cached dub list no longer matches what this anime remembers, so the next open re-reads it.
+     *
+     * Not part of [DetailsUiState] because no screen renders it: it decides whether a call happens,
+     * not what is drawn. Touched only from the main dispatcher, like every other method here.
+     */
+    private var translationsStale = false
     val uiState: StateFlow<DetailsUiState> = combine(
         repository.observeAnime(animeId), repository.observeAnimeDetails(animeId), work, prefs.watchedThreshold,
     ) { entry, details, state, threshold ->
@@ -96,11 +104,16 @@ class DetailsViewModel @Inject constructor(
      *
      * The catalogue call is a network round trip that most visits to this screen never need, so
      * nothing asks for it until the viewer opens the chooser. A list already in hand is not asked
-     * for again; a list that failed is, because the retry inside the chooser calls this.
+     * for again; a list that failed is, because the retry inside the chooser calls this — and so is
+     * a list that [pickTranslation] has since made stale.
      */
     fun loadTranslations() {
         val current = work.value
-        if (current.loadingTranslations || current.translations.isNotEmpty()) return
+        if (current.loadingTranslations) return
+        if (current.translations.isNotEmpty() && !translationsStale) return
+        // Cleared before the call, not after: a pick that lands while this one is in flight marks
+        // the answer stale again, and the open after that re-reads rather than trusting it.
+        translationsStale = false
         viewModelScope.launch {
             work.value = work.value.copy(loadingTranslations = true, translationsError = null)
             val result = streams.translations(animeId)
@@ -142,7 +155,17 @@ class DetailsViewModel @Inject constructor(
                 savingTranslation = false,
                 errorMessage = failure,
                 failedPick = translation.takeIf { failure != null },
+                // The list in hand was ranked for an anime that remembered nothing, and this anime
+                // now remembers something. The tick that moves onto the picked row is the only mark
+                // the list should carry, so the habit chips come off at once; the order is put right
+                // by the re-read the next open now makes.
+                translations = if (failure == null) {
+                    work.value.translations.map { it.copy(oftenChosen = false) }
+                } else {
+                    work.value.translations
+                },
             )
+            if (failure == null) translationsStale = true
         }
     }
 

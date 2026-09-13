@@ -157,6 +157,49 @@ class DetailsViewModelTest {
         }
 
     @Test
+    fun `picking a dub leaves the chooser marking it chosen and nothing else`() = runTest(main.dispatcher) {
+        watchStates.seed(WatchState(1, 1, 0, 0, source.studioBanda.id, 1, Instant.EPOCH))
+        watchStates.seed(WatchState(2, 1, 0, 0, source.studioBanda.id, 1, Instant.EPOCH))
+        val vm = viewModel(FakeRepository(item))
+        advanceUntilIdle()
+        vm.loadTranslations()
+        advanceUntilIdle()
+        assertEquals(listOf(true, false), vm.uiState.value.translations.map { it.oftenChosen })
+
+        vm.pickTranslation(source.studioBanda)
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.translations.none { it.oftenChosen })
+
+        // Reopening re-reads the catalogue, because this anime now remembers a dub and the list it
+        // was given was ranked for an anime that remembered none.
+        vm.loadTranslations()
+        advanceUntilIdle()
+        assertEquals(2, source.translationCalls)
+        assertEquals(listOf("Студийная банда", "AniLibria.TV"), vm.uiState.value.translations.map { it.translation.title })
+        assertTrue(vm.uiState.value.translations.none { it.oftenChosen })
+    }
+
+    @Test
+    fun `a dub that could not be saved leaves the list alone, so the retry still has it`() =
+        runTest(main.dispatcher) {
+            watchStates.seed(WatchState(1, 1, 0, 0, source.studioBanda.id, 1, Instant.EPOCH))
+            watchStates.seed(WatchState(2, 1, 0, 0, source.studioBanda.id, 1, Instant.EPOCH))
+            val vm = viewModel(FakeRepository(item))
+            advanceUntilIdle()
+            vm.loadTranslations()
+            advanceUntilIdle()
+
+            watchStates.failSaveWith = IllegalStateException("disk")
+            vm.pickTranslation(source.studioBanda)
+            advanceUntilIdle()
+
+            assertEquals(2, vm.uiState.value.translations.size)
+            vm.loadTranslations()
+            advanceUntilIdle()
+            assertEquals(1, source.translationCalls)
+        }
+
+    @Test
     fun `a dub list that could not be read says why and can be asked for again`() = runTest(main.dispatcher) {
         source.translationsFailure = NetworkUnavailable(IOException("offline"))
         val vm = viewModel(FakeRepository(item))
