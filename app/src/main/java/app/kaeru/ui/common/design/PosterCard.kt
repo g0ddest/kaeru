@@ -22,6 +22,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import app.kaeru.ui.common.theme.KaeruBackground
 import app.kaeru.ui.common.theme.KaeruElevated
 import app.kaeru.ui.common.theme.KaeruSecondary
@@ -112,6 +113,17 @@ internal fun BoxScope.PosterOverlays(badge: String?, progress: Float?) {
  * these stays the same height whether or not the titles in it have badges or progress. The title
  * sits a step below a row header in size, which is what keeps a row reading as one section with
  * several titles in it rather than several headings.
+ *
+ * [width] is the row pitch the design system fixes, which is what a horizontally scrolling row
+ * wants: every card the same width whatever is beside it. A grid wants the opposite — the cell
+ * decides — so pass `Dp.Unspecified` there along with `Modifier.fillMaxWidth()`, and the card
+ * takes whatever width it is given.
+ *
+ * [titleMinLines] reserves that many lines for the name whether or not it needs them. A row leaves
+ * it at one, because a row is read one card at a time and blank space under a short name would be
+ * space for nothing. A grid passes two: there the cards sit side by side, and a neighbour whose
+ * name runs to a second line drags everything under it — a subtitle, a card action — out of line
+ * with the rest of the row.
  */
 @Composable
 fun PosterCard(
@@ -123,10 +135,11 @@ fun PosterCard(
     badge: String? = null,
     progress: Float? = null,
     width: Dp = KaeruTokens.PosterWidthPhone,
+    titleMinLines: Int = 1,
 ) {
     Column(
         modifier
-            .width(width)
+            .then(if (width.isSpecified) Modifier.width(width) else Modifier)
             .clickable(onClick = onClick, onClickLabel = "Открыть", role = Role.Button),
     ) {
         Box(
@@ -142,6 +155,7 @@ fun PosterCard(
             title,
             style = MaterialTheme.typography.titleSmall,
             color = KaeruText,
+            minLines = titleMinLines,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = KaeruTokens.Space2),

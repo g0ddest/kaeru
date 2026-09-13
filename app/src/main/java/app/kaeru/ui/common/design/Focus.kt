@@ -36,16 +36,22 @@ internal val LocalFocusPreview = staticCompositionLocalOf { false }
  * [borderColor] exists for the one case the accent cannot cover itself: an amber ring around an
  * amber button is invisible, so [PrimaryButton] and a selected [StatusPill] ring in text colour
  * instead. Everything else keeps the accent the design system asks for.
+ *
+ * [focusedScale] exists for the other: a control that already spans the screen has nowhere to grow
+ * into, and six per cent of 344dp is 20dp of overhang past the gutters. Pass `1f` there and the
+ * ring carries the whole signal, which is what a full-width field needs anyway — a text field that
+ * jumped when the keyboard opened would read as a glitch rather than as focus.
  */
 @Composable
 fun Modifier.kaeruFocus(
     shape: Shape = KaeruTokens.ButtonShape,
     borderColor: Color = KaeruAccent,
+    focusedScale: Float = KaeruTokens.FocusScale,
 ): Modifier {
     var focused by remember { mutableStateOf(false) }
     val shown = focused || LocalFocusPreview.current
     val scale by animateFloatAsState(
-        targetValue = if (shown) KaeruTokens.FocusScale else 1f,
+        targetValue = if (shown) focusedScale else 1f,
         animationSpec = tween(KaeruTokens.DurationFast),
         label = "kaeruFocusScale",
     )

@@ -266,3 +266,47 @@ private fun PosterCardStatesPreview() = KaeruTheme {
         PosterCard(null, FRIEREN, {}, subtitle = "28 из 28")
     }
 }
+
+@Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 260)
+@Composable
+private fun SearchFieldPreview() = KaeruTheme {
+    Column(
+        Modifier.padding(KaeruTokens.GutterPhone),
+        verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
+    ) {
+        // Empty, so the placeholder shows and the clear icon is absent.
+        SearchField(query = "", onQueryChange = {}, onSubmit = {})
+        // Typed into: the clear icon takes the place the spacer was holding.
+        SearchField(query = "Фрирен", onQueryChange = {}, onSubmit = {})
+        // While a search is in flight the field stays readable and stops taking keystrokes.
+        SearchField(query = "Клинок, рассекающий демонов", onQueryChange = {}, onSubmit = {}, enabled = false)
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 200)
+@Composable
+private fun SearchFieldFocusedPreview() = KaeruTheme {
+    CompositionLocalProvider(LocalFocusPreview provides true) {
+        Column(
+            Modifier.padding(KaeruTokens.GutterPhone),
+            verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
+        ) {
+            // The ring, at the full width it has to stay inside.
+            SearchField(query = "Дандадан", onQueryChange = {}, onSubmit = {})
+        }
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 160)
+@Composable
+private fun CompactActionsPreview() = KaeruTheme {
+    Row(
+        Modifier.padding(KaeruTokens.GutterPhone),
+        horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space3),
+    ) {
+        // The three things a card action says, at the width a grid column gives it.
+        SecondaryButton("В планы", {}, Modifier.weight(1f), compact = true)
+        SecondaryButton("Добавляем…", {}, Modifier.weight(1f), enabled = false, compact = true)
+        SecondaryButton("В списке", {}, Modifier.weight(1f), enabled = false, compact = true)
+    }
+}

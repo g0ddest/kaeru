@@ -3,11 +3,7 @@ package app.kaeru.ui.mobile
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
@@ -111,28 +107,26 @@ fun MobileShell(onLogout: () -> Unit, nav: NavHostController = rememberNavContro
             }
             composable(Routes.LIBRARY) {
                 val vm: LibraryViewModel = hiltViewModel()
-                UnderStatusBar {
-                    LibraryScreen(
-                        vm.uiState.collectAsStateWithLifecycle().value,
-                        vm::selectStatus,
-                        vm::selectSort,
-                        onLogout,
-                        openAnime,
-                    )
-                }
+                // No status-bar wrapper: the screen draws its own top bar, which carries the inset.
+                LibraryScreen(
+                    state = vm.uiState.collectAsStateWithLifecycle().value,
+                    onStatus = vm::selectStatus,
+                    onSort = vm::selectSort,
+                    onAnime = openAnime,
+                    onSearch = { openTab(Routes.SEARCH) },
+                )
             }
             composable(Routes.SEARCH) {
                 val vm: SearchViewModel = hiltViewModel()
-                UnderStatusBar {
-                    SearchScreen(
-                        vm.uiState.collectAsStateWithLifecycle().value,
-                        vm::setQuery,
-                        vm::submit,
-                        vm::useRecent,
-                        vm::addToPlanned,
-                        openAnime,
-                    )
-                }
+                SearchScreen(
+                    state = vm.uiState.collectAsStateWithLifecycle().value,
+                    onQuery = vm::setQuery,
+                    onSubmit = vm::submit,
+                    onRetry = vm::retry,
+                    onRecent = vm::useRecent,
+                    onPlanned = vm::addToPlanned,
+                    onOpen = openAnime,
+                )
             }
             composable(Routes.SETTINGS) {
                 SettingsScreen(onBack = { nav.popBackStack() }, onLogout = onLogout)
@@ -188,8 +182,3 @@ private fun BottomBar(route: String?, onTab: (String) -> Unit) {
         }
     }
 }
-
-/** The status-bar inset for the screens that do not yet draw their own chrome over it. */
-@Composable
-private fun UnderStatusBar(content: @Composable () -> Unit) =
-    Box(Modifier.windowInsetsPadding(WindowInsets.statusBars)) { content() }

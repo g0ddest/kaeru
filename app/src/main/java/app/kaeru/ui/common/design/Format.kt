@@ -6,6 +6,7 @@ import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.FeedItem
 import app.kaeru.domain.model.FeedKind
 import app.kaeru.domain.model.LibraryEntry
+import app.kaeru.domain.model.ListStatus
 import java.time.Instant
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
@@ -215,4 +216,20 @@ fun primaryAction(
         else -> "Ждём $next серию"
     }
     return PrimaryAction(label, enabled = false, episode = null)
+}
+
+/**
+ * Where a title sits in the viewer's list, in the words Shikimori uses for it.
+ *
+ * Here rather than on any one screen: the title screen's menu, the library's tabs and anything
+ * later that names a status all have to say the same six words, and a screen that owned them would
+ * make every other screen import it.
+ */
+fun statusLabel(status: ListStatus): String = when (status) {
+    ListStatus.WATCHING -> "Смотрю"
+    ListStatus.PLANNED -> "В планах"
+    ListStatus.COMPLETED -> "Завершено"
+    ListStatus.ON_HOLD -> "Отложено"
+    ListStatus.DROPPED -> "Брошено"
+    ListStatus.REWATCHING -> "Пересматриваю"
 }

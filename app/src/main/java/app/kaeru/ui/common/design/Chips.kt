@@ -1,6 +1,7 @@
 package app.kaeru.ui.common.design
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -69,6 +70,10 @@ private const val OFTEN_CHOSEN = "Часто выбираете"
  * Unlike [MetaChip] this is a control, so it is a full 48dp tall and carries an affordance saying
  * a menu is behind it. [trailing] replaces that affordance when a screen needs something else
  * there; the default chevron is decorative, since the pill's own label is what gets read out.
+ *
+ * [role] also decides how the pill announces itself. A tab or a menu anchor has a selected state
+ * worth reading out; a plain button does not, and a recent search query announced as «not
+ * selected» would be telling a screen reader about a state the chip does not have.
  */
 @Composable
 fun StatusPill(
@@ -89,7 +94,13 @@ fun StatusPill(
             )
             .clip(KaeruTokens.ChipShape)
             .background(if (selected) KaeruAccent else KaeruElevated)
-            .selectable(selected = selected, role = role, onClick = onClick)
+            .then(
+                if (role == Role.Button) {
+                    Modifier.clickable(onClick = onClick, role = role)
+                } else {
+                    Modifier.selectable(selected = selected, role = role, onClick = onClick)
+                },
+            )
             .padding(horizontal = KaeruTokens.Space4),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space1),

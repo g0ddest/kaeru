@@ -133,16 +133,7 @@ class DetailsContentTest {
     }
 
     // --- the labels ----------------------------------------------------------------------------
-
-    @Test
-    fun `every list status has a Russian label in sentence case`() {
-        assertEquals("Смотрю", statusLabel(ListStatus.WATCHING))
-        assertEquals("В планах", statusLabel(ListStatus.PLANNED))
-        assertEquals("Завершено", statusLabel(ListStatus.COMPLETED))
-        assertEquals("Отложено", statusLabel(ListStatus.ON_HOLD))
-        assertEquals("Брошено", statusLabel(ListStatus.DROPPED))
-        assertEquals("Пересматриваю", statusLabel(ListStatus.REWATCHING))
-    }
+    // `statusLabel` moved to `ui.common.design.Format`; its test went with it, to `FormatTest`.
 
     @Test
     fun `the dub pill names the studio once the list is loaded and stays honest before that`() {
