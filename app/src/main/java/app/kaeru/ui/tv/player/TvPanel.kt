@@ -1,5 +1,8 @@
 package app.kaeru.ui.tv.player
 
+import androidx.compose.runtime.Immutable
+import app.kaeru.domain.model.Quality
+import app.kaeru.domain.playback.RankedTranslation
 import app.kaeru.ui.common.details.EpisodeCell
 import app.kaeru.ui.common.player.PlayerUiState
 
@@ -91,19 +94,73 @@ internal fun nextWake(atMs: Long?, lastWakeMs: Long): Long? = when {
 }
 
 /**
- * The rungs this state actually has, top to bottom.
+ * Everything the panel draws except the clock.
  *
- * A strip with nothing in it is not a place for the D-pad to land: a remote that stops on an
- * empty row has nowhere to go but back, and from three metres away the viewer cannot tell an
- * empty row from a row that has not drawn yet. Only the transport row is unconditional — there
- * is always something to press there, even over a picture that failed to start.
+ * A value, and the whole point of it is what it leaves out. The engine polls the position every
+ * 250 ms, so a fresh [PlayerUiState] arrives four times a second while an episode runs; handing
+ * that straight to the panel rebuilt both lazy rows and every visible chip to move one amber
+ * line. This carries only what the choices are made of, so a tick that moved nothing but the
+ * position produces an equal value and the panel skips it.
+ *
+ * [episodes] is already filtered to what has aired.
  */
-fun tvPanelRungs(state: PlayerUiState): List<TvPanelRung> = buildList {
-    if (tvAiredEpisodes(state).isNotEmpty()) add(TvPanelRung.EPISODES)
-    if (state.translations.isNotEmpty()) add(TvPanelRung.TRANSLATIONS)
-    if (state.qualities.isNotEmpty()) add(TvPanelRung.QUALITY)
-    add(TvPanelRung.TRANSPORT)
+@Immutable
+data class TvPanelContent(
+    val episodes: List<EpisodeCell> = emptyList(),
+    val episode: Int = 0,
+    val translations: List<RankedTranslation> = emptyList(),
+    val translationId: Int? = null,
+    val loadingTranslations: Boolean = false,
+    val qualities: List<Quality> = emptyList(),
+    val quality: Quality? = null,
+    val isPlaying: Boolean = false,
+    val nextEpisodeAvailable: Boolean = false,
+) {
+
+    /**
+     * The rungs this content has, top to bottom.
+     *
+     * A strip with nothing in it is not a place for the D-pad to land: a remote that stops on an
+     * empty row has nowhere to go but back, and from three metres away the viewer cannot tell an
+     * empty row from a row that has not drawn yet. Only the transport row is unconditional —
+     * there is always something to press there, even over a picture that failed to start.
+     */
+    val rungs: List<TvPanelRung> = buildList {
+        if (episodes.isNotEmpty()) add(TvPanelRung.EPISODES)
+        if (translations.isNotEmpty()) add(TvPanelRung.TRANSLATIONS)
+        if (qualities.isNotEmpty()) add(TvPanelRung.QUALITY)
+        add(TvPanelRung.TRANSPORT)
+    }
 }
+
+/** What the panel draws, read off the whole state in one place. */
+fun tvPanelContent(state: PlayerUiState) = TvPanelContent(
+    episodes = tvAiredEpisodes(state),
+    episode = state.episode,
+    translations = state.translations,
+    translationId = state.translationId,
+    loadingTranslations = state.loadingTranslations,
+    qualities = state.qualities,
+    quality = state.quality,
+    isPlaying = state.isPlaying,
+    nextEpisodeAvailable = state.nextEpisodeAvailable,
+)
+
+/** The rungs this state has, top to bottom. */
+fun tvPanelRungs(state: PlayerUiState): List<TvPanelRung> = tvPanelContent(state).rungs
+
+/**
+ * Whether a failure still owns the screen, or has stepped aside for the voices strip.
+ *
+ * «Сменить озвучку» is an answer to the failure, not a dismissal of it, so the message goes only
+ * once there is something to answer it with: a list on its way, or a list that arrived. A load
+ * that fails or comes back empty puts the message back, because the alternative is a panel
+ * standing over a dead picture with no voices row and «Повторить» nowhere on screen — back hides
+ * the panel, back again leaves the player, and the viewer never got to retry.
+ */
+fun tvShowsFailure(state: PlayerUiState, choosingTrack: Boolean): Boolean =
+    state.errorMessage != null &&
+        !(choosingTrack && (state.translations.isNotEmpty() || state.loadingTranslations))
 
 /**
  * The episodes the strip offers: the ones that have aired.
@@ -135,4 +192,33 @@ fun tvStepRung(rungs: List<TvPanelRung>, rung: TvPanelRung, down: Boolean): TvPa
  * always worth landing on.
  */
 fun tvRungOrNearest(rungs: List<TvPanelRung>, wanted: TvPanelRung): TvPanelRung =
-    rungs.firstOrNull { it.ordinal >= wanted.ordinal } ?: rungs.last()
+    rungs.firstOrNull { it.ordinal >= wanted.ordinal }
+        ?: rungs.lastOrNull()
+        // Unreachable through [TvPanelContent.rungs], which always carries the transport row.
+        // Here so the function is total: an answer rather than an exception if it ever is not.
+        ?: TvPanelRung.TRANSPORT
+
+/**
+ * Where a strip stands: what it is a strip of, which chip is in play, and where the row has to
+ * start for that chip to be on screen with something behind it.
+ *
+ * One value, because the row keys both its anchor and its opening scroll on it and the two must
+ * not be able to disagree. It is deliberately built out of the chips' keys rather than the chips
+ * themselves: the episode in play has its position rewritten every few seconds while it runs, and
+ * a placement that noticed would scroll the row back under the viewer's thumb mid-browse and
+ * forget the chip they had walked to.
+ */
+data class TvStripPlacement(val keys: List<Any>, val current: Any?, val firstVisible: Int)
+
+/** Two chips of lead-in, so the one in play is not flat against the left edge. */
+private const val STRIP_LEAD = 2
+
+fun <T> tvStripPlacement(items: List<T>, key: (T) -> Any, isCurrent: (T) -> Boolean): TvStripPlacement {
+    val index = items.indexOfFirst(isCurrent).coerceAtLeast(0)
+    val keys = items.map(key)
+    return TvStripPlacement(
+        keys = keys,
+        current = keys.getOrNull(index),
+        firstVisible = (index - STRIP_LEAD).coerceAtLeast(0),
+    )
+}

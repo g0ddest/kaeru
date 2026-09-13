@@ -6,6 +6,7 @@ import app.kaeru.domain.playback.RankedTranslation
 import app.kaeru.ui.common.details.EpisodeCell
 import app.kaeru.ui.common.player.PlayerUiState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -51,6 +52,60 @@ class TvPlayerStripTest {
     @Test
     fun `a season nobody has a catalogue entry for has no strip`() {
         assertEquals(emptyList<EpisodeCell>(), tvAiredEpisodes(PlayerUiState()))
+    }
+
+    // --- where the strip stands -----------------------------------------------------------------
+
+    private fun placement(cells: List<EpisodeCell>, playing: Int) =
+        tvStripPlacement(cells, key = { it.number }, isCurrent = { it.number == playing })
+
+    @Test
+    fun `a progress sample leaves the strip's placement alone`() {
+        // The one value the row keys its anchor and its opening scroll on. The episode in play
+        // has its position rewritten every few seconds while it runs, so a placement that
+        // noticed would yank the row back under the viewer's thumb mid-browse and forget where
+        // they had got to — which is exactly what keying on the cells used to do.
+        val ticking = listOf(cell(1, watched = true), cell(2, progress = 0.31f), cell(3))
+        val ticked = listOf(cell(1, watched = true), cell(2, progress = 0.34f), cell(3))
+
+        assertNotEquals(ticking, ticked)
+        assertEquals(placement(ticking, playing = 2), placement(ticked, playing = 2))
+    }
+
+    @Test
+    fun `an episode airing does change it`() {
+        val before = listOf(cell(1), cell(2))
+        val after = listOf(cell(1), cell(2), cell(3))
+
+        assertNotEquals(placement(before, playing = 2), placement(after, playing = 2))
+    }
+
+    @Test
+    fun `moving on to the next episode does change it`() {
+        val cells = listOf(cell(1), cell(2), cell(3))
+
+        assertNotEquals(placement(cells, playing = 2), placement(cells, playing = 3))
+    }
+
+    @Test
+    fun `the row opens two chips before the one in play`() {
+        val cells = (1..40).map { cell(it) }
+
+        assertEquals(0, placement(cells, playing = 1).firstVisible)
+        assertEquals(0, placement(cells, playing = 3).firstVisible)
+        assertEquals(1, placement(cells, playing = 4).firstVisible)
+        assertEquals(18, placement(cells, playing = 21).firstVisible)
+    }
+
+    @Test
+    fun `a strip whose chip in play is missing starts at the beginning`() {
+        // Picking an episode is answered by the controller, so for a moment the number the strip
+        // is marking is one the list does not carry yet.
+        val cells = listOf(cell(1), cell(2))
+        val nowhere = placement(cells, playing = 9)
+
+        assertEquals(0, nowhere.firstVisible)
+        assertEquals(1, nowhere.current)
     }
 
     // --- the voices strip -----------------------------------------------------------------------

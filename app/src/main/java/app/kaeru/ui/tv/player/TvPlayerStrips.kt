@@ -23,6 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,21 +38,24 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Devices
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.playback.RankedTranslation
 import app.kaeru.ui.common.design.KaeruTokens
+import app.kaeru.ui.common.design.LocalFocusPreview
 import app.kaeru.ui.common.design.OFTEN_CHOSEN
 import app.kaeru.ui.common.design.ProgressStrip
 import app.kaeru.ui.common.design.kaeruFocus
 import app.kaeru.ui.common.details.EpisodeCell
-import app.kaeru.ui.common.player.PlayerUiState
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruElevated
 import app.kaeru.ui.common.theme.KaeruSecondary
 import app.kaeru.ui.common.theme.KaeruText
+import app.kaeru.ui.common.theme.KaeruTvTheme
 
 /**
  * The three rows of choices in the panel: which episode, whose voice, how good the picture.
@@ -85,20 +89,26 @@ private val ChipMaxWidth = 300.dp
 
 private val WatchedMark = 18.dp
 
-/** The season, aired episodes only, opened on the one that is playing. */
+/**
+ * The season, aired episodes only, opened on the one that is playing.
+ *
+ * [episodes] is already filtered; the strip takes the fields it draws rather than the whole
+ * player state, so a position tick — four of them a second — leaves its arguments untouched and
+ * the row, with every chip in it, skips.
+ */
 @Composable
 fun TvEpisodeStrip(
-    state: PlayerUiState,
+    episodes: List<EpisodeCell>,
+    episode: Int,
     focus: FocusRequester,
     onPick: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val episodes = tvAiredEpisodes(state)
     TvStripRow(
         label = EPISODES,
         items = episodes,
         key = { it.number },
-        current = { it.number == state.episode },
+        current = { it.number == episode },
         focus = focus,
         modifier = modifier,
     ) { cell, chipModifier ->
@@ -106,8 +116,8 @@ fun TvEpisodeStrip(
             label = cell.number.toString(),
             onClick = { onPick(cell.number) },
             modifier = chipModifier,
-            caption = PLAYING_NOW.takeIf { cell.number == state.episode },
-            selected = cell.number == state.episode,
+            caption = PLAYING_NOW.takeIf { cell.number == episode },
+            selected = cell.number == episode,
             progress = cell.progress,
             watched = cell.watched,
         )
@@ -120,20 +130,25 @@ fun TvEpisodeStrip(
  */
 @Composable
 fun TvTranslationStrip(
-    state: PlayerUiState,
+    translations: List<RankedTranslation>,
+    translationId: Int?,
+    loading: Boolean,
     focus: FocusRequester,
     onPick: (Translation) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    if (state.translations.isEmpty()) {
-        if (state.loadingTranslations) TvStripMessage(TRACKS, LOADING_TRACKS, modifier)
+    if (translations.isEmpty()) {
+        // A chip's worth of «on its way», so the row keeps its place in the column and the
+        // viewer who pressed «Сменить озвучку» can see that something is happening. Not
+        // focusable: there is nothing to choose yet, and the D-pad arrives when there is.
+        if (loading) TvStripLoading(TRACKS, LOADING_TRACKS, modifier)
         return
     }
     TvStripRow(
         label = TRACKS,
-        items = state.translations,
+        items = translations,
         key = { it.translation.id },
-        current = { it.translation.id == state.translationId },
+        current = { it.translation.id == translationId },
         focus = focus,
         modifier = modifier,
     ) { ranked, chipModifier ->
@@ -141,8 +156,8 @@ fun TvTranslationStrip(
             label = translationName(ranked),
             onClick = { onPick(ranked.translation) },
             modifier = chipModifier,
-            caption = translationCaption(ranked, state.translationId),
-            selected = ranked.translation.id == state.translationId,
+            caption = translationCaption(ranked, translationId),
+            selected = ranked.translation.id == translationId,
         )
     }
 }
@@ -150,26 +165,26 @@ fun TvTranslationStrip(
 /** The quality ladder, in the order the source lists it rather than tallest first. */
 @Composable
 fun TvQualityStrip(
-    state: PlayerUiState,
+    qualities: List<Quality>,
+    quality: Quality?,
     focus: FocusRequester,
     onPick: (Quality) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    if (state.qualities.isEmpty()) return
     TvStripRow(
         label = QUALITIES,
-        items = state.qualities,
+        items = qualities,
         key = { it.height },
-        current = { it == state.quality },
+        current = { it == quality },
         focus = focus,
         modifier = modifier,
-    ) { quality, chipModifier ->
+    ) { rung, chipModifier ->
         TvStripChip(
-            label = "${quality.height}p",
-            onClick = { onPick(quality) },
+            label = "${rung.height}p",
+            onClick = { onPick(rung) },
             modifier = chipModifier,
-            caption = CHOSEN.takeIf { quality == state.quality },
-            selected = quality == state.quality,
+            caption = CHOSEN.takeIf { rung == quality },
+            selected = rung == quality,
         )
     }
 }
@@ -217,12 +232,13 @@ private fun <T : Any> TvStripRow(
     chip: @Composable (item: T, modifier: Modifier) -> Unit,
 ) {
     if (items.isEmpty()) return
-    val currentIndex = items.indexOfFirst(current).coerceAtLeast(0)
-    var anchor by remember(items) { mutableStateOf(key(items[currentIndex])) }
+    // One value for both, so the anchor and the scroll cannot disagree, and neither of them can
+    // be moved by a progress sample: opening a strip on episode forty must not start the viewer
+    // at episode one, and neither must the fortieth second of episode forty.
+    val placement = tvStripPlacement(items, key, current)
+    var anchor by remember(placement) { mutableStateOf(placement.current) }
     val listState = rememberLazyListState()
-    // Opening a strip on episode forty must not start the viewer at episode one. Two chips of
-    // lead-in, so the one in play is not flat against the left edge with nothing behind it.
-    LaunchedEffect(items) { listState.scrollToItem((currentIndex - 2).coerceAtLeast(0)) }
+    LaunchedEffect(placement) { listState.scrollToItem(placement.firstVisible) }
 
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         TvStripLabel(label)
@@ -247,12 +263,24 @@ private fun <T : Any> TvStripRow(
     }
 }
 
-/** The row's slot while there is nothing yet to choose from. */
+/**
+ * The row's slot while the list is still on its way: a chip-shaped block that holds the row's
+ * place in the column, so the panel does not change height under the viewer when it arrives.
+ */
 @Composable
-private fun TvStripMessage(label: String, text: String, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth().height(ChipHeight), verticalAlignment = Alignment.CenterVertically) {
+private fun TvStripLoading(label: String, text: String, modifier: Modifier = Modifier) {
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         TvStripLabel(label)
-        Text(text, style = MaterialTheme.typography.bodyMedium, color = KaeruSecondary)
+        Box(
+            Modifier
+                .height(ChipHeight)
+                .clip(KaeruTokens.ButtonShape)
+                .background(KaeruElevated)
+                .padding(horizontal = KaeruTokens.Space4),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(text, style = MaterialTheme.typography.titleSmall, color = KaeruSecondary, maxLines = 1)
+        }
     }
 }
 
@@ -337,3 +365,35 @@ internal fun TvStripChip(
 /** One chip's worth of episode, for the previews and for anything that has to size the row. */
 internal fun previewCell(number: Int, watched: Boolean = false, progress: Float? = null) =
     EpisodeCell(number = number, watched = watched, progress = progress, aired = true)
+
+// --- previews ----------------------------------------------------------------------------------
+
+/**
+ * Every signal one chip can carry, side by side, and the focus ring beside them.
+ *
+ * The four have to stay distinguishable from three metres: behind the viewer is a tick, part-way
+ * through is a strip of amber along the bottom edge, in play is an amber wash and a caption, and
+ * under the D-pad is the ring. The last one is forced on here — a static preview cannot move
+ * focus, and the ring is the thing a preview of a television control is for.
+ */
+@Preview(device = Devices.TV_1080p, backgroundColor = 0xFF0B0C10, showBackground = true)
+@Composable
+private fun TvStripChipPreview() {
+    KaeruTvTheme {
+        Row(
+            Modifier.padding(KaeruTokens.GutterTv),
+            horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space3),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TvStripChip(label = "12", onClick = {})
+            TvStripChip(label = "3", onClick = {}, watched = true, progress = 1f)
+            TvStripChip(label = "4", onClick = {}, progress = 0.42f)
+            TvStripChip(label = "7", onClick = {}, caption = PLAYING_NOW, selected = true, progress = 0.5f)
+            TvStripChip(label = "AniLibria", onClick = {}, caption = CHOSEN, selected = true)
+            TvStripChip(label = "Studio Band", onClick = {}, caption = OFTEN_CHOSEN)
+            CompositionLocalProvider(LocalFocusPreview provides true) {
+                TvStripChip(label = "1080p", onClick = {})
+            }
+        }
+    }
+}

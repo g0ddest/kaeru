@@ -168,8 +168,51 @@ class TvPanelTest {
     }
 
     @Test
-    fun `a rung below everything that exists falls back to the last one`() {
+    fun `a rung the axis skips over hands the D-pad to the transport row`() {
         assertEquals(TRANSPORT, tvRungOrNearest(listOf(EPISODES, TRANSPORT), QUALITY))
+    }
+
+    @Test
+    fun `asking a panel with no rungs at all answers the transport row`() {
+        // Unreachable through `tvPanelRungs`, which always carries the transport row. It is here
+        // so the function is total: an answer, rather than an exception, if it ever is.
+        assertEquals(TRANSPORT, tvRungOrNearest(emptyList(), EPISODES))
+    }
+
+    // --- the failure, and stepping aside for the voices ------------------------------------------
+
+    private fun broken(
+        translations: List<RankedTranslation> = emptyList(),
+        loading: Boolean = false,
+    ) = PlayerUiState(
+        errorMessage = "Источник временно недоступен",
+        translations = translations,
+        loadingTranslations = loading,
+    )
+
+    @Test
+    fun `the failure owns the screen until the viewer asks for another voice`() {
+        assertTrue(tvShowsFailure(broken(), choosingTrack = false))
+        assertTrue(tvShowsFailure(broken(listOf(track(1))), choosingTrack = false))
+    }
+
+    @Test
+    fun `it steps aside while the voices are on their way and once they arrive`() {
+        assertFalse(tvShowsFailure(broken(loading = true), choosingTrack = true))
+        assertFalse(tvShowsFailure(broken(listOf(track(1))), choosingTrack = true))
+    }
+
+    @Test
+    fun `a load that brings back nothing puts the failure back`() {
+        // Otherwise the panel stands over a dead picture with no voices row and «Повторить»
+        // nowhere on screen: back hides the panel, back again leaves the player.
+        assertTrue(tvShowsFailure(broken(), choosingTrack = true))
+    }
+
+    @Test
+    fun `nothing steps aside when nothing failed`() {
+        assertFalse(tvShowsFailure(PlayerUiState(), choosingTrack = true))
+        assertFalse(tvShowsFailure(PlayerUiState(), choosingTrack = false))
     }
 
     // --- the throttle on its own ----------------------------------------------------------------

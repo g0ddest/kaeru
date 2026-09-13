@@ -25,7 +25,13 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,8 +51,10 @@ import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.playback.RankedTranslation
+import app.kaeru.ui.common.details.EpisodeCell
 import app.kaeru.player.EpisodeQueue
 import app.kaeru.ui.common.design.KaeruTokens
+import app.kaeru.ui.common.design.LocalFocusPreview
 import app.kaeru.ui.common.design.PosterImage
 import app.kaeru.ui.common.design.IndeterminateStrip
 import app.kaeru.ui.common.design.SecondaryButton
@@ -103,8 +111,9 @@ private val BufferingMark = 40.dp
  */
 @Composable
 fun TvPlayerPanel(
-    state: PlayerUiState,
-    rungFocus: (TvPanelRung) -> FocusRequester,
+    content: TvPanelContent,
+    clock: TvPlayerClock,
+    rungFocus: Map<TvPanelRung, FocusRequester>,
     onPickEpisode: (Int) -> Unit,
     onPickTranslation: (Translation) -> Unit,
     onPickQuality: (Quality) -> Unit,
@@ -114,8 +123,6 @@ fun TvPlayerPanel(
     onNext: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val rungs = tvPanelRungs(state)
-
     Column(modifier.fillMaxWidth()) {
         Box(
             Modifier.fillMaxWidth().height(PanelScrim)
@@ -128,26 +135,39 @@ fun TvPlayerPanel(
             verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space2),
         ) {
             // The upper zone: what is playing.
-            if (TvPanelRung.EPISODES in rungs) {
-                TvEpisodeStrip(state, rungFocus(TvPanelRung.EPISODES), onPickEpisode)
+            if (TvPanelRung.EPISODES in content.rungs) {
+                TvEpisodeStrip(
+                    episodes = content.episodes,
+                    episode = content.episode,
+                    focus = rungFocus.getValue(TvPanelRung.EPISODES),
+                    onPick = onPickEpisode,
+                )
             }
-            TvTranslationStrip(state, rungFocus(TvPanelRung.TRANSLATIONS), onPickTranslation)
-
-            // The line between the zones, which is also where the episode is.
-            TvProgressLine(
-                positionMs = state.positionMs,
-                bufferedPositionMs = state.bufferedPositionMs,
-                durationMs = state.durationMs,
-                modifier = Modifier.padding(vertical = KaeruTokens.Space2),
+            TvTranslationStrip(
+                translations = content.translations,
+                translationId = content.translationId,
+                loading = content.loadingTranslations,
+                focus = rungFocus.getValue(TvPanelRung.TRANSLATIONS),
+                onPick = onPickTranslation,
             )
 
+            // The line between the zones, which is also where the episode is.
+            TvProgressLine(clock, Modifier.padding(vertical = KaeruTokens.Space2))
+
             // The lower zone: how it is playing.
-            if (TvPanelRung.QUALITY in rungs) {
-                TvQualityStrip(state, rungFocus(TvPanelRung.QUALITY), onPickQuality)
+            if (TvPanelRung.QUALITY in content.rungs) {
+                TvQualityStrip(
+                    qualities = content.qualities,
+                    quality = content.quality,
+                    focus = rungFocus.getValue(TvPanelRung.QUALITY),
+                    onPick = onPickQuality,
+                )
             }
             TvTransportRow(
-                state = state,
-                focus = rungFocus(TvPanelRung.TRANSPORT),
+                episode = content.episode,
+                isPlaying = content.isPlaying,
+                nextEpisodeAvailable = content.nextEpisodeAvailable,
+                focus = rungFocus.getValue(TvPanelRung.TRANSPORT),
                 onTogglePlayPause = onTogglePlayPause,
                 onSeekBy = onSeekBy,
                 onSkipIntro = onSkipIntro,
@@ -155,6 +175,46 @@ fun TvPlayerPanel(
             )
         }
     }
+}
+
+/**
+ * Where the episode is, as three values of its own.
+ *
+ * Held apart from [TvPanelContent] on purpose, and that separation is the whole optimisation.
+ * These are the only things that change four times a second, so keeping them in their own
+ * snapshot state confines a position tick to two timecodes recomposing and one line redrawing,
+ * instead of rebuilding both lazy rows and every chip in them.
+ */
+@Stable
+class TvPlayerClock {
+    var positionMs by mutableLongStateOf(0L)
+    var bufferedMs by mutableLongStateOf(0L)
+    var durationMs by mutableLongStateOf(0L)
+}
+
+/**
+ * The panel's content, held at one instance for as long as it says the same thing.
+ *
+ * `remember` compares its key structurally, so a tick that moved only the position hands back
+ * the instance the panel already has — and the panel, whose parameters are then all unchanged,
+ * skips.
+ */
+@Composable
+fun rememberTvPanelContent(state: PlayerUiState): TvPanelContent {
+    val content = tvPanelContent(state)
+    return remember(content) { content }
+}
+
+/** The clock, fed from the state outside composition so the readers below it are the ones to run. */
+@Composable
+fun rememberTvPlayerClock(state: PlayerUiState): TvPlayerClock {
+    val clock = remember { TvPlayerClock() }
+    SideEffect {
+        clock.positionMs = state.positionMs
+        clock.bufferedMs = state.bufferedPositionMs
+        clock.durationMs = state.durationMs
+    }
+    return clock
 }
 
 /**
@@ -196,34 +256,38 @@ fun TvPlayerHeader(title: String, modifier: Modifier = Modifier) {
  * same way.
  */
 @Composable
-fun TvProgressLine(
-    positionMs: Long,
-    bufferedPositionMs: Long,
-    durationMs: Long,
-    modifier: Modifier = Modifier,
-) {
-    val played = fractionOf(positionMs, durationMs)
-    val ready = fractionOf(bufferedPositionMs, durationMs)
+fun TvProgressLine(clock: TvPlayerClock, modifier: Modifier = Modifier) {
     val track = KaeruText.copy(alpha = 0.24f)
-    val readyColour = KaeruText.copy(alpha = 0.44f)
+    val ready = KaeruText.copy(alpha = 0.44f)
 
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(formatTime(positionMs), style = MaterialTheme.typography.titleMedium, color = KaeruText)
-        Canvas(
-            Modifier.weight(1f).height(LineRow).padding(horizontal = KaeruTokens.Space4),
-        ) {
+        TvTimecode({ clock.positionMs }, KaeruText)
+        Canvas(Modifier.weight(1f).height(LineRow).padding(horizontal = KaeruTokens.Space4)) {
+            // Read here rather than in composition: a `Canvas` draw block is its own snapshot
+            // reader, so the line follows the episode without anything recomposing at all.
+            val played = fractionOf(clock.positionMs, clock.durationMs)
+            val buffered = fractionOf(clock.bufferedMs, clock.durationMs)
             val y = size.height / 2f
             val stroke = LineHeight.toPx()
             drawLine(track, Offset(0f, y), Offset(size.width, y), stroke, StrokeCap.Round)
-            if (ready > 0f) {
-                drawLine(readyColour, Offset(0f, y), Offset(size.width * ready, y), stroke, StrokeCap.Round)
+            if (buffered > 0f) {
+                drawLine(ready, Offset(0f, y), Offset(size.width * buffered, y), stroke, StrokeCap.Round)
             }
             if (played > 0f) {
                 drawLine(KaeruAccent, Offset(0f, y), Offset(size.width * played, y), stroke, StrokeCap.Round)
             }
         }
-        Text(formatTime(durationMs), style = MaterialTheme.typography.titleMedium, color = KaeruSecondary)
+        TvTimecode({ clock.durationMs }, KaeruSecondary)
     }
+}
+
+/**
+ * One end of the line. Its own composable, and it takes a getter rather than a number, so the
+ * clock is read here — which makes this the only thing in the panel that recomposes on a tick.
+ */
+@Composable
+private fun TvTimecode(ms: () -> Long, color: Color) {
+    Text(formatTime(ms()), style = MaterialTheme.typography.titleMedium, color = color)
 }
 
 private fun fractionOf(positionMs: Long, durationMs: Long): Float =
@@ -237,7 +301,9 @@ private fun fractionOf(positionMs: Long, durationMs: Long): Float =
  */
 @Composable
 private fun TvTransportRow(
-    state: PlayerUiState,
+    episode: Int,
+    isPlaying: Boolean,
+    nextEpisodeAvailable: Boolean,
     focus: FocusRequester,
     onTogglePlayPause: () -> Unit,
     onSeekBy: (Long) -> Unit,
@@ -247,7 +313,7 @@ private fun TvTransportRow(
 ) {
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(
-            state.episode.takeIf { it > 0 }?.let { "$it серия" }.orEmpty(),
+            episode.takeIf { it > 0 }?.let { "$it серия" }.orEmpty(),
             style = MaterialTheme.typography.labelMedium,
             color = KaeruSecondary,
             maxLines = 1,
@@ -260,10 +326,10 @@ private fun TvTransportRow(
             horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space3),
         ) {
             SecondaryButton(
-                text = if (state.isPlaying) PAUSE else RESUME,
+                text = if (isPlaying) PAUSE else RESUME,
                 onClick = onTogglePlayPause,
                 modifier = Modifier.focusRequester(focus),
-                icon = if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                icon = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                 compact = true,
             )
             SecondaryButton(
@@ -280,7 +346,7 @@ private fun TvTransportRow(
             )
             SecondaryButton(text = SKIP_INTRO, onClick = onSkipIntro, compact = true)
             // Only where there is something aired to move on to.
-            if (state.nextEpisodeAvailable) {
+            if (nextEpisodeAvailable) {
                 SecondaryButton(
                     text = NEXT_EPISODE,
                     onClick = onNext,
@@ -356,6 +422,9 @@ fun TvBufferingMark(modifier: Modifier = Modifier) {
 
 // --- previews ----------------------------------------------------------------------------------
 
+/** The flat grey a preview stands in a frame of video with. */
+private val PreviewFrame = Color(0xFF20242E)
+
 internal val tvPlayerPreviewState = PlayerUiState(
     title = "Восхождение в тени",
     episode = 7,
@@ -379,26 +448,54 @@ internal val tvPlayerPreviewState = PlayerUiState(
     ),
 )
 
+/** Everything a panel preview needs that is not the state itself. */
+@Composable
+private fun PreviewPanel(
+    modifier: Modifier = Modifier,
+    state: PlayerUiState = tvPlayerPreviewState,
+) {
+    TvPlayerPanel(
+        content = rememberTvPanelContent(state),
+        clock = rememberTvPlayerClock(state),
+        rungFocus = remember { TvPanelRung.entries.associateWith { FocusRequester() } },
+        onPickEpisode = {},
+        onPickTranslation = {},
+        onPickQuality = {},
+        onTogglePlayPause = {},
+        onSeekBy = {},
+        onSkipIntro = {},
+        onNext = {},
+        modifier = modifier,
+    )
+}
+
 /** Both zones at once, over the flat grey that stands in for a frame of video. */
 @Preview(device = Devices.TV_1080p)
 @Composable
 private fun TvPlayerPanelPreview() {
     KaeruTvTheme {
-        val requesters = remember { TvPanelRung.entries.associateWith { FocusRequester() } }
-        Box(Modifier.fillMaxSize().background(Color(0xFF20242E))) {
+        Box(Modifier.fillMaxSize().background(PreviewFrame)) {
             TvPlayerHeader(tvPlayerPreviewState.title, Modifier.align(Alignment.TopStart))
-            TvPlayerPanel(
-                state = tvPlayerPreviewState,
-                rungFocus = { requesters.getValue(it) },
-                onPickEpisode = {},
-                onPickTranslation = {},
-                onPickQuality = {},
-                onTogglePlayPause = {},
-                onSeekBy = {},
-                onSkipIntro = {},
-                onNext = {},
-                modifier = Modifier.align(Alignment.BottomStart),
-            )
+            PreviewPanel(Modifier.align(Alignment.BottomStart))
+        }
+    }
+}
+
+/**
+ * The same panel with the focus treatment forced on.
+ *
+ * A static preview cannot move focus, so every chip wears the ring at once — which is not what a
+ * television shows, but it is the only way to see across a room what the ring weighs against
+ * artwork, and whether a focused chip's six per cent is clipped by the row it sits in.
+ */
+@Preview(device = Devices.TV_1080p)
+@Composable
+private fun TvPlayerPanelFocusedPreview() {
+    KaeruTvTheme {
+        CompositionLocalProvider(LocalFocusPreview provides true) {
+            Box(Modifier.fillMaxSize().background(PreviewFrame)) {
+                PreviewPanel(Modifier.align(Alignment.BottomStart))
+            }
         }
     }
 }
@@ -408,9 +505,9 @@ private fun TvPlayerPanelPreview() {
 @Composable
 private fun TvPlayerPanelBarePreview() {
     KaeruTvTheme {
-        val requesters = remember { TvPanelRung.entries.associateWith { FocusRequester() } }
-        Box(Modifier.fillMaxSize().background(Color(0xFF20242E))) {
-            TvPlayerPanel(
+        Box(Modifier.fillMaxSize().background(PreviewFrame)) {
+            PreviewPanel(
+                modifier = Modifier.align(Alignment.BottomStart),
                 state = tvPlayerPreviewState.copy(
                     episodes = emptyList(),
                     translations = emptyList(),
@@ -418,16 +515,46 @@ private fun TvPlayerPanelBarePreview() {
                     isPlaying = false,
                     nextEpisodeAvailable = false,
                 ),
-                rungFocus = { requesters.getValue(it) },
-                onPickEpisode = {},
-                onPickTranslation = {},
-                onPickQuality = {},
-                onTogglePlayPause = {},
-                onSeekBy = {},
-                onSkipIntro = {},
-                onNext = {},
-                modifier = Modifier.align(Alignment.BottomStart),
             )
+        }
+    }
+}
+
+/** The voices row while the list is still on its way, which is what «Сменить озвучку» opens on. */
+@Preview(device = Devices.TV_1080p)
+@Composable
+private fun TvPlayerPanelLoadingTracksPreview() {
+    KaeruTvTheme {
+        Box(Modifier.fillMaxSize().background(PreviewFrame)) {
+            PreviewPanel(
+                modifier = Modifier.align(Alignment.BottomStart),
+                state = tvPlayerPreviewState.copy(translations = emptyList(), loadingTranslations = true),
+            )
+        }
+    }
+}
+
+/**
+ * The arrangement the panel's height was made flexible for: the offer to move on stacked above
+ * it, which is the one card that shares the screen with the controls.
+ */
+@Preview(device = Devices.TV_1080p)
+@Composable
+private fun TvAutoplayOverPanelPreview() {
+    KaeruTvTheme {
+        Box(Modifier.fillMaxSize().background(PreviewFrame)) {
+            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth()) {
+                TvAutoplayCard(
+                    episode = 8,
+                    countdownSec = 6,
+                    onNow = {},
+                    onCancel = {},
+                    modifier = Modifier
+                        .padding(end = PlayerGutter, bottom = KaeruTokens.Space4)
+                        .align(Alignment.End),
+                )
+                PreviewPanel()
+            }
         }
     }
 }
