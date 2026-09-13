@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
@@ -308,5 +309,58 @@ private fun CompactActionsPreview() = KaeruTheme {
         SecondaryButton("В планы", {}, Modifier.weight(1f), compact = true)
         SecondaryButton("Добавляем…", {}, Modifier.weight(1f), enabled = false, compact = true)
         SecondaryButton("В списке", {}, Modifier.weight(1f), enabled = false, compact = true)
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 220)
+@Composable
+private fun TextFieldPreview() = KaeruTheme {
+    Column(
+        Modifier.padding(KaeruTokens.GutterPhone),
+        verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
+    ) {
+        // Bare: no icon in front, the placeholder in the text's own place.
+        KaeruTextField(value = "", onValueChange = {}, placeholder = "Название студии")
+        // Typed into, with a clear icon offered for it.
+        KaeruTextField(value = "a1b2c3d4e5", onValueChange = {}, clearLabel = "Очистить")
+        // The end slot given to something other than a clear icon.
+        KaeruTextField(
+            value = "AniLibria",
+            onValueChange = {},
+            trailing = { IconAction(Icons.Default.Add, "Добавить студию", {}) },
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 120)
+@Composable
+private fun AvatarPreview() = KaeruTheme {
+    Row(
+        Modifier.padding(KaeruTokens.GutterPhone),
+        horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Nothing stored, which is the contracted fallback.
+        Avatar(url = null, name = "kaeru")
+        Avatar(url = null, name = "Фрирен")
+        // A picture that cannot be fetched — a 404, a phone on a train, a preview with no network.
+        // It has to land on the same letter, or the account block loses its face to a grey disc.
+        Avatar(url = "https://shikimori.example/there-is-no-such-avatar.png", name = "kaeru")
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 120)
+@Composable
+private fun SwitchPreview() = KaeruTheme {
+    Row(
+        Modifier.padding(KaeruTokens.GutterPhone),
+        horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // On takes the accent, the same rule that lights the active tab and the chosen chip.
+        KaeruSwitch(checked = true, onCheckedChange = null)
+        KaeruSwitch(checked = false, onCheckedChange = null)
+        KaeruSwitch(checked = true, onCheckedChange = null, enabled = false)
+        KaeruSwitch(checked = false, onCheckedChange = null, enabled = false)
     }
 }

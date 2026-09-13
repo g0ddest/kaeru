@@ -1,8 +1,11 @@
 package app.kaeru.data.auth
 
+import app.kaeru.data.library.AppPreferences
 import app.kaeru.data.shikimori.SHIKIMORI_BASE_URL
 import app.kaeru.data.shikimori.ShikimoriOAuthApi
 import app.kaeru.data.shikimori.ShikimoriApi
+import app.kaeru.data.shikimori.UserDto
+import app.kaeru.data.shikimori.absolute
 import app.kaeru.data.shikimori.toDomainFailure
 import app.kaeru.domain.error.AuthCallbackRejected
 import app.kaeru.domain.repository.AuthRepository
@@ -27,6 +30,7 @@ class ShikimoriAuthRepository @Inject constructor(
     private val oauthApi: ShikimoriOAuthApi,
     private val api: ShikimoriApi,
     private val session: AccountSession,
+    private val prefs: AppPreferences,
     @param:Named("shikimoriClientId") private val clientId: String,
     @param:Named("shikimoriClientSecret") private val clientSecret: String,
     private val clock: Clock,
@@ -66,23 +70,63 @@ class ShikimoriAuthRepository @Inject constructor(
     override suspend fun exchangeTypedCode(code: String): Result<Unit> =
         exchangeCode(code.trim(), OOB_REDIRECT)
 
-    internal suspend fun exchangeCode(code: String, redirectUri: String): Result<Unit> = try {
-        session.login {
-            val tokens = oauthApi.token(
-                grantType = "authorization_code",
-                clientId = clientId,
-                clientSecret = clientSecret,
-                code = code,
-                redirectUri = redirectUri,
-            )
-            val user = api.whoami("Bearer ${tokens.accessToken}")
-            AuthTokens(tokens.accessToken, tokens.refreshToken, clock.instant().epochSecond + tokens.expiresIn, user.id)
+    /**
+     * The `whoami` that verifies the identity also names it, so the nickname and avatar the
+     * settings screen shows are written down here rather than fetched again on first open.
+     *
+     * The name is written outside the sign-in's own `try`, after the transition has committed. By
+     * that point the tokens and the user id are already in their two stores and the viewer *is*
+     * signed in; a failure writing a nickname must not be reported as a sign-in that did not
+     * happen. See [rememberProfile].
+     */
+    internal suspend fun exchangeCode(code: String, redirectUri: String): Result<Unit> {
+        var profile: UserDto? = null
+        val signedIn = try {
+            session.login {
+                val tokens = oauthApi.token(
+                    grantType = "authorization_code",
+                    clientId = clientId,
+                    clientSecret = clientSecret,
+                    code = code,
+                    redirectUri = redirectUri,
+                )
+                val user = api.whoami("Bearer ${tokens.accessToken}")
+                profile = user
+                AuthTokens(
+                    tokens.accessToken,
+                    tokens.refreshToken,
+                    clock.instant().epochSecond + tokens.expiresIn,
+                    user.id,
+                )
+            }
+            Result.success(Unit)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Result.failure(error.toDomainFailure())
         }
-        Result.success(Unit)
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (error: Exception) {
-        Result.failure(error.toDomainFailure())
+        if (signedIn.isSuccess) rememberProfile(profile)
+        return signedIn
+    }
+
+    /**
+     * Writes the name and the face down, best effort.
+     *
+     * Two things can go wrong here and neither is worth a failed sign-in. The preference store is a
+     * different file from the token store, so it can fail on its own; and a sign-out winning the
+     * race leaves a nickname with no user id beside it, which `AppPreferences.account` reads as
+     * nobody signed in. Either way the name is recoverable — `AccountRepository.refresh()` asks
+     * again when the settings screen opens — and the sign-in itself has already committed.
+     */
+    private suspend fun rememberProfile(profile: UserDto?) {
+        if (profile == null) return
+        try {
+            prefs.setAccountProfile(profile.nickname, absolute(profile.avatar))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Deliberately swallowed: see above. The next `whoami` fills the gap.
+        }
     }
 
     override suspend fun logout() = session.logout()

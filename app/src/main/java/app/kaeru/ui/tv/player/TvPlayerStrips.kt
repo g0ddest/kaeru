@@ -27,6 +27,7 @@ import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.playback.RankedTranslation
+import app.kaeru.ui.common.design.OFTEN_CHOSEN
 import app.kaeru.ui.common.player.PlayerUiState
 import app.kaeru.ui.common.theme.KaeruBackground
 import app.kaeru.ui.common.theme.KaeruTvTheme
@@ -119,11 +120,11 @@ fun TvStripMessage(text: String, modifier: Modifier = Modifier) {
 internal fun translationLabel(ranked: RankedTranslation): String {
     val track = ranked.translation
     val name = if (track.type == TranslationKind.SUBTITLES) "${track.title} (субтитры)" else track.title
-    return if (ranked.oftenChosen) "$name, $OFTEN_CHOSEN" else name
+    return if (ranked.oftenChosen) "$name, $oftenChosenClause" else name
 }
 
-/** Lower case, because it finishes the phrase the studio name starts. */
-private const val OFTEN_CHOSEN = "часто выбираете"
+/** The phone's chip phrase, lower-cased because here it finishes the sentence the studio name starts. */
+private val oftenChosenClause = OFTEN_CHOSEN.replaceFirstChar { it.lowercase() }
 
 @Composable
 private fun StripPanel(modifier: Modifier = Modifier, content: @Composable () -> Unit) {

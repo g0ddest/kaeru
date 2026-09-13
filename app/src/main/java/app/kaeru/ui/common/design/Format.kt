@@ -12,7 +12,8 @@ import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
 /**
- * Every user-facing string the component library builds out of numbers and dates.
+ * Every user-facing string the component library builds out of numbers and dates, and the fixed
+ * phrases more than one screen has to say the same way.
  *
  * Two rules from the design system are enforced here rather than left to each screen:
  *
@@ -241,6 +242,16 @@ fun waitingLabel(
         else -> "Ждём $episode серию"
     }
 }
+
+/**
+ * The mark on a track the viewer keeps coming back to.
+ *
+ * One string for three surfaces: the title screen's chooser and the phone player render it as a
+ * chip through [OftenChosenChip], and the television, where a chip has no room for a second line,
+ * lower-cases the first letter and finishes the studio name with it. A second copy of the phrase
+ * would drift from this one the first time either is reworded.
+ */
+internal const val OFTEN_CHOSEN = "Часто выбираете"
 
 /**
  * Where a title sits in the viewer's list, in the words Shikimori uses for it.
