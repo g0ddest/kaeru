@@ -1,6 +1,9 @@
 package app.kaeru.ui.common.home
 
+import app.kaeru.domain.discover.Season
 import app.kaeru.domain.model.HomeFeed
+import java.time.Instant
+import java.time.ZoneId
 
 data class HomeUiState(
     val feed: HomeFeed = HomeFeed.EMPTY,
@@ -15,4 +18,12 @@ data class HomeUiState(
      * `HomeFeedBuilder`'s, so the label and the feed always name the same episode.
      */
     val watchedThreshold: Float = 0.9f,
+    /**
+     * The catalogue rows under the personal ones.
+     *
+     * The default reads the clock because a season is a fact about today and there is no honest
+     * placeholder for it; the view model always passes its own, so this is only what a preview or
+     * a screen with no discovery of its own gets.
+     */
+    val discover: DiscoverUiState = DiscoverUiState(Season.current(Instant.now(), ZoneId.systemDefault())),
 )

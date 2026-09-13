@@ -31,6 +31,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import app.kaeru.domain.discover.Season
 import app.kaeru.domain.model.FeedItem
 import app.kaeru.ui.common.design.HeroBanner
 import app.kaeru.ui.common.design.EmptyState
@@ -89,6 +90,7 @@ fun HomeScreen(
     onAnime: (Int) -> Unit,
     onSettings: () -> Unit,
     onSearch: () -> Unit,
+    onSeason: (Season) -> Unit,
 ) {
     val content = homeContentState(state)
     val snackbar = remember { SnackbarHostState() }
@@ -120,7 +122,7 @@ fun HomeScreen(
                 HomeContent.Loading -> HomeLoading()
                 is HomeContent.Error -> HomeError(content.message, onRefresh)
                 HomeContent.Empty -> HomeEmpty(onSearch)
-                HomeContent.Feed -> FeedList(state, now, listState, onPlay, onAnime)
+                HomeContent.Feed -> FeedList(state, now, listState, onPlay, onAnime, onSeason)
             }
         }
         HomeBar(listState, onSettings)
@@ -158,6 +160,7 @@ private fun FeedList(
     listState: LazyListState,
     onPlay: (Int, Int) -> Unit,
     onAnime: (Int) -> Unit,
+    onSeason: (Season) -> Unit,
 ) {
     // `now` is remembered on the same feed, so keying on it as well would buy nothing.
     val rows = remember(state.feed, state.watchedThreshold) {
@@ -180,6 +183,8 @@ private fun FeedList(
         rows.forEach { row ->
             item(key = row.title, contentType = ROW) { FeedRow(row, onAnime) }
         }
+        // Below everything the viewer already owns: what everyone else is watching.
+        discoverSections(state.discover, onAnime, onSeason)
     }
 }
 

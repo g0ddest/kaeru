@@ -1,5 +1,8 @@
 package app.kaeru.ui.common.design
 
+import app.kaeru.domain.discover.Season
+import app.kaeru.domain.discover.SeasonKind
+import app.kaeru.domain.discover.seasonChoices
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.FeedItem
@@ -333,5 +336,22 @@ class FormatTest {
         assertEquals("21 серию", pluralEpisodesAccusative(21))
         // Everything else is spelled the same way in both.
         (2..10).forEach { assertEquals(pluralEpisodes(it), pluralEpisodesAccusative(it)) }
+    }
+
+    // --- seasonTitle ---------------------------------------------------------------------------
+
+    @Test
+    fun `a season chip names the season and the year`() {
+        assertEquals("Зима 2026", seasonTitle(Season(SeasonKind.WINTER, 2026)))
+        assertEquals("Весна 2026", seasonTitle(Season(SeasonKind.SPRING, 2026)))
+        assertEquals("Лето 2026", seasonTitle(Season(SeasonKind.SUMMER, 2026)))
+        assertEquals("Осень 2026", seasonTitle(Season(SeasonKind.FALL, 2026)))
+    }
+
+    @Test
+    fun `a season chip is sentence case with no separator`() {
+        val titles = seasonChoices(Season(SeasonKind.FALL, 2026)).map(::seasonTitle)
+        assertEquals(listOf("Лето 2026", "Осень 2026", "Зима 2027"), titles)
+        assertTrue(titles.none { it.contains("·") || it == it.uppercase() })
     }
 }

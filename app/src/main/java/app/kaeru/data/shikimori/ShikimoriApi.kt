@@ -26,6 +26,23 @@ interface ShikimoriApi {
         @Query("limit") limit: Int = 50,
     ): List<AnimeShortDto>
 
+    /**
+     * The catalogue itself rather than one viewer's list: what is airing now, or what a given
+     * season held. `status` and `season` are separate filters and Retrofit drops whichever is
+     * null, so one route serves both rows without either sending a filter it does not mean.
+     *
+     * `censored=true` asks Shikimori to leave adult titles out; a home screen is not the place
+     * to discover them.
+     */
+    @GET("api/animes")
+    suspend fun animes(
+        @Query("status") status: String? = null,
+        @Query("season") season: String? = null,
+        @Query("order") order: String = "popularity",
+        @Query("limit") limit: Int = 20,
+        @Query("censored") censored: String = "true",
+    ): List<AnimeShortDto>
+
     @GET("api/animes/{id}")
     suspend fun anime(@Path("id") id: Int): AnimeDetailsDto
 

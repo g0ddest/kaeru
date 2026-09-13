@@ -101,6 +101,7 @@ fun MobileShell(onLogout: () -> Unit, nav: NavHostController = rememberNavContro
                     onAnime = openAnime,
                     onSettings = { nav.navigate(Routes.SETTINGS) { launchSingleTop = true } },
                     onSearch = { openTab(Routes.SEARCH) },
+                    onSeason = vm::selectSeason,
                 )
             }
             composable(Routes.LIBRARY) {

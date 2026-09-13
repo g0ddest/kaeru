@@ -1,5 +1,7 @@
 package app.kaeru.ui.common.design
 
+import app.kaeru.domain.discover.Season
+import app.kaeru.domain.discover.SeasonKind
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.FeedItem
 import app.kaeru.domain.model.FeedKind
@@ -66,6 +68,22 @@ fun pluralEpisodes(count: Int): String = "$count ${plural(count, "серия", "
  * a boolean is a caller that will pick the wrong one.
  */
 fun pluralEpisodesAccusative(count: Int): String = "$count ${plural(count, "серию", "серии", "серий")}"
+
+/**
+ * `Лето 2026` — a broadcast season as a chip says it.
+ *
+ * The season's name lives here rather than on the domain type: it is a word the viewer reads, and
+ * every one of those in this app is built in the UI layer.
+ */
+fun seasonTitle(season: Season): String {
+    val name = when (season.kind) {
+        SeasonKind.WINTER -> "Зима"
+        SeasonKind.SPRING -> "Весна"
+        SeasonKind.SUMMER -> "Лето"
+        SeasonKind.FALL -> "Осень"
+    }
+    return "$name ${season.year}"
+}
 
 /** `5 из 12`; a season whose length the catalogue does not know prints `5 из ?`. */
 fun episodesLabel(watched: Int, total: Int): String = "$watched из ${if (total > 0) total else "?"}"

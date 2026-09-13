@@ -1,5 +1,6 @@
 package app.kaeru.ui.mobile.home
 
+import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.FeedItem
 import app.kaeru.domain.model.HomeFeed
 import app.kaeru.ui.common.design.pluralEpisodes
@@ -14,6 +15,10 @@ private const val CONTINUE = "Продолжить"
 private const val NEXT_UP = "Дальше по списку"
 private const val UPCOMING = "Скоро"
 private const val PLANNED = "В планах"
+
+/** The two rows about the catalogue rather than about the viewer, in the order they are read. */
+private const val POPULAR_NOW = "Популярно сейчас"
+private const val POPULAR_IN_SEASON = "Популярное в сезоне"
 
 /** What an upcoming card says when the catalogue has no date for the next episode. */
 private const val SOON = "скоро"
@@ -110,3 +115,58 @@ private fun FeedItem.seasonLength(): String? {
     val season = entry.anime.episodes.takeIf { it > 0 } ?: entry.anime.availableEpisodes
     return season.takeIf { it > 0 }?.let(::pluralEpisodes)
 }
+
+/**
+ * A row of titles the viewer has not added to anything.
+ *
+ * Kept apart from [HomeRow] because the two answer different questions and are drawn differently.
+ * A personal row is built from a list already on the device, so it either exists or does not; a
+ * discovery row arrives from the network after the screen is up, which is why this one has a
+ * [loading] shape and [HomeRow] does not. [cards] is empty exactly when [loading] is true.
+ */
+data class DiscoverRow(val title: String, val cards: List<HomeCard>, val loading: Boolean)
+
+/** «Популярно сейчас» — what is airing, most watched first. */
+fun popularNowRow(titles: List<Anime>?, loading: Boolean): DiscoverRow? =
+    discoverRow(POPULAR_NOW, titles, loading)
+
+/** «Популярное в сезоне» — the season the chips have selected says which one. */
+fun seasonalRow(titles: List<Anime>?, loading: Boolean): DiscoverRow? =
+    discoverRow(POPULAR_IN_SEASON, titles, loading)
+
+/**
+ * The row, the skeleton, or nothing at all.
+ *
+ * Titles win over [loading]: a pull-to-refresh reloads a row that is already on screen, and
+ * blanking it to a skeleton would take away something the viewer can read in exchange for
+ * nothing. Nothing at all is the answer to both failure and an empty catalogue — neither is a
+ * problem the viewer can fix, and the rows above still answer what they opened the app for.
+ */
+private fun discoverRow(title: String, titles: List<Anime>?, loading: Boolean): DiscoverRow? = when {
+    !titles.isNullOrEmpty() -> DiscoverRow(title, titles.map(::discoverCard), loading = false)
+    loading -> DiscoverRow(title, emptyList(), loading = true)
+    else -> null
+}
+
+/**
+ * A catalogue card: artwork, name, and one fact about the size of the thing.
+ *
+ * No badge and no progress strip, and not only because there is no progress to show — the clean
+ * artwork is what separates «titles you are in the middle of» from «titles you have never opened»
+ * as the eye goes down the screen, with no heading needed to say so.
+ */
+private fun discoverCard(anime: Anime): HomeCard = HomeCard(
+    animeId = anime.id,
+    title = anime.title,
+    posterUrl = anime.posterUrl,
+    subtitle = anime.catalogueLine(),
+)
+
+/**
+ * How much show there is: episodes there are to watch, or who is making it when none have aired.
+ *
+ * Shikimori's short serialisation carries no studio, so in practice a title that has not started
+ * shows its name alone — which is the whole truth about an announcement, and better than a `0`.
+ */
+private fun Anime.catalogueLine(): String? =
+    availableEpisodes.takeIf { it > 0 }?.let(::pluralEpisodes) ?: studio

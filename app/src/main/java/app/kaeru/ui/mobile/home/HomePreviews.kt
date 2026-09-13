@@ -2,6 +2,8 @@ package app.kaeru.ui.mobile.home
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
+import app.kaeru.domain.discover.Season
+import app.kaeru.domain.discover.SeasonKind
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.FeedItem
@@ -11,6 +13,7 @@ import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.model.WatchState
+import app.kaeru.ui.common.home.DiscoverUiState
 import app.kaeru.ui.common.home.HomeUiState
 import app.kaeru.ui.common.theme.KaeruTheme
 import java.time.Duration
@@ -87,6 +90,27 @@ private val plannedOnlyFeed = HomeFeed(
     planned = listOf(FeedItem(demonSlayer, 1, FeedKind.PLANNED)),
 )
 
+private val summer = Season(SeasonKind.SUMMER, 2026)
+
+// Nothing in the viewer's list, which is the point: the discovery rows are the only place on this
+// screen where a title carries no badge and no progress strip.
+private val popularNow = listOf(
+    anime(11, "Гачиакута", episodes = 24, aired = 11),
+    anime(12, "Поднятие уровня в одиночку", episodes = 12, aired = 5),
+    anime(13, "Кайдзю №8", episodes = 12, aired = 9),
+)
+
+private val seasonal = listOf(
+    anime(14, "Проводы в последний путь", episodes = 13, aired = 13, status = AnimeStatus.RELEASED),
+    anime(15, "Тихая звезда", episodes = 12, aired = 0, status = AnimeStatus.ANONS),
+)
+
+private val discovered = DiscoverUiState(
+    season = summer,
+    popularNow = popularNow,
+    seasonal = seasonal,
+)
+
 @Composable
 private fun Home(state: HomeUiState) = KaeruTheme {
     HomeScreen(
@@ -96,6 +120,7 @@ private fun Home(state: HomeUiState) = KaeruTheme {
         onAnime = {},
         onSettings = {},
         onSearch = {},
+        onSeason = {},
     )
 }
 
@@ -122,3 +147,28 @@ private fun HomeErrorPreview() = Home(
 @Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 800)
 @Composable
 private fun HomePlannedOnlyPreview() = Home(HomeUiState(feed = plannedOnlyFeed, isLoading = false))
+
+/** The whole screen the way a viewer with a list and a network actually sees it. */
+@Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 1600)
+@Composable
+private fun HomeWithDiscoveryPreview() = Home(
+    HomeUiState(feed = loadedFeed, isLoading = false, discover = discovered),
+)
+
+/** The catalogue rows before they arrive: headings and the switcher are up, the cards are not. */
+@Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 1200)
+@Composable
+private fun HomeDiscoveryLoadingPreview() = Home(
+    HomeUiState(
+        feed = plannedOnlyFeed,
+        isLoading = false,
+        discover = DiscoverUiState(season = summer, loadingNow = true, loadingSeasonal = true),
+    ),
+)
+
+/** Shikimori was unreachable: both rows are simply not there, and the list above still works. */
+@Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 800)
+@Composable
+private fun HomeDiscoveryUnavailablePreview() = Home(
+    HomeUiState(feed = plannedOnlyFeed, isLoading = false, discover = DiscoverUiState(season = summer)),
+)

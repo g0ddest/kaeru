@@ -1,7 +1,9 @@
 package app.kaeru.di
 
+import app.kaeru.data.library.ShikimoriDiscoverRepository
 import app.kaeru.data.library.ShikimoriLibraryRepository
 import app.kaeru.domain.feed.HomeFeedBuilder
+import app.kaeru.domain.repository.DiscoverRepository
 import app.kaeru.domain.repository.LibraryRepository
 import dagger.Binds
 import dagger.Module
@@ -34,4 +36,7 @@ object DispatchersModule {
 abstract class RepositoryModule {
     @Binds
     abstract fun libraryRepository(impl: ShikimoriLibraryRepository): LibraryRepository
+
+    @Binds
+    abstract fun discoverRepository(impl: ShikimoriDiscoverRepository): DiscoverRepository
 }

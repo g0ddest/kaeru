@@ -10,6 +10,7 @@ import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.model.WatchState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -190,5 +191,106 @@ class HomeRowsTest {
         ).flatMap { row -> row.items.flatMap { listOfNotNull(it.badge, it.subtitle) } + row.title }
         assertTrue(all.isNotEmpty())
         all.forEach { assertTrue("«$it» joins facts with a middle dot", !it.contains("·")) }
+    }
+
+    // --- discovery ----------------------------------------------------------------------------
+
+    private fun catalogue(
+        id: Int,
+        episodes: Int = 12,
+        aired: Int = 8,
+        status: AnimeStatus = AnimeStatus.ONGOING,
+        studio: String? = "Madhouse",
+    ) = anime(id, episodes, aired, null, status).copy(studio = studio)
+
+    @Test
+    fun `the popular row is titled for what is airing rather than for the catalogue`() {
+        val row = popularNowRow(listOf(catalogue(1)), loading = false)!!
+        assertEquals("Популярно сейчас", row.title)
+        assertEquals(listOf(1), row.cards.map { it.animeId })
+        assertFalse(row.loading)
+    }
+
+    @Test
+    fun `the seasonal row is titled for the season, which the chips then name`() {
+        assertEquals("Популярное в сезоне", seasonalRow(listOf(catalogue(1)), loading = false)!!.title)
+    }
+
+    @Test
+    fun `a discovery card says how much of the show there is to watch`() {
+        val card = popularNowRow(listOf(catalogue(1, episodes = 12, aired = 8)), loading = false)!!.cards.single()
+        assertEquals("8 серий", card.subtitle)
+    }
+
+    @Test
+    fun `a finished show counts the whole season rather than what aired`() {
+        val card = popularNowRow(
+            listOf(catalogue(1, episodes = 24, aired = 24, status = AnimeStatus.RELEASED)),
+            loading = false,
+        )!!.cards.single()
+        assertEquals("24 серии", card.subtitle)
+    }
+
+    @Test
+    fun `a title that has not started says who is making it`() {
+        val card = seasonalRow(
+            listOf(catalogue(1, episodes = 12, aired = 0, status = AnimeStatus.ANONS)),
+            loading = false,
+        )!!.cards.single()
+        assertEquals("Madhouse", card.subtitle)
+    }
+
+    @Test
+    fun `a title with nothing aired and nobody named says nothing at all`() {
+        val card = seasonalRow(
+            listOf(catalogue(1, aired = 0, status = AnimeStatus.ANONS, studio = null)),
+            loading = false,
+        )!!.cards.single()
+        assertNull(card.subtitle)
+    }
+
+    @Test
+    fun `a discovery card carries no episode badge and no progress`() {
+        val card = popularNowRow(listOf(catalogue(1)), loading = false)!!.cards.single()
+        assertNull(card.badge)
+        assertNull(card.progress)
+    }
+
+    @Test
+    fun `a row that could not be read is absent rather than empty`() {
+        assertNull(popularNowRow(null, loading = false))
+        assertNull(seasonalRow(null, loading = false))
+    }
+
+    @Test
+    fun `a row the catalogue had nothing for is absent too`() {
+        assertNull(popularNowRow(emptyList(), loading = false))
+        assertNull(seasonalRow(emptyList(), loading = false))
+    }
+
+    @Test
+    fun `a row still loading keeps its place with nothing in it`() {
+        val row = popularNowRow(null, loading = true)!!
+        assertTrue(row.loading)
+        assertTrue(row.cards.isEmpty())
+        assertEquals("Популярно сейчас", row.title)
+    }
+
+    @Test
+    fun `titles already on screen are not replaced by a skeleton while they reload`() {
+        val row = popularNowRow(listOf(catalogue(1)), loading = true)!!
+        assertFalse(row.loading)
+        assertEquals(listOf(1), row.cards.map { it.animeId })
+    }
+
+    @Test
+    fun `no discovery card joins its facts with a middle dot`() {
+        val rows = listOfNotNull(
+            popularNowRow(listOf(catalogue(1), catalogue(2, aired = 0, status = AnimeStatus.ANONS)), loading = false),
+            seasonalRow(listOf(catalogue(3, episodes = 0, aired = 0, status = AnimeStatus.ANONS)), loading = false),
+        )
+        val text = rows.flatMap { it.cards }.flatMap { listOfNotNull(it.title, it.subtitle) }
+        assertTrue(text.isNotEmpty())
+        assertTrue(text.none { it.contains("·") })
     }
 }

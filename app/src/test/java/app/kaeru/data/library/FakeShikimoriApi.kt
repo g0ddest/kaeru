@@ -73,6 +73,23 @@ class FakeShikimoriApi : ShikimoriApi {
         return screenshots[id].orEmpty()
     }
 
+    /** Catalogue rows, keyed by the filter that asked for them: `ongoing` or a season name. */
+    val catalogue = mutableMapOf<String, List<AnimeShortDto>>()
+    val catalogueCalls = mutableListOf<String>()
+
+    override suspend fun animes(
+        status: String?,
+        season: String?,
+        order: String,
+        limit: Int,
+        censored: String,
+    ): List<AnimeShortDto> {
+        val key = season ?: status.orEmpty()
+        record("catalogue:$key")
+        catalogueCalls += key
+        return catalogue[key].orEmpty().take(limit)
+    }
+
     override suspend fun search(query: String, limit: Int): List<AnimeShortDto> {
         record("search:$query")
         return animes.values.filter { it.name.contains(query, true) }.take(limit)
