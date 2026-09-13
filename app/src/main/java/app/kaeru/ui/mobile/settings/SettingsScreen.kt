@@ -111,7 +111,7 @@ fun SettingsScreen(
                 .padding(top = KaeruTokens.Space2, bottom = KaeruTokens.Space8),
             verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space8),
         ) {
-            AccountSection(state, onRetryAccount, onSignOut = { confirming = true })
+            AccountSection(state, onRetryAccount, onSignOutPressed = { confirming = true })
             PlaybackSection(state, onAutoplay, onQuality, onThreshold)
             DubsSection(state, onStudioUp, onStudioDown, onStudioRemove, onStudioAdd, onStudiosReset)
             KodikSection(state.kodikToken, onKodikToken)
@@ -130,7 +130,7 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun AccountSection(state: SettingsUiState, onRetry: () -> Unit, onSignOut: () -> Unit) {
+private fun AccountSection(state: SettingsUiState, onRetry: () -> Unit, onSignOutPressed: () -> Unit) {
     SettingsSection(ACCOUNT) {
         if (state.accountLoading) AccountSkeleton() else AccountBlock(state.account)
         // Offered only when Shikimori could not be reached and nothing was cached to fall back
@@ -139,7 +139,7 @@ private fun AccountSection(state: SettingsUiState, onRetry: () -> Unit, onSignOu
             TextAction(RETRY, onRetry, Modifier.offset(x = -KaeruTokens.Space3))
         }
         // Signing out never waits on a nickname: knowing who you are is not a condition of leaving.
-        DestructiveButton(SIGN_OUT, onClick = onSignOut)
+        DestructiveButton(SIGN_OUT, onClick = onSignOutPressed)
     }
 }
 
@@ -180,9 +180,15 @@ private fun DubsSection(
     onStudiosReset: () -> Unit,
 ) {
     var typed by rememberSaveable { mutableStateOf("") }
+    // A name already on the list cannot be added again, and the control says so by going quiet
+    // rather than by swallowing the press: the field keeps what was typed, and the row it
+    // duplicates is on screen right above it.
+    val canAdd = typed.isNotBlank() && state.studios.none { it.equals(typed.trim(), ignoreCase = true) }
     val add = {
-        onStudioAdd(typed)
-        typed = ""
+        if (canAdd) {
+            onStudioAdd(typed)
+            typed = ""
+        }
     }
     SettingsSection(DUBS) {
         SettingNote(DUBS_NOTE)
@@ -206,7 +212,7 @@ private fun DubsSection(
             onValueChange = { typed = it },
             placeholder = ADD_STUDIO,
             onSubmit = add,
-            trailing = { IconAction(Icons.Default.Add, ADD_STUDIO, add, enabled = typed.isNotBlank()) },
+            trailing = { IconAction(Icons.Default.Add, ADD_STUDIO, add, enabled = canAdd) },
         )
         // Offered only when there is a list of the viewer's own to undo. Nothing to reset is not
         // a disabled button, it is no button.
