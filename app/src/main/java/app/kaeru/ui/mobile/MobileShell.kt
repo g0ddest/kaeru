@@ -33,6 +33,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.home.HomeViewModel
+import app.kaeru.ui.common.settings.SettingsViewModel
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruElevated
 import app.kaeru.ui.common.theme.KaeruSecondary
@@ -58,7 +59,7 @@ private val tabs = listOf(
 private val tabRoutes = tabs.map { it.route }.toSet()
 
 @Composable
-fun MobileShell(onLogout: () -> Unit, nav: NavHostController = rememberNavController()) {
+fun MobileShell(nav: NavHostController = rememberNavController()) {
     val route = nav.currentBackStackEntryAsState().value?.destination?.route
     val context = LocalContext.current
     // Playback is its own activity: landscape, immersive, and outliving this back stack.
@@ -129,7 +130,21 @@ fun MobileShell(onLogout: () -> Unit, nav: NavHostController = rememberNavContro
                 )
             }
             composable(Routes.SETTINGS) {
-                SettingsScreen(onBack = { nav.popBackStack() }, onLogout = onLogout)
+                val vm: SettingsViewModel = hiltViewModel()
+                SettingsScreen(
+                    state = vm.uiState.collectAsStateWithLifecycle().value,
+                    onBack = { nav.popBackStack() },
+                    onSignOut = vm::signOut,
+                    onAutoplay = vm::setAutoplayNext,
+                    onQuality = vm::setDefaultQuality,
+                    onThreshold = vm::setWatchedThreshold,
+                    onStudioUp = vm::moveStudioUp,
+                    onStudioDown = vm::moveStudioDown,
+                    onStudioRemove = vm::removeStudio,
+                    onStudioAdd = vm::addStudio,
+                    onStudiosReset = vm::resetStudios,
+                    onKodikToken = vm::setKodikToken,
+                )
             }
             composable(Routes.DETAILS, arguments = listOf(navArgument("animeId") { type = NavType.IntType })) { entry ->
                 val vm: DetailsViewModel = hiltViewModel(entry)

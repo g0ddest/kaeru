@@ -30,7 +30,7 @@ fun MobileApp(
         when (auth.loggedIn) {
             null -> Box(Modifier.fillMaxSize())
             false -> LoginScreen(authViewModel::mobileAuthorizeUrl, auth)
-            true -> MobileShell(onLogout = authViewModel::logout)
+            true -> MobileShell()
         }
     }
 }
