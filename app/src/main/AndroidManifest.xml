@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -40,9 +41,15 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="kaeru" android:host="oauth" />
-                <!-- The television's QR code. Read by the phone, never fired by this app. -->
-                <data android:scheme="kaeru" android:host="pair" />
+                <!--
+                  One scheme, two hosts, written as separate tags: the platform merges every data
+                  element in a filter and matches the cross product, so this is `kaeru://oauth`
+                  (the OAuth callback) and `kaeru://pair` (a television's QR code, read by the
+                  phone and never fired by this app), and nothing else.
+                -->
+                <data android:scheme="kaeru" />
+                <data android:host="oauth" />
+                <data android:host="pair" />
             </intent-filter>
         </activity>
 

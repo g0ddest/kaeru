@@ -24,6 +24,7 @@ import app.kaeru.ui.common.player.PlayerViewModel
 import app.kaeru.ui.common.theme.KaeruTvTheme
 import app.kaeru.ui.common.auth.AuthViewModel
 import app.kaeru.ui.tv.auth.TvLoginScreen
+import app.kaeru.ui.tv.auth.TvPairingViewModel
 import app.kaeru.ui.tv.home.TvHomeScreen
 import app.kaeru.ui.tv.player.TvPlayerScreen
 
@@ -45,13 +46,27 @@ fun TvApp(authViewModel: AuthViewModel = hiltViewModel()) {
     KaeruTvTheme {
         when (auth.loggedIn) {
             null -> Box(Modifier.fillMaxSize())
-            false -> TvLoginScreen(
-                authorizeUrl = authViewModel.tvAuthorizeUrl,
-                state = auth,
-                code = code,
-                onCode = { code = it },
-                onSubmit = { authViewModel.exchangeTvCode(code) },
-            )
+            false -> {
+                // The pairing port is opened here rather than in the view model's constructor: it
+                // belongs to the screen, and the view model outlives it — `hiltViewModel()` on a
+                // television hands out one scoped to the activity, so `onCleared` does not fire
+                // when this branch is swapped for the home screen after a successful sign-in.
+                val pairingViewModel: TvPairingViewModel = hiltViewModel()
+                val pairing by pairingViewModel.uiState.collectAsStateWithLifecycle()
+                DisposableEffect(pairingViewModel) {
+                    pairingViewModel.start()
+                    onDispose { pairingViewModel.stop() }
+                }
+                TvLoginScreen(
+                    authorizeUrl = authViewModel.tvAuthorizeUrl,
+                    state = auth,
+                    pairing = pairing,
+                    code = code,
+                    onCode = { code = it },
+                    onSubmit = { authViewModel.exchangeTvCode(code) },
+                    onNewQr = pairingViewModel::start,
+                )
+            }
             true -> {
                 // Hoisted above the branch: the feed is held by the ViewModel, so swapping the
                 // home rows for the title card costs nothing and preserves the loaded state.

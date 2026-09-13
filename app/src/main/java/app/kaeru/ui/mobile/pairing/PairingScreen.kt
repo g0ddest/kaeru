@@ -1,6 +1,5 @@
 package app.kaeru.ui.mobile.pairing
 
-import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.layout.Arrangement
@@ -21,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import app.kaeru.ui.common.design.EmptyState
 import app.kaeru.ui.common.design.ErrorState
 import app.kaeru.ui.common.design.IconAction
@@ -75,7 +75,7 @@ private val TextColumn = 320.dp
 fun PairingScreen(state: PairingUiState, onConfirm: () -> String?, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val authorize: () -> Unit = {
-        onConfirm()?.let { url -> CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(url)) }
+        onConfirm()?.let { url -> CustomTabsIntent.Builder().build().launchUrl(context, url.toUri()) }
     }
     BackHandler(enabled = state.stage != PairingStage.SENDING, onBack = onDismiss)
     Column(Modifier.fillMaxSize()) {
