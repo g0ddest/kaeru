@@ -8,6 +8,7 @@ import androidx.test.core.app.ApplicationProvider
 import app.kaeru.data.auth.AccountSession
 import app.kaeru.data.auth.AuthTokens
 import app.kaeru.data.auth.InMemoryTokenStore
+import app.kaeru.data.auth.TokenStore
 import app.kaeru.data.library.AppPreferences
 import app.kaeru.data.local.KaeruDatabase
 import app.kaeru.domain.error.AccountSessionChanged
@@ -35,6 +36,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.io.File
 import java.time.Instant
 
@@ -47,6 +49,7 @@ import java.time.Instant
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
+@Config(qualifiers = "w960dp-h540dp-television-notnight-mdpi")
 class RoomPlaybackSampleRepositoryTest {
     @get:Rule val tmp = TemporaryFolder()
     private val dispatcher = StandardTestDispatcher()
@@ -57,7 +60,27 @@ class RoomPlaybackSampleRepositoryTest {
     private lateinit var store: DataStore<Preferences>
     private lateinit var prefs: AppPreferences
     private lateinit var session: AccountSession
+    private lateinit var lock: CountingTokenStore
     private lateinit var repo: RoomPlaybackSampleRepository
+
+    /**
+     * Counts turns of the account lock.
+     *
+     * `AccountSession.withAccount` reads the store exactly once per call, inside its mutex and
+     * after taking it, so a read counted here is one critical section entered. That is the property
+     * this class exists for and the one nothing else in the suite can see: parking a holder on the
+     * lock and watching a save block behind it is satisfied by two acquisitions exactly as well as
+     * by one, so it cannot tell this implementation from the one it replaced.
+     */
+    private class CountingTokenStore(private val delegate: TokenStore) : TokenStore by delegate {
+        var turns = 0
+            private set
+
+        override suspend fun get(): AuthTokens? {
+            turns++
+            return delegate.get()
+        }
+    }
 
     @Before
     fun setUp() {
@@ -66,7 +89,8 @@ class RoomPlaybackSampleRepositoryTest {
         store = PreferenceDataStoreFactory.create(scope = storeScope) { File(tmp.root, "prefs.preferences_pb") }
         prefs = AppPreferences(store)
         runTest(dispatcher) { prefs.setUserId(42) }
-        session = AccountSession(InMemoryTokenStore(AuthTokens("access", "refresh", 9_999_999_999, 42)), prefs, db)
+        lock = CountingTokenStore(InMemoryTokenStore(AuthTokens("access", "refresh", 9_999_999_999, 42)))
+        session = AccountSession(lock, prefs, db)
         repo = RoomPlaybackSampleRepository(db, session, dispatcher)
     }
 
@@ -114,7 +138,22 @@ class RoomPlaybackSampleRepositoryTest {
     }
 
     @Test
-    fun `both rows wait on one turn of the account lock, not two`() = scope.runTest {
+    fun `a sample takes the account lock once, not once per row`() = scope.runTest {
+        // The headline property of the whole change, and the one every other assertion in this
+        // file passes just as happily without: the sample used to be two writes with an
+        // acquisition each, and a viewer's position is sampled every few seconds while a library
+        // refresh can hold that lock for a second or two.
+        repo.save(watch(), progress())
+
+        assertEquals(1, lock.turns)
+
+        repo.save(watch(positionMs = 300_000), progress(positionMs = 300_000))
+
+        assertEquals(2, lock.turns)
+    }
+
+    @Test
+    fun `a sample waits for whoever is holding the account`() = scope.runTest {
         val gate = CompletableDeferred<Unit>()
         val holder = launch { session.withAccount { gate.await() } }
         runCurrent()
