@@ -49,8 +49,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.kaeru.domain.download.DownloadState
 import app.kaeru.domain.download.EpisodeDownload
+import app.kaeru.ui.common.downloads.DownloadMark
+import app.kaeru.ui.common.downloads.downloadMark
 import app.kaeru.ui.common.player.CastButton
 import app.kaeru.ui.common.design.KaeruSeekBar
 import app.kaeru.ui.common.design.KaeruTokens
@@ -321,14 +322,19 @@ private fun Chip(text: String, onClick: () -> Unit) {
 @Composable
 private fun DownloadButton(download: EpisodeDownload?, onDownload: () -> Unit, onRemove: () -> Unit) {
     var confirming by remember { mutableStateOf(false) }
-    when (download?.state) {
-        null, DownloadState.FAILED -> DiscButton(Icons.Default.Download, "Скачать серию", onDownload)
-        DownloadState.DOWNLOADING -> DiscLabel(
-            "${(download.progress * 100).toInt()} %",
+    // The same four readings of the engine the season grid draws, so one episode cannot be «в
+    // очереди» on one screen and «скачано» on the other. Only the glyphs differ, which is what
+    // the two surfaces are actually free to disagree about.
+    when (downloadMark(download?.state)) {
+        DownloadMark.NONE, DownloadMark.FAILED ->
+            DiscButton(Icons.Default.Download, "Скачать серию", onDownload)
+        DownloadMark.PENDING ->
+            DiscButton(Icons.Default.Download, "Отменить загрузку", { confirming = true }, pending = true)
+        DownloadMark.RUNNING -> DiscLabel(
+            "${((download?.progress ?: 0f) * 100).toInt()} %",
             "Отменить загрузку",
         ) { confirming = true }
-        DownloadState.REMOVING -> DiscButton(Icons.Default.Download, "Скачать серию", onDownload, enabled = false)
-        else -> DiscButton(Icons.Default.DownloadDone, "Удалить загрузку", { confirming = true })
+        DownloadMark.DONE -> DiscButton(Icons.Default.DownloadDone, "Удалить загрузку", { confirming = true })
     }
     if (confirming) {
         RemoveDownloadSheet(
@@ -357,14 +363,16 @@ private fun DiscLabel(text: String, description: String, onClick: () -> Unit) {
     }
 }
 
+/**
+ * The same disc, drawn a step quieter for an episode that has been asked for but is not here yet.
+ *
+ * Muted rather than disabled: pressing it is how a queue is cancelled, so it has to stay pressable
+ * — it just should not look like something already on the device.
+ */
 @Composable
-private fun DiscButton(icon: ImageVector, description: String, onClick: () -> Unit, enabled: Boolean) {
-    IconButton(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = Modifier.size(48.dp).clip(CircleShape).background(Disc),
-    ) {
-        Icon(icon, contentDescription = description, tint = if (enabled) OnVideo else OnVideoMuted)
+private fun DiscButton(icon: ImageVector, description: String, onClick: () -> Unit, pending: Boolean) {
+    IconButton(onClick = onClick, modifier = Modifier.size(48.dp).clip(CircleShape).background(Disc)) {
+        Icon(icon, contentDescription = description, tint = if (pending) OnVideoMuted else OnVideo)
     }
 }
 

@@ -151,14 +151,18 @@ private fun download(state: DownloadState, progress: Float = 0f) = EpisodeDownlo
     updatedAt = Instant.parse("2026-09-13T20:00:00Z"),
 )
 
-/** The one control in the bar that has three things to say: not here, on its way, here. */
-@Preview(name = "Загрузка в плеере", showBackground = true, backgroundColor = DARK, widthDp = PHONE_WIDTH, heightDp = 260)
+/**
+ * The one control in the bar, saying each of the four things it can: nothing asked for, waiting its
+ * turn, waiting for Wi-Fi (the same «скоро»), coming down, and here.
+ */
+@Preview(name = "Загрузка в плеере", showBackground = true, backgroundColor = DARK, widthDp = PHONE_WIDTH, heightDp = 320)
 @Composable
 private fun PlayerDownloadStatesPreview() = KaeruTheme {
     Column(Modifier.fillMaxWidth().background(Color.Black), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf(
             null,
             download(DownloadState.QUEUED),
+            download(DownloadState.WAITING_FOR_WIFI),
             download(DownloadState.DOWNLOADING, 0.42f),
             download(DownloadState.COMPLETED, 1f),
         ).forEach { row ->

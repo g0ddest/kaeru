@@ -48,6 +48,8 @@ import app.kaeru.ui.common.design.pluralEpisodesAccusative
 import app.kaeru.ui.common.details.COLLAPSE
 import app.kaeru.ui.common.details.EpisodeCell
 import app.kaeru.ui.common.details.watchedLine
+import app.kaeru.ui.common.downloads.DownloadMark
+import app.kaeru.ui.common.downloads.downloadMark
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruElevated
 import app.kaeru.ui.common.theme.KaeruError
@@ -279,7 +281,7 @@ private fun EpisodeTile(
                             .size(CheckSize),
                     )
                 }
-                DownloadMark(
+                DownloadCorner(
                     cell,
                     Modifier
                         .align(Alignment.TopStart)
@@ -350,16 +352,16 @@ private fun MenuItem(
  * sentence.
  */
 @Composable
-private fun DownloadMark(cell: EpisodeCell, modifier: Modifier) {
-    when (cell.download) {
-        null, DownloadState.REMOVING -> Unit
-        DownloadState.QUEUED, DownloadState.RESOLVING, DownloadState.WAITING_FOR_WIFI -> Icon(
+private fun DownloadCorner(cell: EpisodeCell, modifier: Modifier) {
+    when (downloadMark(cell.download)) {
+        DownloadMark.NONE -> Unit
+        DownloadMark.PENDING -> Icon(
             Icons.Default.Download,
             contentDescription = QUEUED,
             tint = KaeruSecondary,
             modifier = modifier.size(DownloadGlyph),
         )
-        DownloadState.DOWNLOADING -> CircularProgressIndicator(
+        DownloadMark.RUNNING -> CircularProgressIndicator(
             progress = { cell.downloadProgress ?: 0f },
             modifier = modifier.size(RingSize).semantics { contentDescription = DOWNLOADING },
             color = KaeruAccent,
@@ -367,13 +369,13 @@ private fun DownloadMark(cell: EpisodeCell, modifier: Modifier) {
             strokeWidth = RingStroke,
             gapSize = 0.dp,
         )
-        DownloadState.COMPLETED -> Icon(
+        DownloadMark.DONE -> Icon(
             Icons.Default.DownloadDone,
             contentDescription = DOWNLOADED,
             tint = KaeruText,
             modifier = modifier.size(DownloadGlyph),
         )
-        DownloadState.FAILED -> Icon(
+        DownloadMark.FAILED -> Icon(
             Icons.Default.ErrorOutline,
             contentDescription = FAILED,
             tint = KaeruError,
