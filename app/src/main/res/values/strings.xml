@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Kaeru</string>
+    <!-- The notification channel downloads run under; shown in the system settings. -->
+    <string name="downloads_channel">Загрузки</string>
 </resources>
