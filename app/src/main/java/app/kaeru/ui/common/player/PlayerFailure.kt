@@ -1,6 +1,5 @@
 package app.kaeru.ui.common.player
 
-import app.kaeru.domain.download.DownloadState
 
 /** Said when an episode that is on the device will not play and the network is not the problem. */
 private const val BROKEN_DOWNLOAD =
@@ -35,17 +34,18 @@ data class PlayerFailure(val message: String, val recovery: PlayerRecovery)
  * then false twice over — there is a network, and the episode has already been downloaded — and it
  * sends the viewer to do the one thing they have already done.
  *
- * Only a finished download qualifies. One still running has nothing playable behind it, so its
- * failure is about the stream like any other, and offering to delete a download in progress would
- * be offering to cancel work the viewer is waiting on.
+ * The condition is the controller's word for it and not a guess made here. «Эта серия скачана» is
+ * not the same fact as «сломалось то, что скачано»: a downloaded episode plays from Kodik whenever
+ * the viewer picks another voice, and always while casting, and a failure on either of those paths
+ * belongs to the source with the file sitting there untouched. Offering to delete it — which is
+ * what this branch offers — would then destroy a working download over somebody else's fault.
  *
  * The message for everything else is the one the failure already carried: it comes from
  * `toUserMessage()`, which names the cause and the next step, and there is nothing to add to it.
  */
 fun playerFailure(state: PlayerUiState): PlayerFailure? {
     val message = state.errorMessage ?: return null
-    val downloaded = state.download?.state == DownloadState.COMPLETED
-    return if (!state.offline && downloaded) {
+    return if (!state.offline && state.failedReadingDownload) {
         PlayerFailure(BROKEN_DOWNLOAD, PlayerRecovery.REMOVE_DOWNLOAD)
     } else {
         PlayerFailure(message, PlayerRecovery.CHANGE_TRANSLATION)

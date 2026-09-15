@@ -30,6 +30,17 @@ data class PlaybackState(
     val autoplayCountdownSec: Int? = null,
     val error: Throwable? = null,
     /**
+     * [error] came from reading the copy on this device rather than from the source.
+     *
+     * The one thing the screen cannot work out for itself. «Не удалось воспроизвести скачанную
+     * серию» is only true when the file is what failed, and every proxy for that is wrong
+     * somewhere: an episode can be downloaded and still be streaming — another voice, a
+     * Chromecast — and a failure there is the source's, with the download sitting there perfectly
+     * playable. Set exactly where the difference is known: false for anything that comes out of a
+     * resolve, true for a decoder failure while the download was the thing being read.
+     */
+    val failedReadingDownload: Boolean = false,
+    /**
      * True while the picture is on a Chromecast rather than on this device. The screen turns
      * into a remote control; everything else about playback is unchanged.
      */

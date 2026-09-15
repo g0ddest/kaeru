@@ -110,6 +110,8 @@ fun PlayerScreen(
             var swipeEnded by remember { mutableIntStateOf(0) }
             val hardware = rememberPlayerHardware()
             val failed = state.errorMessage != null
+            // Whether the failure screen's «Удалить загрузку» has been confirmed yet.
+            var confirmingRemoval by remember(state.episode) { mutableStateOf(false) }
             // What the surface over the video says, decided outside the composition: a downloaded
             // episode failing with a network is a different message with a different way out.
             val failure = remember(state.errorMessage, state.offline, state.download) { playerFailure(state) }
@@ -209,7 +211,20 @@ fun PlayerScreen(
                         failure = it,
                         onRetry = onRetry,
                         onChangeTranslation = onOpenTranslations,
-                        onRemoveDownload = onRemoveBrokenDownload,
+                        // Asked for first, exactly as the top bar asks: this is the same deletion,
+                        // and an error screen is the worst place to make one a single tap away.
+                        onRemoveDownload = { confirmingRemoval = true },
+                    )
+                }
+
+                if (confirmingRemoval) {
+                    RemoveDownloadSheet(
+                        bytes = state.download?.bytes ?: 0,
+                        onRemove = {
+                            confirmingRemoval = false
+                            onRemoveBrokenDownload()
+                        },
+                        onDismiss = { confirmingRemoval = false },
                     )
                 }
 

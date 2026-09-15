@@ -35,22 +35,70 @@ class PlayerFailureTest {
     fun `nothing wrong is nothing to show`() {
         assertNull(playerFailure(PlayerUiState()))
         assertNull(playerFailure(PlayerUiState(download = download(DownloadState.COMPLETED))))
+        assertNull(playerFailure(PlayerUiState(failedReadingDownload = true)))
     }
 
     @Test
-    fun `a downloaded episode failing with a network blames the file, not the network`() {
+    fun `a decoder that could not read the download blames the file, not the network`() {
         val failure = playerFailure(
-            PlayerUiState(errorMessage = "Не удалось воспроизвести", offline = false, download = download(DownloadState.COMPLETED)),
+            PlayerUiState(
+                errorMessage = "Не удалось воспроизвести",
+                offline = false,
+                download = download(DownloadState.COMPLETED),
+                failedReadingDownload = true,
+            ),
         )
 
         assertEquals(BROKEN, failure?.message)
         assertEquals(PlayerRecovery.REMOVE_DOWNLOAD, failure?.recovery)
     }
 
+    /**
+     * The two paths that put a downloaded episode on the source: a voice the download was not
+     * fetched in, and a Chromecast, which never reads this device's cache at all. Both fail as
+     * source failures, with the file sitting there perfectly playable — and the escape this branch
+     * offers would delete it.
+     */
+    @Test
+    fun `a voice switch that failed is the source's fault, downloaded or not`() {
+        val failure = playerFailure(
+            PlayerUiState(
+                errorMessage = "Источник не отвечает",
+                offline = false,
+                download = download(DownloadState.COMPLETED),
+                failedReadingDownload = false,
+            ),
+        )
+
+        assertEquals("Источник не отвечает", failure?.message)
+        assertEquals(PlayerRecovery.CHANGE_TRANSLATION, failure?.recovery)
+    }
+
+    @Test
+    fun `a cast failure on a downloaded episode says nothing about the download`() {
+        val failure = playerFailure(
+            PlayerUiState(
+                errorMessage = "Не удалось начать трансляцию",
+                offline = false,
+                isCasting = true,
+                download = download(DownloadState.COMPLETED),
+                failedReadingDownload = false,
+            ),
+        )
+
+        assertEquals("Не удалось начать трансляцию", failure?.message)
+        assertEquals(PlayerRecovery.CHANGE_TRANSLATION, failure?.recovery)
+    }
+
     @Test
     fun `the same episode failing with no network keeps the offline wording`() {
         val failure = playerFailure(
-            PlayerUiState(errorMessage = OFFLINE, offline = true, download = download(DownloadState.COMPLETED)),
+            PlayerUiState(
+                errorMessage = OFFLINE,
+                offline = true,
+                download = download(DownloadState.COMPLETED),
+                failedReadingDownload = true,
+            ),
         )
 
         assertEquals(OFFLINE, failure?.message)

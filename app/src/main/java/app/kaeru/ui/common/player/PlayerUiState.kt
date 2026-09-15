@@ -67,6 +67,14 @@ data class PlayerUiState(
      * «удалить» for an episode already on the device.
      */
     val download: EpisodeDownload? = null,
+    /**
+     * What failed was the copy on this device, not the source.
+     *
+     * Carried from the controller because no arrangement of the fields here can stand in for it: an
+     * episode can be downloaded and still be streaming — another voice, a Chromecast — and a
+     * failure there belongs to Kodik with the download sitting beside it, perfectly playable.
+     */
+    val failedReadingDownload: Boolean = false,
     /** Something worth one line and no decision, shown and then forgotten. */
     val toast: String? = null,
 ) {

@@ -6,6 +6,7 @@ import androidx.media3.common.Player
 import app.kaeru.di.IoDispatcher
 import app.kaeru.domain.connectivity.Connectivity
 import app.kaeru.domain.download.DownloadRepository
+import app.kaeru.domain.download.DownloadState
 import app.kaeru.domain.download.EpisodeDownload
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
@@ -46,7 +47,11 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
+
+/** How long «Удалить загрузку» waits for the engine to let go of the file before retrying anyway. */
+private const val REMOVAL_TIMEOUT_MS = 5_000L
 
 /**
  * The player screen's brain, shared by the phone and the TV: the screens differ in how they
@@ -188,6 +193,9 @@ class PlayerViewModel @Inject constructor(
             episodes = shown.episodes,
             autoplayCountdownSec = playback.autoplayCountdownSec,
             errorMessage = playback.error?.toUserMessage(),
+            // Straight through from the controller, which is the only layer that knows whether the
+            // file or the source was what broke.
+            failedReadingDownload = playback.failedReadingDownload,
             isCasting = playback.isCasting,
             receiverName = around.receiverName,
             completedPrompt = screen.completedPrompt,
@@ -393,6 +401,16 @@ class PlayerViewModel @Inject constructor(
         val episode = liveEpisodeOf(id) ?: return
         viewModelScope.launch {
             downloads.remove(id, episode)
+            // Waited for, not assumed. Removing only *sends* the request — the engine's service
+            // picks it up later — while opening an episode reads the download index, so a retry
+            // fired on the next line would find the row still finished, re-open the very file the
+            // viewer asked to be rid of, and fail in the same way. Bounded, because a retry that
+            // never happens is worse than one that re-opens a stale row.
+            withTimeoutOrNull(REMOVAL_TIMEOUT_MS) {
+                downloads.observe(id).first { rows ->
+                    rows.none { it.episode == episode && it.state == DownloadState.COMPLETED }
+                }
+            }
             controller.retry()
         }
     }

@@ -86,8 +86,31 @@ class FakeDownloadRepository : DownloadRepository {
         return enqueueFailure?.let { Result.failure(it) } ?: Result.success(Unit)
     }
 
+    /**
+     * While set, a removal is recorded and then nothing happens, the way the real engine behaves:
+     * `remove` only sends a request to a service that gets to it later, and the row stays in the
+     * index until it does. [releaseRemovals] is that service finally getting to it.
+     */
+    var holdRemovals = false
+
+    private val held = mutableListOf<Pair<Int, Int>>()
+
+    fun releaseRemovals() {
+        val pending = held.toList()
+        held.clear()
+        pending.forEach { (animeId, episode) -> forget(animeId, episode) }
+    }
+
     override suspend fun remove(animeId: Int, episode: Int) {
         removed += animeId to episode
+        if (holdRemovals) {
+            held += animeId to episode
+            return
+        }
+        forget(animeId, episode)
+    }
+
+    private fun forget(animeId: Int, episode: Int) {
         rows.update { all -> all.filterNot { it.animeId == animeId && it.episode == episode } }
         streams.update { it - (animeId to episode) }
     }

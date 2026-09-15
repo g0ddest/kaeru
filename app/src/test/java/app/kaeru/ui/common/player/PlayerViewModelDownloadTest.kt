@@ -36,7 +36,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -214,6 +216,49 @@ class PlayerViewModelDownloadTest {
         assertEquals(100 to 4, downloads.removed.single())
         assertNull(downloads.completed(100, 4))
         assertNull(viewModel.uiState.value.download)
+        assertEquals(1, controller.retries)
+    }
+
+    /**
+     * Removing only *sends* the request; the engine's index is what opening reads. So the retry
+     * waits for the row to actually be gone — otherwise it re-opens the very file the viewer asked
+     * to be rid of and fails in the same way.
+     */
+    @Test
+    fun `the retry waits for the engine to let go of the file`() = runTest(main.dispatcher) {
+        downloads.put(row(episode = 4, state = DownloadState.COMPLETED, progress = 1f))
+        downloads.holdRemovals = true
+        viewModel.start(animeId = 100, episode = 4)
+        advanceUntilIdle()
+
+        viewModel.removeDownloadAndRetry()
+        // `runCurrent`, not `advanceUntilIdle`: the latter runs the virtual clock past the timeout
+        // below, which is exactly the thing this test is trying not to reach.
+        runCurrent()
+
+        assertEquals(100 to 4, downloads.removed.single())
+        assertEquals(0, controller.retries)
+
+        downloads.releaseRemovals()
+        runCurrent()
+
+        assertEquals(1, controller.retries)
+    }
+
+    @Test
+    fun `and gives up waiting rather than never retrying at all`() = runTest(main.dispatcher) {
+        downloads.put(row(episode = 4, state = DownloadState.COMPLETED, progress = 1f))
+        downloads.holdRemovals = true
+        viewModel.start(animeId = 100, episode = 4)
+        advanceUntilIdle()
+
+        viewModel.removeDownloadAndRetry()
+        runCurrent()
+        assertEquals(0, controller.retries)
+
+        advanceTimeBy(6_000)
+        runCurrent()
+
         assertEquals(1, controller.retries)
     }
 
