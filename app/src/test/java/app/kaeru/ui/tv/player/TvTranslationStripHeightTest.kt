@@ -18,6 +18,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * The voices strip, measured in both of its states.
@@ -27,6 +28,7 @@ import org.robolectric.RobolectricTestRunner
  * pixels the moment the voices landed, which on a remote is the panel shifting under a press.
  */
 @RunWith(RobolectricTestRunner::class)
+@Config(qualifiers = "w960dp-h540dp-television-notnight-mdpi")
 class TvTranslationStripHeightTest {
     @get:Rule val compose = createComposeRule()
 

@@ -17,6 +17,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * The store a title card's view model lives in, and the promise that it ends with the card.
@@ -27,6 +28,7 @@ import org.robolectric.RobolectricTestRunner
  * at — which is what this scope exists to prevent, and what these check.
  */
 @RunWith(RobolectricTestRunner::class)
+@Config(qualifiers = "w960dp-h540dp-television-notnight-mdpi")
 class TvAnimeScopeTest {
     @get:Rule val compose = createComposeRule()
 

@@ -11,6 +11,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.time.Instant
 
 /**
@@ -21,6 +22,7 @@ import java.time.Instant
  * keyboard over the code the screen exists to show.
  */
 @RunWith(RobolectricTestRunner::class)
+@Config(qualifiers = "w960dp-h540dp-television-notnight-mdpi")
 class TvLoginFocusTest {
     @get:Rule val compose = createComposeRule()
 

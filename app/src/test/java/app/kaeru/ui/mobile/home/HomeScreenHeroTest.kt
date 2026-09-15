@@ -18,6 +18,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.time.Instant
 
 /**
@@ -28,6 +29,7 @@ import java.time.Instant
  * feed rule away, a hero offering an episode that does not exist.
  */
 @RunWith(RobolectricTestRunner::class)
+@Config(qualifiers = "w360dp-h640dp-notnight-xhdpi")
 class HomeScreenHeroTest {
     @get:Rule val compose = createComposeRule()
 
