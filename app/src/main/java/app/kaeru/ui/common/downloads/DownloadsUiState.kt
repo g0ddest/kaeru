@@ -55,15 +55,22 @@ data class DownloadsUiState(
  *
  * A finished download says nothing: its size is already on the row, and «Скачано» next to it would
  * be the row explaining why it is on a screen called «Загрузки».
+ *
+ * @param wifiOnly whether the viewer restricted downloads to Wi-Fi, which is the only thing that
+ *   tells «ждём Wi-Fi» apart from «нет сети»: the engine reports one unmet requirement either way.
  */
-fun downloadStateLine(download: EpisodeDownload): String? = when (download.state) {
+fun downloadStateLine(download: EpisodeDownload, wifiOnly: Boolean = true): String? = when (download.state) {
     DownloadState.COMPLETED -> null
     DownloadState.QUEUED -> "В очереди"
     // The resolve is a Kodik round trip the viewer never asked about by name, so it reads as the
     // queue it is part of rather than as a step of its own.
     DownloadState.RESOLVING -> "В очереди"
     DownloadState.DOWNLOADING -> "Загружается, ${(download.progress * 100).toInt()} %"
-    DownloadState.WAITING_FOR_WIFI -> "Ждём Wi-Fi"
+    // What it is actually waiting for. The engine only knows that a requirement is unmet, and
+    // with «Только по Wi‑Fi» off that requirement is a network of any kind — telling a viewer who
+    // deliberately allowed mobile data that the queue wants Wi-Fi sends them to change a setting
+    // that is already where they put it.
+    DownloadState.WAITING_FOR_WIFI -> if (wifiOnly) "Ждём Wi-Fi" else "Нет сети"
     DownloadState.REMOVING -> "Удаляем"
     // The cause is worth the words: «Ошибка» alone leaves the viewer pressing «Скачать» again
     // against a limit, a dead link or a full disk with no way to tell which.

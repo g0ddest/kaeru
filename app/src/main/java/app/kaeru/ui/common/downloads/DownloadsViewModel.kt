@@ -11,6 +11,7 @@ import app.kaeru.domain.model.Quality
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.settings.SettingsStore
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -42,8 +43,9 @@ class DownloadsViewModel @Inject constructor(
     /** Catalogue cards for the titles being downloaded, as they arrive out of Room. */
     private val cards = MutableStateFlow<Map<Int, Anime>>(emptyMap())
 
-    /** Titles already being watched for a card, so a second episode does not start a second watch. */
-    private val watched = mutableSetOf<Int>()
+    /** The card collector per title, so a second episode does not start a second one — and so a
+     * title that leaves the screen takes its collector with it. */
+    private val watching = mutableMapOf<Int, Job>()
 
     /** Titles already asked of Shikimori, so a title it does not know is asked for once, not forever. */
     private val asked = mutableSetOf<Int>()
@@ -89,7 +91,16 @@ class DownloadsViewModel @Inject constructor(
             rows
                 .map { all -> all.map { it.animeId }.toSet() }
                 .distinctUntilChanged()
-                .collect { ids -> ids.forEach(::follow) }
+                .collect { ids ->
+                    ids.forEach(::follow)
+                    // A title whose last download was deleted keeps nothing behind it: its Room
+                    // collector would otherwise outlive the row that created it, for the life of
+                    // the screen.
+                    (watching.keys - ids).forEach { gone ->
+                        watching.remove(gone)?.cancel()
+                        cards.update { it - gone }
+                    }
+                }
         }
     }
 
@@ -141,8 +152,8 @@ class DownloadsViewModel @Inject constructor(
      * downloaded on a plane would stay «Тайтл №404» until the screen was opened again.
      */
     private fun follow(animeId: Int) {
-        if (!watched.add(animeId)) return
-        viewModelScope.launch {
+        if (watching.containsKey(animeId)) return
+        watching[animeId] = viewModelScope.launch {
             combine(library.observeAnimeDetails(animeId), online, ::Pair)
                 .collect { (anime, online) ->
                     if (anime != null) {

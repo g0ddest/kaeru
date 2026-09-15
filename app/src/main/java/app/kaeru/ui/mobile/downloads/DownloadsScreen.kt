@@ -150,6 +150,7 @@ fun DownloadsScreen(
                     state.titles.forEach { title ->
                         TitleBlock(
                             title = title,
+                            wifiOnly = state.policy.wifiOnly,
                             expanded = title.animeId in expanded,
                             onToggle = {
                                 expanded = if (title.animeId in expanded) {
@@ -233,6 +234,7 @@ private fun UsageBlock(state: DownloadsUiState) {
 @Composable
 private fun TitleBlock(
     title: DownloadedTitle,
+    wifiOnly: Boolean,
     expanded: Boolean,
     onToggle: () -> Unit,
     onRemove: (Int) -> Unit,
@@ -277,7 +279,7 @@ private fun TitleBlock(
         }
         if (expanded) {
             title.episodes.forEach { episode ->
-                EpisodeRow(episode) { onRemove(episode.episode) }
+                EpisodeRow(episode, wifiOnly) { onRemove(episode.episode) }
             }
         }
     }
@@ -290,8 +292,8 @@ private fun TitleBlock(
  * else, because «Скачано» on a screen called «Загрузки» is a row explaining why it is on screen.
  */
 @Composable
-private fun EpisodeRow(download: EpisodeDownload, onRemove: () -> Unit) {
-    val state = downloadStateLine(download)
+private fun EpisodeRow(download: EpisodeDownload, wifiOnly: Boolean, onRemove: () -> Unit) {
+    val state = downloadStateLine(download, wifiOnly)
     Row(
         Modifier
             .fillMaxWidth()

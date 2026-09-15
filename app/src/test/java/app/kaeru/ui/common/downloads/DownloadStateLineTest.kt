@@ -50,8 +50,18 @@ class DownloadStateLineTest {
     }
 
     @Test
-    fun `waiting for Wi-Fi says what it is waiting for`() {
-        assertEquals("Ждём Wi-Fi", downloadStateLine(row(DownloadState.WAITING_FOR_WIFI)))
+    fun `waiting for Wi-Fi says so to the viewer who asked for Wi-Fi only`() {
+        assertEquals("Ждём Wi-Fi", downloadStateLine(row(DownloadState.WAITING_FOR_WIFI), wifiOnly = true))
+    }
+
+    /**
+     * The engine reports one unmet requirement either way. With mobile downloads allowed, that
+     * requirement is a network of any kind — and telling this viewer the queue wants Wi-Fi sends
+     * them looking for a setting that is already where they put it.
+     */
+    @Test
+    fun `and says «нет сети» to the one who allowed mobile data`() {
+        assertEquals("Нет сети", downloadStateLine(row(DownloadState.WAITING_FOR_WIFI), wifiOnly = false))
     }
 
     @Test
