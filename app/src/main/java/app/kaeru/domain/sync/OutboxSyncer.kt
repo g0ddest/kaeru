@@ -20,3 +20,15 @@ fun interface OutboxSyncer {
      */
     suspend fun replay(): Result<ReplayOutcome>
 }
+
+/**
+ * Asks for the queue to be drained now.
+ *
+ * Returns immediately: the drain happens on whatever scope owns it, and whether there is a
+ * network to drain into is that scope's problem rather than the caller's. A rate write that had
+ * to join the queue while the network was up uses this, because nothing else would notice — the
+ * network is already on, so it is not about to come back.
+ */
+fun interface ReplayRequest {
+    fun requestReplay()
+}

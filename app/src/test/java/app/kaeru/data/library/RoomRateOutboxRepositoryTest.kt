@@ -15,6 +15,8 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -106,6 +108,14 @@ class RoomRateOutboxRepositoryTest {
         repo.enqueue(200, RateOpKind.EPISODES, "1")
 
         assertEquals(setOf(100, 200), repo.pendingAnimeIds())
+    }
+
+    @Test
+    fun `one title can be asked about on its own, which is what every write does`() = scope.runTest {
+        repo.enqueue(100, RateOpKind.EPISODES, "7")
+
+        assertTrue(repo.hasPendingFor(100))
+        assertFalse(repo.hasPendingFor(200))
     }
 
     @Test

@@ -1,11 +1,13 @@
 package app.kaeru.di
 
 import app.kaeru.data.connectivity.AndroidConnectivity
+import app.kaeru.data.library.OfflineSyncStarter
 import app.kaeru.data.library.RoomRateOutboxRepository
 import app.kaeru.data.library.ShikimoriOutboxSyncer
 import app.kaeru.domain.connectivity.Connectivity
 import app.kaeru.domain.sync.OutboxSyncer
 import app.kaeru.domain.sync.RateOutboxRepository
+import app.kaeru.domain.sync.ReplayRequest
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -23,4 +25,7 @@ abstract class OfflineModule {
 
     @Binds
     abstract fun outboxSyncer(impl: ShikimoriOutboxSyncer): OutboxSyncer
+
+    @Binds
+    abstract fun replayRequest(impl: OfflineSyncStarter): ReplayRequest
 }

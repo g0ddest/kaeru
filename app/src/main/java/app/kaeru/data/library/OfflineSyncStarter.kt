@@ -1,13 +1,16 @@
 package app.kaeru.data.library
 
 import android.util.Log
+import app.kaeru.di.ApplicationScope
 import app.kaeru.domain.connectivity.Connectivity
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.sync.OutboxSyncer
+import app.kaeru.domain.sync.ReplayRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
@@ -21,7 +24,8 @@ private const val TAG = "OfflineSync"
 private const val RETRY_DELAY_MS = 5_000L
 
 /**
- * Watches for the network coming back and empties the queue of writes that were waiting for it.
+ * Drains the queue of offline writes whenever there is a reason to: the network coming back, and
+ * a write that has just joined the queue while the network was already up.
  *
  * One watcher for the life of the process, started from the application: a marked episode has to
  * reach Shikimori whether or not the screen it was marked on is still open, and a second watcher
@@ -29,19 +33,20 @@ private const val RETRY_DELAY_MS = 5_000L
  *
  * This is where a refused write is followed up, because nothing here holds the account lock and
  * `refreshAnime` takes it. Nothing throws: a replay that fails leaves the queue where it is, and
- * the next return of the network — or the next refresh — tries again.
+ * the next return of the network — or the next write, or the next refresh — tries again.
  */
 @Singleton
 class OfflineSyncStarter @Inject constructor(
     private val connectivity: Connectivity,
     private val syncer: OutboxSyncer,
-    // Lazily: this is constructed while the application object is, and the library repository
-    // pulls in the database and the HTTP stack behind it.
+    // Lazily: a refused write is the only thing that needs the repository, and the repository asks
+    // for a drain of its own — the one link in that circle Hilt can build.
     private val library: Provider<LibraryRepository>,
-) {
+    @param:ApplicationScope private val scope: CoroutineScope,
+) : ReplayRequest {
     private val started = AtomicBoolean(false)
 
-    fun start(scope: CoroutineScope) {
+    fun start() {
         if (!started.compareAndSet(false, true)) return
         scope.launch {
             connectivity.online
@@ -55,6 +60,21 @@ class OfflineSyncStarter @Inject constructor(
                 }
                 .catch { error -> Log.w(TAG, "Stopped watching for a network", error) }
                 .collect { replay() }
+        }
+    }
+
+    /**
+     * Asks for a drain now, and returns without waiting for one.
+     *
+     * A write made while the network is up still joins the queue when that title has older writes
+     * waiting, so that the order the viewer acted in survives. Without this the mark would sit
+     * there until the network next changed — which, being already up, it need never do.
+     */
+    override fun requestReplay() {
+        scope.launch {
+            // Nothing to gain from a drain with no network: it would cost one refused request per
+            // mark for the whole time the viewer is offline.
+            if (connectivity.online.first()) replay()
         }
     }
 

@@ -42,8 +42,8 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import app.kaeru.data.library.RoomRateOutboxRepository
 import app.kaeru.domain.sync.OutboxSyncer
-import javax.inject.Provider
 import app.kaeru.domain.sync.ReplayOutcome
+import app.kaeru.domain.sync.ReplayRequest
 
 @RunWith(RobolectricTestRunner::class)
 class SessionHandoffThreadTest {
@@ -98,7 +98,7 @@ class SessionHandoffThreadTest {
         val library = ShikimoriLibraryRepository(
             api, db, db.animeDao(), db.userRateDao(), db.watchStateDao(), db.episodeProgressDao(),
             prefs, deliverySession, PosterEnricher(api), RoomRateOutboxRepository(db.rateOutboxDao(), clock),
-            Provider { OutboxSyncer { Result.success(ReplayOutcome(0, emptySet())) } }, Dispatchers.IO, clock,
+            OutboxSyncer { Result.success(ReplayOutcome(0, emptySet())) }, ReplayRequest {}, Dispatchers.IO, clock,
         )
         val auth = ShikimoriAuthRepository(oauth, api, session, prefs, "cid", "secret", clock)
         val delivered = ConcurrentLinkedQueue<List<LibraryEntry>>()

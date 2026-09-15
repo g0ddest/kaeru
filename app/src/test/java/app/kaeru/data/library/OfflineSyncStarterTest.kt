@@ -58,13 +58,13 @@ class OfflineSyncStarterTest {
         override suspend fun setEpisodes(animeId: Int, episodes: Int): Result<Unit> = Result.success(Unit)
     }
 
-    private fun starter(watch: Connectivity = connectivity) =
-        OfflineSyncStarter(watch, syncer, Provider { library })
+    private fun starter(scope: TestScope, watch: Connectivity = connectivity) =
+        OfflineSyncStarter(watch, syncer, Provider { library }, scope)
 
     @Test
     fun `nothing is sent while the device is offline`() = runTest {
         val scope = TestScope(StandardTestDispatcher(testScheduler))
-        starter().start(scope)
+        starter(scope).start()
         scope.runCurrent()
 
         assertEquals(0, replays)
@@ -73,7 +73,7 @@ class OfflineSyncStarterTest {
     @Test
     fun `the queue is emptied as soon as the network comes back`() = runTest {
         val scope = TestScope(StandardTestDispatcher(testScheduler))
-        starter().start(scope)
+        starter(scope).start()
         scope.runCurrent()
 
         online.value = true
@@ -85,7 +85,7 @@ class OfflineSyncStarterTest {
     @Test
     fun `every return of the network is another chance to send`() = runTest {
         val scope = TestScope(StandardTestDispatcher(testScheduler))
-        starter().start(scope)
+        starter(scope).start()
         online.value = true
         scope.runCurrent()
         online.value = false
@@ -99,7 +99,7 @@ class OfflineSyncStarterTest {
     @Test
     fun `a replay that fails does not stop the next one`() = runTest {
         val scope = TestScope(StandardTestDispatcher(testScheduler))
-        starter().start(scope)
+        starter(scope).start()
         failNext = true
         online.value = true
         scope.runCurrent()
@@ -115,9 +115,9 @@ class OfflineSyncStarterTest {
     @Test
     fun `starting twice still watches once`() = runTest {
         val scope = TestScope(StandardTestDispatcher(testScheduler))
-        val starter = starter()
-        starter.start(scope)
-        starter.start(scope)
+        val starter = starter(scope)
+        starter.start()
+        starter.start()
         online.value = true
         scope.runCurrent()
 
@@ -128,11 +128,38 @@ class OfflineSyncStarterTest {
     fun `a refused write sends the caller back to the server for that title`() = runTest {
         val scope = TestScope(StandardTestDispatcher(testScheduler))
         refusedNext = setOf(10, 20)
-        starter().start(scope)
+        starter(scope).start()
         online.value = true
         scope.runCurrent()
 
         assertEquals(listOf(10, 20), refreshed)
+    }
+
+    @Test
+    fun `a write that asks for a drain gets one without waiting for the network to change`() = runTest {
+        val scope = TestScope(StandardTestDispatcher(testScheduler))
+        online.value = true
+        val starter = starter(scope)
+        starter.start()
+        scope.runCurrent()
+        assertEquals(1, replays)
+
+        starter.requestReplay()
+        scope.runCurrent()
+
+        assertEquals(2, replays)
+    }
+
+    @Test
+    fun `a drain asked for with no network is not attempted`() = runTest {
+        val scope = TestScope(StandardTestDispatcher(testScheduler))
+        val starter = starter(scope)
+        starter.start()
+
+        starter.requestReplay()
+        scope.runCurrent()
+
+        assertEquals(0, replays)
     }
 
     @Test
@@ -146,7 +173,7 @@ class OfflineSyncStarterTest {
             }
         }
         val scope = TestScope(StandardTestDispatcher(testScheduler))
-        starter(flaky).start(scope)
+        starter(scope, flaky).start()
         scope.runCurrent()
         assertEquals(0, replays)
 

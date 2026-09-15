@@ -25,6 +25,7 @@ import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.sync.OutboxSyncer
 import app.kaeru.domain.sync.RateOpKind
 import app.kaeru.domain.sync.RateOutboxRepository
+import app.kaeru.domain.sync.ReplayRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -40,7 +41,6 @@ import java.io.IOException
 import java.time.Clock
 import java.time.Duration
 import javax.inject.Inject
-import javax.inject.Provider
 import javax.inject.Singleton
 
 /** Room is the observable source of truth; network failures are returned without clearing it. */
@@ -56,9 +56,8 @@ class ShikimoriLibraryRepository @Inject constructor(
     private val session: AccountSession,
     private val posters: PosterEnricher,
     private val outbox: RateOutboxRepository,
-    // Lazily, because the syncer needs this repository back for the refresh a rejected write asks
-    // for. A Provider is the one link in that circle Hilt can build.
-    private val syncer: Provider<OutboxSyncer>,
+    private val syncer: OutboxSyncer,
+    private val replays: ReplayRequest,
     @param:IoDispatcher private val io: CoroutineDispatcher,
     private val clock: Clock,
 ) : LibraryRepository {
@@ -109,12 +108,19 @@ class ShikimoriLibraryRepository @Inject constructor(
         // the server is asked what it holds, so a mark made on a train is part of the answer
         // rather than something the answer has to be defended against — and a drain that reached
         // back into this repository from inside the lock would suspend on it forever.
-        val refused = withContext(io) { syncer.get().replay() }.getOrNull()?.refused.orEmpty()
-        return accountWrite { userId -> fetchLibrary(userId, refused) }
+        withContext(io) { syncer.replay() }
+        return accountWrite { userId -> fetchLibrary(userId) }
     }
 
-    /** The refused titles need no separate re-read: the list this fetches is the server's truth. */
-    private suspend fun fetchLibrary(userId: Long, refused: Set<Int>) {
+    /**
+     * A title Shikimori refused needs no separate re-read: its op is gone, so it is no longer
+     * pending, and the list this fetches is the server's truth for it like any other.
+     */
+    private suspend fun fetchLibrary(userId: Long) {
+        // Read before the list is asked for as well as after. An op that drains while the list is
+        // in flight is no longer pending by the time the merge runs, and the list in hand was
+        // written before the value that drain produced.
+        val pendingBefore = outbox.pendingAnimeIds()
         val rates = ListStatus.entries.flatMap { fetchRates(userId, it) }
         val ids = rates.map { it.animeId }.distinct()
         val cached = ids.chunked(50).flatMap { animeDao.getByIds(it) }.associateBy { it.id }
@@ -126,14 +132,13 @@ class ShikimoriLibraryRepository @Inject constructor(
         })
         // A title with a write still waiting keeps the local rate: the server's copy of it is
         // behind the viewer by exactly the marks that have not left the device yet, and merging it
-        // would put an episode they have already ticked off back in front of them. A title whose
-        // write Shikimori just refused is the opposite case and takes the server's row.
+        // would put an episode they have already ticked off back in front of them.
         //
         // In one transaction because a replay running on the application scope writes the same two
         // tables: read the queue and the rows it protects apart from the replacement, and the
         // replacement can put back a rate that has since been sent.
         db.withTransaction {
-            val pending = outbox.pendingAnimeIds() - refused
+            val pending = pendingBefore + outbox.pendingAnimeIds()
             val unsent = pending.mapNotNull { userRateDao.getByAnimeId(it) }
             userRateDao.replaceAll(rates.filterNot { it.animeId in pending }.map { it.toEntity() } + unsent)
         }
@@ -178,10 +183,7 @@ class ShikimoriLibraryRepository @Inject constructor(
 
     override suspend fun setStatus(animeId: Int, status: ListStatus): Result<Unit> = accountWrite { userId ->
         val existing = userRateDao.getByAnimeId(animeId)
-        // A rate Shikimori has never been told about has no id to send anything to, and the id
-        // standing in for it is not one: PATCHing it would 404, and a 404 is not the failure that
-        // queues. The create is already queued, and this change rides the same queue behind it.
-        if (existing != null && existing.id < 0) {
+        if (existing != null && existing.mustQueue()) {
             queue(existing.copy(status = status), RateOpKind.STATUS, status.apiValue)
             return@accountWrite
         }
@@ -214,9 +216,7 @@ class ShikimoriLibraryRepository @Inject constructor(
 
     override suspend fun setEpisodes(animeId: Int, episodes: Int): Result<Unit> = accountWrite {
         val existing = userRateDao.getByAnimeId(animeId) ?: error("No user_rate for anime $animeId")
-        // Same as a status change against a rate that does not exist on Shikimori yet: the count
-        // waits behind the create instead of being sent to an id that would 404.
-        if (existing.id < 0) {
+        if (existing.mustQueue()) {
             queue(existing.copy(episodes = episodes), RateOpKind.EPISODES, episodes.toString())
             return@accountWrite
         }
@@ -236,6 +236,18 @@ class ShikimoriLibraryRepository @Inject constructor(
      * only mean «not created yet», which is exactly what the syncer has to know to send a create
      * rather than an update. The real id arrives with the server's answer and replaces it.
      */
+    /**
+     * Whether this write has to go through the queue rather than over the network.
+     *
+     * Two reasons, and both are about a request that would be wrong rather than one that would
+     * fail. A rate Shikimori has never been told about has no id to send anything to, and the id
+     * standing in for it is not one: PATCHing it would 404, and a 404 is not the failure that
+     * queues. And a title with a write still waiting must not be overtaken — the drain would send
+     * the older value afterwards, and Shikimori and the device would both end up on the mark the
+     * viewer replaced. Queued, it is the newest value per kind that the drain sends.
+     */
+    private suspend fun UserRateEntity.mustQueue(): Boolean = id < 0 || outbox.hasPendingFor(animeId)
+
     private fun UserRateEntity?.orNewRate(animeId: Int): UserRateEntity = this
         ?: UserRateEntity(-animeId.toLong(), animeId, ListStatus.PLANNED, episodes = 0, updatedAt = clock.instant())
 
@@ -249,9 +261,14 @@ class ShikimoriLibraryRepository @Inject constructor(
      * One transaction, because half of this is a lie: a changed rate with nothing queued behind it
      * is a mark that will never be sent and that the next refresh quietly reverts.
      */
-    private suspend fun queue(local: UserRateEntity, kind: RateOpKind, value: String): Unit = db.withTransaction {
-        userRateDao.upsertAll(listOf(local.copy(updatedAt = clock.instant())))
-        outbox.enqueue(local.animeId, kind, value)
+    private suspend fun queue(local: UserRateEntity, kind: RateOpKind, value: String) {
+        db.withTransaction {
+            userRateDao.upsertAll(listOf(local.copy(updatedAt = clock.instant())))
+            outbox.enqueue(local.animeId, kind, value)
+        }
+        // After the transaction, never inside it: a drain that started before the commit would
+        // find nothing. Fire and forget, and a no-op while there is no network to drain into.
+        replays.requestReplay()
     }
 
     private suspend fun accountWrite(block: suspend (Long) -> Unit): Result<Unit> = try {

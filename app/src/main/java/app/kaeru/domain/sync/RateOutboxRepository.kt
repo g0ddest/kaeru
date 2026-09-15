@@ -18,6 +18,15 @@ interface RateOutboxRepository {
     /** The same set, asked once. A refresh needs the answer now, not a flow of answers. */
     suspend fun pendingAnimeIds(): Set<Int>
 
+    /**
+     * Whether this one anime has a write still waiting.
+     *
+     * Asked before every rate write: a new mark on a title whose earlier marks are still queued
+     * has to join the queue rather than overtake it, or the older value is sent afterwards and
+     * rolls the newer one back.
+     */
+    suspend fun hasPendingFor(animeId: Int): Boolean
+
     suspend fun enqueue(animeId: Int, kind: RateOpKind, value: String): Long
 
     suspend fun remove(id: Long)

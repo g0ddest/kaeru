@@ -48,6 +48,8 @@ import java.time.Instant
 import java.time.ZoneOffset
 import javax.inject.Provider
 import app.kaeru.domain.sync.ReplayOutcome
+import app.kaeru.domain.sync.ReplayRequest
+import kotlinx.coroutines.runBlocking
 
 /**
  * What a rate write does when the network is simply not there.
@@ -90,10 +92,11 @@ class ShikimoriLibraryRepositoryOfflineTest {
         repo = repositoryWith(OutboxSyncer { replays++; Result.success(ReplayOutcome(0, emptySet())) })
     }
 
-    private fun repositoryWith(syncer: OutboxSyncer) = ShikimoriLibraryRepository(
-        api, db, db.animeDao(), db.userRateDao(), db.watchStateDao(), db.episodeProgressDao(), prefs, session,
-        PosterEnricher(api), outbox, Provider { syncer }, Dispatchers.IO, clock,
-    )
+    private fun repositoryWith(syncer: OutboxSyncer, replays: ReplayRequest = ReplayRequest {}) =
+        ShikimoriLibraryRepository(
+            api, db, db.animeDao(), db.userRateDao(), db.watchStateDao(), db.episodeProgressDao(), prefs, session,
+            PosterEnricher(api), outbox, syncer, replays, Dispatchers.IO, clock,
+        )
 
     /** The real drain, so a refresh and a replay meet the way they do in the app. */
     private fun realSyncer() = ShikimoriOutboxSyncer(api, db, db.userRateDao(), db.rateOutboxDao(), prefs, clock)
@@ -280,6 +283,120 @@ class ShikimoriLibraryRepositoryOfflineTest {
         assertEquals(0, server.requestCount)
         assertEquals(3, rate(10)?.episodes)
         assertEquals(listOf(RateOp(1, 10, RateOpKind.EPISODES, "3", now)), queued())
+    }
+
+    /** Shikimori's answer to one rate write, whatever the queue happens to be sending. */
+    private fun serveRate(episodes: Int) {
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest) = MockResponse().setBody(
+                """{"id":5,"target_id":10,"status":"watching","episodes":$episodes,""" +
+                    """"updated_at":"2026-09-01T00:00:00.000+03:00"}""",
+            )
+        }
+    }
+
+    /**
+     * The mark the viewer makes while an older one is still queued.
+     *
+     * Sent straight out it would reach Shikimori first, and the drain would then send the older
+     * value on top of it — leaving the server and the device on the mark the viewer replaced,
+     * with nothing left to correct it.
+     */
+    @Test
+    fun `a mark on a title with writes still queued joins the queue instead of overtaking it`() = runTest {
+        seedAnime(10)
+        seedRate(animeId = 10, rateId = 5, episodes = 4)
+        outbox.enqueue(10, RateOpKind.EPISODES, "5")
+        serveNothing()
+
+        assertTrue(repo.setEpisodes(10, 6).isSuccess)
+
+        assertEquals(0, server.requestCount)
+        assertEquals(6, rate(10)?.episodes)
+        assertEquals(listOf("5", "6"), queued().map { it.value })
+
+        // And the drain sends the newest of them, once.
+        serveRate(episodes = 6)
+        assertEquals(1, realSyncer().replay().getOrThrow().sent)
+
+        assertEquals(1, server.requestCount)
+        assertEquals("""{"user_rate":{"episodes":6}}""", server.takeRequest().body.readUtf8())
+        assertEquals(6, rate(10)?.episodes)
+        assertTrue(queued().isEmpty())
+    }
+
+    @Test
+    fun `a status change on a title with writes still queued joins the queue too`() = runTest {
+        seedAnime(10)
+        seedRate(animeId = 10, rateId = 5, episodes = 4)
+        outbox.enqueue(10, RateOpKind.EPISODES, "5")
+        serveNothing()
+
+        assertTrue(repo.setStatus(10, ListStatus.COMPLETED).isSuccess)
+
+        assertEquals(0, server.requestCount)
+        assertEquals(ListStatus.COMPLETED, rate(10)?.status)
+        assertEquals(listOf(RateOpKind.EPISODES, RateOpKind.STATUS), queued().map { it.kind })
+    }
+
+    @Test
+    fun `a title with nothing queued is still written straight to Shikimori`() = runTest {
+        seedAnime(10)
+        seedRate(animeId = 10, rateId = 5, episodes = 4)
+        serveRate(episodes = 6)
+
+        assertTrue(repo.setEpisodes(10, 6).isSuccess)
+
+        assertEquals(1, server.requestCount)
+        assertEquals(6, rate(10)?.episodes)
+        assertTrue(queued().isEmpty())
+    }
+
+    @Test
+    fun `a write that joins the queue asks for it to be drained`() = runTest {
+        seedAnime(10)
+        seedRate(animeId = 10, rateId = 5, episodes = 4)
+        outbox.enqueue(10, RateOpKind.EPISODES, "5")
+        serveNothing()
+        var asked = 0
+
+        assertTrue(repositoryWith(realSyncer(), ReplayRequest { asked++ }).setEpisodes(10, 6).isSuccess)
+
+        assertEquals(1, asked)
+    }
+
+    /**
+     * A drain that lands while the library list is in flight.
+     *
+     * The list in hand was written before the value the drain produced, and by the time the merge
+     * runs the anime is no longer pending — so only the queue as it stood before the fetch can
+     * say that this title is not the server's to overwrite. The drain is stood in for here: the
+     * real one cannot run inside a MockWebServer dispatcher it would itself have to be served by.
+     */
+    @Test
+    fun `a write that drains while the list is in flight is not overwritten by it`() = runTest {
+        seedAnime(10)
+        seedRate(animeId = 10, rateId = 5, episodes = 6)
+        val op = outbox.enqueue(10, RateOpKind.EPISODES, "7")
+        serveLibrary(episodes = 2)
+        val listing = server.dispatcher
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                if (request.path.orEmpty().startsWith("/api/v2/user_rates?")) {
+                    runBlocking {
+                        outbox.remove(op)
+                        db.userRateDao().upsertAll(
+                            listOf(UserRateEntity(5, 10, ListStatus.WATCHING, 7, now)),
+                        )
+                    }
+                }
+                return listing.dispatch(request)
+            }
+        }
+
+        assertTrue(repo.refresh().isSuccess)
+
+        assertEquals(7, rate(10)?.episodes)
     }
 
     /**

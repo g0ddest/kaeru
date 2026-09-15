@@ -44,7 +44,6 @@ import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
 import app.kaeru.domain.sync.OutboxSyncer
-import javax.inject.Provider
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Protocol
 import okhttp3.Request
@@ -52,6 +51,7 @@ import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import retrofit2.HttpException
 import app.kaeru.domain.sync.ReplayOutcome
+import app.kaeru.domain.sync.ReplayRequest
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -82,7 +82,7 @@ class ShikimoriLibraryRepositoryTest {
     private fun repositoryAt(at: Instant) = ShikimoriLibraryRepository(
         api, db, db.animeDao(), db.userRateDao(), db.watchStateDao(), db.episodeProgressDao(), prefs, session,
         PosterEnricher(api), RoomRateOutboxRepository(db.rateOutboxDao(), Clock.fixed(at, ZoneOffset.UTC)),
-        Provider { OutboxSyncer { Result.success(ReplayOutcome(0, emptySet())) } }, dispatcher, Clock.fixed(at, ZoneOffset.UTC),
+        OutboxSyncer { Result.success(ReplayOutcome(0, emptySet())) }, ReplayRequest {}, dispatcher, Clock.fixed(at, ZoneOffset.UTC),
     )
 
     @After

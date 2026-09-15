@@ -37,6 +37,8 @@ class RoomRateOutboxRepository @Inject constructor(
 
     override suspend fun pendingAnimeIds(): Set<Int> = dao.pendingAnimeIds().toSet()
 
+    override suspend fun hasPendingFor(animeId: Int): Boolean = dao.hasPendingFor(animeId)
+
     override suspend fun enqueue(animeId: Int, kind: RateOpKind, value: String): Long =
         dao.insert(RateOutboxEntity(animeId = animeId, kind = kind.name, value = value, createdAt = clock.instant()))
 

@@ -24,6 +24,9 @@ interface RateOutboxDao {
     @Query("SELECT DISTINCT animeId FROM rate_outbox")
     suspend fun pendingAnimeIds(): List<Int>
 
+    @Query("SELECT EXISTS(SELECT 1 FROM rate_outbox WHERE animeId = :animeId)")
+    suspend fun hasPendingFor(animeId: Int): Boolean
+
     @Query("DELETE FROM rate_outbox WHERE id = :id")
     suspend fun deleteById(id: Long)
 
