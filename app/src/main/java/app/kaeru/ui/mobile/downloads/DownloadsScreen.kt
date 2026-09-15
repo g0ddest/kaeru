@@ -25,6 +25,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -77,6 +79,7 @@ private const val CLEAR_TITLE = "Удалить все загрузки?"
 private const val CLEAR_CONFIRM = "Удалить"
 private const val CLEAR_CANCEL = "Отмена"
 private const val REMOVE_TITLE = "Удалить загрузки тайтла"
+private const val REMOVE_TITLE_ASK = "Удалить загрузки тайтла?"
 private const val REMOVE_EPISODE = "Удалить загрузку"
 private const val EXPAND = "Показать серии"
 private const val COLLAPSE = "Свернуть серии"
@@ -120,6 +123,14 @@ fun DownloadsScreen(
     onLimit: (Long?) -> Unit,
 ) {
     var clearing by rememberSaveable { mutableStateOf(false) }
+    // Which titles are open, held for the screen rather than inside each row. The rows reorder
+    // while a download runs — the newest change goes first — and per-row state is positional, so a
+    // title that moved used to fold shut under the viewer.
+    var expanded by rememberSaveable(stateSaver = TitlesSaver) { mutableStateOf(emptySet<Int>()) }
+    // The title whose downloads are about to go, once the viewer has been asked. Not saveable on
+    // purpose: a rotation closes the question rather than answering it, which is the safe way for
+    // a prompt about deleting something to be interrupted.
+    var removing by remember { mutableStateOf<DownloadedTitle?>(null) }
     Column(Modifier.fillMaxSize()) {
         KaeruTopBar(
             title = TITLE,
@@ -139,8 +150,16 @@ fun DownloadsScreen(
                     state.titles.forEach { title ->
                         TitleBlock(
                             title = title,
+                            expanded = title.animeId in expanded,
+                            onToggle = {
+                                expanded = if (title.animeId in expanded) {
+                                    expanded - title.animeId
+                                } else {
+                                    expanded + title.animeId
+                                }
+                            },
                             onRemove = { episode -> onRemove(title.animeId, episode) },
-                            onRemoveTitle = { onRemoveTitle(title.animeId) },
+                            onRemoveTitle = { removing = title },
                         )
                     }
                 }
@@ -154,6 +173,17 @@ fun DownloadsScreen(
                 )
             }
         }
+    }
+    removing?.let { title ->
+        ConfirmRemovalDialog(
+            title = REMOVE_TITLE_ASK,
+            bytes = title.bytes,
+            onDismiss = { removing = null },
+            onConfirm = {
+                removing = null
+                onRemoveTitle(title.animeId)
+            },
+        )
     }
     if (clearing) {
         ClearAllDialog(
@@ -201,13 +231,18 @@ private fun UsageBlock(state: DownloadsUiState) {
 }
 
 @Composable
-private fun TitleBlock(title: DownloadedTitle, onRemove: (Int) -> Unit, onRemoveTitle: () -> Unit) {
-    var expanded by rememberSaveable(title.animeId) { mutableStateOf(false) }
+private fun TitleBlock(
+    title: DownloadedTitle,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    onRemove: (Int) -> Unit,
+    onRemoveTitle: () -> Unit,
+) {
     Column {
         Row(
             Modifier
                 .fillMaxWidth()
-                .clickable(onClickLabel = if (expanded) COLLAPSE else EXPAND) { expanded = !expanded }
+                .clickable(onClickLabel = if (expanded) COLLAPSE else EXPAND, onClick = onToggle)
                 .padding(horizontal = KaeruTokens.GutterPhone, vertical = KaeruTokens.Space2),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -310,12 +345,23 @@ private fun PolicySection(
 }
 
 @Composable
-private fun ClearAllDialog(bytes: Long, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+private fun ClearAllDialog(bytes: Long, onDismiss: () -> Unit, onConfirm: () -> Unit) =
+    ConfirmRemovalDialog(CLEAR_TITLE, bytes, onDismiss, onConfirm)
+
+/**
+ * Asked before downloads go, whether it is one title or all of them.
+ *
+ * A title is hundreds of megabytes of somebody's connection and, on a train, the difference between
+ * having something to watch and not — the same reason the player asks about a single episode. The
+ * size is in the sentence because it is what a viewer clearing space is deciding on.
+ */
+@Composable
+private fun ConfirmRemovalDialog(title: String, bytes: Long, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = { DestructiveButton(CLEAR_CONFIRM, onClick = onConfirm) },
         dismissButton = { SecondaryButton(CLEAR_CANCEL, onDismiss) },
-        title = { Text(CLEAR_TITLE, style = MaterialTheme.typography.headlineMedium) },
+        title = { Text(title, style = MaterialTheme.typography.headlineMedium) },
         text = { Text("Освободится ${formatBytes(bytes)}", style = MaterialTheme.typography.bodyMedium) },
         shape = KaeruTokens.CardShape,
         containerColor = KaeruSurface,
@@ -325,3 +371,8 @@ private fun ClearAllDialog(bytes: Long, onDismiss: () -> Unit, onConfirm: () -> 
         textContentColor = KaeruSecondary,
     )
 }
+
+/** Which titles are open, across a rotation. A `Set<Int>` travels as the array a `Bundle` holds. */
+private val TitlesSaver: Saver<Set<Int>, IntArray> =
+    Saver(save = { it.toIntArray() }, restore = { it.toSet() })
+

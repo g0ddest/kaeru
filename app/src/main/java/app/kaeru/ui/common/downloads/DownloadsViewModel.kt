@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -47,8 +48,29 @@ class DownloadsViewModel @Inject constructor(
     /** Titles already asked of Shikimori, so a title it does not know is asked for once, not forever. */
     private val asked = mutableSetOf<Int>()
 
+    /**
+     * The engine's rows, collected once for this whole screen.
+     *
+     * Every collection of the real repository registers its own listener and re-reads the download
+     * index on every change, so the screen that asked three times over — the state, the storage
+     * line and the pass that names titles — was tripling the index reads of an active download.
+     */
+    private val rows = downloads.observeAll()
+        .shareIn(viewModelScope, SharingStarted.Eagerly, replay = 1)
+
+    /**
+     * The network, collected once as well.
+     *
+     * The same care for a different reason: each collection of the real `Connectivity` registers a
+     * `NetworkCallback` with the platform, which caps a process at a hundred of them. A per-title
+     * collector meant a phone with a hundred downloaded titles registering a hundred callbacks from
+     * the main thread.
+     */
+    private val online = connectivity.online
+        .stateIn(viewModelScope, SharingStarted.Eagerly, initialValue = false)
+
     val uiState: StateFlow<DownloadsUiState> = combine(
-        downloads.observeAll(),
+        rows,
         downloads.usedBytes,
         settings.downloadPolicy,
         cards,
@@ -64,8 +86,8 @@ class DownloadsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            downloads.observeAll()
-                .map { rows -> rows.map { it.animeId }.toSet() }
+            rows
+                .map { all -> all.map { it.animeId }.toSet() }
                 .distinctUntilChanged()
                 .collect { ids -> ids.forEach(::follow) }
         }
@@ -121,7 +143,7 @@ class DownloadsViewModel @Inject constructor(
     private fun follow(animeId: Int) {
         if (!watched.add(animeId)) return
         viewModelScope.launch {
-            combine(library.observeAnimeDetails(animeId), connectivity.online, ::Pair)
+            combine(library.observeAnimeDetails(animeId), online, ::Pair)
                 .collect { (anime, online) ->
                     if (anime != null) {
                         cards.update { it + (animeId to anime) }

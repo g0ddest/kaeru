@@ -148,6 +148,24 @@ class DownloadsViewModelTest {
         assertEquals("Тайтл №404", vm.uiState.value.titles.single().title)
     }
 
+    /**
+     * Each collection of the real `Connectivity` registers a `NetworkCallback` with the platform,
+     * which caps a process at a hundred; a per-title collector put a phone with a hundred titles
+     * at the edge of that, from the main thread. One collector, whatever is on the screen.
+     */
+    @Test
+    fun `the network is collected once, however many titles are on the screen`() = runTest {
+        (1..5).forEach { id ->
+            library.put(anime(id, "Тайтл $id"))
+            put(id, 1)
+        }
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        assertEquals(5, vm.uiState.value.titles.size)
+        assertEquals(1, connectivity.state.subscriptionCount.value)
+    }
+
     @Test
     fun `an unfinished download is still on the screen, because it is still taking space`() = runTest {
         library.put(anime(1, "Фрирен"))
