@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import app.kaeru.data.kodik.KodikTokenKeys
+import app.kaeru.domain.download.DownloadPolicy
 import app.kaeru.domain.model.Account
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.playback.PlaybackNotificationPrompt
@@ -24,6 +25,12 @@ import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
 
+/** «Без лимита», stored rather than left absent so that turning the limit off is remembered. */
+private const val UNLIMITED = -1L
+
+/** «Как при просмотре»: no height of its own, take whatever playback would take. */
+private const val QUALITY_AS_PLAYBACK = 0
+
 @Singleton
 class AppPreferences @Inject constructor(@param:Named("prefs") private val dataStore: DataStore<Preferences>) :
     PlaybackPreferences, PlaybackNotificationPrompt, SettingsStore {
@@ -36,9 +43,14 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
     private val notificationsAskedKey = booleanPreferencesKey("notifications_asked")
     private val accountNicknameKey = stringPreferencesKey("account_nickname")
     private val accountAvatarKey = stringPreferencesKey("account_avatar")
+    private val downloadLimitKey = longPreferencesKey("download_limit_bytes")
+    private val downloadWifiOnlyKey = booleanPreferencesKey("download_wifi_only")
+    private val downloadDeleteWatchedKey = booleanPreferencesKey("download_delete_watched")
+    private val downloadQualityKey = intPreferencesKey("download_quality")
 
     /** What a wipe leaves behind: configuration of the device, not of whoever is signed in. */
-    private val deviceKeys: List<Preferences.Key<*>> = KodikTokenKeys.all + notificationsAskedKey
+    private val deviceKeys: List<Preferences.Key<*>> = KodikTokenKeys.all + notificationsAskedKey +
+        downloadLimitKey + downloadWifiOnlyKey + downloadDeleteWatchedKey + downloadQualityKey
 
     suspend fun userId(): Long? = dataStore.data.first()[userIdKey]
 
@@ -139,6 +151,42 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
         val cleaned = token?.trim().orEmpty()
         dataStore.edit { prefs ->
             if (cleaned.isEmpty()) prefs.remove(KodikTokenKeys.override) else prefs[KodikTokenKeys.override] = cleaned
+        }
+    }
+
+    /**
+     * The download rules, with two values that have to be spelled out rather than left absent.
+     *
+     * An absent key means «never set» and reads back as the shipped default — 5 GB at 720p — so
+     * «без лимита» is stored as `-1` and «как при просмотре» as height `0`. Without the sentinels
+     * a viewer who turned the limit off would find it back at 5 GB on the next launch.
+     *
+     * A height this build no longer offers degrades to «как при просмотре», the same way
+     * [defaultQuality] degrades to «лучшее доступное», rather than crashing on a rung that has
+     * been dropped.
+     */
+    override val downloadPolicy: Flow<DownloadPolicy> = dataStore.data.map { prefs ->
+        DownloadPolicy(
+            limitBytes = when (val stored = prefs[downloadLimitKey]) {
+                null -> DownloadPolicy.DEFAULT.limitBytes
+                in Long.MIN_VALUE..0L -> null
+                else -> stored
+            },
+            wifiOnly = prefs[downloadWifiOnlyKey] ?: DownloadPolicy.DEFAULT.wifiOnly,
+            deleteWatched = prefs[downloadDeleteWatchedKey] ?: DownloadPolicy.DEFAULT.deleteWatched,
+            quality = when (val height = prefs[downloadQualityKey]) {
+                null -> DownloadPolicy.DEFAULT.quality
+                else -> Quality.ofHeight(height)
+            },
+        )
+    }
+
+    override suspend fun setDownloadPolicy(policy: DownloadPolicy) {
+        dataStore.edit { prefs ->
+            prefs[downloadLimitKey] = policy.limitBytes ?: UNLIMITED
+            prefs[downloadWifiOnlyKey] = policy.wifiOnly
+            prefs[downloadDeleteWatchedKey] = policy.deleteWatched
+            prefs[downloadQualityKey] = policy.quality?.height ?: QUALITY_AS_PLAYBACK
         }
     }
 
