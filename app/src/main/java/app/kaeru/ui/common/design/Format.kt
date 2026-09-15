@@ -2,6 +2,7 @@ package app.kaeru.ui.common.design
 
 import app.kaeru.domain.discover.Season
 import app.kaeru.domain.discover.SeasonKind
+import app.kaeru.domain.download.DownloadQualityChoice
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.FeedItem
 import app.kaeru.domain.model.FeedKind
@@ -69,6 +70,17 @@ private fun decimal(value: Double): String = String.format(Locale.ROOT, "%.1f", 
  * setting, and naming the thing it follows is what lets a viewer predict what they will get.
  */
 fun downloadQualityLabel(quality: Quality?): String = quality?.let { "${it.height}p" } ?: "Как при просмотре"
+
+/**
+ * The same words for a choice a viewer made rather than for a setting they left alone.
+ *
+ * One function per meaning, sharing the one wording: the download settings' «как при просмотре» and
+ * the sheet's «как при просмотре» have to read identically, and they are two different values.
+ */
+fun downloadChoiceLabel(choice: DownloadQualityChoice): String = when (choice) {
+    DownloadQualityChoice.FollowPlayback -> downloadQualityLabel(null)
+    is DownloadQualityChoice.Fixed -> downloadQualityLabel(choice.quality)
+}
 
 /**
  * What a storage-limit chip says: `5 ГБ`, or «Без лимита».

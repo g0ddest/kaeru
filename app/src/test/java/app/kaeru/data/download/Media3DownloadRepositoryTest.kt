@@ -9,6 +9,7 @@ import androidx.media3.exoplayer.scheduler.Requirements
 import app.cash.turbine.test
 import app.kaeru.domain.download.DownloadKey
 import app.kaeru.domain.download.DownloadPolicy
+import app.kaeru.domain.download.DownloadQualityChoice
 import app.kaeru.domain.download.DownloadState
 import app.kaeru.domain.error.DownloadLimitReached
 import app.kaeru.domain.error.EpisodeNotAvailable
@@ -360,7 +361,7 @@ class Media3DownloadRepositoryTest {
         settings.downloadPolicy.value = DownloadPolicy.DEFAULT.copy(quality = Quality.P480)
         episodes.urls = mapOf(Quality.P480 to "https://cdn/480.m3u8", Quality.P720 to "https://cdn/720.m3u8")
 
-        repository.enqueue(ANIME, 7, Quality.P720).getOrThrow()
+        repository.enqueue(ANIME, 7, DownloadQualityChoice.Fixed(Quality.P720)).getOrThrow()
 
         assertEquals(720, DownloadKey.parse(commands.added.single().id)?.quality?.height)
     }
@@ -373,6 +374,50 @@ class Media3DownloadRepositoryTest {
         repository.enqueue(ANIME, 7).getOrThrow()
 
         assertEquals(1080, DownloadKey.parse(commands.added.single().id)?.quality?.height)
+    }
+
+    /**
+     * «Как при просмотре» is a promise about the picture, so it reads the *playback* setting. Asked
+     * of a device that downloads at 480 and watches at 720, the two answers differ — and this is
+     * the one that the words on the chip mean.
+     */
+    @Test
+    fun `following playback takes the height this device watches at, not the one it downloads at`() =
+        runTest(dispatcher) {
+            settings.downloadPolicy.value = DownloadPolicy.DEFAULT.copy(quality = Quality.P480)
+            settings.defaultQuality.value = Quality.P720
+            episodes.urls = mapOf(Quality.P480 to "https://cdn/480.m3u8", Quality.P720 to "https://cdn/720.m3u8")
+
+            repository.enqueue(ANIME, 7, DownloadQualityChoice.FollowPlayback).getOrThrow()
+
+            assertEquals(720, DownloadKey.parse(commands.added.single().id)?.quality?.height)
+        }
+
+    @Test
+    fun `following a playback setting of «лучшее» takes the best the source offers`() = runTest(dispatcher) {
+        settings.downloadPolicy.value = DownloadPolicy.DEFAULT.copy(quality = Quality.P360)
+        settings.defaultQuality.value = null
+        episodes.urls = mapOf(Quality.P480 to "https://cdn/480.m3u8", Quality.P1080 to "https://cdn/1080.m3u8")
+
+        repository.enqueue(ANIME, 7, DownloadQualityChoice.FollowPlayback).getOrThrow()
+
+        assertEquals(1080, DownloadKey.parse(commands.added.single().id)?.quality?.height)
+    }
+
+    /**
+     * The other half of the same rule: a download nobody was asked about — a long press, the
+     * player's button — still takes the download settings, and only falls through to the playback
+     * one when those have no height either.
+     */
+    @Test
+    fun `a download nobody chose a height for still takes the download settings`() = runTest(dispatcher) {
+        settings.downloadPolicy.value = DownloadPolicy.DEFAULT.copy(quality = Quality.P480)
+        settings.defaultQuality.value = Quality.P1080
+        episodes.urls = mapOf(Quality.P480 to "https://cdn/480.m3u8", Quality.P1080 to "https://cdn/1080.m3u8")
+
+        repository.enqueue(ANIME, 7).getOrThrow()
+
+        assertEquals(480, DownloadKey.parse(commands.added.single().id)?.quality?.height)
     }
 
     @Test

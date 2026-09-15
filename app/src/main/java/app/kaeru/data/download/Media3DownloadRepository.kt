@@ -9,6 +9,7 @@ import app.kaeru.di.ApplicationScope
 import app.kaeru.di.IoDispatcher
 import app.kaeru.domain.download.DownloadKey
 import app.kaeru.domain.download.DownloadPolicy
+import app.kaeru.domain.download.DownloadQualityChoice
 import app.kaeru.domain.download.DownloadRepository
 import app.kaeru.domain.download.DownloadState
 import app.kaeru.domain.download.EpisodeDownload
@@ -139,6 +140,25 @@ class Media3DownloadRepository @Inject constructor(
         .shareIn(scope, SharingStarted.WhileSubscribed(SHARE_KEEPALIVE_MS), replay = 1)
 
     /**
+     * Which height this download should take.
+     *
+     * Three answers, and each comes from somewhere different. Nothing asked for means the download
+     * settings decide; «как при просмотре» means the *playback* setting decides, because that is
+     * the promise those words make — it is about what the picture will look like, not about
+     * storage; and a height the viewer picked on the sheet beats both. A null at the end of any of
+     * those paths is «лучшее, что предложит источник», which is what it has always meant.
+     *
+     * Read here rather than when the chip was pressed, so a sheet left open across a settings
+     * change still downloads what the setting says now.
+     */
+    private suspend fun heightFor(quality: DownloadQualityChoice?, policy: DownloadPolicy): Quality? =
+        when (quality) {
+            null -> policy.quality ?: settings.defaultQuality.first()
+            DownloadQualityChoice.FollowPlayback -> settings.defaultQuality.first()
+            is DownloadQualityChoice.Fixed -> quality.quality
+        }
+
+    /**
      * The index rows, with anything in flight replaced by the engine's live copy of it.
      *
      * The index is the only place a finished or failed download exists, and the live list the only
@@ -221,7 +241,7 @@ class Media3DownloadRepository @Inject constructor(
             season = watchStates.observe(key.animeId).first()?.kodikSeason ?: DEFAULT_SEASON,
         )
 
-    override suspend fun enqueue(animeId: Int, episode: Int, quality: Quality?): Result<Unit> {
+    override suspend fun enqueue(animeId: Int, episode: Int, quality: DownloadQualityChoice?): Result<Unit> {
         val policy = settings.downloadPolicy.first()
         val existing = withContext(io) { source.current() }
         val used = existing.sumOf { it.bytesDownloaded }
@@ -230,7 +250,7 @@ class Media3DownloadRepository @Inject constructor(
             return Result.failure(DownloadLimitReached(policy.limitBytes ?: Long.MAX_VALUE, used))
         }
 
-        val wanted = quality ?: policy.quality
+        val wanted = heightFor(quality, policy)
         val placeholder = placeholderId(animeId, episode)
         // A second press while the first is still resolving is the same request. Letting it
         // through would have two coroutines share one placeholder, and whichever finished first

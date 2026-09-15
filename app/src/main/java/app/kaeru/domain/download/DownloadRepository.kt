@@ -1,7 +1,6 @@
 package app.kaeru.domain.download
 
 import app.kaeru.domain.model.EpisodeStream
-import app.kaeru.domain.model.Quality
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -41,14 +40,16 @@ interface DownloadRepository {
     /**
      * Resolves a link for this episode and hands it to the engine.
      *
-     * @param quality a height the viewer picked for this one download; null takes the height from
-     *   the policy, and a policy with no height takes the best the source offers. A height the
-     *   source does not have falls back to the nearest one below it.
+     * @param quality what the viewer asked of this one download, or null when they were not asked
+     *   at all — a long press, the player's own button — in which case the height comes from the
+     *   download settings. `FollowPlayback` reads the playback setting instead, and either of them
+     *   landing on «лучшее» takes the best rung the source offers. A height the source does not
+     *   have falls back to the nearest one below it.
      * @return failure with `DownloadLimitReached` when the policy refuses it, or whatever the
      *   resolve failed with. Success means the request reached the engine, not that the episode
      *   is on the device.
      */
-    suspend fun enqueue(animeId: Int, episode: Int, quality: Quality? = null): Result<Unit>
+    suspend fun enqueue(animeId: Int, episode: Int, quality: DownloadQualityChoice? = null): Result<Unit>
 
     /** Removes this episode's download and the bytes it took, whatever state it was in. */
     suspend fun remove(animeId: Int, episode: Int)

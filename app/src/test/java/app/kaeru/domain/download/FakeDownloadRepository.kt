@@ -22,8 +22,8 @@ class FakeDownloadRepository : DownloadRepository {
     private val rows = MutableStateFlow<List<EpisodeDownload>>(emptyList())
     private val streams = MutableStateFlow<Map<Pair<Int, Int>, EpisodeStream>>(emptyMap())
 
-    /** Every enqueue, in order: the episode and the height that was asked for. */
-    val enqueued = mutableListOf<Triple<Int, Int, Quality?>>()
+    /** Every enqueue, in order: the episode and what was asked of its height. */
+    val enqueued = mutableListOf<Triple<Int, Int, DownloadQualityChoice?>>()
 
     /** Every episode-sized removal, in order. */
     val removed = mutableListOf<Pair<Int, Int>>()
@@ -81,7 +81,7 @@ class FakeDownloadRepository : DownloadRepository {
     override suspend fun completedStream(animeId: Int, episode: Int): EpisodeStream? =
         completed(animeId, episode)?.let { streams.value[animeId to episode] }
 
-    override suspend fun enqueue(animeId: Int, episode: Int, quality: Quality?): Result<Unit> {
+    override suspend fun enqueue(animeId: Int, episode: Int, quality: DownloadQualityChoice?): Result<Unit> {
         enqueued += Triple(animeId, episode, quality)
         return enqueueFailure?.let { Result.failure(it) } ?: Result.success(Unit)
     }

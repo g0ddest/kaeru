@@ -24,19 +24,22 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import app.kaeru.domain.download.DownloadQualityChoice
 import app.kaeru.domain.model.Quality
 import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.design.PrimaryButton
 import app.kaeru.ui.common.design.RowHeader
 import app.kaeru.ui.common.design.StatusPill
 import app.kaeru.ui.common.design.TextAction
-import app.kaeru.ui.common.design.downloadQualityLabel
+import app.kaeru.ui.common.design.downloadChoiceLabel
 import app.kaeru.ui.common.design.formatBytes
 import app.kaeru.ui.common.design.pluralEpisodesAccusative
 import app.kaeru.ui.common.details.DownloadChoice
@@ -55,8 +58,20 @@ private const val WATCHED = "просмотрено"
 private const val QUALITY = "Качество"
 private const val NOTHING = "Все вышедшие серии уже на устройстве"
 
-/** The heights a download is offered at. 1080p is left out: it is a phone, and it is a limit. */
-private val QUALITIES: List<Quality?> = listOf(null, Quality.P360, Quality.P480, Quality.P720)
+/**
+ * What the viewer can ask of this download's height. 1080p is left out: it is a phone, and it is a
+ * limit.
+ *
+ * The first chip is a choice of its own rather than an absent one — «как при просмотре» is a
+ * promise about the picture, and it reaches the engine as [DownloadQualityChoice.FollowPlayback]
+ * instead of as a null that the download settings would then answer.
+ */
+private val QUALITIES: List<DownloadQualityChoice> = listOf(
+    DownloadQualityChoice.FollowPlayback,
+    DownloadQualityChoice.Fixed(Quality.P360),
+    DownloadQualityChoice.Fixed(Quality.P480),
+    DownloadQualityChoice.Fixed(Quality.P720),
+)
 
 /** Tall enough for six episodes; past that the list scrolls inside the sheet. */
 private val ListHeight = 300.dp
@@ -78,7 +93,7 @@ internal fun DownloadSheet(
     choices: List<DownloadChoice>,
     estimateBytes: Long,
     quality: Quality?,
-    onDownload: (episodes: List<Int>, quality: Quality?) -> Unit,
+    onDownload: (episodes: List<Int>, quality: DownloadQualityChoice) -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(
@@ -101,14 +116,20 @@ private fun DownloadSheetContent(
     choices: List<DownloadChoice>,
     estimateBytes: Long,
     quality: Quality?,
-    onDownload: (List<Int>, Quality?) -> Unit,
+    onDownload: (List<Int>, DownloadQualityChoice) -> Unit,
 ) {
-    // Plain `remember`: a set of episode numbers is not something a Bundle can hold, and the sheet
-    // is dismissed by a configuration change anyway.
-    var picked by remember(choices.size) {
+    // Keyed on the episodes themselves rather than on how many there are: one episode finishing
+    // while another is offered leaves the count the same and the numbers different, and a ticked
+    // set that survived that would be ticking episodes nobody chose.
+    val offered = choices.map { it.episode }
+    var picked by rememberSaveable(offered, stateSaver = EpisodesSaver) {
         mutableStateOf(choices.filterNot { it.watched }.map { it.episode }.toSet())
     }
-    var height by remember(quality) { mutableStateOf(quality) }
+    // Opens on whatever the download settings say, as the chip the viewer would have chosen: a
+    // policy with no height of its own is the same sentence this sheet's first chip says.
+    var height by rememberSaveable(quality, stateSaver = ChoiceSaver) {
+        mutableStateOf(quality?.let(DownloadQualityChoice::Fixed) ?: DownloadQualityChoice.FollowPlayback)
+    }
     Column(Modifier.padding(bottom = KaeruTokens.Space6)) {
         RowHeader(TITLE)
         if (choices.isEmpty()) {
@@ -195,7 +216,7 @@ private fun EpisodeChoiceRow(choice: DownloadChoice, checked: Boolean, onToggle:
 }
 
 @Composable
-private fun QualityRow(quality: Quality?, onPick: (Quality?) -> Unit) {
+private fun QualityRow(quality: DownloadQualityChoice, onPick: (DownloadQualityChoice) -> Unit) {
     Column(Modifier.padding(top = KaeruTokens.Space3)) {
         Text(
             QUALITY,
@@ -211,7 +232,7 @@ private fun QualityRow(quality: Quality?, onPick: (Quality?) -> Unit) {
         ) {
             QUALITIES.forEach { option ->
                 StatusPill(
-                    text = downloadQualityLabel(option),
+                    text = downloadChoiceLabel(option),
                     selected = option == quality,
                     onClick = { onPick(option) },
                     role = Role.RadioButton,
@@ -244,3 +265,26 @@ private fun DownloadSheetNothingPreview() = KaeruTheme {
         DownloadSheetContent(emptyList(), 320L * 1024 * 1024, null) { _, _ -> }
     }
 }
+
+/**
+ * Twelve ticked episodes survive a rotation, which is the difference between a phone turning and a
+ * viewer starting again. A `Set<Int>` is not something a `Bundle` holds, so it travels as the array
+ * it can hold.
+ */
+private val EpisodesSaver: Saver<Set<Int>, IntArray> =
+    Saver(save = { it.toIntArray() }, restore = { it.toSet() })
+
+/** The same, for the one chip: the height as a number, or a marker for «как при просмотре». */
+private const val FOLLOW_PLAYBACK = -1
+
+private val ChoiceSaver: Saver<DownloadQualityChoice, Int> = Saver(
+    save = { choice ->
+        when (choice) {
+            DownloadQualityChoice.FollowPlayback -> FOLLOW_PLAYBACK
+            is DownloadQualityChoice.Fixed -> choice.quality.height
+        }
+    },
+    restore = { height ->
+        Quality.ofHeight(height)?.let(DownloadQualityChoice::Fixed) ?: DownloadQualityChoice.FollowPlayback
+    },
+)
