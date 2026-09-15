@@ -27,6 +27,15 @@ enum class SourceUnavailableReason {
 
     /** The source answered and turned us away: a non-2xx, or a failure we cannot classify. */
     REJECTED,
+
+    /**
+     * There is no network at all, and this episode is not on the device.
+     *
+     * Separate from [NetworkUnavailable] because the answer is different: a viewer in a tunnel
+     * cannot fix their connection, but they can download the next episode before the next
+     * tunnel, and that is what the copy for this one says.
+     */
+    OFFLINE,
 }
 
 /** The video source is reachable but will not serve us. */
@@ -81,3 +90,12 @@ enum class PairingFailureReason {
 /** A television could not be signed in from the phone that scanned its QR code. */
 class PairingFailed(val reason: PairingFailureReason, cause: Throwable? = null) :
     Exception("Pairing failed: $reason", cause)
+
+/**
+ * A download was refused because it would not fit inside the storage limit the viewer set.
+ *
+ * Both numbers travel with it so the copy can say what the limit is and how much of it is gone,
+ * which is the difference between «не хватает места» and an instruction the viewer can act on.
+ */
+class DownloadLimitReached(val limitBytes: Long, val usedBytes: Long) :
+    Exception("Download limit reached: $usedBytes of $limitBytes bytes used")
