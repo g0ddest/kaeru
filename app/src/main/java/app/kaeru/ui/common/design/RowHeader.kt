@@ -36,6 +36,7 @@ private val ChevronSize = 18.dp
 data class RowAction(
     val label: String,
     val icon: ImageVector? = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+    val enabled: Boolean = true,
     val onClick: () -> Unit,
 )
 
@@ -72,7 +73,7 @@ fun RowHeader(
             modifier = Modifier.weight(1f),
         )
         if (action != null) {
-            TextAction(action.label, action.onClick, trailingIcon = action.icon)
+            TextAction(action.label, action.onClick, trailingIcon = action.icon, enabled = action.enabled)
         }
     }
 }
@@ -93,9 +94,11 @@ fun TextAction(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     trailingIcon: ImageVector? = null,
+    enabled: Boolean = true,
 ) {
     TextButton(
         onClick = onClick,
+        enabled = enabled,
         modifier = modifier
             .defaultMinSize(minHeight = KaeruTokens.MinTouchTarget)
             .kaeruFocus(KaeruTokens.ButtonShape),
@@ -103,7 +106,11 @@ fun TextAction(
         // corner: on a television the ripple and the ring were two different shapes on one
         // control. The ring is the one the design system fixes, so the button takes its corner.
         shape = KaeruTokens.ButtonShape,
-        colors = ButtonDefaults.textButtonColors(contentColor = KaeruSecondary),
+        colors = ButtonDefaults.textButtonColors(
+            contentColor = KaeruSecondary,
+            // A disabled control still has to be readable: it is usually saying why it is off.
+            disabledContentColor = KaeruSecondary.copy(alpha = 0.6f),
+        ),
         contentPadding = PaddingValues(horizontal = KaeruTokens.Space3),
     ) {
         Text(

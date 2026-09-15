@@ -67,6 +67,7 @@ private const val DOWNLOADING = "Загружается"
 private const val DOWNLOADED = "Скачано"
 private const val FAILED = "Не скачалась"
 private const val MORE_ACTIONS = "Что сделать с серией"
+private const val NO_NETWORK = "Нет сети"
 
 private const val EPISODE_COLUMNS = 5
 
@@ -99,6 +100,7 @@ private val RingStroke = 2.dp
 internal fun EpisodeSection(
     cells: List<EpisodeCell>,
     watched: Int,
+    offline: Boolean,
     onPlay: (Int) -> Unit,
     onMarkWatched: (Int) -> Unit,
     onDownloadSome: () -> Unit,
@@ -119,7 +121,16 @@ internal fun EpisodeSection(
             EPISODES,
             // No chevron: this opens a sheet over the screen rather than leading somewhere, and
             // the ellipsis already says a choice is coming.
-            action = if (downloadable) RowAction(DOWNLOAD_SOME, icon = null, onClick = onDownloadSome) else null,
+            //
+            // With no network it says so in place of the verb and stops accepting presses. A
+            // download starts by resolving a link, so offline the sheet could only end in a
+            // failure — and the honest moment to say that is before the viewer has ticked eight
+            // episodes, not after.
+            action = when {
+                !downloadable -> null
+                offline -> RowAction(NO_NETWORK, icon = null, enabled = false, onClick = {})
+                else -> RowAction(DOWNLOAD_SOME, icon = null, onClick = onDownloadSome)
+            },
         )
         Text(
             // The grid itself is the total: it already draws every episode there turned out to be.
@@ -138,6 +149,7 @@ internal fun EpisodeSection(
                         EpisodeTile(
                             cell = cell,
                             modifier = Modifier.weight(1f),
+                            offline = offline,
                             menuOpen = menuFor == cell.number,
                             onPlay = { onPlay(cell.number) },
                             onLongPress = { menuFor = cell.number },
@@ -198,6 +210,7 @@ internal fun EpisodeSection(
 private fun EpisodeTile(
     cell: EpisodeCell,
     modifier: Modifier,
+    offline: Boolean,
     menuOpen: Boolean,
     onPlay: () -> Unit,
     onLongPress: () -> Unit,
@@ -284,12 +297,21 @@ private fun EpisodeTile(
                 shadowElevation = 0.dp,
                 tonalElevation = 0.dp,
             ) {
-                MenuItem(WATCH, onPlay)
+                // What can be done with the episode, before what can be said about it: playing it
+                // is what the tile itself does, and this menu exists for the rest.
                 when (cell.download) {
-                    null, DownloadState.FAILED -> MenuItem(DOWNLOAD, onDownload)
+                    // Offline it stays on the list and stops working, with the reason beside it —
+                    // an entry that vanished with the network would look like a bug.
+                    null, DownloadState.FAILED -> MenuItem(
+                        DOWNLOAD,
+                        onDownload,
+                        enabled = !offline,
+                        hint = NO_NETWORK.takeIf { offline },
+                    )
                     DownloadState.REMOVING -> Unit
                     else -> MenuItem(REMOVE_DOWNLOAD, onRemoveDownload)
                 }
+                MenuItem(WATCH, onPlay)
                 if (markable) MenuItem(MARK_WATCHED, onMarkWatched)
             }
         }
@@ -297,10 +319,24 @@ private fun EpisodeTile(
 }
 
 @Composable
-private fun MenuItem(text: String, onClick: () -> Unit) = DropdownMenuItem(
+private fun MenuItem(
+    text: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    hint: String? = null,
+) = DropdownMenuItem(
     text = { Text(text, style = MaterialTheme.typography.titleSmall) },
     onClick = onClick,
-    colors = MenuDefaults.itemColors(textColor = KaeruText),
+    enabled = enabled,
+    // The one place a menu entry says why it cannot be pressed. It sits where a submenu chevron
+    // would, which is where the eye goes after the verb.
+    trailingIcon = hint?.let {
+        { Text(it, style = MaterialTheme.typography.labelMedium, color = KaeruSecondary) }
+    },
+    colors = MenuDefaults.itemColors(
+        textColor = KaeruText,
+        disabledTextColor = KaeruSecondary,
+    ),
 )
 
 /**

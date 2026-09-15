@@ -216,6 +216,25 @@ private fun EpisodeDownloadStatesPreview() = KaeruTheme {
                 cell(8, aired = false),
             ),
             watched = 1,
+            offline = false,
+            onPlay = {},
+            onMarkWatched = {},
+            onDownloadSome = {},
+            onDownload = {},
+            onRemoveDownload = {},
+        )
+    }
+}
+
+/** With no network the header says so and stops accepting presses; the tiles keep their marks. */
+@Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 200)
+@Composable
+private fun EpisodeSectionOfflinePreview() = KaeruTheme {
+    Column(Modifier.background(KaeruBackground)) {
+        EpisodeSection(
+            cells = listOf(cell(1, DownloadState.COMPLETED), cell(2), cell(3), cell(4), cell(5)),
+            watched = 1,
+            offline = true,
             onPlay = {},
             onMarkWatched = {},
             onDownloadSome = {},

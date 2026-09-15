@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.kaeru.domain.connectivity.Connectivity
 import app.kaeru.domain.download.DownloadPolicy
+import app.kaeru.domain.download.DownloadQualityChoice
 import app.kaeru.domain.download.DownloadRepository
 import app.kaeru.domain.download.DownloadState
 import app.kaeru.domain.download.EpisodeDownload
@@ -22,7 +23,9 @@ import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.repository.WatchStateRepository
 import app.kaeru.domain.settings.SettingsStore
+import app.kaeru.ui.common.design.downloadLimitLabel
 import app.kaeru.ui.common.design.formatBytes
+import app.kaeru.ui.common.design.pluralEpisodes
 import app.kaeru.ui.common.errorMessageOrNull
 import app.kaeru.ui.common.toUserMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -103,8 +106,8 @@ class DetailsViewModel @Inject constructor(
     private val markEpisodeWatched: MarkEpisodeWatched,
     private val clock: Clock,
     private val downloads: DownloadRepository,
-    settings: SettingsStore,
-    connectivity: Connectivity,
+    private val settings: SettingsStore,
+    private val connectivity: Connectivity,
 ) : ViewModel() {
     private val animeId: Int = checkNotNull(savedStateHandle["animeId"])
     private val work = MutableStateFlow(DetailsUiState())
@@ -280,14 +283,52 @@ class DetailsViewModel @Inject constructor(
      *
      * @param quality a height for these downloads only; null takes the one in the settings.
      */
-    fun download(episodes: List<Int>, quality: Quality? = null) {
+    fun download(episodes: List<Int>, quality: DownloadQualityChoice? = null) {
         if (episodes.isEmpty()) return
         viewModelScope.launch {
+            // The controls that start a download are off with no network; this is the guard behind
+            // them. Resolving a link is the first thing an enqueue does, and with nothing to
+            // resolve against it would leave a row on the screen that dies a moment later.
+            if (!connectivity.online.first()) return@launch
+            refusedBatch(episodes.size)?.let { refusal ->
+                work.value = work.value.copy(storageMessage = refusal)
+                return@launch
+            }
             for (episode in episodes.sorted()) {
                 val failure = downloads.enqueue(animeId, episode, quality).exceptionOrNull() ?: continue
                 work.value = work.value.copy(storageMessage = storageMessage(failure))
                 return@launch
             }
+        }
+    }
+
+    /**
+     * Why this many episodes will not fit, or null when they will.
+     *
+     * The engine checks one episode at a time, and it has to: it is told about one episode at a
+     * time. That check is no use to a batch, because what it measures — bytes actually on disk —
+     * barely moves while ten requests are being queued, so ten episodes that will not fit are all
+     * accepted and the device runs past a limit that never evicts anything.
+     *
+     * So the whole batch is weighed here, against the same estimate the button on the sheet showed,
+     * and refused as a batch. The message says how many *would* fit, because that is the number the
+     * viewer needs to go back and tick.
+     */
+    private suspend fun refusedBatch(count: Int): String? {
+        if (count <= 1) return null
+        val policy = settings.downloadPolicy.first()
+        val limit = policy.limitBytes ?: return null
+        val estimate = uiState.value.episodeEstimate
+        val used = downloads.usedBytes.first()
+        if (policy.fits(used, estimate * count)) return null
+        val room = if (estimate <= 0) 0 else ((limit - used) / estimate).coerceAtLeast(0)
+        // The limit reads as the round number the viewer chose from four of them, as it does on
+        // «Загрузки»; what is used reads to a tenth, because that is a measurement.
+        val sizes = "${formatBytes(used)} из ${downloadLimitLabel(limit)}"
+        return if (room <= 0) {
+            "Лимит места исчерпан: $sizes. Освободите место в настройках"
+        } else {
+            "Не хватит места: занято $sizes. Поместится только ${pluralEpisodes(room.toInt())}"
         }
     }
 
@@ -309,7 +350,7 @@ class DetailsViewModel @Inject constructor(
      */
     private fun storageMessage(failure: Throwable): String = when (failure) {
         is DownloadLimitReached ->
-            "Лимит места исчерпан: ${formatBytes(failure.usedBytes)} из ${formatBytes(failure.limitBytes)}. " +
+            "Лимит места исчерпан: ${formatBytes(failure.usedBytes)} из ${downloadLimitLabel(failure.limitBytes)}. " +
                 "Освободите место в настройках"
         else -> failure.toUserMessage()
     }

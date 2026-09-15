@@ -40,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,9 +51,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.kaeru.domain.model.Anime
+import app.kaeru.domain.download.DownloadQualityChoice
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
-import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.ui.common.design.Backdrop
 import app.kaeru.ui.common.design.ErrorState
@@ -136,7 +137,7 @@ fun DetailsScreen(
     onLoadTranslations: () -> Unit,
     onPickTranslation: (Translation) -> Unit,
     onMarkWatched: (episode: Int) -> Unit,
-    onDownload: (episodes: List<Int>, quality: Quality?) -> Unit,
+    onDownload: (episodes: List<Int>, quality: DownloadQualityChoice?) -> Unit,
     onRemoveDownload: (episode: Int) -> Unit,
     onStorageMessageShown: () -> Unit,
     onDownloads: () -> Unit,
@@ -215,7 +216,7 @@ private fun TitlePage(
     onLoadTranslations: () -> Unit,
     onPickTranslation: (Translation) -> Unit,
     onMarkWatched: (Int) -> Unit,
-    onDownload: (List<Int>, Quality?) -> Unit,
+    onDownload: (List<Int>, DownloadQualityChoice?) -> Unit,
     onRemoveDownload: (Int) -> Unit,
 ) {
     val entry = state.entry
@@ -224,7 +225,8 @@ private fun TitlePage(
             anime, entry?.rate, entry?.watch, entry?.progress.orEmpty(), state.watchedThreshold, state.downloads,
         )
     }
-    var sheetOpen by remember { mutableStateOf(false) }
+    // Saveable: a rotation with the sheet open should put it back, not throw away twelve ticks.
+    var sheetOpen by rememberSaveable { mutableStateOf(false) }
     // One clock per anime. «9 серия выйдет завтра» is read against it, and a label that rewrote
     // itself on every recomposition would be a label nobody could finish reading.
     val now = remember(anime) { Instant.now() }
@@ -243,6 +245,9 @@ private fun TitlePage(
         EpisodeSection(
             cells = cells,
             watched = entry?.rate?.episodes ?: 0,
+            // With no network there is nothing to resolve a link against, so the two controls that
+            // start a download are off rather than ready to fail.
+            offline = state.offline,
             onPlay = { episode -> onPlay(anime.id, episode) },
             onMarkWatched = onMarkWatched,
             onDownloadSome = { sheetOpen = true },
@@ -251,7 +256,9 @@ private fun TitlePage(
         )
         anime.description?.takeIf { it.isNotBlank() }?.let { Description(it) }
     }
-    if (sheetOpen) {
+    // Never while offline, however the flag got there: the sheet's own button would enqueue
+    // downloads that cannot resolve.
+    if (sheetOpen && !state.offline) {
         DownloadSheet(
             choices = remember(cells) { downloadChoices(cells) },
             estimateBytes = state.episodeEstimate,

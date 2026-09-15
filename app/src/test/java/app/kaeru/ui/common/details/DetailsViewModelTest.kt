@@ -2,12 +2,15 @@ package app.kaeru.ui.common.details
 
 import androidx.lifecycle.SavedStateHandle
 import app.kaeru.domain.connectivity.FakeConnectivity
+import app.kaeru.domain.download.DownloadPolicy
+import app.kaeru.domain.download.DownloadQualityChoice
 import app.kaeru.domain.download.FakeDownloadRepository
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
+import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.model.WatchState
 import app.kaeru.domain.playback.FakePlaybackPreferences
@@ -36,6 +39,8 @@ import org.junit.Test
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+
+private const val GB = 1024L * 1024 * 1024
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DetailsViewModelTest {
@@ -384,5 +389,108 @@ class DetailsViewModelTest {
         vm.markWatched(12)
         advanceUntilIdle()
         assertEquals(emptyList<Pair<Int, Int>>(), repo.episodeWrites)
+    }
+
+    // --- downloads ------------------------------------------------------------------------------
+
+    @Test
+    fun `the sheet's choice of height reaches the engine as the viewer made it`() = runTest(main.dispatcher) {
+        val vm = viewModel(FakeRepository(item))
+        advanceUntilIdle()
+
+        vm.download(listOf(7), DownloadQualityChoice.FollowPlayback)
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(Triple(7, 7, DownloadQualityChoice.FollowPlayback)),
+            downloads.enqueued.toList(),
+        )
+    }
+
+    @Test
+    fun `a long press asks for nothing in particular, so the settings decide`() = runTest(main.dispatcher) {
+        val vm = viewModel(FakeRepository(item))
+        advanceUntilIdle()
+
+        vm.download(listOf(7))
+        advanceUntilIdle()
+
+        assertNull(downloads.enqueued.single().third)
+    }
+
+    @Test
+    fun `with no network nothing is enqueued, whatever asked`() = runTest(main.dispatcher) {
+        connectivity.goOffline()
+        val vm = viewModel(FakeRepository(item))
+        advanceUntilIdle()
+
+        vm.download(listOf(7, 8), DownloadQualityChoice.Fixed(Quality.P480))
+        vm.download(listOf(9))
+        advanceUntilIdle()
+
+        assertTrue(downloads.enqueued.isEmpty())
+        assertNull(vm.uiState.value.storageMessage)
+    }
+
+    @Test
+    fun `a batch the limit cannot hold is refused whole, and says how many would fit`() =
+        runTest(main.dispatcher) {
+            downloads.setUsedBytes(4 * GB)
+            settings.downloadPolicy.value = DownloadPolicy.DEFAULT.copy(limitBytes = 5 * GB)
+            val vm = viewModel(FakeRepository(item))
+            advanceUntilIdle()
+
+            vm.download((1..10).toList(), DownloadQualityChoice.FollowPlayback)
+            advanceUntilIdle()
+
+            assertTrue(downloads.enqueued.isEmpty())
+            assertEquals(
+                "Не хватит места: занято 4,0 ГБ из 5 ГБ. Поместится только 2 серии",
+                vm.uiState.value.storageMessage,
+            )
+        }
+
+    @Test
+    fun `one more episode that does fit is left to the engine to judge`() = runTest(main.dispatcher) {
+        downloads.setUsedBytes(4 * GB)
+        settings.downloadPolicy.value = DownloadPolicy.DEFAULT.copy(limitBytes = 5 * GB)
+        val vm = viewModel(FakeRepository(item))
+        advanceUntilIdle()
+
+        vm.download(listOf(7))
+        advanceUntilIdle()
+
+        assertEquals(1, downloads.enqueued.size)
+        assertNull(vm.uiState.value.storageMessage)
+    }
+
+    @Test
+    fun `with no room at all the message says where to go and not how many fit`() = runTest(main.dispatcher) {
+        downloads.setUsedBytes(5 * GB)
+        settings.downloadPolicy.value = DownloadPolicy.DEFAULT.copy(limitBytes = 5 * GB)
+        val vm = viewModel(FakeRepository(item))
+        advanceUntilIdle()
+
+        vm.download(listOf(7, 8, 9))
+        advanceUntilIdle()
+
+        assertTrue(downloads.enqueued.isEmpty())
+        assertEquals(
+            "Лимит места исчерпан: 5,0 ГБ из 5 ГБ. Освободите место в настройках",
+            vm.uiState.value.storageMessage,
+        )
+    }
+
+    @Test
+    fun `without a limit a batch of any size goes through`() = runTest(main.dispatcher) {
+        downloads.setUsedBytes(40 * GB)
+        settings.downloadPolicy.value = DownloadPolicy.DEFAULT.copy(limitBytes = null)
+        val vm = viewModel(FakeRepository(item))
+        advanceUntilIdle()
+
+        vm.download((1..10).toList())
+        advanceUntilIdle()
+
+        assertEquals(10, downloads.enqueued.size)
     }
 }
