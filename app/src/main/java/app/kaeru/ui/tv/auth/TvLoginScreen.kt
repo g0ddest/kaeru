@@ -15,13 +15,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.semantics.contentDescription
@@ -41,7 +44,7 @@ import app.kaeru.ui.common.design.kaeruFocus
 import app.kaeru.ui.common.theme.KaeruError
 import app.kaeru.ui.common.theme.KaeruSecondary
 import app.kaeru.ui.common.theme.KaeruText
-import app.kaeru.ui.tv.requestFocusOrLog
+import app.kaeru.ui.tv.claimFocusWhenReady
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
@@ -110,13 +113,20 @@ fun TvLoginScreen(
     onNewQr: () -> Unit,
 ) {
     val qr = remember { FocusRequester() }
-    LaunchedEffect(Unit) { qr.requestFocusOrLog("the pairing code of the television login") }
+    // Latched by the focus arriving rather than by the request being accepted, and asked for as
+    // long as the settings list is: this screen is drawn while a socket is being opened and a code
+    // encoded, so its first composition is not a fast one either, and landing in the text field
+    // beside the code is exactly the outcome the claim exists to prevent.
+    var claimed by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        qr.claimFocusWhenReady("the pairing code of the television login") { claimed }
+    }
 
     Row(
         Modifier.fillMaxSize().padding(horizontal = KaeruTokens.GutterTv, vertical = ScreenPadding),
         horizontalArrangement = Arrangement.spacedBy(ColumnGap),
     ) {
-        PairingHalf(pairing, authorizeUrl, onNewQr, qr, Modifier.weight(1f))
+        PairingHalf(pairing, authorizeUrl, onNewQr, qr, { claimed = true }, Modifier.weight(1f))
         TypedCodeHalf(authorizeUrl, state, code, onCode, onSubmit, Modifier.weight(1f))
     }
 }
@@ -127,11 +137,12 @@ private fun PairingHalf(
     authorizeUrl: String,
     onNewQr: () -> Unit,
     qr: FocusRequester,
+    onQrFocused: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space4)) {
         Text(HEADING, style = MaterialTheme.typography.headlineMedium, color = KaeruText)
-        QrCard(tvLoginQr(pairing, authorizeUrl), PairingQr, qr, QR_LABEL)
+        QrCard(tvLoginQr(pairing, authorizeUrl), PairingQr, qr, QR_LABEL, onQrFocused)
         Text(tvLoginHint(pairing), style = MaterialTheme.typography.bodyMedium, color = KaeruSecondary)
         Text(tvLoginName(pairing), style = MaterialTheme.typography.titleMedium, color = KaeruText)
         StatusLine(pairing)
@@ -230,6 +241,7 @@ private fun QrCard(
     size: Dp,
     focusRequester: FocusRequester? = null,
     label: String? = null,
+    onFocused: () -> Unit = {},
 ) {
     val bitmap = remember(payload) { qrBitmap(payload).asImageBitmap() }
     val card = @Composable {
@@ -252,6 +264,7 @@ private fun QrCard(
                 .then(focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
                 .kaeruFocus(KaeruTokens.CardShape)
                 .semantics { contentDescription = label }
+                .onFocusChanged { if (it.isFocused) onFocused() }
                 .focusable()
                 .padding(QrFocusInset),
         ) { card() }
