@@ -41,8 +41,11 @@ import app.kaeru.player.EpisodeQueue
 import app.kaeru.ui.common.design.ErrorState
 import app.kaeru.ui.common.design.TranslationPickerSheet
 import app.kaeru.ui.common.design.waitingLabel
+import app.kaeru.ui.common.player.PlayerFailure
+import app.kaeru.ui.common.player.PlayerRecovery
 import app.kaeru.ui.common.player.PlayerSheet
 import app.kaeru.ui.common.player.PlayerUiState
+import app.kaeru.ui.common.player.playerFailure
 import kotlinx.coroutines.delay
 import java.time.Instant
 
@@ -82,6 +85,7 @@ fun PlayerScreen(
     onToastShown: () -> Unit,
     onDownload: () -> Unit,
     onRemoveDownload: () -> Unit,
+    onRemoveBrokenDownload: () -> Unit,
     isInPictureInPicture: Boolean = false,
     onEnterPictureInPicture: (() -> Unit)? = null,
 ) {
@@ -106,6 +110,9 @@ fun PlayerScreen(
             var swipeEnded by remember { mutableIntStateOf(0) }
             val hardware = rememberPlayerHardware()
             val failed = state.errorMessage != null
+            // What the surface over the video says, decided outside the composition: a downloaded
+            // episode failing with a network is a different message with a different way out.
+            val failure = remember(state.errorMessage, state.offline, state.download) { playerFailure(state) }
             val snackbar = remember { SnackbarHostState() }
             // Taken once per episode: the only thing measured against it is which day the next one airs.
             val now = remember(state.episode) { Instant.now() }
@@ -197,11 +204,12 @@ fun PlayerScreen(
                     }
                 }
 
-                if (failed) {
+                failure?.let {
                     PlaybackFailure(
-                        message = state.errorMessage.orEmpty(),
+                        failure = it,
                         onRetry = onRetry,
                         onChangeTranslation = onOpenTranslations,
+                        onRemoveDownload = onRemoveBrokenDownload,
                     )
                 }
 
@@ -357,17 +365,33 @@ private fun SeekPulseBadge(pulse: SeekPulse) {
 
 /**
  * The video would not play. Over the frame rather than instead of it, so the top bar is still
- * reachable: from here the ways forward are trying the same stream again and trying another
- * voice, and the second one lives in the chooser behind this.
+ * reachable: from here the ways forward are trying the same stream again and one other thing.
+ *
+ * Which other thing depends on what failed. Normally it is another voice, which lives in the
+ * chooser behind this. For an episode that is on the device and will not play with a network
+ * present, the copy on the device is what failed, so the way past it is to take that copy away —
+ * which also starts the episode again from the source, since one without the other leaves the
+ * viewer on the same still frame wondering whether anything happened.
  */
 @Composable
-private fun PlaybackFailure(message: String, onRetry: () -> Unit, onChangeTranslation: () -> Unit) {
+private fun PlaybackFailure(
+    failure: PlayerFailure,
+    onRetry: () -> Unit,
+    onChangeTranslation: () -> Unit,
+    onRemoveDownload: () -> Unit,
+) {
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.88f)), contentAlignment = Alignment.Center) {
         ErrorState(
-            message = message,
+            message = failure.message,
             onRetry = onRetry,
-            secondaryLabel = "Сменить озвучку",
-            onSecondary = onChangeTranslation,
+            secondaryLabel = when (failure.recovery) {
+                PlayerRecovery.CHANGE_TRANSLATION -> "Сменить озвучку"
+                PlayerRecovery.REMOVE_DOWNLOAD -> "Удалить загрузку"
+            },
+            onSecondary = when (failure.recovery) {
+                PlayerRecovery.CHANGE_TRANSLATION -> onChangeTranslation
+                PlayerRecovery.REMOVE_DOWNLOAD -> onRemoveDownload
+            },
         )
     }
 }
