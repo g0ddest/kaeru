@@ -258,7 +258,16 @@ private fun TvHomeFeed(
             // Above the hero band rather than over the artwork: the television has no downloads to
             // offer instead, so this is the whole of what the screen has to say about the network,
             // and it is said once, at the top, in three words.
-            if (offline) OfflineStrip(text = OFFLINE, gutter = TvLayout.Gutter)
+            // The panel crops its own edges, and the band below is what usually carries that
+            // inset; above it, the strip has to carry its own or «Нет сети» lands in the part of
+            // the picture a television does not draw.
+            if (offline) {
+                OfflineStrip(
+                    modifier = Modifier.padding(top = TvLayout.SafeVertical),
+                    text = OFFLINE,
+                    gutter = TvLayout.Gutter,
+                )
+            }
             TvHeroBand(hero)
             LazyColumn(
                 state = listState,

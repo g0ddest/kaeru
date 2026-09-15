@@ -2,6 +2,8 @@ package app.kaeru.ui.common.home
 
 import app.kaeru.domain.connectivity.FakeConnectivity
 import app.kaeru.domain.discover.Season
+import app.kaeru.domain.download.DownloadRepository
+import app.kaeru.domain.download.EpisodeDownload
 import app.kaeru.domain.download.FakeDownloadRepository
 import app.kaeru.domain.feed.HomeFeedBuilder
 import app.kaeru.domain.model.Anime
@@ -26,6 +28,7 @@ import app.kaeru.test.MainDispatcherRule
 import app.kaeru.test.MutableClock
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -90,7 +93,7 @@ class HomeViewModelOfflineTest {
     private val downloads = FakeDownloadRepository()
     private val connectivity = FakeConnectivity()
 
-    private fun viewModel(): HomeViewModel {
+    private fun viewModel(engine: DownloadRepository = downloads): HomeViewModel {
         val prefs = FakePlaybackPreferences()
         val clock = MutableClock(now)
         val cache = StreamPrefetchCache(clock)
@@ -100,7 +103,7 @@ class HomeViewModelOfflineTest {
         )
         return HomeViewModel(
             library, FakeDiscoverRepository(), HomeFeedBuilder(), Clock.fixed(now, ZoneOffset.UTC),
-            prefs, prefetch, downloads, connectivity, main.dispatcher,
+            prefs, prefetch, engine, connectivity, main.dispatcher,
         )
     }
 
@@ -184,6 +187,37 @@ class HomeViewModelOfflineTest {
 
         assertEquals(listOf(4), vm.uiState.value.feed.downloaded.map { it.episode })
         assertEquals(FeedKind.DOWNLOADED, vm.uiState.value.feed.downloaded.single().kind)
+    }
+
+    /**
+     * The library is in Room and the download index is behind a dispatch to IO. The screen draws
+     * what it already has rather than holding its skeletons up until the engine answers about
+     * downloads it may not even have.
+     */
+    @Test
+    fun `the feed is drawn before the download engine has said anything`() = runTest {
+        library.entries.value = listOf(entry())
+        val silent = object : DownloadRepository by downloads {
+            override fun observeAll(): Flow<List<EpisodeDownload>> = MutableSharedFlow()
+        }
+        val vm = viewModel(silent)
+        advanceUntilIdle()
+
+        assertFalse(vm.uiState.value.isLoading)
+        assertEquals(7, vm.uiState.value.feed.top?.entry?.anime?.id)
+        assertTrue(vm.uiState.value.feed.downloaded.isEmpty())
+    }
+
+    @Test
+    fun `and the strip does not wait for it either`() = runTest {
+        connectivity.goOffline()
+        val silent = object : DownloadRepository by downloads {
+            override fun observeAll(): Flow<List<EpisodeDownload>> = MutableSharedFlow()
+        }
+        val vm = viewModel(silent)
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.offline)
     }
 }
 

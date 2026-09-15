@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -97,7 +98,17 @@ class HomeViewModel @Inject constructor(
      * between them — what can this screen still offer — and because `combine` takes five flows
      * before it starts taking an array of them.
      */
-    private val device = combine(connectivity.online, downloads.observeAll(), ::DeviceState)
+    private val device = combine(
+        connectivity.online,
+        // Seeded, because `combine` says nothing until every arm has spoken and this one has to
+        // reach the download index first — a dispatch to IO and a read. The library is already in
+        // Room, so without the seed a screen with a feed on it would sit on its skeletons waiting
+        // for an answer about downloads, and the offline strip would land a beat after the network
+        // went. An empty list is the truth for a device with nothing downloaded and a moment early
+        // for one that has something.
+        downloads.observeAll().onStart { emit(emptyList()) },
+        ::DeviceState,
+    )
 
     val uiState: StateFlow<HomeUiState> = combine(
         repository.observeLibrary(),
