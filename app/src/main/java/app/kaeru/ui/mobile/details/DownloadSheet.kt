@@ -2,6 +2,7 @@ package app.kaeru.ui.mobile.details
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
@@ -10,8 +11,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -37,12 +36,12 @@ import app.kaeru.domain.model.Quality
 import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.design.PrimaryButton
 import app.kaeru.ui.common.design.RowHeader
-import app.kaeru.ui.common.design.StatusPill
 import app.kaeru.ui.common.design.TextAction
 import app.kaeru.ui.common.design.downloadChoiceLabel
 import app.kaeru.ui.common.design.formatBytes
 import app.kaeru.ui.common.design.pluralEpisodesAccusative
 import app.kaeru.ui.common.details.DownloadChoice
+import app.kaeru.ui.common.settings.SettingChoiceRow
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruDivider
 import app.kaeru.ui.common.theme.KaeruOnAccent
@@ -55,6 +54,7 @@ private const val TITLE = "Скачать серии"
 private const val ALL_AIRED = "Все вышедшие"
 private const val UNWATCHED = "Непросмотренные"
 private const val WATCHED = "просмотрено"
+private const val SEEN = "Просмотренные"
 private const val QUALITY = "Качество"
 private const val NOTHING = "Все вышедшие серии уже на устройстве"
 
@@ -145,15 +145,38 @@ private fun DownloadSheetContent(
             TextAction(ALL_AIRED, { picked = choices.map { it.episode }.toSet() })
             TextAction(UNWATCHED, { picked = choices.filterNot { it.watched }.map { it.episode }.toSet() })
         }
+        val toggle: (DownloadChoice) -> Unit = { choice ->
+            picked = if (choice.episode in picked) picked - choice.episode else picked + choice.episode
+        }
+        // What the sheet opens ticked goes first, and the rest sit under a word saying why they are
+        // not. The list used to run in episode order, so a viewer on episode ten met five watched
+        // episodes and a button already promising «Скачать 1 серию» about a tick below the fold —
+        // a summary that could not be checked against anything on screen.
+        val (unwatched, watched) = sheetSections(choices)
         LazyColumn(Modifier.heightIn(max = ListHeight)) {
-            items(choices, key = { it.episode }) { choice ->
+            items(unwatched, key = { it.episode }) { choice ->
+                EpisodeChoiceRow(choice, checked = choice.episode in picked) { toggle(choice) }
+            }
+            if (watched.isNotEmpty() && unwatched.isNotEmpty()) {
+                item(key = SEEN) {
+                    Text(
+                        SEEN,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = KaeruSecondary,
+                        modifier = Modifier.padding(
+                            start = KaeruTokens.GutterPhone,
+                            top = KaeruTokens.Space4,
+                            bottom = KaeruTokens.Space1,
+                        ),
+                    )
+                }
+            }
+            items(watched, key = { it.episode }) { choice ->
                 EpisodeChoiceRow(
-                    choice = choice,
+                    choice,
                     checked = choice.episode in picked,
-                    onToggle = {
-                        picked = if (choice.episode in picked) picked - choice.episode else picked + choice.episode
-                    },
-                )
+                    underHeading = unwatched.isNotEmpty(),
+                ) { toggle(choice) }
             }
         }
         QualityRow(height) { height = it }
@@ -181,7 +204,12 @@ private fun buttonLabel(count: Int, estimateBytes: Long): String {
 }
 
 @Composable
-private fun EpisodeChoiceRow(choice: DownloadChoice, checked: Boolean, onToggle: () -> Unit) {
+private fun EpisodeChoiceRow(
+    choice: DownloadChoice,
+    checked: Boolean,
+    underHeading: Boolean = false,
+    onToggle: () -> Unit,
+) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -207,9 +235,9 @@ private fun EpisodeChoiceRow(choice: DownloadChoice, checked: Boolean, onToggle:
             color = KaeruText,
             modifier = Modifier.weight(1f),
         )
-        // Said quietly rather than hidden: a viewer downloading a show to watch again needs to see
-        // which episodes those are, and «Непросмотренные» above needs something to select on.
-        if (choice.watched) {
+        // Only where there is no heading above to say it — a season with nothing left unwatched
+        // lists everything in one block, and the rows are then the only place it can be said.
+        if (choice.watched && !underHeading) {
             Text(WATCHED, style = MaterialTheme.typography.labelMedium, color = KaeruSecondary)
         }
     }
@@ -224,25 +252,26 @@ private fun QualityRow(quality: DownloadQualityChoice, onPick: (DownloadQualityC
             color = KaeruSecondary,
             modifier = Modifier.padding(horizontal = KaeruTokens.GutterPhone),
         )
-        Row(
-            Modifier
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = KaeruTokens.GutterPhone, vertical = KaeruTokens.Space2),
-            horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space2),
-        ) {
-            QUALITIES.forEach { option ->
-                StatusPill(
-                    text = downloadChoiceLabel(option),
-                    selected = option == quality,
-                    onClick = { onPick(option) },
-                    role = Role.RadioButton,
-                    affordance = false,
-                )
-            }
+        // Wrapped rather than scrolled. Four chips and «Как при просмотре» among them do not fit a
+        // phone's width, and a row that scrolled left the last one cut off at the edge with nothing
+        // saying it was there — a choice a viewer cannot see is a choice they do not have. This is
+        // also how the same chips are drawn in the settings.
+        Box(Modifier.padding(horizontal = KaeruTokens.GutterPhone, vertical = KaeruTokens.Space2)) {
+            SettingChoiceRow(
+                options = QUALITIES,
+                label = ::downloadChoiceLabel,
+                selected = { it == quality },
+                onSelect = onPick,
+            )
         }
     }
 }
 
+/**
+ * A viewer part way through a season, which is the case that was wrong on a real phone: the
+ * episodes the sheet opens ticked have to be the ones at the top, or the button counts something
+ * nobody can see.
+ */
 private val sample = listOf(
     DownloadChoice(5, watched = true),
     DownloadChoice(6, watched = true),
@@ -250,11 +279,34 @@ private val sample = listOf(
     DownloadChoice(8, watched = false),
 )
 
+/** A rewatch: nothing left unwatched, so there is no heading and the rows say it themselves. */
+private val allSeen = (1..4).map { DownloadChoice(it, watched = true) }
+
 @Preview(showBackground = true, backgroundColor = 0xFF15171E, widthDp = 360, heightDp = 560)
 @Composable
 private fun DownloadSheetPreview() = KaeruTheme {
     Column(Modifier.background(KaeruSurface)) {
         DownloadSheetContent(sample, 320L * 1024 * 1024, Quality.P720) { _, _ -> }
+    }
+}
+
+/**
+ * The narrowest phone this app is drawn for. The quality chips wrap onto a second line here, which
+ * is the whole point of them wrapping: on a 1080-wide device the last one used to sit off the edge.
+ */
+@Preview(showBackground = true, backgroundColor = 0xFF15171E, widthDp = 320, heightDp = 580)
+@Composable
+private fun DownloadSheetNarrowPreview() = KaeruTheme {
+    Column(Modifier.background(KaeruSurface)) {
+        DownloadSheetContent(sample, 320L * 1024 * 1024, null) { _, _ -> }
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF15171E, widthDp = 360, heightDp = 560)
+@Composable
+private fun DownloadSheetAllWatchedPreview() = KaeruTheme {
+    Column(Modifier.background(KaeruSurface)) {
+        DownloadSheetContent(allSeen, 320L * 1024 * 1024, Quality.P480) { _, _ -> }
     }
 }
 
@@ -265,6 +317,17 @@ private fun DownloadSheetNothingPreview() = KaeruTheme {
         DownloadSheetContent(emptyList(), 320L * 1024 * 1024, null) { _, _ -> }
     }
 }
+
+/**
+ * The two blocks the list is drawn in: what the sheet opens ticked, then what it does not.
+ *
+ * Extracted from the composition so the rule can be read in a test. It is the one the button's
+ * summary depends on — «Скачать 1 серию» has to be about a tick the viewer can see, and in episode
+ * order on a season somebody is part way through, that tick is below the fold under five episodes
+ * they have already watched.
+ */
+internal fun sheetSections(choices: List<DownloadChoice>): Pair<List<DownloadChoice>, List<DownloadChoice>> =
+    choices.partition { !it.watched }
 
 /**
  * Twelve ticked episodes survive a rotation, which is the difference between a phone turning and a
