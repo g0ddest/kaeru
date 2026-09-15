@@ -203,6 +203,33 @@ class KodikHtmlParserTest {
     }
 
     @Test
+    fun `a page names the track it is itself showing`() {
+        val page = KodikHtmlParser.parse(fixture("movie.html"))
+
+        assertEquals(923, page.currentTranslationId)
+        assertEquals("AnimeVost", page.currentTranslationTitle)
+    }
+
+    @Test
+    fun `a film with a single voice still names it, even with no chooser on the page`() {
+        val page = KodikHtmlParser.parse(fixture("movie-single-track.html"))
+
+        assertTrue("this fixture is the one without a chooser", page.translations.isEmpty())
+        assertEquals(923, page.currentTranslationId)
+        assertEquals("AnimeVost", page.currentTranslationTitle)
+        assertEquals("990011", page.currentId)
+        assertEquals("aa11bb22cc33dd44ee55ff6677889900", page.currentHash)
+    }
+
+    @Test
+    fun `a page that names no track at all says nothing rather than guessing`() {
+        val page = KodikHtmlParser.parse(minimalPage(type = "video", translationsBoxClass = null, seriesBoxClass = null))
+
+        assertNull(page.currentTranslationId)
+        assertNull(page.currentTranslationTitle)
+    }
+
+    @Test
     fun `a serial page without a translations box still throws`() {
         val error = assertThrows(KodikError.ParserBroken::class.java) {
             KodikHtmlParser.parse(minimalPage(translationsBoxClass = null))

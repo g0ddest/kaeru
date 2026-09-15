@@ -1,6 +1,8 @@
 package app.kaeru.domain.playback
 
+import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.WatchState
+import app.kaeru.domain.repository.PlaybackSampleRepository
 import app.kaeru.domain.repository.WatchStateRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
@@ -22,9 +24,17 @@ import java.time.Instant
  *
  * [report] returns as soon as the sample is accepted, which is immediately unless it is
  * the one that has to do the writing.
+ *
+ * Each accepted sample lands in two places, in one transaction. `episode_progress` keeps one row
+ * per episode and is what «продолжить» is read from, so a viewer who opens another episode still
+ * finds this one where they left it. `watch_state` keeps the single row per anime that says which
+ * episode played last, in which track and Kodik season. [watchStates] is read from here as well —
+ * a sample carries forward the track and season already remembered — and that read deliberately
+ * does not wait on the account lock the write takes.
  */
 class WatchProgress(
     private val watchStates: WatchStateRepository,
+    private val samples: PlaybackSampleRepository,
     private val clock: Clock,
 ) {
     private data class Sample(
@@ -98,25 +108,52 @@ class WatchProgress(
     }
 
     private suspend fun persist(sample: Sample) {
-        try {
+        // Two rows, one write. They used to go down separately so that a failure to write one
+        // could not cost the other — but they are the same fact about the same moment, and while
+        // they were written apart the database could say the episode was at minute one and the
+        // anime's pointer still name the episode before it. One write is also one acquisition of
+        // the account lock, which a library refresh can hold for a second or two, twice every few
+        // seconds.
+        bestEffort {
             val previous = watchStates.observe(sample.animeId).first()
-            watchStates.save(
-                WatchState(
+            val track = sample.translationId ?: previous?.translationId
+            samples.save(
+                watch = WatchState(
                     animeId = sample.animeId,
                     episode = sample.episode,
                     positionMs = sample.positionMs,
                     durationMs = sample.durationMs,
-                    translationId = sample.translationId ?: previous?.translationId,
+                    translationId = track,
+                    // A sample never sees the catalogue, so it cannot name a track — it can only
+                    // carry forward the name already stored, and only while it is still the same
+                    // track. A changed one is left nameless until the next resolve names it.
+                    translationTitle = previous?.translationTitle?.takeIf { previous.translationId == track },
                     kodikSeason = sample.kodikSeason ?: previous?.kodikSeason,
                     // When the viewer was there, not when the queue got to it.
                     updatedAt = sample.at,
                 ),
+                progress = EpisodeProgress(
+                    animeId = sample.animeId,
+                    episode = sample.episode,
+                    positionMs = sample.positionMs,
+                    durationMs = sample.durationMs,
+                    updatedAt = sample.at,
+                ),
             )
+        }
+    }
+
+    /**
+     * A dropped position is worth nothing to say: the next sample is seconds away, and playback
+     * must not fail because a write did.
+     */
+    private suspend fun bestEffort(block: suspend () -> Unit) {
+        try {
+            block()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            // A dropped position is worth nothing to say: the next sample is seconds away,
-            // and playback must not fail because a write did.
+            // Deliberately silent; see above.
         }
     }
 }

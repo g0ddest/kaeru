@@ -111,10 +111,41 @@ class KodikSourceProvider @Inject constructor(
         val link = answer.link
             ?.takeIf { answer.found && it.isNotBlank() }
             ?: throw KodikError.NotFound(shikimoriId)
-        val page = extractor.loadPage(link)
+        val page = extractor.loadPage(link).withSoleTrack()
         val fresh = Catalogue(page, page.translations.map { it.toDomain() }, clock.instant())
         cacheLock.withLock { cache[shikimoriId] = fresh }
         return fresh
+    }
+
+    /**
+     * A film with a single voice, given the one entry its page never drew.
+     *
+     * Kodik renders no translations box when there is nothing to choose between, so such a page
+     * parses with an empty track list — and an empty list meant no index to resolve, so every film
+     * of that kind came back as «серия недоступна». The page still names the voice it is showing
+     * in its own script, so the entry is made from the page rather than invented: the page's own
+     * media id and hash, the id and title it gives itself, one episode because a film is one.
+     *
+     * Written into the page, not only into [Catalogue.translations], so the two halves stay
+     * positionally aligned — which is the whole contract `resolve` indexes them by.
+     *
+     * A serial can never reach this: [KodikHtmlParser] refuses a serial page with no box.
+     */
+    private fun KodikPlayerPage.withSoleTrack(): KodikPlayerPage {
+        if (translations.isNotEmpty()) return this
+        val sole = KodikTranslationOption(
+            // The page's own translation id, which is a real Kodik id and so cannot collide with
+            // one from a chooser. Only a page that names none falls back, and it falls back to a
+            // negative number derived from the media id: stable for this film and impossible to
+            // mistake for a track anything else remembers.
+            id = currentTranslationId ?: -(currentId.toIntOrNull() ?: 1),
+            title = currentTranslationTitle ?: SOLE_TRACK_TITLE,
+            type = TranslationType.VOICE,
+            episodesCount = 1,
+            mediaId = currentId,
+            mediaHash = currentHash,
+        )
+        return copy(translations = listOf(sole))
     }
 
     private suspend fun cached(shikimoriId: Int): Catalogue? = cacheLock.withLock {
@@ -181,6 +212,10 @@ class KodikSourceProvider @Inject constructor(
 
     private companion object {
         val CACHE_TTL: Duration = Duration.ofHours(6)
+
+        /** For a film whose page names no studio: what the viewer is hearing, without a claim about who made it. */
+        const val SOLE_TRACK_TITLE = "Единственная озвучка"
+
         const val HTTP_UNAUTHORIZED = 401
         const val SERIAL_TYPE = "seria"
     }

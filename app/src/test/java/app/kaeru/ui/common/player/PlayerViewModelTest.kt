@@ -4,6 +4,7 @@ import app.kaeru.domain.error.EpisodeNotAvailable
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
+import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.EpisodeStream
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
@@ -13,9 +14,11 @@ import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.model.WatchState
+import app.kaeru.domain.playback.FakeEpisodeProgressRepository
 import app.kaeru.domain.playback.FakePlaybackPreferences
 import app.kaeru.domain.playback.FakeWatchStateRepository
 import app.kaeru.domain.playback.ResolveEpisodeStream
+import app.kaeru.domain.playback.StreamPrefetchCache
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.source.EpisodeSourceProvider
 import app.kaeru.player.EpisodeQueue
@@ -30,6 +33,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
@@ -56,6 +60,7 @@ class PlayerViewModelTest {
 
     private val controller = FakePlaybackController()
     private val watchStates = FakeWatchStateRepository()
+    private val episodes = FakeEpisodeProgressRepository()
     private val library = FakeLibraryRepository()
     private val source = FakeEpisodeSource()
     // AniLibria is on the viewer's list, which is what puts it above the other track.
@@ -84,9 +89,10 @@ class PlayerViewModelTest {
         viewModel = PlayerViewModel(
             controller = controller,
             cast = cast,
-            resolve = ResolveEpisodeStream(source, watchStates, prefs, clock),
+            resolve = ResolveEpisodeStream(source, watchStates, prefs, clock, StreamPrefetchCache(clock)),
             library = library,
             watchStates = watchStates,
+            episodeProgress = episodes,
             prefs = prefs,
             io = main.dispatcher,
         )
@@ -108,6 +114,240 @@ class PlayerViewModelTest {
         advanceUntilIdle()
 
         assertEquals(PlaybackTarget(100, 4, 320_000, null), controller.played.single())
+    }
+
+    @Test
+    fun `each episode is resumed from its own position`() = runTest(main.dispatcher) {
+        episodes.seed(EpisodeProgress(100, 6, 300_000, 1_440_000, now))
+        episodes.seed(EpisodeProgress(100, 7, 2_400_000, 2_880_000, now))
+        // The pointer names the seventh, because that is the one that played last.
+        watchStates.seed(WatchState(100, 7, 2_400_000, 2_880_000, translationId = 11, kodikSeason = 1, updatedAt = now))
+
+        // Going back to the sixth picks the sixth up where it was left, not where the seventh is.
+        viewModel.start(animeId = 100, episode = 6)
+        advanceUntilIdle()
+
+        assertEquals(300_000L, controller.played.single().startPositionMs)
+        assertEquals(2_400_000L, episodes.observe(100).first().single { it.episode == 7 }.positionMs)
+    }
+
+    @Test
+    fun `an episode the per-episode table has never heard of starts from the beginning`() =
+        runTest(main.dispatcher) {
+            episodes.seed(EpisodeProgress(100, 7, 2_400_000, 2_880_000, now))
+
+            viewModel.start(animeId = 100, episode = 5)
+            advanceUntilIdle()
+
+            assertEquals(0L, controller.played.single().startPositionMs)
+        }
+
+    @Test
+    fun `an episode holding nothing but a mis-tap starts from the beginning`() = runTest(main.dispatcher) {
+        // The same ten seconds the watch button refuses to offer: asked for on purpose, the
+        // episode starts where the viewer expects it to, not ten seconds in.
+        episodes.seed(EpisodeProgress(100, 6, 10_000, 1_440_000, now))
+
+        viewModel.start(animeId = 100, episode = 6)
+        advanceUntilIdle()
+
+        assertEquals(0L, controller.played.single().startPositionMs)
+    }
+
+    @Test
+    fun `choosing an episode from the remote resumes that episode's own position`() = runTest(main.dispatcher) {
+        episodes.seed(EpisodeProgress(100, 9, 700_000, 1_440_000, now))
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+
+        viewModel.playEpisode(9)
+        advanceUntilIdle()
+
+        assertEquals(700_000L, controller.played.last().startPositionMs)
+    }
+
+    @Test
+    fun `the remote control draws a strip on every episode left part-watched`() = runTest(main.dispatcher) {
+        episodes.seed(EpisodeProgress(100, 5, 720_000, 1_440_000, now))
+        episodes.seed(EpisodeProgress(100, 7, 360_000, 1_440_000, now))
+
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+
+        val cells = viewModel.uiState.value.episodes
+        assertEquals(0.5f, cells.single { it.number == 5 }.progress!!, 0.001f)
+        assertEquals(0.25f, cells.single { it.number == 7 }.progress!!, 0.001f)
+        assertNull(cells.single { it.number == 6 }.progress)
+    }
+
+    // --- coming back to a player that moved on --------------------------------------------------
+
+    /** Autoplay moved the session on while the screen was away; the intent still names episode 4. */
+    private fun playingOn(episode: Int, positionMs: Long = 300_000, animeId: Int = 100) {
+        controller.playback.value = PlaybackState(
+            target = PlaybackTarget(animeId, episode, startPositionMs = 0, translation = null),
+            stream = stream(episode = episode),
+            quality = Quality.P720,
+            isPlaying = true,
+            positionMs = positionMs,
+            durationMs = 1_440_000,
+            airedEpisodes = 12,
+        )
+    }
+
+    @Test
+    fun `coming back finds the episode the session reached, not the one it was opened with`() =
+        runTest(main.dispatcher) {
+            viewModel.start(100, 4)
+            advanceUntilIdle()
+            val started = controller.played.size
+            playingOn(episode = 7, positionMs = 300_000)
+
+            viewModel.start(100, 4, explicit = false)
+            advanceUntilIdle()
+
+            assertEquals(started, controller.played.size)
+            assertEquals(7, viewModel.uiState.value.episode)
+            assertEquals(300_000L, viewModel.uiState.value.positionMs)
+        }
+
+    @Test
+    fun `coming back attaches the screen so a receiver knows it is being watched again`() =
+        runTest(main.dispatcher) {
+            viewModel.start(100, 4)
+            advanceUntilIdle()
+            playingOn(episode = 7)
+            val attached = controller.attaches
+
+            viewModel.start(100, 4, explicit = false)
+            advanceUntilIdle()
+
+            assertEquals(attached + 1, controller.attaches)
+        }
+
+    @Test
+    fun `a failed session is come back to, not replaced by the episode the intent names`() =
+        runTest(main.dispatcher) {
+            viewModel.start(100, 4)
+            advanceUntilIdle()
+            playingOn(episode = 7)
+            controller.playback.update { it.copy(isPlaying = false, error = NetworkUnavailable(IOException("offline"))) }
+            val started = controller.played.size
+
+            viewModel.start(100, 4, explicit = false)
+            advanceUntilIdle()
+
+            assertEquals(started, controller.played.size)
+            assertEquals(7, viewModel.uiState.value.episode)
+            assertEquals("Нет соединения. Проверьте интернет", viewModel.uiState.value.errorMessage)
+        }
+
+    @Test
+    fun `coming back to a player with nothing in it starts what the intent names`() =
+        runTest(main.dispatcher) {
+            viewModel.start(100, 4, explicit = false)
+            advanceUntilIdle()
+
+            assertEquals(4, controller.played.single().episode)
+        }
+
+    @Test
+    fun `a player killed and relaunched comes back to the episode this anime remembers`() =
+        runTest(main.dispatcher) {
+            // Nothing is loaded — the process died — and the intent still names the episode the
+            // viewer opened hours and three episodes ago.
+            watchStates.seed(WatchState(100, 7, 300_000, 1_440_000, translationId = 11, kodikSeason = 1, updatedAt = now))
+
+            viewModel.start(100, 4, explicit = false)
+            advanceUntilIdle()
+
+            assertEquals(PlaybackTarget(100, 7, 300_000, null), controller.played.single())
+        }
+
+    @Test
+    fun `with nothing remembered the intent is all there is to go on`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4, explicit = false)
+        advanceUntilIdle()
+
+        assertEquals(PlaybackTarget(100, 4, 0, null), controller.played.single())
+    }
+
+    @Test
+    fun `an episode chosen by hand outranks what the row remembers`() = runTest(main.dispatcher) {
+        watchStates.seed(WatchState(100, 7, 300_000, 1_440_000, translationId = 11, kodikSeason = 1, updatedAt = now))
+
+        viewModel.start(100, 4, explicit = true)
+        advanceUntilIdle()
+
+        assertEquals(4, controller.played.single().episode)
+    }
+
+    @Test
+    fun `a screen opened with no episode named adopts the session that is playing`() =
+        runTest(main.dispatcher) {
+            playingOn(episode = 7, positionMs = 420_000)
+            val attached = controller.attaches
+
+            assertTrue("the session should have been adopted", viewModel.attachLive())
+            advanceUntilIdle()
+
+            assertTrue(controller.played.isEmpty())
+            assertEquals(attached + 1, controller.attaches)
+            // The catalogue fields the remote control draws from need the anime id, which the
+            // notification's intent does not carry.
+            assertEquals("Фрирен", viewModel.uiState.value.title)
+            assertEquals(7, viewModel.uiState.value.episode)
+            assertEquals(420_000L, viewModel.uiState.value.positionMs)
+        }
+
+    @Test
+    fun `a screen opened with no episode named and nothing playing says there is nothing to show`() =
+        runTest(main.dispatcher) {
+            // The activity closes on this answer: a remote control with no session behind it is a
+            // dead screen, and going back to the app is the only useful thing left.
+            assertFalse("there is no session to adopt", viewModel.attachLive())
+            advanceUntilIdle()
+
+            assertTrue(controller.played.isEmpty())
+            assertEquals("", viewModel.uiState.value.title)
+            assertEquals(0, controller.attaches)
+        }
+
+    @Test
+    fun `a session for another anime does not capture the screen coming back`() = runTest(main.dispatcher) {
+        playingOn(episode = 7, animeId = 200)
+
+        viewModel.start(100, 4, explicit = false)
+        advanceUntilIdle()
+
+        assertEquals(PlaybackTarget(100, 4, 0, null), controller.played.single())
+    }
+
+    @Test
+    fun `asking for another episode by hand plays it, whatever the session reached`() =
+        runTest(main.dispatcher) {
+            viewModel.start(100, 4)
+            advanceUntilIdle()
+            playingOn(episode = 7)
+
+            viewModel.start(100, 9, explicit = true)
+            advanceUntilIdle()
+
+            assertEquals(9, controller.played.last().episode)
+        }
+
+    @Test
+    fun `asking by hand for the episode already playing changes nothing`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+        playingOn(episode = 7)
+        val started = controller.played.size
+
+        viewModel.start(100, 7, explicit = true)
+        advanceUntilIdle()
+
+        assertEquals(started, controller.played.size)
+        assertEquals(7, viewModel.uiState.value.episode)
     }
 
     @Test
@@ -208,8 +448,24 @@ class PlayerViewModelTest {
         advanceUntilIdle()
 
         assertEquals(PlayerSheet.TRANSLATIONS, viewModel.uiState.value.sheet)
-        assertEquals(listOf(anilibria, studioBanda), viewModel.uiState.value.translations)
+        assertEquals(listOf(anilibria, studioBanda), viewModel.uiState.value.translations.map { it.translation })
         assertFalse(viewModel.uiState.value.loadingTranslations)
+    }
+
+    @Test
+    fun `the sheet marks a track this viewer keeps choosing elsewhere`() = runTest(main.dispatcher) {
+        // Nothing on the viewer's own list, so their watching history is what orders the sheet.
+        prefs.preferredTranslations.value = emptyList()
+        watchStates.seed(WatchState(1, 1, 0, 0, translationId = studioBanda.id, kodikSeason = 1, updatedAt = now))
+        watchStates.seed(WatchState(2, 1, 0, 0, translationId = studioBanda.id, kodikSeason = 1, updatedAt = now))
+        viewModel.start(100, 1)
+        advanceUntilIdle()
+
+        viewModel.openTranslations()
+        advanceUntilIdle()
+
+        assertEquals(listOf(studioBanda, anilibria), viewModel.uiState.value.translations.map { it.translation })
+        assertEquals(listOf(true, false), viewModel.uiState.value.translations.map { it.oftenChosen })
     }
 
     @Test
@@ -319,7 +575,7 @@ class PlayerViewModelTest {
     fun `the countdown and the next episode offer come straight from the player`() = runTest(main.dispatcher) {
         viewModel.start(100, 4)
         advanceUntilIdle()
-        controller.playback.update { it.copy(nextEpisodeAvailable = true, autoplayCountdownSec = 7) }
+        controller.playback.update { it.copy(airedEpisodes = 12, autoplayCountdownSec = 7) }
         advanceUntilIdle()
 
         assertEquals(7, viewModel.uiState.value.autoplayCountdownSec)
@@ -331,6 +587,191 @@ class PlayerViewModelTest {
 
         assertEquals(1, controller.cancels)
         assertEquals(1, controller.nexts)
+    }
+
+    @Test
+    fun `the remote lists the season with what is behind the viewer marked`() = runTest(main.dispatcher) {
+        watchStates.seed(WatchState(100, 4, 720_000, 1_440_000, translationId = 11, kodikSeason = 1, updatedAt = now))
+
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+
+        val episodes = viewModel.uiState.value.episodes
+        assertEquals(12, episodes.size)
+        // Three episodes counted on Shikimori, the fourth half watched on this phone.
+        assertEquals(listOf(1, 2, 3), episodes.filter { it.watched }.map { it.number })
+        assertEquals(0.5f, episodes.first { it.number == 4 }.progress!!, 1e-3f)
+        assertTrue(episodes.all { it.aired })
+    }
+
+    @Test
+    fun `the remote does not list an episode that has not aired as playable`() = runTest(main.dispatcher) {
+        library.put(
+            LibraryEntry(
+                anime.copy(status = AnimeStatus.ONGOING, episodes = 12, episodesAired = 5),
+                UserRate(1, 100, ListStatus.WATCHING, 3, now),
+                null,
+            ),
+        )
+
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+
+        val episodes = viewModel.uiState.value.episodes
+        assertEquals(12, episodes.size)
+        assertEquals((1..5).toList(), episodes.filter { it.aired }.map { it.number })
+    }
+
+    @Test
+    fun `choosing an episode from the remote plays it in the track that is playing`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+        controller.playback.update { it.copy(stream = stream(episode = 4, track = studioBanda)) }
+
+        viewModel.playEpisode(9)
+        advanceUntilIdle()
+
+        val asked = controller.played.last()
+        assertEquals(9, asked.episode)
+        assertEquals(studioBanda, asked.translation)
+        assertEquals(0L, asked.startPositionMs)
+    }
+
+    @Test
+    fun `choosing the episode that is already playing changes nothing`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+        val before = controller.played.size
+
+        viewModel.playEpisode(4)
+        advanceUntilIdle()
+
+        assertEquals(before, controller.played.size)
+    }
+
+    @Test
+    fun `an episode with aired episodes after it offers the next one`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+        controller.playback.update { it.copy(airedEpisodes = 12) }
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.nextEpisodeAvailable)
+    }
+
+    @Test
+    fun `the last aired episode offers no next one`() = runTest(main.dispatcher) {
+        viewModel.start(100, 12)
+        advanceUntilIdle()
+        controller.playback.update { it.copy(airedEpisodes = 12) }
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.nextEpisodeAvailable)
+    }
+
+    @Test
+    fun `an episode running out is announced whether or not another one follows`() = runTest(main.dispatcher) {
+        viewModel.start(100, 12)
+        advanceUntilIdle()
+        controller.playback.update { it.copy(airedEpisodes = 12, nextEpisodeDue = true) }
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.episodeEnding)
+        assertFalse(viewModel.uiState.value.nextEpisodeAvailable)
+    }
+
+    @Test
+    fun `a finished show has no more episodes coming`() = runTest(main.dispatcher) {
+        viewModel.start(100, 12)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.moreEpisodesComing)
+    }
+
+    @Test
+    fun `an ongoing show has`() = runTest(main.dispatcher) {
+        library.put(
+            LibraryEntry(
+                anime.copy(status = AnimeStatus.ONGOING, episodesAired = 7),
+                UserRate(1, 100, ListStatus.WATCHING, 3, now),
+                null,
+            ),
+        )
+
+        viewModel.start(100, 7)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.moreEpisodesComing)
+    }
+
+    @Test
+    fun `the screen knows when the next episode is due to air`() = runTest(main.dispatcher) {
+        val airing = Instant.parse("2026-09-20T10:00:00Z")
+        library.put(
+            LibraryEntry(
+                anime.copy(status = AnimeStatus.ONGOING, episodesAired = 7, nextEpisodeAt = airing),
+                UserRate(1, 100, ListStatus.WATCHING, 3, now),
+                null,
+            ),
+        )
+
+        viewModel.start(100, 7)
+        advanceUntilIdle()
+
+        assertEquals(airing, viewModel.uiState.value.nextEpisodeAt)
+        assertEquals(7, viewModel.uiState.value.availableEpisodes)
+    }
+
+    @Test
+    fun `a quality picked with nothing remembering it is for this episode only`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+
+        viewModel.pickQuality(Quality.P480)
+        advanceUntilIdle()
+
+        assertEquals(Quality.P480, controller.qualities.single())
+        assertNull(prefs.defaultQuality.value)
+        assertFalse(viewModel.uiState.value.rememberQuality)
+    }
+
+    @Test
+    fun `asking for the quality to be remembered writes the one that is playing`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+        controller.playback.update { it.copy(quality = Quality.P720) }
+        advanceUntilIdle()
+
+        viewModel.setRememberQuality(true)
+        advanceUntilIdle()
+
+        assertEquals(Quality.P720, prefs.defaultQuality.value)
+        assertTrue(viewModel.uiState.value.rememberQuality)
+    }
+
+    @Test
+    fun `while it is remembered every pick replaces it`() = runTest(main.dispatcher) {
+        prefs.defaultQuality.value = Quality.P720
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+
+        viewModel.pickQuality(Quality.P480)
+        advanceUntilIdle()
+
+        assertEquals(Quality.P480, prefs.defaultQuality.value)
+    }
+
+    @Test
+    fun `no longer remembering it puts the source back in charge`() = runTest(main.dispatcher) {
+        prefs.defaultQuality.value = Quality.P480
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+
+        viewModel.setRememberQuality(false)
+        advanceUntilIdle()
+
+        assertNull(prefs.defaultQuality.value)
+        assertFalse(viewModel.uiState.value.rememberQuality)
     }
 
     @Test

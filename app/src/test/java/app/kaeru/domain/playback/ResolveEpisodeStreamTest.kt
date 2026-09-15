@@ -47,6 +47,7 @@ class ResolveEpisodeStreamTest {
     private lateinit var store: DataStore<Preferences>
     private lateinit var prefs: AppPreferences
     private lateinit var resolve: ResolveEpisodeStream
+    private val prefetch = StreamPrefetchCache(clock)
 
     private val anilibria = Translation(11, "AniLibria.TV", TranslationKind.VOICE, episodesCount = 12)
     private val studioBanda = Translation(22, "Студийная банда", TranslationKind.VOICE, episodesCount = 24)
@@ -56,7 +57,7 @@ class ResolveEpisodeStreamTest {
     fun setUp() {
         store = PreferenceDataStoreFactory.create(scope = storeScope) { File(tmp.root, "prefs.preferences_pb") }
         prefs = AppPreferences(store)
-        resolve = ResolveEpisodeStream(source, watchStates, prefs, clock)
+        resolve = ResolveEpisodeStream(source, watchStates, prefs, clock, prefetch)
         source.translations = Result.success(listOf(studioBanda, anilibria, subtitles))
     }
 
@@ -120,11 +121,33 @@ class ResolveEpisodeStreamTest {
     }
 
     @Test
-    fun `with nothing remembered the preferred studio wins`() = runTest(dispatcher) {
+    fun `with nothing remembered and nothing watched the built-in studios win`() = runTest(dispatcher) {
         resolve(animeId = 100, episode = 1).getOrThrow()
 
         assertEquals(anilibria.id, source.resolveCalls.single().third?.id)
     }
+
+    @Test
+    fun `an anime nobody has started opens in the track this viewer picks most`() = runTest(dispatcher) {
+        watchStates.seed(row(episode = 1, translationId = studioBanda.id).copy(animeId = 1))
+        watchStates.seed(row(episode = 1, translationId = studioBanda.id).copy(animeId = 2))
+
+        resolve(animeId = 100, episode = 1).getOrThrow()
+
+        assertEquals(studioBanda.id, source.resolveCalls.single().third?.id)
+    }
+
+    @Test
+    fun `the track this anime remembers still beats the one the viewer uses everywhere else`() =
+        runTest(dispatcher) {
+            watchStates.seed(row(episode = 1, translationId = studioBanda.id).copy(animeId = 1))
+            watchStates.seed(row(episode = 1, translationId = studioBanda.id).copy(animeId = 2))
+            watchStates.seed(row(episode = 3, translationId = anilibria.id))
+
+            resolve(animeId = 100, episode = 4).getOrThrow()
+
+            assertEquals(anilibria.id, source.resolveCalls.single().third?.id)
+        }
 
     @Test
     fun `a first play writes a fresh row at the start of the episode`() = runTest(dispatcher) {
@@ -137,7 +160,10 @@ class ResolveEpisodeStreamTest {
         resolve(animeId = 100, episode = 3).getOrThrow()
 
         assertEquals(
-            WatchState(100, 3, positionMs = 0, durationMs = 0, translationId = anilibria.id, kodikSeason = 2, updatedAt = now),
+            WatchState(
+                100, 3, positionMs = 0, durationMs = 0, translationId = anilibria.id, kodikSeason = 2,
+                updatedAt = now, translationTitle = anilibria.title,
+            ),
             watchStates.saved.single(),
         )
     }
@@ -150,7 +176,10 @@ class ResolveEpisodeStreamTest {
         resolve(animeId = 100, episode = 3).getOrThrow()
 
         assertEquals(
-            WatchState(100, 3, 500_000, 1_400_000, anilibria.id, kodikSeason = 1, updatedAt = now.plusSeconds(60)),
+            WatchState(
+                100, 3, 500_000, 1_400_000, anilibria.id, kodikSeason = 1,
+                updatedAt = now.plusSeconds(60), translationTitle = anilibria.title,
+            ),
             watchStates.saved.single(),
         )
     }
@@ -225,9 +254,36 @@ class ResolveEpisodeStreamTest {
 
         val listed = resolve.translations(animeId = 100).getOrThrow()
 
-        assertEquals(listOf(studioBanda.id, anilibria.id, subtitles.id), listed.map { it.id })
-        assertEquals(listOf(2, 2, 2), listed.map { it.season })
+        assertEquals(listOf(studioBanda.id, anilibria.id, subtitles.id), listed.map { it.translation.id })
+        assertEquals(listOf(2, 2, 2), listed.map { it.translation.season })
     }
+
+    @Test
+    fun `the sheet marks the tracks this viewer keeps choosing, ranked by how often`() = runTest(dispatcher) {
+        watchStates.seed(row(episode = 1, translationId = studioBanda.id).copy(animeId = 1))
+        watchStates.seed(row(episode = 1, translationId = studioBanda.id).copy(animeId = 2))
+        watchStates.seed(row(episode = 1, translationId = subtitles.id).copy(animeId = 3))
+
+        val listed = resolve.translations(animeId = 100).getOrThrow()
+
+        // Watched once, subtitles still outrank a studio from the built-in list nobody has played;
+        // once is not a habit, so only the track two anime carry is marked.
+        assertEquals(listOf(studioBanda.id, subtitles.id, anilibria.id), listed.map { it.translation.id })
+        assertEquals(listOf(true, false, false), listed.map { it.oftenChosen })
+    }
+
+    @Test
+    fun `an anime with a track of its own marks nothing, since that track is already marked chosen`() =
+        runTest(dispatcher) {
+            watchStates.seed(row(episode = 1, translationId = studioBanda.id).copy(animeId = 1))
+            watchStates.seed(row(episode = 1, translationId = studioBanda.id).copy(animeId = 2))
+            watchStates.seed(row(episode = 3, translationId = anilibria.id))
+
+            val listed = resolve.translations(animeId = 100).getOrThrow()
+
+            assertEquals(listOf(anilibria.id, studioBanda.id, subtitles.id), listed.map { it.translation.id })
+            assertEquals(listOf(false, false, false), listed.map { it.oftenChosen })
+        }
 
     @Test
     fun `a catalogue failure reaches the selection sheet unchanged`() = runTest(dispatcher) {
@@ -235,5 +291,78 @@ class ResolveEpisodeStreamTest {
         source.translations = Result.failure(failure)
 
         assertSame(failure, resolve.translations(animeId = 100).exceptionOrNull())
+    }
+
+    // --- the prefetched stream ---------------------------------------------------------------
+
+    @Test
+    fun `an episode already resolved for the home screen is not resolved again`() = runTest(dispatcher) {
+        watchStates.seed(row(episode = 4, translationId = anilibria.id))
+        val prepared = EpisodeStream(100, 4, anilibria, mapOf(Quality.P720 to "https://cdn/prepared"), now)
+        prefetch.put(prepared)
+
+        val stream = resolve(animeId = 100, episode = 4).getOrThrow()
+
+        assertSame(prepared, stream)
+        assertTrue(source.resolveCalls.isEmpty())
+        assertTrue(source.translationCalls.isEmpty())
+    }
+
+    @Test
+    fun `a prefetched stream in a voice the viewer has since changed is ignored`() = runTest(dispatcher) {
+        watchStates.seed(row(episode = 4, translationId = studioBanda.id))
+        prefetch.put(EpisodeStream(100, 4, anilibria, mapOf(Quality.P720 to "https://cdn/prepared"), now))
+
+        val stream = resolve(animeId = 100, episode = 4).getOrThrow()
+
+        assertEquals(studioBanda.id, stream.translation.id)
+        assertEquals(1, source.resolveCalls.size)
+    }
+
+    @Test
+    fun `a prefetched stream still becomes this anime's memory when it is played`() = runTest(dispatcher) {
+        watchStates.seed(row(episode = 3, positionMs = 90_000, durationMs = 1_440_000, translationId = anilibria.id))
+        prefetch.put(EpisodeStream(100, 4, anilibria, mapOf(Quality.P720 to "https://cdn/prepared"), now))
+
+        resolve(animeId = 100, episode = 4).getOrThrow()
+
+        val saved = watchStates.saved.last()
+        assertEquals(4, saved.episode)
+        assertEquals(anilibria.id, saved.translationId)
+    }
+
+    @Test
+    fun `a resolve that is only preparing leaves the memory alone`() = runTest(dispatcher) {
+        watchStates.seed(row(episode = 3, positionMs = 90_000, durationMs = 1_440_000, translationId = anilibria.id))
+        val before = watchStates.saved.size
+
+        resolve(animeId = 100, episode = 4, persist = false).getOrThrow()
+
+        assertEquals(before, watchStates.saved.size)
+    }
+
+    @Test
+    fun `a movie the source lists no tracks for still shows the one that is playing`() = runTest(dispatcher) {
+        source.translations = Result.success(emptyList())
+
+        val listed = resolve.translations(animeId = 100, playing = anilibria).getOrThrow()
+
+        assertEquals(listOf(anilibria), listed.map { it.translation })
+        assertEquals(listOf(false), listed.map { it.oftenChosen })
+    }
+
+    @Test
+    fun `nothing listed and nothing playing is still an empty list, not an invented track`() =
+        runTest(dispatcher) {
+            source.translations = Result.success(emptyList())
+
+            assertEquals(emptyList<RankedTranslation>(), resolve.translations(animeId = 100).getOrThrow())
+        }
+
+    @Test
+    fun `a track the source does list is not replaced by the one that is playing`() = runTest(dispatcher) {
+        val listed = resolve.translations(animeId = 100, playing = subtitles).getOrThrow()
+
+        assertEquals(3, listed.size)
     }
 }

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Where CastButton parks the background MediaRouteButton was built with — its borderless
+      ripple — while a dark disc stands in for it over artwork. A keyed tag rather than the
+      view's single untyped tag, which belongs to whoever the widget's own code hands it to.
+    -->
+    <item name="kaeru_cast_default_background" type="id" />
+</resources>

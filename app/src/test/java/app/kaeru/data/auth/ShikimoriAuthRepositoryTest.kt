@@ -1,6 +1,9 @@
 package app.kaeru.data.auth
 
 import app.cash.turbine.test
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -16,8 +19,11 @@ import okhttp3.OkHttpClient
 import app.kaeru.data.shikimori.ShikimoriOAuthApi
 import app.kaeru.data.shikimori.shikimoriJson
 import app.kaeru.domain.error.AuthCallbackRejected
+import app.kaeru.domain.model.Account
 import app.kaeru.domain.repository.MOBILE_REDIRECT
 import app.kaeru.domain.repository.OOB_REDIRECT
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
@@ -36,6 +42,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
+import java.io.IOException
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -68,7 +75,7 @@ class ShikimoriAuthRepositoryTest {
             .client(OkHttpClient.Builder().addInterceptor(AuthInterceptor(store)).build())
             .addConverterFactory(shikimoriJson().asConverterFactory("application/json".toMediaType()))
             .build().create(ShikimoriApi::class.java)
-        repo = ShikimoriAuthRepository(oauth, api, session, "cid", "sec", clock)
+        repo = ShikimoriAuthRepository(oauth, api, session, prefs, "cid", "sec", clock)
     }
 
     @After
@@ -160,7 +167,7 @@ class ShikimoriAuthRepositoryTest {
 
     @Test
     fun `authorize url encodes reserved characters in client id and redirect`() {
-        val custom = ShikimoriAuthRepository(oauth, api, session, "id&scope=other+value", "sec", clock)
+        val custom = ShikimoriAuthRepository(oauth, api, session, prefs, "id&scope=other+value", "sec", clock)
         val url = custom.authorizeUrl("kaeru://oauth?value=a&other=b+c").toHttpUrl()
         assertEquals("id&scope=other+value", url.queryParameter("client_id"))
         assertEquals("kaeru://oauth?value=a&other=b+c", url.queryParameter("redirect_uri"))
@@ -191,9 +198,62 @@ class ShikimoriAuthRepositoryTest {
     }
 
     @Test
+    fun `signing in remembers the nickname and avatar the settings screen shows`() = runTest {
+        enqueueTokens("""{"id":42,"nickname":"frog","avatar":"https://shikimori.io/frog.png"}""")
+
+        assertTrue(repo.exchangeCode("abc", MOBILE_REDIRECT).isSuccess)
+
+        // The same `whoami` that verifies the identity also names it: asking twice for one sign-in
+        // would be a second round trip for an answer already in hand.
+        assertEquals(Account(42, "frog", "https://shikimori.io/frog.png"), prefs.account.first())
+    }
+
+    @Test
+    fun `a nickname that cannot be written down does not fail a sign-in that already happened`() =
+        runTest {
+            // The token store and the preference store are two different files, so the second can
+            // fail on its own. By the time it is written the sign-in has committed.
+            val unwritable = AppPreferences(object : DataStore<Preferences> {
+                override val data = flowOf(emptyPreferences())
+                override suspend fun updateData(transform: suspend (Preferences) -> Preferences) =
+                    throw IOException("no space left on device")
+            })
+            val repo = ShikimoriAuthRepository(oauth, api, session, unwritable, "cid", "sec", clock)
+            enqueueTokens()
+
+            assertTrue(repo.exchangeCode("abc", MOBILE_REDIRECT).isSuccess)
+
+            assertTrue(repo.isLoggedIn.first())
+            // The name is simply missing until the settings screen asks `whoami` again.
+            assertNull(prefs.account.first())
+        }
+
+    @Test
+    fun `a relative avatar path is stored as a url something can actually load`() = runTest {
+        enqueueTokens("""{"id":42,"nickname":"frog","avatar":"/system/users/x160/42.png"}""")
+
+        assertTrue(repo.exchangeCode("abc", MOBILE_REDIRECT).isSuccess)
+
+        assertEquals(
+            Account(42, "frog", "https://shikimori.io/system/users/x160/42.png"),
+            prefs.account.first(),
+        )
+    }
+
+    @Test
+    fun `signing out forgets the nickname along with the rest of the account`() = runTest {
+        enqueueTokens("""{"id":42,"nickname":"frog","avatar":"https://shikimori.io/frog.png"}""")
+        assertTrue(repo.exchangeCode("abc", MOBILE_REDIRECT).isSuccess)
+
+        repo.logout()
+
+        assertNull(prefs.account.first())
+    }
+
+    @Test
     fun `exchange code form encodes secrets codes and OOB redirect`() = runTest {
         enqueueTokens()
-        val custom = ShikimoriAuthRepository(oauth, api, session, "c+id", "s&ec", clock)
+        val custom = ShikimoriAuthRepository(oauth, api, session, prefs, "c+id", "s&ec", clock)
         assertTrue(custom.exchangeCode("a+b&c", OOB_REDIRECT).isSuccess)
         assertEquals("grant_type=authorization_code&client_id=c%2Bid&client_secret=s%26ec&code=a%2Bb%26c&redirect_uri=urn%3Aietf%3Awg%3Aoauth%3A2.0%3Aoob", server.takeRequest().body.readUtf8())
     }
@@ -223,6 +283,75 @@ class ShikimoriAuthRepositoryTest {
         assertNull(store.get())
     }
 
+    @Test
+    fun `a code paired from a phone is exchanged with the redirect that phone used`() = runTest {
+        enqueueTokens()
+        assertTrue(repo.exchangePairedCode("  paired-code  ", MOBILE_REDIRECT).isSuccess)
+        assertEquals(
+            "grant_type=authorization_code&client_id=cid&client_secret=sec&code=paired-code&redirect_uri=kaeru%3A%2F%2Foauth",
+            server.takeRequest().body.readUtf8(),
+        )
+        assertEquals(42L, store.get()?.userId)
+    }
+
+    @Test
+    fun `a paired code needs no state because the nonce on the television was the confirmation`() = runTest {
+        enqueueTokens()
+        assertTrue(repo.exchangePairedCode("paired-code", MOBILE_REDIRECT).isSuccess)
+    }
+
+    @Test
+    fun `a pairing cannot redirect the token request anywhere this app does not own`() = runTest {
+        assertRejected(repo.exchangePairedCode("code", "https://attacker.example/collect"))
+        assertRejected(repo.exchangePairedCode("code", ""))
+        assertEquals(0, server.requestCount)
+        assertNull(store.get())
+    }
+
+    @Test
+    fun `a pairing carrying no code never reaches the oauth api`() = runTest {
+        assertRejected(repo.exchangePairedCode("   ", MOBILE_REDIRECT))
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun `a pairing cannot switch the account a television is already signed into`() = runTest {
+        enqueueTokens()
+        assertTrue(repo.exchangePairedCode("first", MOBILE_REDIRECT).isSuccess)
+        val before = store.get()
+        assertRejected(repo.exchangePairedCode("second", MOBILE_REDIRECT))
+        assertEquals(before, store.get())
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `an authorization built for a pairing arms nothing on this phone`() = runTest {
+        val pairing = repo.pairingAuthorization()
+        val url = pairing.url.toHttpUrl()
+        assertEquals(MOBILE_REDIRECT, url.queryParameter("redirect_uri"))
+        assertEquals(pairing.state, url.queryParameter("state"))
+        assertTrue(pairing.state.length >= 32)
+
+        // The code this URL produces is going to a television, so nothing here waits for a
+        // callback: one echoing that state is as unsolicited as any other.
+        assertRejected(repo.exchangeRedirectCode("attacker", pairing.state))
+        assertEquals(0, server.requestCount)
+        assertNull(store.get())
+    }
+
+    @Test
+    fun `every pairing authorization carries a state of its own`() {
+        assertNotEquals(repo.pairingAuthorization().state, repo.pairingAuthorization().state)
+    }
+
+    @Test
+    fun `a pairing authorization does not disturb a sign-in already in flight`() = runTest {
+        enqueueTokens()
+        val armed = pendingState()
+        repo.pairingAuthorization()
+        assertTrue(repo.exchangeRedirectCode("abc", armed).isSuccess)
+    }
+
     private fun pendingState(): String =
         requireNotNull(repo.authorizeUrl(MOBILE_REDIRECT).toHttpUrl().queryParameter("state"))
 
@@ -230,8 +359,8 @@ class ShikimoriAuthRepositoryTest {
         assertTrue(result.exceptionOrNull() is AuthCallbackRejected)
     }
 
-    private fun enqueueTokens() {
+    private fun enqueueTokens(whoami: String = """{"id":42,"nickname":"frog"}""") {
         server.enqueue(MockResponse().setBody("""{"access_token":"acc","token_type":"Bearer","expires_in":86400,"refresh_token":"ref","scope":"user_rates","created_at":1757600000}"""))
-        server.enqueue(MockResponse().setBody("""{"id":42,"nickname":"frog"}"""))
+        server.enqueue(MockResponse().setBody(whoami))
     }
 }

@@ -17,8 +17,16 @@ data class PlaybackState(
     val isPlaying: Boolean = false,
     val isBuffering: Boolean = false,
     val positionMs: Long = 0,
+    /** How far ahead of [positionMs] the media is already downloaded. */
+    val bufferedPositionMs: Long = 0,
     val durationMs: Long = 0,
-    val nextEpisodeAvailable: Boolean = false,
+    /** The episode is close enough to its end that what comes after it is worth saying. */
+    val nextEpisodeDue: Boolean = false,
+    /**
+     * How many episodes of this anime have actually aired, read once when the episode opened.
+     * Zero while nothing is playing, and for an anime this device has never cached.
+     */
+    val airedEpisodes: Int = 0,
     val autoplayCountdownSec: Int? = null,
     val error: Throwable? = null,
     /**
@@ -28,6 +36,14 @@ data class PlaybackState(
     val isCasting: Boolean = false,
 ) {
     val episode: Int? get() = target?.episode
+
+    /**
+     * Whether an episode after this one exists to play.
+     *
+     * Aired episodes, not announced ones: a season of twenty-four with seven broadcast has
+     * nothing after the seventh, and offering it ends at «Серия ещё не появилась в Kodik».
+     */
+    val hasNextEpisode: Boolean get() = airedEpisodes > 0 && (target?.episode ?: 0) < airedEpisodes
 }
 
 /** Things that happen once and are answered once, so they cannot live in [PlaybackState]. */

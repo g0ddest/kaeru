@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -17,8 +18,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.BrightnessMedium
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.SkipNext
@@ -28,8 +32,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -44,10 +46,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.kaeru.ui.common.player.formatTime
+import app.kaeru.ui.common.player.CastButton
+import app.kaeru.ui.common.design.KaeruSeekBar
+import app.kaeru.ui.common.design.KaeruTokens
+import app.kaeru.ui.common.design.formatTime
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruElevated
-import app.kaeru.ui.common.theme.KaeruSecondary
 import app.kaeru.player.EpisodeQueue
 import kotlin.math.roundToLong
 
@@ -66,6 +70,7 @@ fun PlayerTopBar(
     onTranslations: () -> Unit,
     onQualities: () -> Unit,
     modifier: Modifier = Modifier,
+    onEnterPictureInPicture: (() -> Unit)? = null,
 ) {
     Row(modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         DiscButton(Icons.AutoMirrored.Filled.ArrowBack, "Назад", onBack)
@@ -77,11 +82,10 @@ fun PlayerTopBar(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            val subtitle = listOfNotNull(
-                episode.takeIf { it > 0 }?.let { "$it серия" },
-                translationTitle,
-            ).joinToString("   ")
-            if (subtitle.isNotEmpty()) {
+            // The episode alone: the dub is the chip at the other end of this same row, and a
+            // row that names it twice reads as two different facts about the same thing.
+            val subtitle = episode.takeIf { it > 0 }?.let { "$it серия" }
+            if (subtitle != null) {
                 Text(
                     subtitle,
                     style = MaterialTheme.typography.bodySmall,
@@ -90,6 +94,10 @@ fun PlayerTopBar(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+        onEnterPictureInPicture?.let {
+            DiscButton(Icons.Default.PictureInPictureAlt, "В окно", it)
+            Spacer(Modifier.width(4.dp))
         }
         CastButton(Modifier.padding(end = 4.dp))
         // The chips carry the current choice, so the viewer can read their settings without opening anything.
@@ -122,6 +130,7 @@ fun PlayerCenterControl(isBuffering: Boolean, isPlaying: Boolean, onToggle: () -
 @Composable
 fun PlayerBottomBar(
     positionMs: Long,
+    bufferedPositionMs: Long,
     durationMs: Long,
     showNext: Boolean,
     onSeekTo: (Long) -> Unit,
@@ -131,31 +140,26 @@ fun PlayerBottomBar(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-        // While a finger is on the slider the timeline follows the finger, not the video.
+        // While a finger is on the bar the timeline follows the finger, not the video.
         var scrubbing by remember { mutableStateOf<Float?>(null) }
         val shown = scrubbing?.roundToLong() ?: positionMs
-        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
+        // The same inset the track keeps, so «0:00» stands over the start of the track and the
+        // duration over its end rather than over the thumb's overhang.
+        Row(Modifier.fillMaxWidth().padding(horizontal = KaeruTokens.SeekInset)) {
             Text(formatTime(shown), style = MaterialTheme.typography.labelMedium, color = OnVideo)
             Spacer(Modifier.weight(1f))
             Text(formatTime(durationMs), style = MaterialTheme.typography.labelMedium, color = OnVideoMuted)
         }
-        Slider(
-            value = shown.coerceIn(0, maxOf(durationMs, 0)).toFloat(),
-            onValueChange = { scrubbing = it },
-            onValueChangeFinished = {
+        val durationSafe = maxOf(durationMs, 1L)
+        KaeruSeekBar(
+            progress = shown.coerceIn(0, maxOf(durationMs, 0)).toFloat() / durationSafe.toFloat(),
+            onScrub = { fraction -> scrubbing = fraction.coerceIn(0f, 1f) * durationSafe },
+            onScrubEnd = {
                 scrubbing?.let { onSeekTo(it.roundToLong()) }
                 scrubbing = null
             },
-            valueRange = 0f..maxOf(durationMs, 1L).toFloat(),
             enabled = durationMs > 0,
-            colors = SliderDefaults.colors(
-                thumbColor = KaeruAccent,
-                activeTrackColor = KaeruAccent,
-                inactiveTrackColor = Color.White.copy(alpha = 0.24f),
-                disabledThumbColor = KaeruSecondary,
-                disabledActiveTrackColor = KaeruSecondary,
-                disabledInactiveTrackColor = Color.White.copy(alpha = 0.16f),
-            ),
+            buffered = bufferedPositionMs.coerceIn(0, maxOf(durationMs, 0)).toFloat() / durationSafe.toFloat(),
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             DiscButton(Icons.Default.Replay10, "Назад на 10 секунд") { onSeekBy(-EpisodeQueue.SEEK_STEP_MS) }
@@ -208,12 +212,83 @@ fun NextEpisodeCard(episode: Int, countdownSec: Int, onNow: () -> Unit, onCancel
     }
 }
 
+/**
+ * What a swipe over the video is doing, while it does it.
+ *
+ * A strip rather than a number: the viewer is dragging a level, and a bar that fills answers
+ * «how far up am I» at a glance, where «62 %» has to be read. It stands on the side the finger
+ * is on, because that is the half of the picture the gesture belongs to, and it fades rather
+ * than disappearing so the last value can be checked after the thumb has gone.
+ */
+@Composable
+fun SwipeIndicator(side: PlayerSide, level: Float, modifier: Modifier = Modifier) {
+    val brightness = side == PlayerSide.LEFT
+    Column(
+        modifier
+            .clip(RoundedCornerShape(22.dp))
+            .background(Disc)
+            .padding(horizontal = 12.dp, vertical = 14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(
+            imageVector = if (brightness) Icons.Default.BrightnessMedium else Icons.AutoMirrored.Filled.VolumeUp,
+            contentDescription = if (brightness) "Яркость" else "Громкость",
+            tint = OnVideo,
+            modifier = Modifier.size(20.dp),
+        )
+        Box(
+            Modifier.padding(top = 10.dp).width(INDICATOR_WIDTH).height(INDICATOR_HEIGHT)
+                .clip(RoundedCornerShape(3.dp)).background(Color.White.copy(alpha = 0.24f)),
+            contentAlignment = Alignment.BottomCenter,
+        ) {
+            Box(
+                Modifier.width(INDICATOR_WIDTH)
+                    .height(INDICATOR_HEIGHT * level.coerceIn(0f, 1f))
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(OnVideo),
+            )
+        }
+    }
+}
+
+private val INDICATOR_WIDTH = 6.dp
+private val INDICATOR_HEIGHT = 120.dp
+
+/**
+ * The other end of an episode: nothing follows it yet.
+ *
+ * Same place and same shape as [NextEpisodeCard], because it answers the same question at the
+ * same moment — what happens when this runs out. It simply has no action to offer, so it has no
+ * buttons and no drain, and says when to come back instead.
+ */
+@Composable
+fun LastEpisodeCard(waiting: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier
+            .width(300.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(KaeruElevated.copy(alpha = 0.94f))
+            .padding(16.dp),
+    ) {
+        Text(waiting, style = MaterialTheme.typography.titleMedium, color = OnVideo)
+        Text(
+            "Пока это последняя вышедшая серия",
+            style = MaterialTheme.typography.bodySmall,
+            color = OnVideoMuted,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+    }
+}
+
 @Composable
 private fun Chip(text: String, onClick: () -> Unit) {
     TextButton(
         onClick = onClick,
         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-        modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Disc),
+        modifier = Modifier
+            .defaultMinSize(minHeight = KaeruTokens.MinTouchTarget)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Disc),
     ) {
         Text(text, color = OnVideo, style = MaterialTheme.typography.labelMedium, maxLines = 1)
     }

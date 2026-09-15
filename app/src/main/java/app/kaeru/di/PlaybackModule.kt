@@ -3,13 +3,19 @@ package app.kaeru.di
 import androidx.media3.common.util.UnstableApi
 import app.kaeru.data.kodik.KodikConstants
 import app.kaeru.data.library.AppPreferences
+import app.kaeru.data.playback.RoomEpisodeProgressRepository
+import app.kaeru.data.playback.RoomPlaybackSampleRepository
 import app.kaeru.data.playback.RoomWatchStateRepository
 import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.PlaybackNotificationPrompt
 import app.kaeru.domain.playback.PlaybackPreferences
+import app.kaeru.domain.playback.PrefetchTopCardStream
 import app.kaeru.domain.playback.ResolveEpisodeStream
+import app.kaeru.domain.playback.StreamPrefetchCache
 import app.kaeru.domain.playback.WatchProgress
+import app.kaeru.domain.repository.EpisodeProgressRepository
 import app.kaeru.domain.repository.LibraryRepository
+import app.kaeru.domain.repository.PlaybackSampleRepository
 import app.kaeru.domain.repository.WatchStateRepository
 import app.kaeru.domain.source.EpisodeSourceProvider
 import app.kaeru.player.CastFramework
@@ -63,7 +69,24 @@ object PlaybackModule {
         watchStates: WatchStateRepository,
         prefs: PlaybackPreferences,
         clock: Clock,
-    ): ResolveEpisodeStream = ResolveEpisodeStream(source, watchStates, prefs, clock)
+        prefetch: StreamPrefetchCache,
+    ): ResolveEpisodeStream = ResolveEpisodeStream(source, watchStates, prefs, clock, prefetch)
+
+    /**
+     * One for the process: the home screen fills it and the player empties it, and two instances
+     * would mean the press still waited for a resolve that had already happened.
+     */
+    @Provides
+    @Singleton
+    fun streamPrefetchCache(clock: Clock): StreamPrefetchCache = StreamPrefetchCache(clock)
+
+    @Provides
+    @Singleton
+    fun prefetchTopCardStream(
+        resolve: ResolveEpisodeStream,
+        cache: StreamPrefetchCache,
+        watchStates: WatchStateRepository,
+    ): PrefetchTopCardStream = PrefetchTopCardStream(resolve, cache, watchStates)
 
     /**
      * A single instance on purpose: the coalescing queue that keeps one position write in
@@ -71,8 +94,11 @@ object PlaybackModule {
      */
     @Provides
     @Singleton
-    fun watchProgress(watchStates: WatchStateRepository, clock: Clock): WatchProgress =
-        WatchProgress(watchStates, clock)
+    fun watchProgress(
+        watchStates: WatchStateRepository,
+        samples: PlaybackSampleRepository,
+        clock: Clock,
+    ): WatchProgress = WatchProgress(watchStates, samples, clock)
 
     /**
      * Main-thread-confined on purpose: the controller and Media3 share one player, and Media3
@@ -108,6 +134,14 @@ abstract class PlaybackBindings {
     // out that one instance.
     @Binds
     abstract fun watchStateRepository(impl: RoomWatchStateRepository): WatchStateRepository
+
+    /** The per-episode positions, from the same Room database and under the same account guard. */
+    @Binds
+    abstract fun episodeProgressRepository(impl: RoomEpisodeProgressRepository): EpisodeProgressRepository
+
+    /** Both rows of a progress sample, in one transaction under one turn of the account lock. */
+    @Binds
+    abstract fun playbackSampleRepository(impl: RoomPlaybackSampleRepository): PlaybackSampleRepository
 
     /** The settings reader every layer above `data` sees. */
     @Binds

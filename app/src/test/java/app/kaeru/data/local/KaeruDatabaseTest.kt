@@ -235,6 +235,7 @@ class KaeruDatabaseTest {
             translationId = 17,
             kodikSeason = 2,
             updatedAt = Instant.ofEpochMilli(600_987),
+            translationTitle = "AniLibria.TV",
         )
 
         val entity = domain.toEntity()
@@ -248,10 +249,31 @@ class KaeruDatabaseTest {
                 translationId = 17,
                 kodikSeason = 2,
                 updatedAt = Instant.ofEpochMilli(600_987),
+                translationTitle = "AniLibria.TV",
             ),
             entity,
         )
         assertEquals(domain, entity.toDomain())
+    }
+
+    @Test
+    fun `the dub's name is stored and read back with the position`() = runTest {
+        val dao = db.watchStateDao()
+
+        dao.upsert(
+            WatchState(
+                animeId = 31,
+                episode = 8,
+                positionMs = 12_345,
+                durationMs = 98_765,
+                translationId = 17,
+                kodikSeason = 2,
+                updatedAt = Instant.ofEpochMilli(600_987),
+                translationTitle = "Студийная банда",
+            ).toEntity(),
+        )
+
+        assertEquals("Студийная банда", dao.observeByAnimeId(31).first()?.translationTitle)
     }
 
     @Test

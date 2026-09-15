@@ -1,13 +1,17 @@
 package app.kaeru.data.auth
 
+import app.kaeru.data.library.AppPreferences
 import app.kaeru.data.shikimori.SHIKIMORI_BASE_URL
 import app.kaeru.data.shikimori.ShikimoriOAuthApi
 import app.kaeru.data.shikimori.ShikimoriApi
+import app.kaeru.data.shikimori.UserDto
+import app.kaeru.data.shikimori.absolute
 import app.kaeru.data.shikimori.toDomainFailure
 import app.kaeru.domain.error.AuthCallbackRejected
 import app.kaeru.domain.repository.AuthRepository
 import app.kaeru.domain.repository.MOBILE_REDIRECT
 import app.kaeru.domain.repository.OOB_REDIRECT
+import app.kaeru.domain.repository.PairingAuthorization
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -27,6 +31,7 @@ class ShikimoriAuthRepository @Inject constructor(
     private val oauthApi: ShikimoriOAuthApi,
     private val api: ShikimoriApi,
     private val session: AccountSession,
+    private val prefs: AppPreferences,
     @param:Named("shikimoriClientId") private val clientId: String,
     @param:Named("shikimoriClientSecret") private val clientSecret: String,
     private val clock: Clock,
@@ -43,9 +48,23 @@ class ShikimoriAuthRepository @Inject constructor(
     override val isLoggedIn: Flow<Boolean> = session.userId.map { it != null }.distinctUntilChanged()
 
     override fun authorizeUrl(redirectUri: String): String {
-        val state = Base64.getUrlEncoder().withoutPadding()
-            .encodeToString(ByteArray(32).also(random::nextBytes))
+        val state = newState()
         pendingState = state
+        return authorizePage(redirectUri, state)
+    }
+
+    /**
+     * The same page, with the `state` handed out rather than remembered: a code fetched here is
+     * for a television, and leaving one armed on this phone would outlive the hand-off by the
+     * life of the process.
+     */
+    override fun pairingAuthorization(): PairingAuthorization =
+        newState().let { state -> PairingAuthorization(authorizePage(MOBILE_REDIRECT, state), state) }
+
+    private fun newState(): String = Base64.getUrlEncoder().withoutPadding()
+        .encodeToString(ByteArray(32).also(random::nextBytes))
+
+    private fun authorizePage(redirectUri: String, state: String): String {
         val redirect = URLEncoder.encode(redirectUri, "UTF-8")
         val client = URLEncoder.encode(clientId, "UTF-8")
         return "${SHIKIMORI_BASE_URL}oauth/authorize?client_id=$client&redirect_uri=$redirect" +
@@ -63,26 +82,82 @@ class ShikimoriAuthRepository @Inject constructor(
         return exchangeCode(code, MOBILE_REDIRECT)
     }
 
+    /**
+     * The television's side of the QR hand-off. The guards mirror [exchangeRedirectCode]'s: an
+     * account already signed in is never swapped out from under itself, and the redirect the phone
+     * reports has to be one of this app's own — a caller on the local network must not be able to
+     * choose where the token request claims it came from.
+     */
+    override suspend fun exchangePairedCode(code: String, redirectUri: String): Result<Unit> {
+        if (isLoggedIn.first()) return rejected("An account is already signed in")
+        if (redirectUri != MOBILE_REDIRECT && redirectUri != OOB_REDIRECT) {
+            return rejected("Pairing named a redirect this app does not use")
+        }
+        val trimmed = code.trim()
+        if (trimmed.isEmpty()) return rejected("Pairing carried no authorization code")
+        return exchangeCode(trimmed, redirectUri)
+    }
+
     override suspend fun exchangeTypedCode(code: String): Result<Unit> =
         exchangeCode(code.trim(), OOB_REDIRECT)
 
-    internal suspend fun exchangeCode(code: String, redirectUri: String): Result<Unit> = try {
-        session.login {
-            val tokens = oauthApi.token(
-                grantType = "authorization_code",
-                clientId = clientId,
-                clientSecret = clientSecret,
-                code = code,
-                redirectUri = redirectUri,
-            )
-            val user = api.whoami("Bearer ${tokens.accessToken}")
-            AuthTokens(tokens.accessToken, tokens.refreshToken, clock.instant().epochSecond + tokens.expiresIn, user.id)
+    /**
+     * The `whoami` that verifies the identity also names it, so the nickname and avatar the
+     * settings screen shows are written down here rather than fetched again on first open.
+     *
+     * The name is written outside the sign-in's own `try`, after the transition has committed. By
+     * that point the tokens and the user id are already in their two stores and the viewer *is*
+     * signed in; a failure writing a nickname must not be reported as a sign-in that did not
+     * happen. See [rememberProfile].
+     */
+    internal suspend fun exchangeCode(code: String, redirectUri: String): Result<Unit> {
+        var profile: UserDto? = null
+        val signedIn = try {
+            session.login {
+                val tokens = oauthApi.token(
+                    grantType = "authorization_code",
+                    clientId = clientId,
+                    clientSecret = clientSecret,
+                    code = code,
+                    redirectUri = redirectUri,
+                )
+                val user = api.whoami("Bearer ${tokens.accessToken}")
+                profile = user
+                AuthTokens(
+                    tokens.accessToken,
+                    tokens.refreshToken,
+                    clock.instant().epochSecond + tokens.expiresIn,
+                    user.id,
+                )
+            }
+            Result.success(Unit)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Result.failure(error.toDomainFailure())
         }
-        Result.success(Unit)
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (error: Exception) {
-        Result.failure(error.toDomainFailure())
+        if (signedIn.isSuccess) rememberProfile(profile)
+        return signedIn
+    }
+
+    /**
+     * Writes the name and the face down, best effort.
+     *
+     * Two things can go wrong here and neither is worth a failed sign-in. The preference store is a
+     * different file from the token store, so it can fail on its own; and a sign-out winning the
+     * race leaves a nickname with no user id beside it, which `AppPreferences.account` reads as
+     * nobody signed in. Either way the name is recoverable — `AccountRepository.refresh()` asks
+     * again when the settings screen opens — and the sign-in itself has already committed.
+     */
+    private suspend fun rememberProfile(profile: UserDto?) {
+        if (profile == null) return
+        try {
+            prefs.setAccountProfile(profile.nickname, absolute(profile.avatar))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Deliberately swallowed: see above. The next `whoami` fills the gap.
+        }
     }
 
     override suspend fun logout() = session.logout()

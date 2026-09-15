@@ -13,3 +13,8 @@
 /tools/.venv/
 /tools/__pycache__/
 *.pyc
+
+# Signing material never enters the repository
+*.jks
+*.keystore
+release.properties

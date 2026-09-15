@@ -1,7 +1,9 @@
 package app.kaeru.di
 
+import app.kaeru.data.library.ShikimoriDiscoverRepository
 import app.kaeru.data.library.ShikimoriLibraryRepository
 import app.kaeru.domain.feed.HomeFeedBuilder
+import app.kaeru.domain.repository.DiscoverRepository
 import app.kaeru.domain.repository.LibraryRepository
 import dagger.Binds
 import dagger.Module
@@ -24,6 +26,11 @@ object DispatchersModule {
     @IoDispatcher
     fun io(): CoroutineDispatcher = Dispatchers.IO
 
+    /**
+     * Stateless on purpose. The viewer's watched threshold is an argument to `build`, not a field
+     * pinned here: a singleton holding one value of a setting that changes is how the hero came to
+     * name one episode and start another.
+     */
     @Provides
     @Singleton
     fun homeFeedBuilder(): HomeFeedBuilder = HomeFeedBuilder()
@@ -34,4 +41,7 @@ object DispatchersModule {
 abstract class RepositoryModule {
     @Binds
     abstract fun libraryRepository(impl: ShikimoriLibraryRepository): LibraryRepository
+
+    @Binds
+    abstract fun discoverRepository(impl: ShikimoriDiscoverRepository): DiscoverRepository
 }

@@ -5,18 +5,25 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.common.Player
 import app.kaeru.di.IoDispatcher
 import app.kaeru.domain.model.Anime
+import app.kaeru.domain.model.AnimeStatus
+import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.PlaybackTarget
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
+import app.kaeru.domain.model.WatchState
 import app.kaeru.domain.playback.PlaybackPreferences
+import app.kaeru.domain.playback.RankedTranslation
 import app.kaeru.domain.playback.ResolveEpisodeStream
+import app.kaeru.domain.repository.EpisodeProgressRepository
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.repository.WatchStateRepository
 import app.kaeru.player.CastSessionBridge
 import app.kaeru.player.EpisodeQueue
 import app.kaeru.player.PlaybackController
 import app.kaeru.player.PlaybackEvent
+import app.kaeru.ui.common.details.EpisodeCell
+import app.kaeru.ui.common.details.episodeCells
 import app.kaeru.ui.common.toUserMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineDispatcher
@@ -52,26 +59,53 @@ class PlayerViewModel @Inject constructor(
     private val resolve: ResolveEpisodeStream,
     private val library: LibraryRepository,
     private val watchStates: WatchStateRepository,
+    private val episodeProgress: EpisodeProgressRepository,
     private val prefs: PlaybackPreferences,
     @param:IoDispatcher private val io: CoroutineDispatcher,
 ) : ViewModel() {
 
     /** What only this screen knows: which sheet is open, and what is waiting to be said. */
     private data class ScreenState(
-        val translations: List<Translation> = emptyList(),
+        val translations: List<RankedTranslation> = emptyList(),
         val loadingTranslations: Boolean = false,
         val sheet: PlayerSheet? = null,
         val completedPrompt: Boolean = false,
         val toast: String? = null,
     )
 
+    /** The anime, and the season as the remote control lists it. Read together, shown together. */
+    private data class Shown(val anime: Anime? = null, val episodes: List<EpisodeCell> = emptyList())
+
     private val animeId = MutableStateFlow<Int?>(null)
     private val screen = MutableStateFlow(ScreenState())
     private var requested: Pair<Int, Int>? = null
     private var startJob: Job? = null
 
-    private val anime: Flow<Anime?> = animeId.flatMapLatest { id ->
-        if (id == null) flowOf(null) else library.observeAnimeDetails(id)
+    /**
+     * Everything about the show itself. The season list is built here rather than on the screen
+     * because it needs four sources — the catalogue, the viewer's count, this device's positions
+     * and the episode it played last — and a screen that gathered them would be the third place in
+     * the app doing it.
+     *
+     * The positions are read from their own repository rather than off [LibraryRepository]'s
+     * entry, because this screen also opens on a title that is in no list at all, where there is
+     * no entry to read them from.
+     */
+    private val shown: Flow<Shown> = animeId.flatMapLatest { id ->
+        if (id == null) {
+            flowOf(Shown())
+        } else {
+            combine(
+                library.observeAnimeDetails(id),
+                library.observeAnime(id),
+                watchStates.observe(id),
+                episodeProgress.observe(id),
+                prefs.watchedThreshold,
+            ) { details, entry, watch, progress, threshold ->
+                val anime = entry?.anime ?: details
+                Shown(anime, anime?.let { episodeCells(it, entry?.rate, watch, progress, threshold) }.orEmpty())
+            }
+        }
     }
 
     /** The player a video surface attaches to, or null while there is none to attach to. */
@@ -79,10 +113,12 @@ class PlayerViewModel @Inject constructor(
 
     val uiState: StateFlow<PlayerUiState> = combine(
         controller.state,
-        anime,
+        shown,
         screen,
         cast.receiverName,
-    ) { playback, anime, screen, receiverName ->
+        prefs.defaultQuality,
+    ) { playback, shown, screen, receiverName, settledQuality ->
+        val anime = shown.anime
         PlayerUiState(
             title = anime?.title.orEmpty(),
             posterUrl = anime?.posterUrl,
@@ -93,13 +129,19 @@ class PlayerViewModel @Inject constructor(
             isPlaying = playback.isPlaying,
             isBuffering = playback.isBuffering,
             positionMs = playback.positionMs,
+            bufferedPositionMs = playback.bufferedPositionMs,
             durationMs = playback.durationMs,
             quality = playback.quality,
             qualities = playback.stream?.urls?.keys.orEmpty().sortedBy { it.height },
+            rememberQuality = settledQuality != null,
             translations = screen.translations,
             loadingTranslations = screen.loadingTranslations,
             sheet = screen.sheet,
-            nextEpisodeAvailable = playback.nextEpisodeAvailable,
+            nextEpisodeAvailable = playback.hasNextEpisode,
+            episodeEnding = playback.nextEpisodeDue,
+            nextEpisodeAt = anime?.nextEpisodeAt,
+            moreEpisodesComing = anime != null && anime.status != AnimeStatus.RELEASED,
+            episodes = shown.episodes,
             autoplayCountdownSec = playback.autoplayCountdownSec,
             errorMessage = playback.error?.toUserMessage(),
             isCasting = playback.isCasting,
@@ -123,25 +165,37 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
-     * Starts [episode] of [animeId], or does nothing if that is already what is playing —
-     * the screen calls this every time it comes forward, and coming back from the background
-     * must not rewind anything.
+     * Starts [episode] of [animeId], or attaches to the session already under way.
      *
-     * A player with nothing loaded is started again even when it is the same episode: a screen
-     * that was released while buried in the back stack would otherwise come back to black. A
-     * start still on its way counts as loaded, so the two calls a screen makes on the way in —
-     * one from the lifecycle, one from composition — are one playback.
+     * The screen calls this every time it comes forward, and what it is allowed to do depends on
+     * why it came forward. [explicit] is true only when the viewer chose an episode — a press on
+     * a watch button, a tap on an episode tile — and false when the same screen is merely coming
+     * back into view: the app minimised and reopened, a relaunch out of recents, an activity
+     * rebuilt from its own saved state.
+     *
+     * That distinction is the whole of this method. The episode a screen was *opened* with goes
+     * stale the moment autoplay moves on, and a screen that came back an hour and three episodes
+     * later used to hand that stale number to the controller — rewinding a viewer on episode
+     * seven to episode six at 0:00, or interrupting a television to do it. So a launch that is
+     * not a choice never overrules what is playing: if anything at all is loaded for this anime,
+     * that is the episode, at the position it is actually at.
+     *
+     * A player with nothing loaded is started even on that path — a screen released while buried
+     * in the back stack would otherwise come back to black, and the intent is then the only thing
+     * that knows what to play. A start still on its way counts as loaded, so the two calls a
+     * screen makes on the way in — one from the lifecycle, one from composition — are one
+     * playback.
      */
-    fun start(animeId: Int, episode: Int) {
+    fun start(animeId: Int, episode: Int, explicit: Boolean = true) {
         // Said every time, including on the path that starts nothing: it is how playback left on
         // a receiver learns that somebody is looking at it again.
         controller.attachScreen()
         val loaded = controller.state.value.target
-        // Already playing this very episode. That includes a receiver that kept going while the
-        // screen was away, where starting again would interrupt a television for nothing — and a
-        // screen recreated without its view model, which used to rewind to the last saved second.
-        if (loaded?.animeId == animeId && loaded.episode == episode) {
-            requested = animeId to episode
+        val live = loaded != null && loaded.animeId == animeId
+        // Attach rather than start: either this is the very episode asked for, or it is not a
+        // choice at all and whatever the session reached outranks the number the intent carries.
+        if (live && (!explicit || loaded.episode == episode)) {
+            requested = animeId to loaded.episode
             this.animeId.value = animeId
             return
         }
@@ -150,19 +204,61 @@ class PlayerViewModel @Inject constructor(
         requested = animeId to episode
         this.animeId.value = animeId
         startJob = viewModelScope.launch {
-            controller.play(PlaybackTarget(animeId, episode, resumeFrom(animeId, episode), translation = null))
+            val saved = watchStates.observe(animeId).first()
+            // Nothing is loaded — the process was killed while the app was away — and the intent
+            // is a photograph of the episode this screen was first opened with. This anime's own
+            // row is not: autoplay writes it as it goes. So on a launch that is not a choice the
+            // row wins, and the intent is only the answer when there is no row at all.
+            val wanted = if (explicit) episode else saved?.episode ?: episode
+            controller.play(PlaybackTarget(animeId, wanted, resumeFrom(saved, animeId, wanted), translation = null))
         }
     }
 
     /**
-     * Where to pick this episode up. A position belongs to the episode it was taken in, and
-     * an episode already watched to its end starts over: resuming on the last frame would
-     * only offer the next episode again.
+     * The screen was opened without an episode: the cast notification names none, because the
+     * Cast framework builds that intent itself.
+     *
+     * Whatever is playing is what the viewer tapped the notification about, so it is adopted
+     * whole — including the anime id, which everything the remote control draws from the
+     * catalogue needs and which the intent does not carry. Nothing is started: a notification
+     * only exists while something is already playing.
+     *
+     * @return whether there was a session to adopt. False leaves the screen with nothing to show
+     *   and nothing to start, which the caller answers by closing it rather than by drawing a
+     *   remote control with no receiver behind it.
      */
-    private suspend fun resumeFrom(animeId: Int, episode: Int): Long {
-        val saved = watchStates.observe(animeId).first()?.takeIf { it.episode == episode } ?: return 0
+    fun attachLive(): Boolean {
+        val live = controller.state.value.target ?: return false
+        controller.attachScreen()
+        requested = live.animeId to live.episode
+        animeId.value = live.animeId
+        return true
+    }
+
+    /**
+     * Where to pick this episode up. Every episode keeps its own position, so going back to an
+     * earlier one lands where that one was left rather than at the beginning — and, just as
+     * importantly, never spends the position of the episode that was playing.
+     *
+     * An episode already watched to its end starts over: resuming on the last frame would only
+     * offer the next episode again.
+     *
+     * A position the watch button would not offer is not one to drop the viewer into either: an
+     * episode holding nothing but a mis-tap starts from the beginning, by the same cutoff the rest
+     * of the feature uses.
+     *
+     * [saved] stands in when the per-episode table has no row for this episode but the anime's
+     * pointer is inside it. The sampler writes the two independently, so either can be the one
+     * that got through; the pointer is only ever believed about the episode it names.
+     */
+    private suspend fun resumeFrom(saved: WatchState?, animeId: Int, episode: Int): Long {
+        val row = episodeProgress.observe(animeId).first().firstOrNull { it.episode == episode }
+            ?: saved?.takeIf { it.episode == episode }
+                ?.let { EpisodeProgress(animeId, episode, it.positionMs, it.durationMs, it.updatedAt) }
+            ?: return 0
+        if (!row.started) return 0
         val threshold = prefs.watchedThreshold.first()
-        return if (EpisodeQueue.watched(saved.positionMs, saved.durationMs, threshold)) 0 else saved.positionMs
+        return if (EpisodeQueue.watched(row.positionMs, row.durationMs, threshold)) 0 else row.positionMs
     }
 
     fun togglePlayPause() = controller.togglePlayPause()
@@ -178,21 +274,56 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch { controller.playNext() }
     }
 
+    /**
+     * The viewer picked an episode from the list on the remote control.
+     *
+     * The track that is playing carries over, exactly as it does when one episode runs into the
+     * next: jumping back to episode two is not a request to reconsider the voice. Picking the
+     * episode already on screen does nothing, rather than restarting a television mid-scene.
+     */
+    fun playEpisode(episode: Int) {
+        val id = animeId.value ?: return
+        if (controller.state.value.target?.episode == episode) return
+        val track = controller.state.value.stream?.translation
+        requested = id to episode
+        startJob = viewModelScope.launch {
+            val saved = watchStates.observe(id).first()
+            controller.play(PlaybackTarget(id, episode, resumeFrom(saved, id, episode), translation = track))
+        }
+    }
+
     fun cancelAutoplay() = controller.cancelAutoplay()
 
     fun retry() {
         viewModelScope.launch { controller.retry() }
     }
 
-    /** Loads the tracks on demand: the sheet is rarely opened and the list costs a request. */
-    fun openTranslations() {
+    /** Loads the tracks on demand and shows them: the sheet costs a request to fill. */
+    fun openTranslations() = fetchTranslations(show = true)
+
+    /**
+     * The same list, with nothing opened over the picture.
+     *
+     * The television has no sheet: the voices are a strip that is already on the panel, and all
+     * it needs is for the list to arrive. Separate from [openTranslations] rather than a flag on
+     * it, because the two screens are asking different things — «show me the voices» and «fill
+     * the row I am already showing».
+     */
+    fun loadTranslations() = fetchTranslations(show = false)
+
+    private fun fetchTranslations(show: Boolean) {
         val id = animeId.value ?: return
+        val playing = controller.state.value.stream?.translation
         screen.update { it.copy(loadingTranslations = true) }
         viewModelScope.launch {
-            withContext(io) { resolve.translations(id) }
+            withContext(io) { resolve.translations(id, playing) }
                 .onSuccess { tracks ->
                     screen.update {
-                        it.copy(translations = tracks, loadingTranslations = false, sheet = PlayerSheet.TRANSLATIONS)
+                        it.copy(
+                            translations = tracks,
+                            loadingTranslations = false,
+                            sheet = if (show) PlayerSheet.TRANSLATIONS else it.sheet,
+                        )
                     }
                 }
                 .onFailure { failure ->
@@ -213,6 +344,22 @@ class PlayerViewModel @Inject constructor(
     fun pickQuality(quality: Quality) {
         closeSheet()
         controller.changeQuality(quality)
+        // While the viewer has settled on a quality, every pick is a change of mind about which
+        // one — not a one-off that leaves the old setting behind to override the next episode.
+        if (uiState.value.rememberQuality) viewModelScope.launch { prefs.setDefaultQuality(quality) }
+    }
+
+    /**
+     * Settles on the quality that is playing, or hands the choice back to the source.
+     *
+     * The switch lives in the quality chooser rather than in settings because that is where the
+     * viewer is when they find out their connection will not carry 1080p. Turning it on takes the
+     * rung they are on now; turning it off leaves this episode alone and lets the next one open
+     * at the best the source offers.
+     */
+    fun setRememberQuality(on: Boolean) {
+        val settled = if (on) controller.state.value.quality else null
+        viewModelScope.launch { prefs.setDefaultQuality(settled) }
     }
 
     fun confirmCompleted() {

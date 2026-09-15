@@ -23,41 +23,96 @@ class ResolveEpisodeStream(
     private val watchStates: WatchStateRepository,
     private val prefs: PlaybackPreferences,
     private val clock: Clock,
+    private val prefetch: StreamPrefetchCache,
 ) {
     /**
      * @param translationOverride a track the viewer picked by hand. It is taken as given —
      *   including its season — and becomes the new memory, so no catalogue call is needed.
+     * @param persist whether what is resolved becomes this anime's memory. False for a resolve
+     *   done ahead of time, on the chance the viewer presses play: preparing an episode must not
+     *   move the row that says where they actually are.
      */
     suspend operator fun invoke(
         animeId: Int,
         episode: Int,
         translationOverride: Translation? = null,
+        persist: Boolean = true,
     ): Result<EpisodeStream> {
-        val remembered = watchStates.observe(animeId).first()
+        val rows = watchStates.observeAll().first()
+        val remembered = rows.rowFor(animeId)
+        // Looked for here rather than in the controller, because only here is it known which
+        // voice is about to be asked for: an anime whose remembered voice has changed since the
+        // links were prepared must not be handed the ones prepared for the old one.
+        prefetch.take(animeId, episode, translationOverride?.id ?: remembered?.translationId)?.let { ready ->
+            if (persist) remember(ready, remembered)
+            return Result.success(ready)
+        }
         val chosen = if (translationOverride != null) {
             translationOverride
         } else {
             val available = source.translations(animeId).getOrElse { return Result.failure(it) }
-            TranslationRanker.pick(available, prefs.preferredTranslations.first(), remembered?.translationId)
-                ?.withSeasonOf(remembered)
+            TranslationRanker.pick(
+                available,
+                prefs.preferredTranslations.first(),
+                remembered?.translationId,
+                TranslationUsage.of(rows),
+            )?.withSeasonOf(remembered)
         }
 
         // A source with nothing listed is still asked: only it can say whether this is an
         // unknown anime, an episode that has not aired, or a page that stopped parsing.
         val stream = source.resolve(animeId, episode, chosen).getOrElse { return Result.failure(it) }
-        remember(stream, remembered)
+        if (persist) remember(stream, remembered)
         return Result.success(stream)
     }
 
-    /** The tracks on offer, ordered the way the selection sheet should show them. */
-    suspend fun translations(animeId: Int): Result<List<Translation>> {
-        val remembered = watchStates.observe(animeId).first()
-        val available = source.translations(animeId).getOrElse { return Result.failure(it) }
+    /**
+     * The tracks on offer, ordered the way the selection sheet should show them, each carrying
+     * whether this viewer keeps choosing it.
+     *
+     * Nothing is marked once this anime remembers a track of its own: the sheet already marks that
+     * one as chosen, and a habit is only worth pointing out where there is no answer yet.
+     *
+     * @param playing the track the player is using right now, if any. A film whose Kodik page
+     *   carries no translations box lists nothing at all, and a chooser that opens on an empty
+     *   list is the app denying what the viewer can plainly hear; the track that is playing is
+     *   the honest answer to «which voice is this», so it stands in for the list it is missing
+     *   from. It is never added to a list the source did answer with.
+     */
+    suspend fun translations(animeId: Int, playing: Translation? = null): Result<List<RankedTranslation>> {
+        val rows = watchStates.observeAll().first()
+        val remembered = rows.rowFor(animeId)
+        val listed = source.translations(animeId).getOrElse { return Result.failure(it) }
+        val available = listed.ifEmpty { listOfNotNull(playing) }
         val seasoned = available.map { it.withSeasonOf(remembered) }
+        val usage = TranslationUsage.of(rows)
+        val rememberedId = remembered?.translationId
+        val sorted = TranslationRanker.sort(seasoned, prefs.preferredTranslations.first(), rememberedId, usage)
         return Result.success(
-            TranslationRanker.sort(seasoned, prefs.preferredTranslations.first(), remembered?.translationId),
+            sorted.map { track ->
+                RankedTranslation(
+                    translation = track,
+                    oftenChosen = rememberedId == null && TranslationUsage.oftenChosen(usage, track.id),
+                )
+            },
         )
     }
+
+    /**
+     * What this anime remembers, out of the one snapshot both questions are answered from.
+     *
+     * Every call here reads the whole table once — a few dozen tiny rows, one per anime ever
+     * started — rather than asking twice: two reads would register two Room observers, and could
+     * answer from either side of a write that landed between them. The map goes to the ranker
+     * built, never looked up inside the comparator, which would run per comparison.
+     *
+     * The anime being ranked votes in its own usage count, deliberately. Its remembered track gets
+     * one vote toward the habit that is about to put it first anyway — rule 1 has already decided,
+     * and the habit chip is suppressed outright whenever a track is remembered — so the vote can
+     * never show up on screen, and leaving it in keeps [TranslationUsage.of] a plain count of the
+     * table rather than a count with an exception in it.
+     */
+    private fun List<WatchState>.rowFor(animeId: Int): WatchState? = firstOrNull { it.animeId == animeId }
 
     /** The season is a property of the anime's mapping onto Kodik, not of one track. */
     private fun Translation.withSeasonOf(remembered: WatchState?): Translation =
@@ -80,6 +135,7 @@ class ResolveEpisodeStream(
                     positionMs = if (sameEpisode) previous.positionMs else 0,
                     durationMs = if (sameEpisode) previous.durationMs else 0,
                     translationId = stream.translation.id,
+                    translationTitle = stream.translation.title,
                     kodikSeason = stream.translation.season,
                     updatedAt = clock.instant(),
                 ),

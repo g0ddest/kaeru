@@ -113,6 +113,30 @@ class RoomWatchStateRepositoryTest {
     }
 
     @Test
+    fun `every row comes back at once, for counting which tracks get chosen`() = scope.runTest {
+        repo.save(state(animeId = 100, translationId = 7))
+        repo.save(state(animeId = 200, translationId = 9))
+
+        val all = repo.observeAll().first().sortedBy { it.animeId }
+
+        assertEquals(listOf(state(animeId = 100, translationId = 7), state(animeId = 200, translationId = 9)), all)
+    }
+
+    @Test
+    fun `the list of every row follows the table`() = scope.runTest {
+        repo.observeAll().test {
+            assertEquals(emptyList<WatchState>(), awaitItem())
+
+            repo.save(state(animeId = 100))
+            assertEquals(listOf(100), awaitItem().map { it.animeId })
+
+            repo.save(state(animeId = 200))
+            assertEquals(listOf(100, 200), awaitItem().map { it.animeId }.sorted())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
     fun `another anime being written does not disturb this one`() = scope.runTest {
         repo.save(state())
 

@@ -20,6 +20,15 @@ data class Anime(
     val description: String?,
 ) {
     val title: String get() = nameRu.ifBlank { nameRomaji }
-    /** Number of episodes actually available: aired for ongoing shows, otherwise total. */
-    val availableEpisodes: Int get() = if (status == AnimeStatus.ONGOING) episodesAired else if (episodes > 0) episodes else episodesAired
+
+    /**
+     * Number of episodes actually available to watch: aired so far for an ongoing show, nothing
+     * at all for an announcement that has not started, and the announced total for a finished
+     * show — falling back to what aired if the total itself is unknown.
+     */
+    val availableEpisodes: Int get() = when (status) {
+        AnimeStatus.ONGOING -> episodesAired
+        AnimeStatus.ANONS -> 0
+        AnimeStatus.RELEASED -> if (episodes > 0) episodes else episodesAired
+    }
 }

@@ -15,6 +15,13 @@ import kotlinx.coroutines.flow.Flow
  */
 interface WatchStateRepository {
     fun observe(animeId: Int): Flow<WatchState?>
+
+    /**
+     * Every row there is. The one caller that needs them all is the ranking: which track a
+     * viewer keeps choosing is a fact about their whole history, not about one anime.
+     */
+    fun observeAll(): Flow<List<WatchState>>
+
     suspend fun save(state: WatchState)
     suspend fun clear(animeId: Int)
 }

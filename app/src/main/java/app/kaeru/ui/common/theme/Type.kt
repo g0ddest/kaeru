@@ -31,50 +31,110 @@ val Manrope = FontFamily(
     },
 )
 
-private fun manrope(weight: FontWeight, size: Int, letterSpacing: Double = 0.0) = TextStyle(
-    fontFamily = Manrope, fontWeight = weight, fontSize = size.sp, letterSpacing = letterSpacing.sp,
+private fun manrope(weight: FontWeight, size: Int, lineHeight: Int, letterSpacing: Double = 0.0) = TextStyle(
+    fontFamily = Manrope,
+    fontWeight = weight,
+    fontSize = size.sp,
+    lineHeight = lineHeight.sp,
+    letterSpacing = letterSpacing.sp,
 )
 
-private fun TextStyle.manrope(weight: FontWeight) = copy(fontFamily = Manrope, fontWeight = weight)
-
-private val MaterialDefaults = Typography()
-
-/** Every role is defined: an unset one silently falls back to the system font. */
-val KaeruTypography = Typography(
-    displayLarge = MaterialDefaults.displayLarge.manrope(FontWeight.Bold),
-    displayMedium = MaterialDefaults.displayMedium.manrope(FontWeight.Bold),
-    displaySmall = manrope(FontWeight.Bold, 36, -0.5),
-    headlineLarge = MaterialDefaults.headlineLarge.manrope(FontWeight.Bold),
-    headlineMedium = manrope(FontWeight.Bold, 26, -0.25),
-    headlineSmall = MaterialDefaults.headlineSmall.manrope(FontWeight.SemiBold),
-    titleLarge = manrope(FontWeight.SemiBold, 20),
-    titleMedium = manrope(FontWeight.SemiBold, 16),
-    titleSmall = MaterialDefaults.titleSmall.manrope(FontWeight.SemiBold),
-    bodyLarge = manrope(FontWeight.Normal, 16),
-    bodyMedium = manrope(FontWeight.Normal, 14),
-    bodySmall = MaterialDefaults.bodySmall.manrope(FontWeight.Normal),
-    labelLarge = manrope(FontWeight.Bold, 14),
-    labelMedium = MaterialDefaults.labelMedium.manrope(FontWeight.Medium),
-    labelSmall = MaterialDefaults.labelSmall.manrope(FontWeight.Medium),
+/**
+ * One type scale, written once and handed to both Material and tv-Material.
+ *
+ * The design system names five roles; they live at the Material names below so that
+ * `MaterialTheme.typography` stays the only place a screen reads type from:
+ *
+ * | role     | Material name    | phone                 | used by                            |
+ * |----------|------------------|-----------------------|------------------------------------|
+ * | display  | `displaySmall`   | 34/40 ExtraBold, −0.8 | the hero title, nothing else       |
+ * | headline | `headlineMedium` | 24/30 Bold, −0.4      | screen titles, state titles        |
+ * | title    | `titleMedium`    | 17/22 SemiBold        | row headers, buttons               |
+ * |          | `titleSmall`     | 15/20 SemiBold        | card titles, status pills          |
+ * | body     | `bodyMedium`     | 15/22 Regular         | descriptions, empty and error text |
+ * | label    | `labelMedium`    | 13/18 SemiBold        | badges, chips, metadata            |
+ *
+ * The neighbouring roles are filled in too: an unset one silently falls back to the system font.
+ */
+private class KaeruRoles(
+    val displayLarge: TextStyle,
+    val displayMedium: TextStyle,
+    val displaySmall: TextStyle,
+    val headlineLarge: TextStyle,
+    val headlineMedium: TextStyle,
+    val headlineSmall: TextStyle,
+    val titleLarge: TextStyle,
+    val titleMedium: TextStyle,
+    val titleSmall: TextStyle,
+    val bodyLarge: TextStyle,
+    val bodyMedium: TextStyle,
+    val bodySmall: TextStyle,
+    val labelLarge: TextStyle,
+    val labelMedium: TextStyle,
+    val labelSmall: TextStyle,
 )
+
+private fun KaeruRoles.toMaterial() = Typography(
+    displayLarge = displayLarge, displayMedium = displayMedium, displaySmall = displaySmall,
+    headlineLarge = headlineLarge, headlineMedium = headlineMedium, headlineSmall = headlineSmall,
+    titleLarge = titleLarge, titleMedium = titleMedium, titleSmall = titleSmall,
+    bodyLarge = bodyLarge, bodyMedium = bodyMedium, bodySmall = bodySmall,
+    labelLarge = labelLarge, labelMedium = labelMedium, labelSmall = labelSmall,
+)
+
+private fun KaeruRoles.toTv() = TvTypography(
+    displayLarge = displayLarge, displayMedium = displayMedium, displaySmall = displaySmall,
+    headlineLarge = headlineLarge, headlineMedium = headlineMedium, headlineSmall = headlineSmall,
+    titleLarge = titleLarge, titleMedium = titleMedium, titleSmall = titleSmall,
+    bodyLarge = bodyLarge, bodyMedium = bodyMedium, bodySmall = bodySmall,
+    labelLarge = labelLarge, labelMedium = labelMedium, labelSmall = labelSmall,
+)
+
+private val PhoneRoles = KaeruRoles(
+    displayLarge = manrope(FontWeight.ExtraBold, 52, 60, -1.2),
+    displayMedium = manrope(FontWeight.ExtraBold, 42, 48, -1.0),
+    displaySmall = manrope(FontWeight.ExtraBold, 34, 40, -0.8),
+    headlineLarge = manrope(FontWeight.Bold, 28, 34, -0.5),
+    headlineMedium = manrope(FontWeight.Bold, 24, 30, -0.4),
+    headlineSmall = manrope(FontWeight.Bold, 20, 26, -0.2),
+    titleLarge = manrope(FontWeight.SemiBold, 20, 26),
+    titleMedium = manrope(FontWeight.SemiBold, 17, 22),
+    titleSmall = manrope(FontWeight.SemiBold, 15, 20),
+    bodyLarge = manrope(FontWeight.Normal, 16, 24),
+    bodyMedium = manrope(FontWeight.Normal, 15, 22),
+    bodySmall = manrope(FontWeight.Normal, 13, 18),
+    labelLarge = manrope(FontWeight.SemiBold, 15, 20),
+    labelMedium = manrope(FontWeight.SemiBold, 13, 18),
+    labelSmall = manrope(FontWeight.SemiBold, 11, 16),
+)
+
+/** The same scale at ×1.35 — the distance between a phone in the hand and a television across the room. */
+private val TvRoles = KaeruRoles(
+    displayLarge = manrope(FontWeight.ExtraBold, 70, 80, -1.6),
+    displayMedium = manrope(FontWeight.ExtraBold, 57, 65, -1.3),
+    displaySmall = manrope(FontWeight.ExtraBold, 46, 54, -1.0),
+    headlineLarge = manrope(FontWeight.Bold, 38, 46, -0.7),
+    headlineMedium = manrope(FontWeight.Bold, 32, 40, -0.5),
+    headlineSmall = manrope(FontWeight.Bold, 27, 34, -0.3),
+    titleLarge = manrope(FontWeight.SemiBold, 27, 34),
+    titleMedium = manrope(FontWeight.SemiBold, 23, 30),
+    titleSmall = manrope(FontWeight.SemiBold, 20, 26),
+    bodyLarge = manrope(FontWeight.Normal, 22, 32),
+    bodyMedium = manrope(FontWeight.Normal, 20, 30),
+    bodySmall = manrope(FontWeight.Normal, 18, 26),
+    labelLarge = manrope(FontWeight.SemiBold, 20, 26),
+    labelMedium = manrope(FontWeight.SemiBold, 18, 24),
+    labelSmall = manrope(FontWeight.SemiBold, 15, 20),
+)
+
+val KaeruTypography = PhoneRoles.toMaterial()
 
 /** The TV type scale is its own class; without this, `tv.material3` text uses the system font. */
-val KaeruTvTypography = TvTypography().run {
-    copy(
-        displayLarge = displayLarge.manrope(FontWeight.ExtraBold),
-        displayMedium = displayMedium.manrope(FontWeight.Bold),
-        displaySmall = displaySmall.manrope(FontWeight.Bold),
-        headlineLarge = headlineLarge.manrope(FontWeight.Bold),
-        headlineMedium = headlineMedium.manrope(FontWeight.Bold),
-        headlineSmall = headlineSmall.manrope(FontWeight.SemiBold),
-        titleLarge = titleLarge.manrope(FontWeight.SemiBold),
-        titleMedium = titleMedium.manrope(FontWeight.SemiBold),
-        titleSmall = titleSmall.manrope(FontWeight.SemiBold),
-        bodyLarge = bodyLarge.manrope(FontWeight.Normal),
-        bodyMedium = bodyMedium.manrope(FontWeight.Normal),
-        bodySmall = bodySmall.manrope(FontWeight.Normal),
-        labelLarge = labelLarge.manrope(FontWeight.Bold),
-        labelMedium = labelMedium.manrope(FontWeight.Medium),
-        labelSmall = labelSmall.manrope(FontWeight.Medium),
-    )
-}
+val KaeruTvTypography = TvRoles.toTv()
+
+/**
+ * The TV scale as a Material typography, so the components shared between phone and television —
+ * buttons, chips, row headers, empty and error states — grow with everything else on a TV instead
+ * of staying at phone size inside a TV screen.
+ */
+val KaeruTvMaterialTypography = TvRoles.toMaterial()

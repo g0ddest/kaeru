@@ -33,8 +33,22 @@ class FakeEpisodeSource : EpisodeSourceProvider {
     /** While set, every resolve parks here — a Kodik round trip caught in the act. */
     var gate: CompletableDeferred<Unit>? = null
 
-    override suspend fun translations(shikimoriId: Int): Result<List<Translation>> =
-        Result.success(listOf(anilibria, studioBanda))
+    /** How many times the catalogue was asked for its tracks, so a lazy load can be shown to be lazy. */
+    var translationCalls = 0
+        private set
+
+    /** While set, the catalogue refuses to list anything — an outage between the app and Kodik. */
+    var translationsFailure: Throwable? = null
+
+    /** While set, listing the catalogue parks here, so a test can look at the screen mid-flight. */
+    var translationsGate: CompletableDeferred<Unit>? = null
+
+    override suspend fun translations(shikimoriId: Int): Result<List<Translation>> {
+        translationCalls += 1
+        translationsGate?.await()
+        translationsFailure?.let { return Result.failure(it) }
+        return Result.success(listOf(anilibria, studioBanda))
+    }
 
     override suspend fun resolve(
         shikimoriId: Int,

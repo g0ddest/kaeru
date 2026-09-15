@@ -15,6 +15,16 @@ val localProps = Properties().apply {
 }
 fun secret(name: String): String = "\"" + (localProps.getProperty(name) ?: "") + "\""
 
+// Release signing lives outside the repository: ~/.kaeru/release.properties (or the file named by
+// KAERU_RELEASE_PROPS in local.properties) holds KAERU_STORE_FILE / KAERU_STORE_PASSWORD /
+// KAERU_KEY_ALIAS / KAERU_KEY_PASSWORD. Without it the release build type is simply unsigned.
+val releaseProps = Properties().apply {
+    val path = localProps.getProperty("KAERU_RELEASE_PROPS")
+        ?: (System.getProperty("user.home") + "/.kaeru/release.properties")
+    val f = file(path)
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
 android {
     namespace = "app.kaeru"
     compileSdk = 36
@@ -31,11 +41,25 @@ android {
         buildConfigField("String", "KODIK_TOKEN", secret("KODIK_TOKEN"))
     }
 
+    signingConfigs {
+        if (releaseProps.getProperty("KAERU_STORE_FILE") != null) {
+            create("release") {
+                storeFile = file(releaseProps.getProperty("KAERU_STORE_FILE"))
+                storePassword = releaseProps.getProperty("KAERU_STORE_PASSWORD")
+                keyAlias = releaseProps.getProperty("KAERU_KEY_ALIAS")
+                keyPassword = releaseProps.getProperty("KAERU_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // The first hand-out build ships unminified: the R8 rules have not been smoke-tested on
+            // a device yet, and ~30 MB is an acceptable price for a build that cannot break at runtime.
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("release")
         }
     }
     compileOptions {
@@ -56,7 +80,14 @@ android {
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
 
-ksp { arg("room.generateKotlin", "true") }
+ksp {
+    arg("room.generateKotlin", "true")
+    // Exported from version 2 on. A migration can only be checked against the schema it is
+    // migrating to, and there is no v1 schema to check the one this app already has — but every
+    // migration after it will have one, which is the point of turning this on now rather than
+    // when it is needed.
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
 
 dependencies {
     implementation(libs.core.ktx)
@@ -110,4 +141,10 @@ dependencies {
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
+    // Composition tests under Robolectric: the focus a television screen starts on, and whether a
+    // row a remote has to reach is reachable. Both are questions only a real composition answers.
+    testImplementation(libs.compose.ui.test.junit4)
+    // Debug rather than test: it contributes the bare ComponentActivity the compose rule launches,
+    // and a manifest entry only reaches Robolectric through the application's own debug manifest.
+    debugImplementation(libs.compose.ui.test.manifest)
 }

@@ -159,6 +159,7 @@ class CastPlaybackEngine(
             isBuffering = playbackState == Player.STATE_BUFFERING,
             ended = playbackState == Player.STATE_ENDED,
             positionMs = player.currentPosition.coerceAtLeast(0),
+            bufferedPositionMs = player.bufferedPosition.coerceAtLeast(0),
             durationMs = if (duration == C.TIME_UNSET || duration < 0) 0 else duration,
             error = error,
         )

@@ -30,6 +30,15 @@ data class KodikPlayerPage(
     val currentType: String,
     val currentHash: String,
     val currentId: String,
+    /**
+     * The track this page is itself showing, as the page names it in its own script.
+     *
+     * Every player page carries these, chooser or no chooser, which is what makes a film with a
+     * single voice playable: it has no translations box to read, but it still says which voice it
+     * is. Null when a page names neither — nothing is guessed from a page that will not say.
+     */
+    val currentTranslationId: Int? = null,
+    val currentTranslationTitle: String? = null,
     val translations: List<KodikTranslationOption>,
     val episodes: List<KodikEpisodeOption>,
     val ftorPath: String = "/ftor",
@@ -56,6 +65,8 @@ object KodikHtmlParser {
     private val trailingEpisodeCountRegex = Regex("""\s*\(\d+\s*эп\.\)\s*$""")
     private val atobRegex = Regex("""atob\(["']([^"']*)["']\)""")
     private val tokenRegex = Regex("""token\s*=\s*"([a-z0-9]+)"""")
+    private val currentTranslationIdRegex = Regex("""\btranslationId\s*=\s*(\d+)""")
+    private val currentTranslationTitleRegex = Regex("""\btranslationTitle\s*=\s*"([^"]*)"""")
     private val entityRegex = Regex("&(#[xX][0-9a-fA-F]+|#[0-9]+|[a-zA-Z][a-zA-Z0-9]*);")
     /** Serial and movie players wrap the same `<option>` shape in differently named divs. */
     private val TRANSLATION_BOX_CLASSES = listOf("serial-translations-box", "movie-translations-box")
@@ -100,6 +111,11 @@ object KodikHtmlParser {
             currentType = currentType,
             currentHash = currentHash,
             currentId = currentId,
+            currentTranslationId = currentTranslationIdRegex.find(html)?.groupValues?.get(1)?.toIntOrNull(),
+            currentTranslationTitle = currentTranslationTitleRegex.find(html)
+                ?.groupValues?.get(1)
+                ?.let { decodeHtmlEntities(it) }
+                ?.takeIf { it.isNotBlank() },
             translations = translations,
             episodes = episodes,
             ftorPath = extractFtorPath(html),

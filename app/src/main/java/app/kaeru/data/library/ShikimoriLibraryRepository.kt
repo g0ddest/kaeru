@@ -2,13 +2,12 @@ package app.kaeru.data.library
 
 import app.kaeru.data.auth.AccountSession
 import app.kaeru.data.local.AnimeDao
+import app.kaeru.data.local.EpisodeProgressDao
 import app.kaeru.data.local.UserRateDao
 import app.kaeru.data.local.WatchStateDao
 import app.kaeru.data.local.mergeShort
 import app.kaeru.data.local.toEntity
 import app.kaeru.data.shikimori.ShikimoriApi
-import app.kaeru.data.shikimori.isMissingPoster
-import app.kaeru.data.shikimori.postersQuery
 import app.kaeru.data.shikimori.UserRatePayload
 import app.kaeru.data.shikimori.UserRateRequest
 import app.kaeru.data.shikimori.toDomain
@@ -43,8 +42,10 @@ class ShikimoriLibraryRepository @Inject constructor(
     private val animeDao: AnimeDao,
     private val userRateDao: UserRateDao,
     private val watchStateDao: WatchStateDao,
+    private val episodeProgressDao: EpisodeProgressDao,
     private val prefs: AppPreferences,
     private val session: AccountSession,
+    private val posters: PosterEnricher,
     @param:IoDispatcher private val io: CoroutineDispatcher,
     private val clock: Clock,
 ) : LibraryRepository {
@@ -62,13 +63,21 @@ class ShikimoriLibraryRepository @Inject constructor(
     }
 
     private fun observeAccountLibrary(): Flow<List<LibraryEntry>> = combine(
-        animeDao.observeAll(), userRateDao.observeAll(), watchStateDao.observeAll(),
-    ) { animes, rates, watches ->
+        animeDao.observeAll(), userRateDao.observeAll(), watchStateDao.observeAll(), episodeProgressDao.observeAll(),
+    ) { animes, rates, watches, progress ->
         val animeById = animes.associateBy { it.id }
         val watchById = watches.associateBy { it.animeId }
+        // Grouped once for the whole library rather than filtered per entry: the table holds a row
+        // per episode ever started, so a scan per anime would be the library squared.
+        val progressByAnime = progress.groupBy { it.animeId }
         rates.mapNotNull { rate ->
             val anime = animeById[rate.animeId] ?: return@mapNotNull null
-            LibraryEntry(anime.toDomain(), rate.toDomain(), watchById[rate.animeId]?.toDomain())
+            LibraryEntry(
+                anime.toDomain(),
+                rate.toDomain(),
+                watchById[rate.animeId]?.toDomain(),
+                progressByAnime[rate.animeId].orEmpty().map { it.toDomain() },
+            )
         }
     }
 
@@ -129,24 +138,8 @@ class ShikimoriLibraryRepository @Inject constructor(
         api.search(query).map { it.toDomain() }.withRealPosters()
     }
 
-    /**
-     * REST `image` is a legacy field: for titles added after Shikimori's poster migration it returns
-     * `missing_original.jpg`. GraphQL carries the real poster, so fetch it in batches of 50 and prefer
-     * it. Posters are cosmetic: a failed GraphQL call keeps whatever REST returned.
-     */
-    private suspend fun List<Anime>.withRealPosters(): List<Anime> {
-        if (isEmpty()) return this
-        val posters = map { it.id }.chunked(50).flatMap { batch ->
-            runCatching { api.graphql(postersQuery(batch)).data?.animes.orEmpty() }.getOrDefault(emptyList())
-        }.mapNotNull { dto ->
-            val url = dto.poster?.mainUrl ?: dto.poster?.originalUrl ?: return@mapNotNull null
-            dto.id.toIntOrNull()?.let { it to url }
-        }.toMap()
-        return map { anime ->
-            val real = posters[anime.id]
-            if (real != null && (isMissingPoster(anime.posterUrl) || real != anime.posterUrl)) anime.copy(posterUrl = real) else anime
-        }
-    }
+    /** Shared with the discovery rows, so the same title shows the same artwork everywhere. */
+    private suspend fun List<Anime>.withRealPosters(): List<Anime> = posters.enrich(this)
 
     override suspend fun setStatus(animeId: Int, status: ListStatus): Result<Unit> = accountWrite { userId ->
         val existing = userRateDao.getByAnimeId(animeId)

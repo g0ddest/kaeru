@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import app.kaeru.data.library.AppPreferences
 import app.kaeru.data.library.FakeShikimoriApi
 import app.kaeru.data.library.ShikimoriLibraryRepository
+import app.kaeru.data.library.PosterEnricher
 import app.kaeru.data.local.KaeruDatabase
 import app.kaeru.data.local.toEntity
 import app.kaeru.data.shikimori.ShikimoriOAuthApi
@@ -90,8 +91,11 @@ class SessionHandoffThreadTest {
             }
             result
         }
-        val library = ShikimoriLibraryRepository(api, db.animeDao(), db.userRateDao(), db.watchStateDao(), prefs, deliverySession, Dispatchers.IO, clock)
-        val auth = ShikimoriAuthRepository(oauth, api, session, "cid", "secret", clock)
+        val library = ShikimoriLibraryRepository(
+            api, db.animeDao(), db.userRateDao(), db.watchStateDao(), db.episodeProgressDao(),
+            prefs, deliverySession, PosterEnricher(api), Dispatchers.IO, clock,
+        )
+        val auth = ShikimoriAuthRepository(oauth, api, session, prefs, "cid", "secret", clock)
         val delivered = ConcurrentLinkedQueue<List<LibraryEntry>>()
         val first = CountDownLatch(1)
         val bDelivered = CountDownLatch(1)

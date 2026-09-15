@@ -7,24 +7,28 @@ import androidx.compose.ui.Modifier
 import androidx.tv.material3.LocalContentColor as TvLocalContentColor
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme as TvMaterialTheme
 import androidx.tv.material3.darkColorScheme as tvDarkColorScheme
 
 private val MobileColors = darkColorScheme(
-    primary = KaeruAccent, onPrimary = Color.Black,
+    primary = KaeruAccent, onPrimary = KaeruOnAccent,
     background = KaeruBackground, onBackground = KaeruText,
     surface = KaeruSurface, onSurface = KaeruText,
     surfaceVariant = KaeruElevated, onSurfaceVariant = KaeruSecondary,
+    outline = KaeruDivider, outlineVariant = KaeruDivider,
+    error = KaeruError, onError = KaeruText,
 )
 
 private val TvColors = tvDarkColorScheme(
-    primary = KaeruAccent, onPrimary = Color.Black,
+    primary = KaeruAccent, onPrimary = KaeruOnAccent,
     background = KaeruBackground, onBackground = KaeruText,
     surface = KaeruSurface, onSurface = KaeruText,
+    surfaceVariant = KaeruElevated, onSurfaceVariant = KaeruSecondary,
+    border = KaeruDivider, error = KaeruError, onError = KaeruText,
 )
 
 /**
@@ -32,10 +36,10 @@ private val TvColors = tvDarkColorScheme(
  * `LocalContentColor`: without a root Surface every `Text` without an explicit color renders black.
  */
 @Composable
-fun KaeruTheme(content: @Composable () -> Unit) {
+fun KaeruTheme(typography: Typography = KaeruTypography, content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = MobileColors,
-        typography = KaeruTypography,
+        typography = typography,
         shapes = MaterialTheme.shapes.copy(medium = RoundedCornerShape(12.dp), large = RoundedCornerShape(12.dp)),
     ) {
         Surface(
@@ -49,7 +53,7 @@ fun KaeruTheme(content: @Composable () -> Unit) {
 
 @Composable
 fun KaeruTvTheme(content: @Composable () -> Unit) {
-    KaeruTheme {
+    KaeruTheme(typography = KaeruTvMaterialTypography) {
         TvMaterialTheme(colorScheme = TvColors, typography = KaeruTvTypography) {
             CompositionLocalProvider(TvLocalContentColor provides TvColors.onBackground, content = content)
         }

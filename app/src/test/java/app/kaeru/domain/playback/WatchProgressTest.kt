@@ -1,9 +1,11 @@
 package app.kaeru.domain.playback
 
 import app.kaeru.domain.error.AccountSessionChanged
+import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.WatchState
 import app.kaeru.test.MutableClock
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -19,7 +21,9 @@ class WatchProgressTest {
     private val now = Instant.parse("2026-09-13T10:00:00Z")
     private val clock = MutableClock(now)
     private val watchStates = FakeWatchStateRepository()
-    private val progress = WatchProgress(watchStates, clock)
+    private val episodes = FakeEpisodeProgressRepository()
+    private val samples = FakePlaybackSampleRepository(watchStates, episodes)
+    private val progress = WatchProgress(watchStates, samples, clock)
 
     @Test
     fun `a sample with nothing in flight is written straight through`() = runTest {
@@ -29,6 +33,38 @@ class WatchProgressTest {
             WatchState(100, 4, 65_000, 1_400_000, translationId = 7, kodikSeason = null, updatedAt = now),
             watchStates.saved.single(),
         )
+    }
+
+    @Test
+    fun `a sample lands in the episode's own row as well as in the anime's pointer`() = runTest {
+        progress.report(animeId = 100, episode = 4, positionMs = 65_000, durationMs = 1_400_000, translationId = 7)
+
+        assertEquals(EpisodeProgress(100, 4, 65_000, 1_400_000, now), episodes.saved.single())
+        assertEquals(4, watchStates.saved.single().episode)
+    }
+
+    @Test
+    fun `starting another episode leaves the position kept for the last one alone`() = runTest {
+        // The mis-tap, from the sampler's side: the seventh keeps its forty minutes while the
+        // sixth writes its own ten seconds down beside it.
+        episodes.seed(EpisodeProgress(100, 7, 2_400_000, 2_880_000, now))
+
+        progress.report(animeId = 100, episode = 6, positionMs = 10_000, durationMs = 1_400_000, translationId = 7)
+
+        val rows = episodes.observe(100).first()
+        assertEquals(listOf(6 to 10_000L, 7 to 2_400_000L), rows.map { it.episode to it.positionMs })
+    }
+
+    @Test
+    fun `a sample that cannot be written is lost whole rather than half`() = runTest {
+        // Both rows go down together, which is what one transaction buys: there is no moment where
+        // the episode's row says minute one and the anime's pointer still says the episode before.
+        samples.failSaveWith = AccountSessionChanged("signed out")
+
+        progress.report(animeId = 100, episode = 4, positionMs = 65_000, durationMs = 1_400_000, translationId = 7)
+
+        assertTrue(episodes.saved.isEmpty())
+        assertTrue(watchStates.saved.isEmpty())
     }
 
     @Test
@@ -126,10 +162,10 @@ class WatchProgressTest {
 
     @Test
     fun `a failed save is swallowed and the next sample still gets through`() = runTest {
-        watchStates.failSaveWith = AccountSessionChanged("signed out")
+        samples.failSaveWith = AccountSessionChanged("signed out")
 
         progress.report(100, 4, 5_000, 1_400_000, 7)
-        watchStates.failSaveWith = null
+        samples.failSaveWith = null
         progress.report(100, 4, 10_000, 1_400_000, 7)
 
         assertEquals(listOf(10_000L), watchStates.saved.map { it.positionMs })

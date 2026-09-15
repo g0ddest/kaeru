@@ -16,6 +16,8 @@ data class EngineState(
     val isBuffering: Boolean = false,
     val ended: Boolean = false,
     val positionMs: Long = 0,
+    /** How much of the media is downloaded and ready to play, as a position, not a length. */
+    val bufferedPositionMs: Long = 0,
     val durationMs: Long = 0,
     val error: Throwable? = null,
 )

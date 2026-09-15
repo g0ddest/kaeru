@@ -10,9 +10,12 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import app.kaeru.data.kodik.KodikTokenKeys
+import app.kaeru.domain.model.Account
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.playback.PlaybackNotificationPrompt
 import app.kaeru.domain.playback.PlaybackPreferences
+import app.kaeru.domain.settings.SettingsStore
+import app.kaeru.domain.settings.WATCHED_THRESHOLD_RANGE
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -23,7 +26,7 @@ import javax.inject.Singleton
 
 @Singleton
 class AppPreferences @Inject constructor(@param:Named("prefs") private val dataStore: DataStore<Preferences>) :
-    PlaybackPreferences, PlaybackNotificationPrompt {
+    PlaybackPreferences, PlaybackNotificationPrompt, SettingsStore {
     private val userIdKey = longPreferencesKey("user_id")
     private val lastFullSyncKey = longPreferencesKey("last_full_sync")
     private val watchedThresholdKey = floatPreferencesKey("watched_threshold")
@@ -31,6 +34,8 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
     private val autoplayNextKey = booleanPreferencesKey("autoplay_next")
     private val defaultQualityKey = intPreferencesKey("default_quality")
     private val notificationsAskedKey = booleanPreferencesKey("notifications_asked")
+    private val accountNicknameKey = stringPreferencesKey("account_nickname")
+    private val accountAvatarKey = stringPreferencesKey("account_avatar")
 
     /** What a wipe leaves behind: configuration of the device, not of whoever is signed in. */
     private val deviceKeys: List<Preferences.Key<*>> = KodikTokenKeys.all + notificationsAskedKey
@@ -49,28 +54,61 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
         dataStore.edit { it[lastFullSyncKey] = at.toEpochMilli() }
     }
 
+    /**
+     * Who is signed in, as far as this device remembers.
+     *
+     * An id with no nickname beside it is deliberately not an account: it means `whoami` has not
+     * answered yet, or this install predates the screen that shows a name, and answering with a
+     * nameless account would put an empty line where a nickname belongs. The settings screen asks
+     * Shikimori again on open, so the gap closes by itself.
+     */
+    val account: Flow<Account?> = dataStore.data.map { prefs ->
+        val id = prefs[userIdKey]
+        val nickname = prefs[accountNicknameKey]
+        if (id == null || nickname == null) null else Account(id, nickname, prefs[accountAvatarKey])
+    }
+
+    suspend fun setAccountProfile(nickname: String, avatarUrl: String?) {
+        dataStore.edit { prefs ->
+            prefs[accountNicknameKey] = nickname
+            if (avatarUrl.isNullOrBlank()) prefs.remove(accountAvatarKey) else prefs[accountAvatarKey] = avatarUrl
+        }
+    }
+
     override val watchedThreshold: Flow<Float> = dataStore.data.map { it[watchedThresholdKey] ?: 0.9f }
 
+    /** The screen offers 0.8 to 0.95; [WATCHED_THRESHOLD_RANGE] guards everything that is not it. */
+    override suspend fun setWatchedThreshold(fraction: Float) {
+        // Not a number is not a share of an episode. Writing it would make every later comparison
+        // false and silently stop marking anything watched at all.
+        if (!fraction.isFinite()) return
+        dataStore.edit { it[watchedThresholdKey] = fraction.coerceIn(WATCHED_THRESHOLD_RANGE) }
+    }
+
     /**
-     * Dub studios in the order the viewer wants them offered; a track matches when its title
-     * contains one of these names. Stored as one newline-joined string because a preference set
-     * loses the order, and the order is the whole point. An empty list is a deliberate choice and
-     * is kept: only an absent key falls back to [DEFAULT_PREFERRED_TRANSLATIONS].
+     * Dub studios in the order the viewer wants them offered, and nothing else; a track matches
+     * when its title contains one of these names. Stored as one newline-joined string because a
+     * preference set loses the order, and the order is the whole point.
+     *
+     * An absent key reads as an empty list rather than as the studios the app ships with. Those
+     * live in `TranslationRanker.DEFAULT_STUDIOS` and rank below what this viewer actually
+     * watches, which is a decision for the ranker to make — a store that answered with them could
+     * not say whether a viewer had chosen them or simply never opened the setting.
      */
     override val preferredTranslations: Flow<List<String>> = dataStore.data.map { prefs ->
         prefs[preferredTranslationsKey]
             ?.split('\n')?.map { it.trim() }?.filter { it.isNotEmpty() }
-            ?: DEFAULT_PREFERRED_TRANSLATIONS
+            .orEmpty()
     }
 
-    suspend fun setPreferredTranslations(studios: List<String>) {
+    override suspend fun setPreferredTranslations(studios: List<String>) {
         val cleaned = studios.map { it.trim() }.filter { it.isNotEmpty() }
         dataStore.edit { it[preferredTranslationsKey] = cleaned.joinToString("\n") }
     }
 
     override val autoplayNext: Flow<Boolean> = dataStore.data.map { it[autoplayNextKey] ?: true }
 
-    suspend fun setAutoplayNext(enabled: Boolean) {
+    override suspend fun setAutoplayNext(enabled: Boolean) {
         dataStore.edit { it[autoplayNextKey] = enabled }
     }
 
@@ -82,9 +120,25 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
         prefs[defaultQualityKey]?.let { Quality.ofHeight(it) }
     }
 
-    suspend fun setDefaultQuality(quality: Quality?) {
+    override suspend fun setDefaultQuality(quality: Quality?) {
         dataStore.edit { prefs ->
             if (quality == null) prefs.remove(defaultQualityKey) else prefs[defaultQualityKey] = quality.height
+        }
+    }
+
+    /**
+     * A Kodik key somebody typed in, or null for the public one. It is the same key
+     * `DefaultKodikTokenProvider` reads first, so a token saved here takes effect on the next
+     * request rather than on the next launch.
+     */
+    override val kodikToken: Flow<String?> = dataStore.data.map { prefs ->
+        prefs[KodikTokenKeys.override]?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
+    override suspend fun setKodikToken(token: String?) {
+        val cleaned = token?.trim().orEmpty()
+        dataStore.edit { prefs ->
+            if (cleaned.isEmpty()) prefs.remove(KodikTokenKeys.override) else prefs[KodikTokenKeys.override] = cleaned
         }
     }
 
@@ -114,16 +168,11 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
         dataStore.edit {
             it.remove(userIdKey)
             it.remove(lastFullSyncKey)
+            it.remove(accountNicknameKey)
+            it.remove(accountAvatarKey)
         }
     }
 
-    companion object {
-        /** Studios that dub most of what this app plays, best first. */
-        val DEFAULT_PREFERRED_TRANSLATIONS = listOf(
-            "AniLibria", "AniDUB", "Crunchyroll", "Amazing Dubbing", "AniBaza",
-            "AniMaunt", "JAM", "Dream Cast", "SHIZA Project",
-        )
-    }
 }
 
 /**
