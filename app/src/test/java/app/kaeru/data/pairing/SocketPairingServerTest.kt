@@ -134,7 +134,11 @@ class SocketPairingServerTest {
         // nothing listening on it — a QR on screen pointing at a socket that would never answer.
         val port = listen().port
         exchangeThrows = IllegalStateException("something nobody anticipated")
-        runCatching { post(port, body()) }
+        // And the phone is told so rather than hung up on: a connection that closes with nothing
+        // on it reads as «that television is not there», and this one is there.
+        val (status, answer) = post(port, body())
+        assertEquals(500, status)
+        assertTrue(answer, answer.contains("server_error"))
         assertEquals(1, exchanges.size)
 
         // The same offer, still live: the nonce was never spent, so the next phone is served.

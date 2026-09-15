@@ -25,4 +25,11 @@ internal object PairingErrors {
     const val EXPIRED = "expired"
     const val ALREADY_PAIRED = "already_paired"
     const val EXCHANGE_FAILED = "exchange_failed"
+
+    /**
+     * Something went wrong that nobody planned for. The phone is told so rather than being left
+     * with a connection that closed on it: a transport error looks like a television that is not
+     * there, and this one is there and has just failed at something.
+     */
+    const val SERVER_ERROR = "server_error"
 }

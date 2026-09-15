@@ -196,7 +196,19 @@ class SocketPairingServer @Inject constructor(
         // phone holding a connection that closes with no answer on it — and the sign-in this
         // answers may itself be what takes the login screen, and this server, down.
         withContext(NonCancellable) {
-            write(client, decide(generationAtStart, request, session, onCode))
+            // A throw out of `decide` used to escape before anything was written, so the phone got
+            // a connection reset — which reads as «that television is not there» rather than as
+            // «it is there and something went wrong». It is given a sentence instead, and the
+            // throw goes on up to the accept loop, which logs it and keeps listening.
+            val answer = try {
+                decide(generationAtStart, request, session, onCode)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Throwable) {
+                runCatching { write(client, refused(500, PairingErrors.SERVER_ERROR)) }
+                throw failure
+            }
+            write(client, answer)
         }
     }
 
@@ -276,6 +288,7 @@ class SocketPairingServer @Inject constructor(
         400 -> "Bad Request"
         409 -> "Conflict"
         410 -> "Gone"
+        500 -> "Internal Server Error"
         else -> "Error"
     }
 
