@@ -1,10 +1,9 @@
 package app.kaeru.domain.playback
 
-import app.kaeru.domain.download.DownloadRepository
+import app.kaeru.domain.download.DeferredDownloadRemoval
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.repository.WatchStateRepository
-import app.kaeru.domain.settings.SettingsStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import java.time.Clock
@@ -35,8 +34,7 @@ class MarkEpisodeWatched(
     private val library: LibraryRepository,
     private val watchStates: WatchStateRepository,
     private val clock: Clock,
-    private val downloads: DownloadRepository,
-    private val settings: SettingsStore,
+    private val deleteWatchedDownloads: DeferredDownloadRemoval,
 ) {
     suspend operator fun invoke(animeId: Int, episode: Int): Result<WatchedOutcome> {
         val known = library.observeAnime(animeId).first()
@@ -68,21 +66,17 @@ class MarkEpisodeWatched(
     /**
      * «Удалять просмотренные»: an episode that has just been counted gives its space back.
      *
-     * Three conditions, and each rules out a different way this could go wrong. The setting is off
-     * by default, because deleting somebody's episode is not a default. Only a download that has
-     * *finished* is touched — a queue set up for tonight is not something a mark should quietly
-     * cancel, and a half-downloaded episode is going to finish and then be deleted anyway, which
-     * would spend the data for nothing. And it runs only on the branch where something was newly
-     * counted, so re-entering an episode the server already knew about never deletes it from under
-     * a viewer who is watching it again.
+     * Only on the branch where something was newly counted, so re-entering an episode the server
+     * already knew about never deletes it from under a viewer watching it again. Everything else
+     * about the decision — whether the setting is on, whether the download finished, and above all
+     * *when* it is safe to delete — belongs to [DeferredDownloadRemoval]: this mark is usually
+     * raised by the player at nine tenths of the episode, with the file still being read.
      *
      * A removal that fails costs nothing but space, so it is not allowed to fail the mark.
      */
     private suspend fun deleteWatchedDownload(animeId: Int, episode: Int) {
         try {
-            if (!settings.downloadPolicy.first().deleteWatched) return
-            if (downloads.completed(animeId, episode) == null) return
-            downloads.remove(animeId, episode)
+            deleteWatchedDownloads.onWatched(animeId, episode)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {

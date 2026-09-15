@@ -7,6 +7,7 @@ import androidx.media3.common.util.UnstableApi
 import app.kaeru.data.download.DownloadEngine
 import app.kaeru.data.image.PosterWarmer
 import app.kaeru.data.library.OfflineSyncStarter
+import app.kaeru.domain.download.DeferredDownloadRemoval
 import app.kaeru.di.ApplicationScope
 import coil3.ImageLoader
 import coil3.PlatformContext
@@ -35,6 +36,8 @@ class KaeruApp : Application(), SingletonImageLoader.Factory {
 
     @Inject lateinit var posters: PosterWarmer
 
+    @Inject lateinit var deleteWatchedDownloads: DeferredDownloadRemoval
+
     @Inject lateinit var images: ImageLoader
 
     override fun onCreate() {
@@ -48,6 +51,9 @@ class KaeruApp : Application(), SingletonImageLoader.Factory {
         // with. A poster is kilobytes against an episode's megabytes, and without it the offline
         // screens are a list of grey rectangles.
         posters.start(appScope)
+        // Whatever «удалять просмотренные» owed when the process last died. A deletion waits for
+        // playback to move off the episode, and a process that goes away first never gets there.
+        deleteWatchedDownloads.start(appScope)
         registerActivityLifecycleCallbacks(ForegroundWatch())
     }
 

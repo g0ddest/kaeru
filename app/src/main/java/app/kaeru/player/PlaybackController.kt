@@ -6,6 +6,7 @@ import app.kaeru.di.LocalEngine
 import app.kaeru.di.PlaybackScope
 import app.kaeru.domain.connectivity.Connectivity
 import app.kaeru.domain.download.DownloadRepository
+import app.kaeru.domain.download.DeferredDownloadRemoval
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.error.SourceUnavailable
 import app.kaeru.domain.error.SourceUnavailableReason
@@ -136,6 +137,7 @@ interface PlaybackController {
 class DefaultPlaybackController @Inject constructor(
     @param:LocalEngine private val localEngine: PlaybackEngine,
     private val resolve: ResolveEpisodeStream,
+    private val deleteWatchedDownloads: DeferredDownloadRemoval,
     private val progress: WatchProgress,
     private val markWatched: MarkEpisodeWatched,
     private val library: LibraryRepository,
@@ -493,6 +495,8 @@ class DefaultPlaybackController @Inject constructor(
 
     /** Forget what was playing. Which engine is live is the one thing that survives. */
     private fun goIdle() {
+        // Nothing is reading anything now, so anything held back for that reason can go.
+        scope.launch { deleteWatchedDownloads.nowPlaying(null, null) }
         opening = null
         _state.value = PlaybackState(isCasting = casting)
         markedEpisode = false
@@ -546,6 +550,10 @@ class DefaultPlaybackController @Inject constructor(
         )
         engine.prepare(stream.urls.getValue(quality), headers, target.startPositionMs, describe(target, stream, anime))
         engine.play()
+        // What is being read now. «Удалять просмотренные» holds back any episode named here, and
+        // lets go of the one this call moves off — the mark that asks for a deletion is raised at
+        // nine tenths of an episode, while its file is still under the engine.
+        deleteWatchedDownloads.nowPlaying(target.animeId, target.episode)
         opening = null
         // Everything the engine said while this transition ran was ignored on purpose. Take its
         // word now, or a player that reports nothing further would leave the screen mid-swap.

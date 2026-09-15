@@ -1,6 +1,7 @@
 package app.kaeru.player
 
 import app.kaeru.domain.connectivity.FakeConnectivity
+import app.kaeru.domain.download.DeferredDownloadRemoval
 import app.kaeru.domain.download.FakeDownloadRepository
 import app.kaeru.domain.error.EpisodeNotAvailable
 import app.kaeru.domain.error.NetworkUnavailable
@@ -57,6 +58,9 @@ class PlaybackControllerTest {
     private val source = FakeEpisodeSource()
     private val library = FakeLibraryRepository()
     private val prefs = FakePlaybackPreferences()
+    private val downloads = FakeDownloadRepository()
+    private val settings = FakeSettingsStore()
+    private lateinit var deleteWatched: DeferredDownloadRemoval
     private lateinit var controller: DefaultPlaybackController
 
     @Before
@@ -72,15 +76,17 @@ class PlaybackControllerTest {
                 null,
             ),
         )
+        deleteWatched = DeferredDownloadRemoval(downloads, library, settings)
         controller = DefaultPlaybackController(
             localEngine = engine,
             resolve = ResolveEpisodeStream(source, watchStates, prefs, clock, StreamPrefetchCache(clock)),
             progress = WatchProgress(watchStates, FakePlaybackSampleRepository(watchStates), clock),
-            markWatched = MarkEpisodeWatched(library, watchStates, clock, FakeDownloadRepository(), FakeSettingsStore()),
+            markWatched = MarkEpisodeWatched(library, watchStates, clock, deleteWatched),
+            deleteWatchedDownloads = deleteWatched,
             library = library,
             prefs = prefs,
             headers = headers,
-            downloads = FakeDownloadRepository(),
+            downloads = downloads,
             connectivity = FakeConnectivity(),
             scope = scope,
             io = dispatcher,

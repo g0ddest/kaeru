@@ -2,8 +2,10 @@ package app.kaeru.player
 
 import app.kaeru.domain.connectivity.FakeConnectivity
 import app.kaeru.domain.download.DownloadKey
+import app.kaeru.domain.download.DownloadPolicy
 import app.kaeru.domain.download.DownloadState
 import app.kaeru.domain.download.EpisodeDownload
+import app.kaeru.domain.download.DeferredDownloadRemoval
 import app.kaeru.domain.download.FakeDownloadRepository
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.error.SourceUnavailable
@@ -36,6 +38,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -67,6 +70,8 @@ class PlaybackControllerOfflineTest {
     private val prefs = FakePlaybackPreferences()
     private val downloads = FakeDownloadRepository()
     private val connectivity = FakeConnectivity()
+    private val settings = FakeSettingsStore()
+    private lateinit var deleteWatched: DeferredDownloadRemoval
     private lateinit var controller: DefaultPlaybackController
 
     @Before
@@ -82,11 +87,13 @@ class PlaybackControllerOfflineTest {
                 null,
             ),
         )
+        deleteWatched = DeferredDownloadRemoval(downloads, library, settings)
         controller = DefaultPlaybackController(
             localEngine = engine,
             resolve = ResolveEpisodeStream(source, watchStates, prefs, clock, StreamPrefetchCache(clock)),
             progress = WatchProgress(watchStates, FakePlaybackSampleRepository(watchStates), clock),
-            markWatched = MarkEpisodeWatched(library, watchStates, clock, FakeDownloadRepository(), FakeSettingsStore()),
+            markWatched = MarkEpisodeWatched(library, watchStates, clock, deleteWatched),
+            deleteWatchedDownloads = deleteWatched,
             library = library,
             prefs = prefs,
             headers = headers,
@@ -478,4 +485,44 @@ class PlaybackControllerOfflineTest {
             assertEquals(4, controller.state.value.target?.episode)
             assertNull(controller.state.value.error)
         }
+
+    /**
+     * «Удалять просмотренные» meets the episode it is about to delete: the mark is raised at nine
+     * tenths, and the last tenth is still being read out of the cache. Offline there is no second
+     * chance — the address behind the file died weeks ago — so the deletion waits.
+     */
+    @Test
+    fun `an episode being watched offline survives its own watched mark`() = runTest(dispatcher) {
+        settings.downloadPolicy.value = DownloadPolicy.DEFAULT.copy(deleteWatched = true)
+        downloaded(episode = 4)
+        goOffline()
+        controller.play(target(episode = 4))
+        engine.ready(1_440_000)
+        advanceUntilIdle()
+
+        engine.moveTo(1_400_000)
+        advanceUntilIdle()
+
+        assertTrue(downloads.removed.isEmpty())
+        assertNotNull(downloads.completed(100, 4))
+        assertNull(controller.state.value.error)
+    }
+
+    @Test
+    fun `and gives its space back once the next episode is on`() = runTest(dispatcher) {
+        settings.downloadPolicy.value = DownloadPolicy.DEFAULT.copy(deleteWatched = true)
+        downloaded(episode = 4)
+        downloaded(episode = 5)
+        goOffline()
+        controller.play(target(episode = 4))
+        engine.ready(1_440_000)
+        advanceUntilIdle()
+        engine.moveTo(1_400_000)
+        advanceUntilIdle()
+
+        controller.playNext()
+        advanceUntilIdle()
+
+        assertEquals(listOf(100 to 4), downloads.removed)
+    }
 }

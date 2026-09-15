@@ -1,5 +1,6 @@
 package app.kaeru.domain.playback
 
+import app.kaeru.domain.download.DeferredDownloadRemoval
 import app.kaeru.domain.download.FakeDownloadRepository
 import app.kaeru.domain.error.AccountSessionChanged
 import app.kaeru.domain.error.HttpError
@@ -30,7 +31,7 @@ class MarkEpisodeWatchedTest {
     private val clock = MutableClock(now)
     private val library = FakeLibraryRepository()
     private val watchStates = FakeWatchStateRepository()
-    private val mark = MarkEpisodeWatched(library, watchStates, clock, FakeDownloadRepository(), FakeSettingsStore())
+    private val mark = MarkEpisodeWatched(library, watchStates, clock, DeferredDownloadRemoval(FakeDownloadRepository(), library, FakeSettingsStore()))
 
     private fun anime(id: Int = 100, episodes: Int = 12, status: AnimeStatus = AnimeStatus.RELEASED) = Anime(
         id = id, nameRu = "Имя", nameRomaji = "Name", posterUrl = null, screenshotUrls = emptyList(),

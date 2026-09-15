@@ -2,6 +2,7 @@ package app.kaeru.ui.common.details
 
 import androidx.lifecycle.SavedStateHandle
 import app.kaeru.domain.connectivity.FakeConnectivity
+import app.kaeru.domain.download.DeferredDownloadRemoval
 import app.kaeru.domain.download.DownloadPolicy
 import app.kaeru.domain.download.DownloadQualityChoice
 import app.kaeru.domain.download.FakeDownloadRepository
@@ -99,7 +100,7 @@ class DetailsViewModelTest {
         prefs = prefs,
         streams = streams,
         watchStates = watchStates,
-        markEpisodeWatched = MarkEpisodeWatched(repo, watchStates, clock, downloads, settings),
+        markEpisodeWatched = MarkEpisodeWatched(repo, watchStates, clock, DeferredDownloadRemoval(downloads, repo, settings)),
         clock = clock,
         downloads = downloads,
         settings = settings,

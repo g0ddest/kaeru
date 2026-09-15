@@ -1,5 +1,6 @@
 package app.kaeru.domain.playback
 
+import app.kaeru.domain.download.DeferredDownloadRemoval
 import app.kaeru.domain.download.DownloadKey
 import app.kaeru.domain.download.DownloadPolicy
 import app.kaeru.domain.download.DownloadState
@@ -23,6 +24,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
@@ -42,7 +44,8 @@ class MarkEpisodeWatchedDeleteTest {
     private val settings = FakeSettingsStore()
     private val track = Translation(7, "AniLibria.TV", TranslationKind.VOICE, 24)
 
-    private val mark = MarkEpisodeWatched(library, watchStates, clock, downloads, settings)
+    private val deleteWatchedDownloads = DeferredDownloadRemoval(downloads, library, settings)
+    private val mark = MarkEpisodeWatched(library, watchStates, clock, deleteWatchedDownloads)
 
     private class FakeLibrary : LibraryRepository {
         private val entries = MutableStateFlow<Map<Int, LibraryEntry>>(emptyMap())
@@ -157,6 +160,87 @@ class MarkEpisodeWatchedDeleteTest {
         downloads.downloaded(100, 4, track, "https://cdn/100/4")
 
         assertTrue(mark(100, 4).isSuccess)
+
+        assertTrue(downloads.removed.isEmpty())
+    }
+
+    /**
+     * The mark that triggers this is raised by the player at nine tenths of the episode, while the
+     * file is still under the engine. Deleting it there tears the segments out of the cache the
+     * player is reading, and offline — the case the download exists for — there is nothing behind
+     * the dead Kodik address it falls through to.
+     */
+    @Test
+    fun `the episode being played is not deleted out from under the player`() = runTest {
+        seed()
+        deleteWatched(true)
+        downloads.downloaded(100, 4, track, "https://cdn/100/4")
+        deleteWatchedDownloads.nowPlaying(100, 4)
+
+        assertTrue(mark(100, 4).isSuccess)
+
+        assertTrue(downloads.removed.isEmpty())
+        assertNotNull(downloads.completed(100, 4))
+    }
+
+    @Test
+    fun `and goes the moment playback moves on to the next one`() = runTest {
+        seed()
+        deleteWatched(true)
+        downloads.downloaded(100, 4, track, "https://cdn/100/4")
+        deleteWatchedDownloads.nowPlaying(100, 4)
+        assertTrue(mark(100, 4).isSuccess)
+
+        deleteWatchedDownloads.nowPlaying(100, 5)
+
+        assertEquals(listOf(100 to 4), downloads.removed)
+    }
+
+    @Test
+    fun `or when the player stops altogether`() = runTest {
+        seed()
+        deleteWatched(true)
+        downloads.downloaded(100, 4, track, "https://cdn/100/4")
+        deleteWatchedDownloads.nowPlaying(100, 4)
+        assertTrue(mark(100, 4).isSuccess)
+
+        deleteWatchedDownloads.nowPlaying(null, null)
+
+        assertEquals(listOf(100 to 4), downloads.removed)
+    }
+
+    @Test
+    fun `an episode nobody is playing still goes at once`() = runTest {
+        seed()
+        deleteWatched(true)
+        downloads.downloaded(100, 4, track, "https://cdn/100/4")
+        deleteWatchedDownloads.nowPlaying(100, 7)
+
+        assertTrue(mark(100, 4).isSuccess)
+
+        assertEquals(listOf(100 to 4), downloads.removed)
+    }
+
+    /** A process that died before playback moved on: the next start clears what it owed. */
+    @Test
+    fun `the sweep clears what a previous run left behind`() = runTest {
+        seed(watched = 4)
+        deleteWatched(true)
+        downloads.downloaded(100, 4, track, "https://cdn/100/4")
+        downloads.downloaded(100, 5, track, "https://cdn/100/5")
+
+        deleteWatchedDownloads.sweep()
+
+        assertEquals(listOf(100 to 4), downloads.removed)
+    }
+
+    @Test
+    fun `the sweep does nothing with the setting off`() = runTest {
+        seed(watched = 4)
+        deleteWatched(false)
+        downloads.downloaded(100, 4, track, "https://cdn/100/4")
+
+        deleteWatchedDownloads.sweep()
 
         assertTrue(downloads.removed.isEmpty())
     }

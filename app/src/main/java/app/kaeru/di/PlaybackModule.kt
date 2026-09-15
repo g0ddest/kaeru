@@ -9,6 +9,7 @@ import app.kaeru.data.library.AppPreferences
 import app.kaeru.data.playback.RoomEpisodeProgressRepository
 import app.kaeru.data.playback.RoomPlaybackSampleRepository
 import app.kaeru.data.playback.RoomWatchStateRepository
+import app.kaeru.domain.download.DeferredDownloadRemoval
 import app.kaeru.domain.download.DownloadRepository
 import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.PlaybackNotificationPrompt
@@ -158,9 +159,20 @@ object PlaybackModule {
         library: LibraryRepository,
         watchStates: WatchStateRepository,
         clock: Clock,
+        deleteWatchedDownloads: DeferredDownloadRemoval,
+    ): MarkEpisodeWatched = MarkEpisodeWatched(library, watchStates, clock, deleteWatchedDownloads)
+
+    /**
+     * One instance, because it holds what is playing: a second would defer against a target nothing
+     * sets and delete a file the first is protecting.
+     */
+    @Provides
+    @Singleton
+    fun deferredDownloadRemoval(
         downloads: DownloadRepository,
+        library: LibraryRepository,
         settings: SettingsStore,
-    ): MarkEpisodeWatched = MarkEpisodeWatched(library, watchStates, clock, downloads, settings)
+    ): DeferredDownloadRemoval = DeferredDownloadRemoval(downloads, library, settings)
 }
 
 @UnstableApi
