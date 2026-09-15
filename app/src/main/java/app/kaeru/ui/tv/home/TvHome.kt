@@ -55,7 +55,10 @@ data class TvHomeCard(
      */
     val playEpisode: Int?,
     val hero: TvHero,
-)
+) {
+    /** Unique inside a row, where the id alone is not: a row can name two episodes of one title. */
+    val key: String get() = if (badge == null) "$animeId" else "$animeId:$badge"
+}
 
 /** A titled row. Never built empty, so the heading always has cards under it. */
 data class TvHomeRow(val title: String, val items: List<TvHomeCard>)
