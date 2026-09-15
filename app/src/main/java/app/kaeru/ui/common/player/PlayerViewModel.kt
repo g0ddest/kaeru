@@ -356,6 +356,23 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch { downloads.remove(id, episode) }
     }
 
+    /**
+     * «Удалить загрузку» on the failure over the video: takes the broken copy away, then starts the
+     * episode again from the source.
+     *
+     * One action rather than the two it looks like, and strictly in that order. Opening an episode
+     * prefers a finished download, so a retry that ran before the removal had landed would pick the
+     * same unplayable file up again and fail in exactly the same way.
+     */
+    fun removeDownloadAndRetry() {
+        val id = animeId.value ?: return
+        val episode = controller.state.value.target?.episode ?: return
+        viewModelScope.launch {
+            downloads.remove(id, episode)
+            controller.retry()
+        }
+    }
+
     /** Loads the tracks on demand and shows them: the sheet costs a request to fill. */
     fun openTranslations() = fetchTranslations(show = true)
 

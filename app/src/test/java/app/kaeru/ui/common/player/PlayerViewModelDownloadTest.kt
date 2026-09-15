@@ -187,10 +187,32 @@ class PlayerViewModelDownloadTest {
     fun `nothing is downloaded while there is no episode to download`() = runTest(main.dispatcher) {
         viewModel.download()
         viewModel.removeDownload()
+        viewModel.removeDownloadAndRetry()
         advanceUntilIdle()
 
         assertTrue(downloads.enqueued.isEmpty())
         assertTrue(downloads.removed.isEmpty())
+        assertEquals(0, controller.retries)
+    }
+
+    /**
+     * «Удалить загрузку» on a failed episode: the copy goes, and the episode starts again from the
+     * source. Both, in that order and in one coroutine — opening an episode prefers a finished
+     * download, so a retry that ran first would pick the same unplayable file up again.
+     */
+    @Test
+    fun `removing a broken download starts the episode again from the source`() = runTest(main.dispatcher) {
+        downloads.put(row(episode = 4, state = DownloadState.COMPLETED, progress = 1f))
+        viewModel.start(animeId = 100, episode = 4)
+        advanceUntilIdle()
+
+        viewModel.removeDownloadAndRetry()
+        advanceUntilIdle()
+
+        assertEquals(100 to 4, downloads.removed.single())
+        assertNull(downloads.completed(100, 4))
+        assertNull(viewModel.uiState.value.download)
+        assertEquals(1, controller.retries)
     }
 
     @Test
