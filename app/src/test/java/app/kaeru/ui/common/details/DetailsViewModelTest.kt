@@ -1,6 +1,7 @@
 package app.kaeru.ui.common.details
 
 import androidx.lifecycle.SavedStateHandle
+import app.kaeru.domain.download.FakeDownloadRepository
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
@@ -14,6 +15,7 @@ import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.playback.StreamPrefetchCache
 import app.kaeru.domain.repository.LibraryRepository
+import app.kaeru.domain.settings.FakeSettingsStore
 import app.kaeru.player.FakeEpisodeSource
 import app.kaeru.test.MainDispatcherRule
 import java.io.IOException
@@ -87,7 +89,7 @@ class DetailsViewModelTest {
         prefs = prefs,
         streams = streams,
         watchStates = watchStates,
-        markEpisodeWatched = MarkEpisodeWatched(repo, watchStates, clock),
+        markEpisodeWatched = MarkEpisodeWatched(repo, watchStates, clock, FakeDownloadRepository(), FakeSettingsStore()),
         clock = clock,
     )
 

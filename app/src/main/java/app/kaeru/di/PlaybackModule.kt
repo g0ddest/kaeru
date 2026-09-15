@@ -6,6 +6,7 @@ import app.kaeru.data.library.AppPreferences
 import app.kaeru.data.playback.RoomEpisodeProgressRepository
 import app.kaeru.data.playback.RoomPlaybackSampleRepository
 import app.kaeru.data.playback.RoomWatchStateRepository
+import app.kaeru.domain.download.DownloadRepository
 import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.PlaybackNotificationPrompt
 import app.kaeru.domain.playback.PlaybackPreferences
@@ -17,6 +18,7 @@ import app.kaeru.domain.repository.EpisodeProgressRepository
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.repository.PlaybackSampleRepository
 import app.kaeru.domain.repository.WatchStateRepository
+import app.kaeru.domain.settings.SettingsStore
 import app.kaeru.domain.source.EpisodeSourceProvider
 import app.kaeru.player.CastFramework
 import app.kaeru.player.DefaultPlaybackController
@@ -123,7 +125,9 @@ object PlaybackModule {
         library: LibraryRepository,
         watchStates: WatchStateRepository,
         clock: Clock,
-    ): MarkEpisodeWatched = MarkEpisodeWatched(library, watchStates, clock)
+        downloads: DownloadRepository,
+        settings: SettingsStore,
+    ): MarkEpisodeWatched = MarkEpisodeWatched(library, watchStates, clock, downloads, settings)
 }
 
 @UnstableApi
