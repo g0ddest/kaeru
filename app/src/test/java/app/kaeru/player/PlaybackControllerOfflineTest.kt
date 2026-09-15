@@ -35,6 +35,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -99,6 +100,17 @@ class PlaybackControllerOfflineTest {
     @After
     fun tearDown() = scope.cancel()
 
+    /**
+     * A device with no network, modelled the way one actually behaves: the flag is down *and* the
+     * source cannot be reached. The controller no longer refuses a resolve on the flag alone — a
+     * network the platform will not validate is still a network — so a test that only lowered the
+     * flag would be testing a phone whose Kodik answers from a tunnel.
+     */
+    private fun goOffline() {
+        connectivity.goOffline()
+        source.resolveFailure = NetworkUnavailable(IOException("нет маршрута"))
+    }
+
     private fun target(episode: Int = 4, startPositionMs: Long = 0, translation: Translation? = null) =
         PlaybackTarget(animeId = 100, episode = episode, startPositionMs = startPositionMs, translation = translation)
 
@@ -150,12 +162,13 @@ class PlaybackControllerOfflineTest {
 
     @Test
     fun `no network and nothing on the device is a failure that names the reason`() = runTest(dispatcher) {
-        connectivity.goOffline()
+        goOffline()
 
         controller.play(target(episode = 4))
         advanceUntilIdle()
 
-        assertTrue(source.resolves.isEmpty())
+        // Asked anyway, and the failure is what decides the wording.
+        assertEquals(listOf(4), source.resolves)
         assertTrue(engine.prepared.isEmpty())
         val failure = controller.state.value.error
         assertTrue(failure is SourceUnavailable)
@@ -213,12 +226,14 @@ class PlaybackControllerOfflineTest {
         downloaded(episode = 4, track = anilibria)
         controller.play(target(episode = 4))
         advanceUntilIdle()
-        connectivity.goOffline()
+        goOffline()
 
         controller.changeTranslation(studioBanda)
         advanceUntilIdle()
 
-        assertTrue(source.resolves.isEmpty())
+        // The other voice is asked for — it might be there — and when it is not, the voice already
+        // on the device beats a red line over an episode that would play.
+        assertEquals(listOf(4), source.resolves)
         assertEquals("https://cdn/100/4/11/720?sign=expired", engine.prepared.last().url)
         assertNull(controller.state.value.error)
     }
@@ -264,7 +279,7 @@ class PlaybackControllerOfflineTest {
         controller.play(target(episode = 4))
         engine.ready(1_440_000)
         advanceUntilIdle()
-        connectivity.goOffline()
+        goOffline()
         val receiver = FakePlaybackEngine()
 
         controller.switchEngine(receiver, carryPositionMs = 120_000)
@@ -364,7 +379,42 @@ class PlaybackControllerOfflineTest {
             val failure = controller.state.value.error
             assertTrue(failure is SourceUnavailable)
             assertEquals(SourceUnavailableReason.OFFLINE, (failure as SourceUnavailable).reason)
+            // And the screen is told *what* failed, which is the only thing that lets it offer to
+            // delete the file rather than to change the voice.
+            assertTrue(controller.state.value.failedReadingDownload)
         }
+
+    /**
+     * The same downloaded episode, failing on the source instead: the viewer asked for a voice it
+     * was not fetched in, so this is Kodik's failure with the file untouched beside it.
+     */
+    @Test
+    fun `a resolve that failed is never blamed on the file, downloaded or not`() = runTest(dispatcher) {
+        downloaded(episode = 4, track = anilibria)
+        controller.play(target(episode = 4))
+        engine.ready(1_440_000)
+        advanceUntilIdle()
+        source.resolveFailure = NetworkUnavailable(IOException("kodik"))
+
+        controller.changeTranslation(studioBanda)
+        advanceUntilIdle()
+
+        assertFalse(controller.state.value.failedReadingDownload)
+    }
+
+    @Test
+    fun `a cast that failed says nothing about the file either`() = runTest(dispatcher) {
+        downloaded(episode = 4)
+        controller.play(target(episode = 4))
+        engine.ready(1_440_000)
+        advanceUntilIdle()
+        source.resolveFailure = NetworkUnavailable(IOException("kodik"))
+
+        controller.switchEngine(FakePlaybackEngine(), carryPositionMs = 120_000)
+        advanceUntilIdle()
+
+        assertFalse(controller.state.value.failedReadingDownload)
+    }
 
     @Test
     fun `a streamed episode that stops for good still reports what the engine said`() =
@@ -381,7 +431,37 @@ class PlaybackControllerOfflineTest {
             advanceUntilIdle()
 
             assertTrue(controller.state.value.error is NetworkUnavailable)
+            assertFalse(controller.state.value.failedReadingDownload)
         }
+
+    /**
+     * A network the platform will not validate — a portal it cannot probe, a filtered uplink — is
+     * still a network. The app finds out by asking rather than by believing the flag, because
+     * believing it meant playing nothing at all on a connection where everything worked.
+     */
+    @Test
+    fun `a network the device doubts is still asked, and what answers plays`() = runTest(dispatcher) {
+        connectivity.goOffline()
+
+        controller.play(target(episode = 4))
+        advanceUntilIdle()
+
+        assertEquals(listOf(4), source.resolves)
+        assertEquals("https://cdn/100/4/11/720", engine.prepared.single().url)
+        assertNull(controller.state.value.error)
+    }
+
+    @Test
+    fun `a source that answers with a refusal says so, not «нет сети»`() = runTest(dispatcher) {
+        connectivity.goOffline()
+        source.rejects = setOf(4)
+
+        controller.play(target(episode = 4))
+        advanceUntilIdle()
+
+        val failure = controller.state.value.error
+        assertTrue(failure.toString(), failure !is SourceUnavailable || failure.reason != SourceUnavailableReason.OFFLINE)
+    }
 
     @Test
     fun `offline, an episode that is not on the device announces the reason and keeps the one playing`() =
@@ -390,7 +470,7 @@ class PlaybackControllerOfflineTest {
             controller.play(target(episode = 4))
             engine.ready(1_440_000)
             advanceUntilIdle()
-            connectivity.goOffline()
+            goOffline()
 
             controller.playNext()
             advanceUntilIdle()

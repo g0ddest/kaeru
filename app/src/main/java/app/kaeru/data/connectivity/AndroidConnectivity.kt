@@ -85,8 +85,19 @@ class AndroidConnectivity(
         getNetworkCapabilities(activeNetwork ?: return false).reachesInternet
 }
 
-/** Both capabilities, not either: `INTERNET` is what the interface is for, `VALIDATED` is whether it works. */
+/**
+ * An interface that carries the internet — and deliberately not one the platform has *validated*.
+ *
+ * Validation is Android probing its own check endpoints. Where those are blocked, slow or simply
+ * unreachable — a hotel network, a filtered one, a television on an unusual uplink — a connection
+ * that works perfectly reports unvalidated indefinitely. This flag is read by everything that can
+ * hide or refuse work, so believing that report meant an app that showed «Нет сети», played
+ * nothing and refreshed nothing on a network where every request would have succeeded.
+ *
+ * So the question here is only «есть ли вообще сеть», which is what the strip is about, and
+ * nothing is refused on the strength of it: the player attempts its resolve either way and lets
+ * the attempt decide. A portal that swallows requests costs one failed request and an honest
+ * message, which is a far better trade than a phone that will not try.
+ */
 private val NetworkCapabilities?.reachesInternet: Boolean
-    get() = this != null &&
-        hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-        hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    get() = this != null && hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)

@@ -82,9 +82,24 @@ class AndroidConnectivityTest {
         }
     }
 
+    /**
+     * Validation is the platform probing its own endpoints, and a network where those are blocked
+     * carries traffic perfectly while reporting unvalidated for good. Nothing in this app refuses
+     * work on this flag, so the honest answer is the one the interface itself gives.
+     */
     @Test
-    fun `a network that has not been validated reaches nothing`() = runTest {
+    fun `a network the platform has not validated still counts as a network`() = runTest {
         connect(capabilities(NetworkCapabilities.NET_CAPABILITY_INTERNET))
+
+        connectivity().online.test {
+            assertTrue(awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `an interface that does not carry the internet at all is offline`() = runTest {
+        connect(capabilities(NetworkCapabilities.NET_CAPABILITY_NOT_METERED))
 
         connectivity().online.test {
             assertEquals(false, awaitItem())
@@ -107,19 +122,6 @@ class AndroidConnectivityTest {
 
             // The same network saying the same thing again is not news.
             fire { onCapabilitiesChanged(network, validated) }
-            expectNoEvents()
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `a captive portal that never validates never reads as online`() = runTest {
-        val network = connect(capabilities(NetworkCapabilities.NET_CAPABILITY_INTERNET))
-
-        connectivity().online.test {
-            assertEquals(false, awaitItem())
-
-            fire { onCapabilitiesChanged(network, capabilities(NetworkCapabilities.NET_CAPABILITY_INTERNET)) }
             expectNoEvents()
             cancelAndIgnoreRemainingEvents()
         }

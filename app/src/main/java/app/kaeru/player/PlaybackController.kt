@@ -6,6 +6,7 @@ import app.kaeru.di.LocalEngine
 import app.kaeru.di.PlaybackScope
 import app.kaeru.domain.connectivity.Connectivity
 import app.kaeru.domain.download.DownloadRepository
+import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.error.SourceUnavailable
 import app.kaeru.domain.error.SourceUnavailableReason
 import app.kaeru.domain.model.Anime
@@ -18,6 +19,7 @@ import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.playback.WatchProgress
 import app.kaeru.domain.repository.LibraryRepository
+import java.io.IOException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -585,13 +587,36 @@ class DefaultPlaybackController @Inject constructor(
             if (downloaded != null && !(pickedTrack && asksAnotherTrack(target, downloaded))) {
                 return@withContext Result.success(Source(downloaded, onDevice = true))
             }
-            if (!connectivity.online.first()) {
-                return@withContext downloaded?.let { Result.success(Source(it, onDevice = true)) }
-                    ?: Result.failure(SourceUnavailable(SourceUnavailableReason.OFFLINE))
-            }
-            resolve(target.animeId, target.episode, target.translation).map { Source(it, onDevice = false) }
+            // The resolve is attempted whatever the platform thinks of the network, and that is
+            // deliberate. «Online» here means an interface that claims to carry the internet, and
+            // on a connection the platform will not validate — a captive portal it cannot probe, a
+            // network where its own check endpoints are blocked — that claim is wrong in the
+            // direction that costs the most: refusing to ask Kodik means playing nothing at all on
+            // a network that works. So the flag never gates the request; it only decides how a
+            // failure is worded afterwards.
+            resolve(target.animeId, target.episode, target.translation)
+                .map { Source(it, onDevice = false) }
+                .recoverCatching { failure ->
+                    val offline = !connectivity.online.first()
+                    // One voice on the device beats a red line over an episode that would play.
+                    if (offline && downloaded != null) return@recoverCatching Source(downloaded, onDevice = true)
+                    throw if (offline && failure.isNetworkFailure()) {
+                        SourceUnavailable(SourceUnavailableReason.OFFLINE, failure)
+                    } else {
+                        failure
+                    }
+                }
         }
     }
+
+    /**
+     * The failure looks like one a network would cause, rather than one Kodik answered with.
+     *
+     * Only these become «нет сети», and only when the device also says there is none. A source
+     * that answered and said no is a different sentence, and telling a viewer to download the
+     * episode in advance would be advice they cannot act on.
+     */
+    private fun Throwable.isNetworkFailure(): Boolean = this is NetworkUnavailable || this is IOException
 
     /** The voice the viewer chose is not the one the download was fetched in. */
     private fun asksAnotherTrack(target: PlaybackTarget, downloaded: EpisodeStream): Boolean =
@@ -691,7 +716,7 @@ class DefaultPlaybackController @Inject constructor(
             // network carrying it: the file was removed, or its bytes will not decode. «Нет сети.
             // Скачайте серию заранее» is the one sentence that points at the thing to do about it.
             if (playingDownload) {
-                fail(SourceUnavailable(SourceUnavailableReason.OFFLINE, error))
+                fail(SourceUnavailable(SourceUnavailableReason.OFFLINE, error), fromDownload = true)
             } else {
                 fail(error)
             }
@@ -801,8 +826,15 @@ class DefaultPlaybackController @Inject constructor(
         kodikSeason = sample.season,
     )
 
-    private fun fail(error: Throwable) {
-        _state.update { it.copy(isBuffering = false, isPlaying = false, error = error) }
+    /**
+     * @param fromDownload whether what failed was the copy on this device. False for everything
+     *   that comes out of a resolve — including a resolve for an episode that happens to be
+     *   downloaded — and true only where the engine was reading the download when it broke.
+     */
+    private fun fail(error: Throwable, fromDownload: Boolean = false) {
+        _state.update {
+            it.copy(isBuffering = false, isPlaying = false, error = error, failedReadingDownload = fromDownload)
+        }
     }
 
     /**
