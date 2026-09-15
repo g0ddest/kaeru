@@ -189,6 +189,10 @@ fun MobileShell(
                     onLoadTranslations = vm::loadTranslations,
                     onPickTranslation = vm::pickTranslation,
                     onMarkWatched = vm::markWatched,
+                    onDownload = vm::download,
+                    onRemoveDownload = vm::removeDownload,
+                    onStorageMessageShown = vm::storageMessageShown,
+                    onDownloads = { nav.navigate(Routes.DOWNLOADS) },
                 )
             }
         }

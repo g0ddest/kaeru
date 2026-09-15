@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,6 +19,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
@@ -49,6 +52,7 @@ import androidx.compose.ui.unit.sp
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
+import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.ui.common.design.Backdrop
 import app.kaeru.ui.common.design.ErrorState
@@ -56,6 +60,7 @@ import app.kaeru.ui.common.design.IconAction
 import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.design.KaeruTopBar
 import app.kaeru.ui.common.design.MetaChip
+import app.kaeru.ui.common.design.OfflineStrip
 import app.kaeru.ui.common.design.PosterImage
 import app.kaeru.ui.common.design.PrimaryButton
 import app.kaeru.ui.common.design.RowHeader
@@ -74,6 +79,7 @@ import app.kaeru.ui.common.details.DetailsUiState
 import app.kaeru.ui.common.details.detailsAction
 import app.kaeru.ui.common.details.detailsContentState
 import app.kaeru.ui.common.details.detailsMeta
+import app.kaeru.ui.common.details.downloadChoices
 import app.kaeru.ui.common.details.episodeCells
 import app.kaeru.ui.common.details.translationLabel
 import app.kaeru.ui.common.theme.KaeruAccent
@@ -81,6 +87,7 @@ import app.kaeru.ui.common.theme.KaeruBackground
 import app.kaeru.ui.common.theme.KaeruElevated
 import app.kaeru.ui.common.theme.KaeruSecondary
 import app.kaeru.ui.common.theme.KaeruText
+import app.kaeru.ui.mobile.ActionSnackbar
 import app.kaeru.ui.mobile.KaeruSnackbarHost
 import app.kaeru.ui.mobile.RetrySnackbar
 import app.kaeru.ui.common.player.CastButton
@@ -103,6 +110,12 @@ private val PosterOverhang = 48.dp
 /** How far the page travels before the floating bar takes a ground of its own. */
 private val ScrimDistance = 160.dp
 
+/** The height of [KaeruTopBar], which floats over this screen instead of taking space in it. */
+private val BarHeight = 56.dp
+
+/** What the snackbar about a full device offers: the screen where the space actually is. */
+private const val DOWNLOADS = "Загрузки"
+
 /** Where the description stops until the viewer asks for the rest. */
 private const val COLLAPSED_LINES = 4
 
@@ -123,27 +136,44 @@ fun DetailsScreen(
     onLoadTranslations: () -> Unit,
     onPickTranslation: (Translation) -> Unit,
     onMarkWatched: (episode: Int) -> Unit,
+    onDownload: (episodes: List<Int>, quality: Quality?) -> Unit,
+    onRemoveDownload: (episode: Int) -> Unit,
+    onStorageMessageShown: () -> Unit,
+    onDownloads: () -> Unit,
 ) {
     val content = detailsContentState(state)
     val snackbar = remember { SnackbarHostState() }
     // Over an anime the viewer can still read, a failure is a snackbar; with nothing to show it is
     // the screen, and two «Повторить» at once would be one too many.
     RetrySnackbar(state.errorMessage.takeIf { content is DetailsContent.Ready }, snackbar, onRetry)
+    // A device that is full is a different message with a different way out: «Повторить» would only
+    // fail again, so this one leads to the screen where the space can be freed.
+    ActionSnackbar(state.storageMessage, DOWNLOADS, snackbar, onDownloads, onStorageMessageShown)
     val scroll = rememberScrollState()
     Box(Modifier.fillMaxSize().background(KaeruBackground)) {
-        when (content) {
-            DetailsContent.Loading -> DetailsSkeleton()
-            is DetailsContent.Error -> ErrorState(content.message, onRetry, Modifier.fillMaxSize())
-            is DetailsContent.Ready -> TitlePage(
-                anime = content.anime,
-                state = state,
-                scroll = scroll,
-                onStatus = onStatus,
-                onPlay = onPlay,
-                onLoadTranslations = onLoadTranslations,
-                onPickTranslation = onPickTranslation,
-                onMarkWatched = onMarkWatched,
-            )
+        Column(Modifier.fillMaxSize()) {
+            // With no network the strip takes real space under the bar rather than floating over
+            // the artwork: one line the viewer has to be able to read, whatever is behind it.
+            if (state.offline) {
+                Spacer(Modifier.windowInsetsPadding(WindowInsets.statusBars).height(BarHeight))
+                OfflineStrip()
+            }
+            when (content) {
+                DetailsContent.Loading -> DetailsSkeleton()
+                is DetailsContent.Error -> ErrorState(content.message, onRetry, Modifier.fillMaxSize())
+                is DetailsContent.Ready -> TitlePage(
+                    anime = content.anime,
+                    state = state,
+                    scroll = scroll,
+                    onStatus = onStatus,
+                    onPlay = onPlay,
+                    onLoadTranslations = onLoadTranslations,
+                    onPickTranslation = onPickTranslation,
+                    onMarkWatched = onMarkWatched,
+                    onDownload = onDownload,
+                    onRemoveDownload = onRemoveDownload,
+                )
+            }
         }
         // Always drawn, whatever else is on the screen: a title that failed to load is never a
         // dead end. The disc under the glyphs is only worth it over artwork.
@@ -185,11 +215,16 @@ private fun TitlePage(
     onLoadTranslations: () -> Unit,
     onPickTranslation: (Translation) -> Unit,
     onMarkWatched: (Int) -> Unit,
+    onDownload: (List<Int>, Quality?) -> Unit,
+    onRemoveDownload: (Int) -> Unit,
 ) {
     val entry = state.entry
-    val cells = remember(anime, entry, state.watchedThreshold) {
-        episodeCells(anime, entry?.rate, entry?.watch, entry?.progress.orEmpty(), state.watchedThreshold)
+    val cells = remember(anime, entry, state.watchedThreshold, state.downloads) {
+        episodeCells(
+            anime, entry?.rate, entry?.watch, entry?.progress.orEmpty(), state.watchedThreshold, state.downloads,
+        )
     }
+    var sheetOpen by remember { mutableStateOf(false) }
     // One clock per anime. «9 серия выйдет завтра» is read against it, and a label that rewrote
     // itself on every recomposition would be a label nobody could finish reading.
     val now = remember(anime) { Instant.now() }
@@ -210,8 +245,23 @@ private fun TitlePage(
             watched = entry?.rate?.episodes ?: 0,
             onPlay = { episode -> onPlay(anime.id, episode) },
             onMarkWatched = onMarkWatched,
+            onDownloadSome = { sheetOpen = true },
+            onDownload = { episode -> onDownload(listOf(episode), null) },
+            onRemoveDownload = onRemoveDownload,
         )
         anime.description?.takeIf { it.isNotBlank() }?.let { Description(it) }
+    }
+    if (sheetOpen) {
+        DownloadSheet(
+            choices = remember(cells) { downloadChoices(cells) },
+            estimateBytes = state.episodeEstimate,
+            quality = state.downloadQuality,
+            onDownload = { episodes, quality ->
+                sheetOpen = false
+                onDownload(episodes, quality)
+            },
+            onDismiss = { sheetOpen = false },
+        )
     }
 }
 

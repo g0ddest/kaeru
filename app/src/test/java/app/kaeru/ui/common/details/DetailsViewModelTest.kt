@@ -1,6 +1,7 @@
 package app.kaeru.ui.common.details
 
 import androidx.lifecycle.SavedStateHandle
+import app.kaeru.domain.connectivity.FakeConnectivity
 import app.kaeru.domain.download.FakeDownloadRepository
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.model.Anime
@@ -83,14 +84,21 @@ class DetailsViewModelTest {
         }
     }
 
+    private val downloads = FakeDownloadRepository()
+    private val settings = FakeSettingsStore()
+    private val connectivity = FakeConnectivity()
+
     private fun viewModel(repo: FakeRepository) = DetailsViewModel(
         savedStateHandle = SavedStateHandle(mapOf("animeId" to 7)),
         repository = repo,
         prefs = prefs,
         streams = streams,
         watchStates = watchStates,
-        markEpisodeWatched = MarkEpisodeWatched(repo, watchStates, clock, FakeDownloadRepository(), FakeSettingsStore()),
+        markEpisodeWatched = MarkEpisodeWatched(repo, watchStates, clock, downloads, settings),
         clock = clock,
+        downloads = downloads,
+        settings = settings,
+        connectivity = connectivity,
     )
 
     @Test

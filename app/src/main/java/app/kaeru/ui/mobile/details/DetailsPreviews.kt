@@ -1,7 +1,11 @@
 package app.kaeru.ui.mobile.details
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import app.kaeru.domain.download.DownloadState
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.LibraryEntry
@@ -12,6 +16,8 @@ import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.model.WatchState
 import app.kaeru.domain.playback.RankedTranslation
 import app.kaeru.ui.common.details.DetailsUiState
+import app.kaeru.ui.common.details.EpisodeCell
+import app.kaeru.ui.common.theme.KaeruBackground
 import app.kaeru.ui.common.theme.KaeruTheme
 import java.time.Duration
 import java.time.Instant
@@ -82,6 +88,10 @@ private fun DetailsInListPreview() = KaeruTheme {
         onLoadTranslations = {},
         onPickTranslation = {},
         onMarkWatched = {},
+        onDownload = { _, _ -> },
+        onRemoveDownload = {},
+        onStorageMessageShown = {},
+        onDownloads = {},
     )
 }
 
@@ -104,6 +114,10 @@ private fun DetailsWaitingPreview() = KaeruTheme {
         onLoadTranslations = {},
         onPickTranslation = {},
         onMarkWatched = {},
+        onDownload = { _, _ -> },
+        onRemoveDownload = {},
+        onStorageMessageShown = {},
+        onDownloads = {},
     )
 }
 
@@ -122,6 +136,10 @@ private fun DetailsNotInListPreview() = KaeruTheme {
         onLoadTranslations = {},
         onPickTranslation = {},
         onMarkWatched = {},
+        onDownload = { _, _ -> },
+        onRemoveDownload = {},
+        onStorageMessageShown = {},
+        onDownloads = {},
     )
 }
 
@@ -137,6 +155,10 @@ private fun DetailsLoadingPreview() = KaeruTheme {
         onLoadTranslations = {},
         onPickTranslation = {},
         onMarkWatched = {},
+        onDownload = { _, _ -> },
+        onRemoveDownload = {},
+        onStorageMessageShown = {},
+        onDownloads = {},
     )
 }
 
@@ -155,5 +177,50 @@ private fun DetailsErrorPreview() = KaeruTheme {
         onLoadTranslations = {},
         onPickTranslation = {},
         onMarkWatched = {},
+        onDownload = { _, _ -> },
+        onRemoveDownload = {},
+        onStorageMessageShown = {},
+        onDownloads = {},
     )
+}
+
+private fun cell(
+    number: Int,
+    download: DownloadState? = null,
+    downloadProgress: Float? = null,
+    watched: Boolean = false,
+    progress: Float? = null,
+    aired: Boolean = true,
+) = EpisodeCell(number, watched, progress, aired, download, downloadProgress)
+
+/**
+ * Every corner a tile can carry, in one grid.
+ *
+ * Left to right: on the device, coming down with a ring around how far it has got, waiting its
+ * turn, waiting for Wi-Fi, refused — then one with nothing asked of it, one watched and
+ * downloaded (both corners at once), and one that has not aired.
+ */
+@Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 260)
+@Composable
+private fun EpisodeDownloadStatesPreview() = KaeruTheme {
+    Column(Modifier.background(KaeruBackground)) {
+        EpisodeSection(
+            cells = listOf(
+                cell(1, DownloadState.COMPLETED),
+                cell(2, DownloadState.DOWNLOADING, downloadProgress = 0.42f, progress = 0.3f),
+                cell(3, DownloadState.QUEUED),
+                cell(4, DownloadState.WAITING_FOR_WIFI),
+                cell(5, DownloadState.FAILED),
+                cell(6),
+                cell(7, DownloadState.COMPLETED, watched = true),
+                cell(8, aired = false),
+            ),
+            watched = 1,
+            onPlay = {},
+            onMarkWatched = {},
+            onDownloadSome = {},
+            onDownload = {},
+            onRemoveDownload = {},
+        )
+    }
 }
