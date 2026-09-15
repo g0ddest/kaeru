@@ -1,6 +1,7 @@
 package app.kaeru.di
 
 import android.content.Context
+import android.content.Intent
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.DatabaseProvider
 import androidx.media3.database.StandaloneDatabaseProvider
@@ -12,11 +13,13 @@ import app.kaeru.data.download.DownloadCache
 import app.kaeru.data.download.DownloadCommands
 import app.kaeru.data.download.DownloadNotifications
 import app.kaeru.data.download.DownloadOutcomes
+import app.kaeru.data.download.DownloadsScreenIntent
 import app.kaeru.data.download.DownloadsSource
 import app.kaeru.data.download.Media3DownloadCommands
 import app.kaeru.data.download.Media3DownloadRepository
 import app.kaeru.data.download.Media3DownloadsSource
 import app.kaeru.domain.download.DownloadRepository
+import app.kaeru.MainActivity
 import app.kaeru.player.StreamHeaders
 import dagger.Binds
 import dagger.Module
@@ -50,6 +53,13 @@ object DownloadModule {
     fun mediaDatabaseProvider(@ApplicationContext context: Context): DatabaseProvider =
         StandaloneDatabaseProvider(context)
 
+    /**
+     * Built once, and whoever asks first pays for it: `SimpleCache`'s constructor blocks on a scan
+     * of the downloads directory, which on a phone holding a season is not instant. `@Singleton`
+     * is the lock — Dagger's double-check builds it on one thread and parks every other caller
+     * until it is there — so the thing that matters is who asks first, and `DownloadEngine.start`
+     * makes sure that is an io coroutine rather than the main thread.
+     */
     @Provides
     @Singleton
     fun downloadCache(
@@ -57,6 +67,7 @@ object DownloadModule {
         databaseProvider: DatabaseProvider,
     ): SimpleCache = DownloadCache.open(context, databaseProvider)
 
+    /** Built once, on whichever thread asks first; see [downloadCache], which this pulls in. */
     @Provides
     @Singleton
     fun downloadManager(
@@ -76,6 +87,20 @@ object DownloadModule {
             maxParallelDownloads = MAX_PARALLEL_DOWNLOADS
         }
     }
+
+    /**
+     * Where a download notification leads. Built here rather than in `data`, which is the one
+     * place that knows both the activity and the route, and keeps the data layer from naming a
+     * screen.
+     */
+    @Provides
+    @Singleton
+    fun downloadsScreenIntent(@ApplicationContext context: Context): DownloadsScreenIntent =
+        DownloadsScreenIntent {
+            Intent(context, MainActivity::class.java)
+                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                .putExtra(DownloadsScreenIntent.EXTRA_ROUTE, DownloadsScreenIntent.ROUTE_DOWNLOADS)
+        }
 
     private const val PARALLEL_SEGMENTS = 2
     private const val MAX_PARALLEL_DOWNLOADS = 2

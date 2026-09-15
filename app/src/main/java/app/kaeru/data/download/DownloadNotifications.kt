@@ -3,13 +3,11 @@ package app.kaeru.data.download
 import android.app.Notification
 import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.offline.Download
-import app.kaeru.MainActivity
 import app.kaeru.R
 import app.kaeru.domain.download.DownloadKey
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -33,17 +31,19 @@ interface DownloadOutcomes {
  * The notification the download service runs in the foreground with, and the two one-off
  * notifications that say how a download ended.
  *
- * Built by hand on `NotificationCompat` rather than with media3's own `DownloadNotificationHelper`,
- * which lives in `media3-ui` — a dependency this app does not have and would be taking on for one
- * builder. The copy all comes from [DownloadNotificationText], which is pure and tested.
+ * Built by hand on `NotificationCompat` rather than with media3's own
+ * `DownloadNotificationHelper`, which is on the classpath but builds its strings from media3's own
+ * English resources and leaves nothing to test. The copy all comes from
+ * [DownloadNotificationText], which is pure, Russian, and tested.
  */
 @UnstableApi
 @Singleton
 class DownloadNotifications @Inject constructor(
     @param:ApplicationContext private val context: Context,
+    private val downloadsScreen: DownloadsScreenIntent,
 ) : DownloadOutcomes {
 
-    private var channelReady = false
+    @Volatile private var channelReady = false
 
     /**
      * The foreground notification, rebuilt every second while the service runs.
@@ -126,23 +126,13 @@ class DownloadNotifications @Inject constructor(
         .setContentIntent(openDownloads())
         .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
 
-    /**
-     * A tap lands on the downloads screen rather than wherever the app was left.
-     *
-     * The route travels as an extra rather than as a deep link, because it names a screen inside
-     * the app and nothing outside it should be able to fire it.
-     */
-    private fun openDownloads(): PendingIntent {
-        val intent = Intent(context, MainActivity::class.java)
-            .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            .putExtra(EXTRA_ROUTE, ROUTE_DOWNLOADS)
-        return PendingIntent.getActivity(
-            context,
-            0,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-    }
+    /** A tap lands on the downloads screen rather than wherever the app was left. */
+    private fun openDownloads(): PendingIntent = PendingIntent.getActivity(
+        context,
+        0,
+        downloadsScreen.create(),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
 
     private fun Download.item(): DownloadNotificationText.Item {
         val payload = payload()
@@ -157,9 +147,5 @@ class DownloadNotifications @Inject constructor(
     companion object {
         /** The channel media3's `DownloadService` creates for us, at low importance. */
         const val CHANNEL_ID = "downloads"
-
-        /** How the notification asks `MainActivity` to open the downloads screen. */
-        const val EXTRA_ROUTE = "route"
-        const val ROUTE_DOWNLOADS = "downloads"
     }
 }
