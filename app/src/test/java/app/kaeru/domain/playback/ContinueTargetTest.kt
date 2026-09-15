@@ -342,4 +342,48 @@ class ContinueTargetTest {
 
         assertEquals(ContinueTarget(1, 0), target)
     }
+
+    @Test
+    fun `a finished show whose length nobody recorded has still ended`() {
+        // Shikimori's answer for a long-finished title is often no announced length at all, and
+        // the aired count stands in for it. Both halves then arrive here as an announced zero, so
+        // without the catalogue's own word for «over» such a show offered «Ждём 25 серию»,
+        // unpressable, for ever.
+        val target = ContinueTarget.of(
+            rate(24, ListStatus.COMPLETED),
+            aired = 24,
+            announced = 0,
+            progress = emptyList(),
+            watchedThreshold = threshold,
+            finishedAiring = true,
+        )
+
+        assertEquals(ContinueTarget(1, 0, rewatch = true), target)
+    }
+
+    @Test
+    fun `a show of unknown length that nobody has called finished is waited for, not restarted`() {
+        // The same numbers with the flag the other way round. A season whose length was never
+        // announced has not run out; it has only run out of aired episodes.
+        assertEquals(
+            ContinueTarget(25, 0),
+            ContinueTarget.of(rate(24), aired = 24, announced = 0, progress = emptyList(), watchedThreshold = threshold),
+        )
+    }
+
+    @Test
+    fun `a finished show of unknown length still hands a viewer the episode they are on`() {
+        // The flag says the show has ended, not that this viewer has: ten of twenty-four watched
+        // is the eleventh episode, never an offer to start again from the first.
+        val target = ContinueTarget.of(
+            rate(10),
+            aired = 24,
+            announced = 0,
+            progress = emptyList(),
+            watchedThreshold = threshold,
+            finishedAiring = true,
+        )
+
+        assertEquals(ContinueTarget(11, 0), target)
+    }
 }

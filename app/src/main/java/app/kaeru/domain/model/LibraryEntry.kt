@@ -31,8 +31,14 @@ data class LibraryEntry(
      * Which episode the watch control starts, and where inside it. The one answer to «продолжить»,
      * shared by the home feed, the title screen and the player.
      */
-    fun continueTarget(watchedThreshold: Float): ContinueTarget =
-        ContinueTarget.of(rate, anime.availableEpisodes, anime.episodes, episodeProgress, watchedThreshold)
+    fun continueTarget(watchedThreshold: Float): ContinueTarget = ContinueTarget.of(
+        rate = rate,
+        aired = anime.availableEpisodes,
+        announced = anime.episodes,
+        progress = episodeProgress,
+        watchedThreshold = watchedThreshold,
+        finishedAiring = anime.status == AnimeStatus.RELEASED,
+    )
 
     /** Episode to start from the watch control. */
     fun nextEpisode(watchedThreshold: Float): Int = continueTarget(watchedThreshold).episode

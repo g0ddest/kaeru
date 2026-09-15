@@ -346,6 +346,27 @@ class FormatTest {
     }
 
     @Test
+    fun `a finished show whose length nobody recorded offers the rewatch as well`() {
+        // The catalogue knows the show is over and not how long it was, which is the ordinary
+        // shape for an old title. Twenty-four watched of twenty-four aired: there is no
+        // twenty-fifth episode, and this used to sit on «Ждём 25 серию» with nothing to press.
+        val done = entry(
+            anime = anime(AnimeStatus.RELEASED, episodes = 0, aired = 24),
+            watched = 24,
+            status = ListStatus.COMPLETED,
+        )
+        val action = primaryAction(done, 0.9f, now, zone)
+
+        assertEquals("Пересмотреть", action.label)
+        assertTrue(action.enabled)
+        assertEquals(1, action.episode)
+
+        // The same numbers on a season still airing: the twenty-fifth is what it is waiting for.
+        val airing = entry(anime = anime(AnimeStatus.ONGOING, episodes = 0, aired = 24), watched = 24)
+        assertEquals("Ждём 25 серию", primaryAction(airing, 0.9f, now, zone).label)
+    }
+
+    @Test
     fun `an announcement with nothing aired offers nothing to press`() {
         val anons = entry(anime = anime(AnimeStatus.ANONS, episodes = 0, aired = 0), watched = 0)
         val action = primaryAction(anons, 0.9f, now, zone)

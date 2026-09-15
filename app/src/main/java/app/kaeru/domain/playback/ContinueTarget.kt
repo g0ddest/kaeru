@@ -81,6 +81,12 @@ data class ContinueTarget(
          *   is Shikimori's answer for most ongoing shows. Nothing is clamped without it: a season
          *   whose length is unknown has not run out, it has only run out of aired episodes, and
          *   the next one is what the viewer is waiting for.
+         * @param finishedAiring whether the catalogue says this show is over. It is the only way to
+         *   tell a finished show whose length nobody recorded from one that is still airing, since
+         *   both arrive here as an [announced] of zero — and the difference is «Пересмотреть»
+         *   against «Ждём 9 серию». The default is the safe half of that: a show nobody has called
+         *   finished is waited for, never restarted, which is the answer this had for every caller
+         *   before the flag existed.
          */
         fun of(
             rate: UserRate?,
@@ -88,6 +94,7 @@ data class ContinueTarget(
             announced: Int,
             progress: List<EpisodeProgress>,
             watchedThreshold: Float,
+            finishedAiring: Boolean = false,
         ): ContinueTarget {
             val counted = rate?.episodes ?: 0
             val rewatching = rate?.status == ListStatus.REWATCHING
@@ -104,10 +111,13 @@ data class ContinueTarget(
             }
             var next = counted + 1
             while (next in finishedHere) next++
-            // A show has run out only when every episode it announced is out. Eight of twelve is a
-            // season still airing, whatever the count on Shikimori has reached, and the ninth
-            // episode is what its viewer is waiting for rather than something they have finished.
-            val runEnded = announced > 0 && aired >= announced
+            // A show has run out either way it can be known to have. Every episode it announced is
+            // out — eight of twelve is a season still airing, whatever the count on Shikimori has
+            // reached, and the ninth is what its viewer is waiting for. Or the catalogue simply
+            // says it is over, which is the only thing to go on for a finished show whose length
+            // nobody recorded: `episodes` is zero there, and without this such a title offered
+            // «Ждём N серию», unpressable, for ever.
+            val runEnded = (announced > 0 && aired >= announced) || (finishedAiring && aired > 0)
             if (runEnded && next > maxOf(announced, aired)) return ContinueTarget(FIRST_EPISODE, 0, rewatch = true)
             return ContinueTarget(next, 0)
         }
