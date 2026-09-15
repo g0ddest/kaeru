@@ -181,15 +181,17 @@ class Media3DownloadRepository @Inject constructor(
         .map { all -> all.filter { it.animeId == animeId }.sortedBy { it.episode } }
         .distinctUntilChanged()
 
+    override val usedBytes: Flow<Long> = snapshots
+        .map { snapshot -> bytesOnDevice(snapshot.rows) }
+        .distinctUntilChanged()
+
     /**
      * Bytes on the device. A row being deleted is already spoken for, so it is left out: counting
-     * it would make the storage line tick down a second or two after the episode disappeared.
+     * it would make the storage line tick down a second or two after the episode disappeared — and
+     * would refuse the next download over space that is already free.
      */
-    override val usedBytes: Flow<Long> = snapshots
-        .map { snapshot ->
-            snapshot.rows.filter { it.state != Download.STATE_REMOVING }.sumOf { it.bytesDownloaded }
-        }
-        .distinctUntilChanged()
+    private fun bytesOnDevice(rows: List<Download>): Long =
+        rows.filter { it.state != Download.STATE_REMOVING }.sumOf { it.bytesDownloaded }
 
     override suspend fun completed(animeId: Int, episode: Int): EpisodeDownload? = withContext(io) {
         finished(animeId, episode)
@@ -244,7 +246,9 @@ class Media3DownloadRepository @Inject constructor(
     override suspend fun enqueue(animeId: Int, episode: Int, quality: DownloadQualityChoice?): Result<Unit> {
         val policy = settings.downloadPolicy.first()
         val existing = withContext(io) { source.current() }
-        val used = existing.sumOf { it.bytesDownloaded }
+        // Counted the same way the storage line counts, or a download refused right after the
+        // viewer deleted something would be refused against bytes the line had already given back.
+        val used = bytesOnDevice(existing)
         if (!policy.fits(used, estimate(existing))) {
             // limitBytes is non-null here: a policy with no limit fits everything.
             return Result.failure(DownloadLimitReached(policy.limitBytes ?: Long.MAX_VALUE, used))

@@ -71,7 +71,6 @@ import app.kaeru.ui.common.design.SkeletonGroup
 import app.kaeru.ui.common.design.SkeletonHero
 import app.kaeru.ui.common.design.StatusPill
 import app.kaeru.ui.common.design.TranslationPickerSheet
-import app.kaeru.ui.common.design.statusLabel
 import app.kaeru.ui.common.design.TextAction
 import app.kaeru.ui.common.design.statusLabel
 import app.kaeru.ui.common.details.COLLAPSE

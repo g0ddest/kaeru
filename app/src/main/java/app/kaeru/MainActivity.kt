@@ -12,12 +12,12 @@ import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import app.kaeru.data.download.DownloadsScreenIntent
 import app.kaeru.player.CastFramework
 import app.kaeru.player.CastSessionBridge
+import app.kaeru.ui.common.player.LocalCastAvailable
 import app.kaeru.ui.mobile.MobileApp
 import app.kaeru.ui.mobile.OAuthCallback
-import app.kaeru.ui.common.player.LocalCastAvailable
+import app.kaeru.ui.mobile.Routes
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -77,9 +77,9 @@ class MainActivity : FragmentActivity() {
      * from wherever the viewer had got to since.
      */
     private fun readRoute(intent: Intent?) {
-        val route = intent?.getStringExtra(DownloadsScreenIntent.EXTRA_ROUTE) ?: return
-        if (route == DownloadsScreenIntent.ROUTE_DOWNLOADS) pendingRoute = route
-        intent.removeExtra(DownloadsScreenIntent.EXTRA_ROUTE)
+        val route = intent?.getStringExtra(Routes.EXTRA_ROUTE) ?: return
+        if (route == Routes.DOWNLOADS) pendingRoute = route
+        intent.removeExtra(Routes.EXTRA_ROUTE)
     }
 
     /**

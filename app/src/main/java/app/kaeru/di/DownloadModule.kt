@@ -21,6 +21,7 @@ import app.kaeru.data.download.Media3DownloadsSource
 import app.kaeru.domain.download.DownloadRepository
 import app.kaeru.MainActivity
 import app.kaeru.player.StreamHeaders
+import app.kaeru.ui.mobile.Routes
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -99,7 +100,7 @@ object DownloadModule {
         DownloadsScreenIntent {
             Intent(context, MainActivity::class.java)
                 .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                .putExtra(DownloadsScreenIntent.EXTRA_ROUTE, DownloadsScreenIntent.ROUTE_DOWNLOADS)
+                .putExtra(Routes.EXTRA_ROUTE, Routes.DOWNLOADS)
         }
 
     private const val PARALLEL_SEGMENTS = 2

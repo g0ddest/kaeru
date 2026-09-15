@@ -1,7 +1,9 @@
 package app.kaeru.di
 
 import android.content.Context
+import app.kaeru.data.image.CoilPosterFetcher
 import app.kaeru.data.image.KaeruImages
+import app.kaeru.data.image.PosterFetcher
 import coil3.ImageLoader
 import dagger.Module
 import dagger.Provides
@@ -25,4 +27,8 @@ object ImageModule {
     @Provides
     @Singleton
     fun imageLoader(@ApplicationContext context: Context): ImageLoader = KaeruImages.loader(context)
+
+    @Provides
+    @Singleton
+    fun posterFetcher(fetcher: CoilPosterFetcher): PosterFetcher = fetcher
 }
