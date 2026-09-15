@@ -4,11 +4,13 @@ import android.content.Context
 import android.util.Log
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.offline.Download
+import androidx.media3.exoplayer.offline.DownloadManager
 import androidx.media3.exoplayer.offline.DownloadRequest
 import androidx.media3.exoplayer.offline.DownloadService
 import androidx.media3.exoplayer.scheduler.Requirements
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 
 /**
@@ -47,6 +49,11 @@ interface DownloadCommands {
 @Singleton
 class Media3DownloadCommands @Inject constructor(
     @param:ApplicationContext private val context: Context,
+    /**
+     * Asked for lazily: building the manager opens a database and scans the cache directory, and
+     * neither belongs on whatever thread happens to construct this class.
+     */
+    private val manager: Provider<DownloadManager>,
 ) : DownloadCommands {
 
     override fun add(request: DownloadRequest) = guard {
@@ -61,13 +68,18 @@ class Media3DownloadCommands @Inject constructor(
         DownloadService.sendRemoveAllDownloads(context, KaeruDownloadService::class.java, /* foreground = */ false)
     }
 
+    /**
+     * Set on the manager rather than sent to the service, which is the only command here that
+     * does not go through an intent.
+     *
+     * The service's own handler does exactly this — `downloadManager.setRequirements(...)` — after
+     * filtering by what the scheduler supports, and `PlatformScheduler` supports both requirements
+     * this app ever asks for. Going through the service would start it on every launch, which on
+     * Android 12 and up means promoting it to the foreground: a «Загрузка серий» notification
+     * flashing up and disappearing each time the app opens, for a setting that has not changed.
+     */
     override fun setRequirements(requirements: Requirements) = guard {
-        DownloadService.sendSetRequirements(
-            context,
-            KaeruDownloadService::class.java,
-            requirements,
-            /* foreground = */ false,
-        )
+        manager.get().setRequirements(requirements)
     }
 
     override fun resume(id: String) = guard {

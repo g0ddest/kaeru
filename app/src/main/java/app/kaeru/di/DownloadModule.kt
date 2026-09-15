@@ -10,6 +10,8 @@ import androidx.media3.exoplayer.offline.DefaultDownloaderFactory
 import androidx.media3.exoplayer.offline.DownloadManager
 import app.kaeru.data.download.DownloadCache
 import app.kaeru.data.download.DownloadCommands
+import app.kaeru.data.download.DownloadNotifications
+import app.kaeru.data.download.DownloadOutcomes
 import app.kaeru.data.download.DownloadsSource
 import app.kaeru.data.download.Media3DownloadCommands
 import app.kaeru.data.download.Media3DownloadRepository
@@ -97,4 +99,8 @@ abstract class DownloadBindings {
 
     @Binds
     abstract fun downloadRepository(impl: Media3DownloadRepository): DownloadRepository
+
+    /** What the engine says when a download ends: a notification, for a viewer who left the app. */
+    @Binds
+    abstract fun downloadOutcomes(impl: DownloadNotifications): DownloadOutcomes
 }

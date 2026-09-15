@@ -7,6 +7,7 @@ import androidx.media3.exoplayer.offline.DownloadManager
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 
 /**
@@ -53,8 +54,14 @@ interface DownloadsSource {
 @UnstableApi
 @Singleton
 class Media3DownloadsSource @Inject constructor(
-    private val manager: DownloadManager,
+    /**
+     * Asked for lazily: building the manager opens a database and scans the cache directory, so
+     * it happens on the first read, which callers already keep off the main thread.
+     */
+    private val downloads: Provider<DownloadManager>,
 ) : DownloadsSource {
+
+    private val manager: DownloadManager get() = downloads.get()
 
     /** One media3 listener per listener of ours, so removing takes away the right one. */
     private val bridges = ConcurrentHashMap<DownloadsSource.Listener, DownloadManager.Listener>()

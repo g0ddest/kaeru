@@ -6,6 +6,7 @@ import androidx.media3.exoplayer.offline.Download
 import app.kaeru.domain.download.DownloadKey
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 
@@ -22,7 +23,7 @@ import kotlinx.serialization.json.Json
  * The four id fields are duplicated from [DownloadKey] deliberately. They are what makes the blob
  * readable on its own, and they cost nothing next to the rest.
  */
-@kotlinx.serialization.Serializable
+@Serializable
 data class DownloadPayload(
     val animeId: Int,
     val episode: Int,
