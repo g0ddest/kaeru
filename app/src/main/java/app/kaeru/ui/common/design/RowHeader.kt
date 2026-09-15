@@ -27,8 +27,17 @@ import app.kaeru.ui.common.theme.KaeruText
 
 private val ChevronSize = 18.dp
 
-/** What the control at the end of a row header says, and what it does. */
-data class RowAction(val label: String, val onClick: () -> Unit)
+/**
+ * What the control at the end of a row header says, and what it does.
+ *
+ * [icon] is the chevron by default, because most of these lead somewhere. An action that opens a
+ * sheet over the screen passes null: a chevron there promises a screen that never arrives.
+ */
+data class RowAction(
+    val label: String,
+    val icon: ImageVector? = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+    val onClick: () -> Unit,
+)
 
 /**
  * The name of a row of cards, with an optional way out of it — "Всё", "Настроить".
@@ -63,11 +72,7 @@ fun RowHeader(
             modifier = Modifier.weight(1f),
         )
         if (action != null) {
-            TextAction(
-                action.label,
-                action.onClick,
-                trailingIcon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            )
+            TextAction(action.label, action.onClick, trailingIcon = action.icon)
         }
     }
 }

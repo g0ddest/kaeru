@@ -1,5 +1,7 @@
 package app.kaeru.ui.common.details
 
+import app.kaeru.domain.download.DownloadState
+import app.kaeru.domain.download.EpisodeDownload
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.LibraryEntry
@@ -14,7 +16,9 @@ import java.time.Instant
  *
  * Three different things are true of an episode and each is drawn differently, so none of them
  * has to stand in for another: [watched] is Shikimori's count, [progress] is where this device
- * stopped inside it, and [aired] is whether there is anything to play at all.
+ * stopped inside it, and [aired] is whether there is anything to play at all. [download] is a
+ * fourth and is drawn in the corner rather than over the tile, because where an episode is stored
+ * is not the same kind of fact as whether it has been watched.
  */
 data class EpisodeCell(
     val number: Int,
@@ -22,7 +26,39 @@ data class EpisodeCell(
     /** How far into this episode the viewer got, or null when they have not really started it. */
     val progress: Float?,
     val aired: Boolean,
+    /** What the download engine is doing with this episode, or null when it has never been asked. */
+    val download: DownloadState? = null,
+    /**
+     * How much of the download is done, or null when there is no ring to draw.
+     *
+     * Only a download actually running has one. A queued episode's zero would be a ring that looks
+     * stuck, and a finished one's whole circle would be a second way of saying what the check
+     * already says.
+     */
+    val downloadProgress: Float? = null,
 )
+
+/**
+ * One line of the «Скачать…» sheet: an episode it can still offer, and whether the viewer has
+ * already seen it.
+ *
+ * [watched] is not a reason to leave the episode out — plenty of downloads are for a rewatch — it
+ * is what «Непросмотренные» selects on.
+ */
+data class DownloadChoice(val episode: Int, val watched: Boolean)
+
+/**
+ * The episodes the «Скачать…» sheet may offer: aired, and not already on the device.
+ *
+ * A failed download is offered again, which is the one case worth spelling out: it is the only
+ * state where the engine has a row for the episode and the right thing to do is still to ask for
+ * it. Everything else the engine is holding — queued, running, waiting for Wi-Fi, finished, being
+ * removed — is already an answer to «скачай эту серию», and offering it again would either do
+ * nothing or start a second copy.
+ */
+fun downloadChoices(cells: List<EpisodeCell>): List<DownloadChoice> = cells
+    .filter { it.aired && (it.download == null || it.download == DownloadState.FAILED) }
+    .map { DownloadChoice(it.number, it.watched) }
 
 /**
  * The season as a grid: every episode the show has announced, marked with what is behind the
@@ -51,6 +87,7 @@ fun episodeCells(
     watch: WatchState?,
     progress: List<EpisodeProgress>,
     watchedThreshold: Float,
+    downloads: List<EpisodeDownload> = emptyList(),
 ): List<EpisodeCell> {
     // The rules for "which episodes does this device know about" and "is there a position worth
     // showing" live on LibraryEntry and are the ones the watch button obeys; a title outside the
@@ -64,12 +101,19 @@ fun episodeCells(
     val reached = maxOf(seen, entry.episodeProgress.filter { it.started }.maxOfOrNull { it.episode } ?: 0)
     val playable = maxOf(anime.airedEpisodes(), reached)
     val announced = maxOf(anime.episodes, playable)
+    // A download never stretches the season. An id that does not belong to this grid — a stale
+    // row, an episode renumbered by the catalogue — would otherwise add a tile the viewer could
+    // press, and there is nothing behind it to open.
+    val byEpisode = downloads.associateBy { it.episode }
     return (1..announced).map { episode ->
+        val download = byEpisode[episode]
         EpisodeCell(
             number = episode,
             watched = episode <= seen,
             progress = entry.episodeFraction(episode, watchedThreshold),
             aired = episode <= playable,
+            download = download?.state,
+            downloadProgress = download?.progress?.takeIf { download.state == DownloadState.DOWNLOADING },
         )
     }
 }

@@ -24,6 +24,7 @@ import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.playback.StreamPrefetchCache
 import app.kaeru.domain.playback.WatchProgress
+import app.kaeru.domain.settings.FakeSettingsStore
 import app.kaeru.test.MutableClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -84,7 +85,7 @@ class PlaybackControllerOfflineTest {
             localEngine = engine,
             resolve = ResolveEpisodeStream(source, watchStates, prefs, clock, StreamPrefetchCache(clock)),
             progress = WatchProgress(watchStates, FakePlaybackSampleRepository(watchStates), clock),
-            markWatched = MarkEpisodeWatched(library, watchStates, clock),
+            markWatched = MarkEpisodeWatched(library, watchStates, clock, FakeDownloadRepository(), FakeSettingsStore()),
             library = library,
             prefs = prefs,
             headers = headers,

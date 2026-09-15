@@ -1,5 +1,7 @@
 package app.kaeru.domain.feed
 
+import app.kaeru.domain.download.DownloadState
+import app.kaeru.domain.download.EpisodeDownload
 import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.FeedItem
 import app.kaeru.domain.model.FeedKind
@@ -16,8 +18,15 @@ class HomeFeedBuilder(private val upcomingWindow: Duration = Duration.ofDays(7))
      *   this is a singleton, the setting changes while it is alive, and every label drawn around
      *   the feed reads the live value. A builder holding 0.9 of its own is a hero whose button
      *   says «Продолжить 7 серию» and starts the sixth.
+     * @param downloads every download the engine knows about, in every state. Defaulted empty
+     *   because the television has none and never will.
      */
-    fun build(entries: List<LibraryEntry>, now: Instant, watchedThreshold: Float): HomeFeed {
+    fun build(
+        entries: List<LibraryEntry>,
+        now: Instant,
+        watchedThreshold: Float,
+        downloads: List<EpisodeDownload> = emptyList(),
+    ): HomeFeed {
         // The target is worked out once per title and carried through every row. It used to be
         // derived four times over — once here and once inside each `nextEpisode` call — and the
         // three rows below all ask the same question of it.
@@ -78,7 +87,43 @@ class HomeFeedBuilder(private val upcomingWindow: Duration = Duration.ofDays(7))
             .sortedByDescending { it.rate.updatedAt }
             .map { FeedItem(it, 1, FeedKind.PLANNED) }
 
+        // Every entry, not just the active ones: an episode on the device is worth offering
+        // whatever the list says about the title it came from — a show marked «Завершено» whose
+        // finale is downloaded is still a finale somebody can watch on a train.
+        val known = entries.associateBy { it.anime.id }
+        val downloaded = downloads
+            .filter { it.state == DownloadState.COMPLETED }
+            // Newest download first, which is the order the viewer put them there in. Nothing
+            // else would do: these episodes have no other relationship to each other.
+            .sortedByDescending { it.updatedAt }
+            .mapNotNull { row ->
+                // A download whose title is in no list has no card to draw — there is no artwork,
+                // no name and no count. The «Загрузки» screen names it by its id; a poster row
+                // cannot.
+                val entry = known[row.animeId] ?: return@mapNotNull null
+                if (entry.isBehind(row.episode, watchedThreshold)) return@mapNotNull null
+                FeedItem(entry, row.episode, FeedKind.DOWNLOADED)
+            }
+
+        // The hero is never a download. «Скачано» is about where the episode is, not about what
+        // the viewer was in the middle of, and a card that stole the top of the screen from an
+        // episode left half-watched would be answering a question nobody asked.
         val top = continueWatching.firstOrNull() ?: newEpisodes.firstOrNull() ?: nextUp.firstOrNull()
-        return HomeFeed(top, continueWatching, newEpisodes, nextUp, upcoming, planned)
+        return HomeFeed(top, continueWatching, newEpisodes, nextUp, upcoming, planned, downloaded)
     }
+}
+
+/**
+ * Whether this episode is already behind the viewer, either way it can be.
+ *
+ * Shikimori's count is one of them and what this device saw is the other, and they are checked
+ * separately because they fail separately: a mark that has not reached the server yet leaves only
+ * the local position, and a title watched on another device leaves only the count.
+ *
+ * An episode with no position at all is not behind anybody — it is exactly what «Скачано» is for.
+ */
+private fun LibraryEntry.isBehind(episode: Int, watchedThreshold: Float): Boolean {
+    if (episode <= rate.episodes) return true
+    val row = progressAt(episode) ?: return false
+    return !row.unfinished(watchedThreshold)
 }

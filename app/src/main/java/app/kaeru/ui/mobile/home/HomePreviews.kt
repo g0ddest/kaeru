@@ -81,6 +81,19 @@ private val loadedFeed = HomeFeed(
     planned = listOf(FeedItem(demonSlayer, 1, FeedKind.PLANNED)),
 )
 
+/**
+ * The screen with no network: the strip, «Скачано» first, and no catalogue under the rows.
+ *
+ * Two downloads of one title on purpose — that is the row that used to be impossible to key.
+ */
+private val offlineFeed = loadedFeed.copy(
+    downloaded = listOf(
+        FeedItem(frieren, 8, FeedKind.DOWNLOADED),
+        FeedItem(frieren, 9, FeedKind.DOWNLOADED),
+        FeedItem(dandadan, 9, FeedKind.DOWNLOADED),
+    ),
+)
+
 private val plannedOnlyFeed = HomeFeed(
     top = null,
     continueWatching = emptyList(),
@@ -166,6 +179,18 @@ private fun HomeWithDiscoveryPreview() = Home(
 private fun HomeEmptyWithDiscoveryPreview() = Home(
     HomeUiState(isLoading = false, discover = discovered),
 )
+
+/** No network: one line under the bar, the downloads first, and nothing that needs Shikimori. */
+@Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 1000)
+@Composable
+private fun HomeOfflinePreview() = Home(
+    HomeUiState(feed = offlineFeed, isLoading = false, offline = true),
+)
+
+/** No network and nothing downloaded either: the strip still says what is going on. */
+@Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 800)
+@Composable
+private fun HomeOfflineEmptyPreview() = Home(HomeUiState(isLoading = false, offline = true))
 
 /** The catalogue rows before they arrive: the real headings and the switcher are up, the cards are not. */
 @Preview(showBackground = true, backgroundColor = DARK, widthDp = 360, heightDp = 1200)

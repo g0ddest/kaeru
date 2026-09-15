@@ -1,5 +1,6 @@
 package app.kaeru.domain.playback
 
+import app.kaeru.domain.download.FakeDownloadRepository
 import app.kaeru.domain.error.AccountSessionChanged
 import app.kaeru.domain.error.HttpError
 import app.kaeru.domain.model.Anime
@@ -9,6 +10,7 @@ import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.model.WatchState
 import app.kaeru.domain.repository.LibraryRepository
+import app.kaeru.domain.settings.FakeSettingsStore
 import app.kaeru.test.MutableClock
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,7 +30,7 @@ class MarkEpisodeWatchedTest {
     private val clock = MutableClock(now)
     private val library = FakeLibraryRepository()
     private val watchStates = FakeWatchStateRepository()
-    private val mark = MarkEpisodeWatched(library, watchStates, clock)
+    private val mark = MarkEpisodeWatched(library, watchStates, clock, FakeDownloadRepository(), FakeSettingsStore())
 
     private fun anime(id: Int = 100, episodes: Int = 12, status: AnimeStatus = AnimeStatus.RELEASED) = Anime(
         id = id, nameRu = "Имя", nameRomaji = "Name", posterUrl = null, screenshotUrls = emptyList(),

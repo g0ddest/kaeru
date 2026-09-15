@@ -3,9 +3,16 @@ package app.kaeru.ui.common.details
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.kaeru.domain.connectivity.Connectivity
+import app.kaeru.domain.download.DownloadPolicy
+import app.kaeru.domain.download.DownloadRepository
+import app.kaeru.domain.download.DownloadState
+import app.kaeru.domain.download.EpisodeDownload
+import app.kaeru.domain.error.DownloadLimitReached
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
+import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.WatchState
 import app.kaeru.domain.playback.MarkEpisodeWatched
@@ -14,6 +21,8 @@ import app.kaeru.domain.playback.RankedTranslation
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.repository.WatchStateRepository
+import app.kaeru.domain.settings.SettingsStore
+import app.kaeru.ui.common.design.formatBytes
 import app.kaeru.ui.common.errorMessageOrNull
 import app.kaeru.ui.common.toUserMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -53,6 +62,35 @@ data class DetailsUiState(
     val savingTranslation: Boolean = false,
     /** Why the dub list could not be read; shown inside the chooser, not over the screen. */
     val translationsError: String? = null,
+    /** Every download of this title, in episode order, in whatever state each one is in. */
+    val downloads: List<EpisodeDownload> = emptyList(),
+    /** There is no network: the strip is on the screen, and nothing that needs Kodik will work. */
+    val offline: Boolean = false,
+    /** The height new downloads take, as the settings have it. What the sheet's chips open on. */
+    val downloadQuality: Quality? = DownloadPolicy.DEFAULT.quality,
+    /**
+     * What one episode is assumed to weigh, for the sheet's «Скачать 3 серии (~1,2 ГБ)».
+     *
+     * The average of what this device has actually downloaded, which is the only honest estimate
+     * available: it already accounts for the height the viewer downloads at and the length of this
+     * kind of episode. Until there is one, the same 400 MB the limit check uses.
+     */
+    val episodeEstimate: Long = DownloadPolicy.FALLBACK_ESTIMATE,
+    /**
+     * The last download the storage limit refused, in the words the snackbar says.
+     *
+     * Kept apart from [errorMessage] because the two offer different ways out: a failed load is
+     * «Повторить», and a limit reached is «Загрузки», where the space actually is.
+     */
+    val storageMessage: String? = null,
+)
+
+/** What the download engine and the network say about this title, read as one value. */
+private data class DownloadSnapshot(
+    val rows: List<EpisodeDownload> = emptyList(),
+    val estimate: Long = DownloadPolicy.FALLBACK_ESTIMATE,
+    val quality: Quality? = DownloadPolicy.DEFAULT.quality,
+    val offline: Boolean = false,
 )
 
 @HiltViewModel
@@ -64,6 +102,9 @@ class DetailsViewModel @Inject constructor(
     private val watchStates: WatchStateRepository,
     private val markEpisodeWatched: MarkEpisodeWatched,
     private val clock: Clock,
+    private val downloads: DownloadRepository,
+    settings: SettingsStore,
+    connectivity: Connectivity,
 ) : ViewModel() {
     private val animeId: Int = checkNotNull(savedStateHandle["animeId"])
     private val work = MutableStateFlow(DetailsUiState())
@@ -75,10 +116,41 @@ class DetailsViewModel @Inject constructor(
      * not what is drawn. Touched only from the main dispatcher, like every other method here.
      */
     private var translationsStale = false
+
+    /**
+     * Everything read off the download engine, in one arm of the combine below.
+     *
+     * Every download rather than this title's, because the estimate is an average over all of
+     * them: this title may have none yet, and a screen that estimated only from itself would offer
+     * «~400 МБ» to a viewer whose device already knows an episode is 320.
+     */
+    private val downloadState = combine(
+        downloads.observeAll(), settings.downloadPolicy, connectivity.online,
+    ) { all, policy, online ->
+        DownloadSnapshot(
+            rows = all.filter { it.animeId == animeId }.sortedBy { it.episode },
+            estimate = estimate(all),
+            quality = policy.quality,
+            offline = !online,
+        )
+    }
+
     val uiState: StateFlow<DetailsUiState> = combine(
-        repository.observeAnime(animeId), repository.observeAnimeDetails(animeId), work, prefs.watchedThreshold,
-    ) { entry, details, state, threshold ->
-        state.copy(entry = entry, anime = entry?.anime ?: details, watchedThreshold = threshold)
+        repository.observeAnime(animeId),
+        repository.observeAnimeDetails(animeId),
+        work,
+        prefs.watchedThreshold,
+        downloadState,
+    ) { entry, details, state, threshold, device ->
+        state.copy(
+            entry = entry,
+            anime = entry?.anime ?: details,
+            watchedThreshold = threshold,
+            downloads = device.rows,
+            offline = device.offline,
+            downloadQuality = device.quality,
+            episodeEstimate = device.estimate,
+        )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, DetailsUiState())
 
     init { refresh() }
@@ -198,6 +270,50 @@ class DetailsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Keeps these episodes on the device, at the height the sheet was left on.
+     *
+     * One at a time and in order, because that is the order they will be watched in and the engine
+     * takes them in the order they arrive. The first refusal stops the rest: a limit that refused
+     * the third episode will refuse the fourth, and five identical snackbars about it would be the
+     * app arguing with itself.
+     *
+     * @param quality a height for these downloads only; null takes the one in the settings.
+     */
+    fun download(episodes: List<Int>, quality: Quality? = null) {
+        if (episodes.isEmpty()) return
+        viewModelScope.launch {
+            for (episode in episodes.sorted()) {
+                val failure = downloads.enqueue(animeId, episode, quality).exceptionOrNull() ?: continue
+                work.value = work.value.copy(storageMessage = storageMessage(failure))
+                return@launch
+            }
+        }
+    }
+
+    /** Gives one episode's space back. */
+    fun removeDownload(episode: Int) {
+        viewModelScope.launch { downloads.remove(animeId, episode) }
+    }
+
+    /** The snackbar has been shown, so the next refusal is news again rather than a repeat. */
+    fun storageMessageShown() {
+        work.value = work.value.copy(storageMessage = null)
+    }
+
+    /**
+     * Why a download was refused, in words that name the numbers.
+     *
+     * «Лимит места исчерпан» on its own leaves the viewer with nothing to act on: the two sizes
+     * are what tell them whether to delete one episode or to raise the limit.
+     */
+    private fun storageMessage(failure: Throwable): String = when (failure) {
+        is DownloadLimitReached ->
+            "Лимит места исчерпан: ${formatBytes(failure.usedBytes)} из ${formatBytes(failure.limitBytes)}. " +
+                "Освободите место в настройках"
+        else -> failure.toUserMessage()
+    }
+
     /** The episode the watch button offers, read fresh rather than from the last composition. */
     private suspend fun nextEpisode(): Int =
         repository.observeAnime(animeId).first()?.nextEpisode(prefs.watchedThreshold.first()) ?: 1
@@ -217,4 +333,18 @@ class DetailsViewModel @Inject constructor(
     } catch (failure: Exception) {
         failure.toUserMessage()
     }
+}
+
+/**
+ * What one episode is likely to weigh, from what this device has already downloaded.
+ *
+ * The mean rather than the median or the largest: the number is a hint under a button, not a
+ * guarantee, and a mean over a handful of episodes of the same show at the same height is as close
+ * as any of them. A device with nothing finished yet has nothing to average, so it takes the same
+ * 400 MB the limit check assumes — deliberately on the high side.
+ */
+private fun estimate(all: List<EpisodeDownload>): Long {
+    val finished = all.filter { it.state == DownloadState.COMPLETED && it.bytes > 0 }
+    if (finished.isEmpty()) return DownloadPolicy.FALLBACK_ESTIMATE
+    return finished.sumOf { it.bytes } / finished.size
 }
