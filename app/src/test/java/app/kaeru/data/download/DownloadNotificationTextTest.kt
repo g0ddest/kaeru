@@ -37,8 +37,21 @@ class DownloadNotificationTextTest {
     }
 
     @Test
-    fun `a failed download says so by name`() {
-        assertEquals("Не удалось скачать Тайтл, 7 серия", DownloadNotificationText.failed(item()))
+    fun `a failed download says so by name, in the case the verb takes`() {
+        // «скачать» governs the accusative: «Не удалось скачать 7 серия» is the same mistake
+        // pluralEpisodesAccusative exists to prevent on the title screen.
+        assertEquals("Не удалось скачать Тайтл, 7 серию", DownloadNotificationText.failed(item()))
+    }
+
+    @Test
+    fun `an episode number is an ordinal, so the noun never goes plural`() {
+        // «11 серию» is «одиннадцатую серию», not eleven of them — the count rule would say
+        // «11 серий» and mean something else.
+        assertEquals(
+            "Не удалось скачать Тайтл, 11 серию",
+            DownloadNotificationText.failed(item(episode = 11)),
+        )
+        assertEquals("Скачано: Тайтл, 11 серия", DownloadNotificationText.completed(item(episode = 11)))
     }
 
     @Test
@@ -47,7 +60,7 @@ class DownloadNotificationTextTest {
 
         assertEquals("7 серия, 42 %", DownloadNotificationText.progress(listOf(nameless)))
         assertEquals("Скачано: 7 серия", DownloadNotificationText.completed(nameless))
-        assertEquals("Не удалось скачать 7 серия", DownloadNotificationText.failed(nameless))
+        assertEquals("Не удалось скачать 7 серию", DownloadNotificationText.failed(nameless))
     }
 
     @Test

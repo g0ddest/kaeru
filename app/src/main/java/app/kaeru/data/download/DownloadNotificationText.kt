@@ -32,12 +32,30 @@ object DownloadNotificationText {
 
     fun completed(item: Item): String = "Скачано: ${item.named()}"
 
-    fun failed(item: Item): String = "Не удалось скачать ${item.named()}"
+    /**
+     * «Не удалось скачать Тайтл, 7 серию».
+     *
+     * The accusative, because «скачать» governs it — the same rule
+     * `ui.common.design.pluralEpisodesAccusative` exists for, and «Не удалось скачать 7 серия» is
+     * the same mistake it was written to prevent.
+     */
+    fun failed(item: Item): String = "Не удалось скачать ${item.named(EPISODE_ACCUSATIVE)}"
 
-    /** «Тайтл, 7 серия», or just «7 серия» for a download whose title this device never learned. */
-    private fun Item.named(): String = if (title.isNullOrBlank()) "$episode серия" else "$title, $episode серия"
+    /**
+     * «Тайтл, 7 серия», or just «7 серия» for a download whose title this device never learned.
+     *
+     * An episode number is an ordinal, not a count, so the noun never goes plural: «11 серия» is
+     * «одиннадцатая серия», not eleven of them. That is why this takes the word rather than
+     * calling [pluralEpisodes] — the count rule would turn 11 into «11 серий» and say something
+     * else entirely.
+     */
+    private fun Item.named(noun: String = EPISODE_NOMINATIVE): String =
+        if (title.isNullOrBlank()) "$episode $noun" else "$title, $episode $noun"
 
     private fun Int.clamped(): Int = coerceIn(0, 100)
+
+    private const val EPISODE_NOMINATIVE = "серия"
+    private const val EPISODE_ACCUSATIVE = "серию"
 
     private fun pluralEpisodes(count: Int): String {
         val n = kotlin.math.abs(count)
