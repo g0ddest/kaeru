@@ -20,7 +20,7 @@ class FakePlaybackSampleRepository(
 
     override suspend fun save(watch: WatchState, progress: EpisodeProgress) {
         failSaveWith?.let { throw it }
-        episodes.save(progress)
+        episodes.write(progress)
         watchStates.save(watch)
     }
 }

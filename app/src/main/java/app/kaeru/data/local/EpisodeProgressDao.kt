@@ -17,9 +17,6 @@ interface EpisodeProgressDao {
     @Query("SELECT * FROM episode_progress ORDER BY animeId, episode")
     fun observeAll(): Flow<List<EpisodeProgressEntity>>
 
-    @Query("DELETE FROM episode_progress WHERE animeId = :animeId")
-    suspend fun deleteByAnime(animeId: Int)
-
     @Query("DELETE FROM episode_progress")
     suspend fun deleteAll()
 }
