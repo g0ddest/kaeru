@@ -184,6 +184,18 @@ class TvPanelTest {
     }
 
     @Test
+    fun `a step from a rung whose strip is gone moves, rather than landing back on the clamp`() {
+        // The panel parked on the voices while their list loads: there is no voices strip, so the
+        // D-pad stands one rung down, on the quality row. The step used to be measured from the
+        // remembered rung, find it missing and answer with that same clamp — so the first press of
+        // every pair moved nothing and the viewer pressed everything twice.
+        val rungs = listOf(EPISODES, QUALITY, TRANSPORT)
+
+        assertEquals(TRANSPORT, tvStepRung(rungs, TRANSLATIONS, down = true))
+        assertEquals(EPISODES, tvStepRung(rungs, TRANSLATIONS, down = false))
+    }
+
+    @Test
     fun `a rung that has gone away hands the D-pad to the next one down`() {
         val rungs = listOf(QUALITY, TRANSPORT)
 

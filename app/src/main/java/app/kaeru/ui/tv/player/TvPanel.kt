@@ -195,12 +195,18 @@ fun tvAiredEpisodes(state: PlayerUiState): List<EpisodeCell> = state.episodes.fi
  *
  * It stops rather than wrapping: a press that means «one more down» should not move the viewer's
  * eye the full height of the screen.
+ *
+ * The step is taken from where the D-pad is standing, which is not always the rung the panel
+ * remembers. A panel parked on the voices while their list loads has no voices strip to stand on,
+ * so the focus is one rung down — and stepping from the remembered rung landed on that same clamp
+ * and moved nothing, which cost the viewer the first press of every pair.
  */
 fun tvStepRung(rungs: List<TvPanelRung>, rung: TvPanelRung, down: Boolean): TvPanelRung {
-    val here = rungs.indexOf(rung)
-    if (here < 0) return tvRungOrNearest(rungs, rung)
+    val from = tvRungOrNearest(rungs, rung)
+    val here = rungs.indexOf(from)
+    if (here < 0) return from
     val there = if (down) here + 1 else here - 1
-    return rungs.getOrNull(there) ?: rung
+    return rungs.getOrNull(there) ?: from
 }
 
 /**
