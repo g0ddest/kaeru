@@ -1,7 +1,9 @@
 package app.kaeru.ui.tv
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TvFocusTest {
@@ -123,5 +125,31 @@ class TvFocusTest {
         val target = tvRestoreTarget(TvFocusKey("WATCHING", 130), tab)
         assertEquals(TvRestoreTarget("WATCHING", 130, index = 30), target)
         assertEquals(30, tvRowScroll(target!!.index, firstVisible = 0, viewport = 10))
+    }
+
+    // --- how long an opening claim keeps asking ------------------------------------------------
+
+    @Test
+    fun `a claim keeps asking for about a second, measured on the frame clock`() {
+        val start = 5_000_000_000L
+
+        assertTrue("the frame it started on", claimHasTimeLeft(start, start))
+        assertTrue("four frames in, which is where the old count gave up", claimHasTimeLeft(start, start + 66_000_000))
+        assertTrue("half a second of a cold composition", claimHasTimeLeft(start, start + 500_000_000))
+        assertTrue("just inside the budget", claimHasTimeLeft(start, start + 999_000_000))
+        assertFalse("the budget itself", claimHasTimeLeft(start, start + 1_000_000_000))
+        assertFalse("well past it", claimHasTimeLeft(start, start + 4_000_000_000))
+    }
+
+    @Test
+    fun `the budget survives the wrap the frame clock is allowed to have`() {
+        // System.nanoTime may be anywhere in the range, negative included, and is only meaningful
+        // as a difference. A comparison of the two values rather than of their difference would
+        // read every frame after a wrap as «out of time» and give up on the first one.
+        val beforeWrap = Long.MAX_VALUE - 100_000_000
+        val afterWrap = beforeWrap + 200_000_000
+
+        assertTrue(claimHasTimeLeft(beforeWrap, afterWrap))
+        assertFalse(claimHasTimeLeft(beforeWrap, beforeWrap + 1_500_000_000))
     }
 }

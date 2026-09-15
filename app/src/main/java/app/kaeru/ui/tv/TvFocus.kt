@@ -52,8 +52,33 @@ internal suspend fun FocusRequester.claimFocus(what: String): Boolean {
     return requestFocusOrLog(what)
 }
 
-/** How many frames a screen waits for its opening focus to land before it gives up asking. */
-private const val CLAIM_FRAMES = 4
+/**
+ * How long a screen keeps asking for its opening focus before it gives up.
+ *
+ * A second, and measured rather than counted. The first version of this counted four frames, which
+ * is 66 ms on a 60 Hz panel and less on a faster one — and the whole premise of the helper is that
+ * a lazy list composes and places its items on a schedule the caller cannot see. A cold first
+ * composition on a low-end television can miss a window that small, and the failure is silent and
+ * lands in the worst possible place: the settings screen then opens with nothing focused, so the
+ * first press of the D-pad falls to the first focusable in the list, which is «Выйти из аккаунта».
+ *
+ * Nothing is spent on a longer budget in the ordinary case, because the asking stops the instant
+ * the focus arrives. It only changes what happens in the case that was broken.
+ */
+private const val CLAIM_BUDGET_MS = 1_000L
+
+private const val CLAIM_BUDGET_NANOS = CLAIM_BUDGET_MS * 1_000_000L
+
+/**
+ * Whether a claim that began on the frame at [startedNanos] may ask again on the frame at
+ * [frameNanos].
+ *
+ * Written against the frame clock rather than the wall clock: the frame clock is what actually
+ * paces the asking, it is the one a test driving frames also drives, and the subtraction survives
+ * the wrap `System.nanoTime` is allowed to have.
+ */
+internal fun claimHasTimeLeft(startedNanos: Long, frameNanos: Long): Boolean =
+    frameNanos - startedNanos < CLAIM_BUDGET_NANOS
 
 /**
  * Asks for the focus once a frame until it actually arrives.
@@ -65,14 +90,16 @@ private const val CLAIM_FRAMES = 4
  * nothing with it. Nothing tells the asker which happened, so the only honest end condition is the
  * focus arriving — which is what [arrived] reports, latched by `onFocusChanged` on the node itself.
  *
- * Four frames and then it stops. A screen whose opening focusable never appears has a different
- * problem, and asking for ever would keep a coroutine alive for as long as the screen is up.
+ * It stops after [CLAIM_BUDGET_MS]. A screen whose opening focusable has not appeared by then has a
+ * different problem, and asking for ever would keep a coroutine alive for as long as the screen is.
  */
 internal suspend fun FocusRequester.claimFocusWhenReady(what: String, arrived: () -> Boolean) {
-    repeat(CLAIM_FRAMES) {
-        if (arrived()) return
+    var startedNanos: Long? = null
+    while (!arrived()) {
         runCatching { requestFocus() }
-        withFrameNanos { }
+        val frameNanos = withFrameNanos { it }
+        val started = startedNanos ?: frameNanos.also { startedNanos = it }
+        if (!claimHasTimeLeft(started, frameNanos)) break
     }
     if (!arrived()) Log.w(TV_TAG, "Focus never reached $what; the screen starts without D-pad focus")
 }
