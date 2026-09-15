@@ -15,6 +15,8 @@ import app.kaeru.domain.download.EpisodeDownload
 import app.kaeru.domain.error.DownloadLimitReached
 import app.kaeru.domain.model.EpisodeStream
 import app.kaeru.domain.model.Quality
+import app.kaeru.domain.model.Translation
+import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.settings.SettingsStore
@@ -104,10 +106,41 @@ class Media3DownloadRepository @Inject constructor(
         .distinctUntilChanged()
 
     override suspend fun completed(animeId: Int, episode: Int): EpisodeDownload? = withContext(io) {
-        source.current()
-            .firstOrNull { it.state == Download.STATE_COMPLETED && it.matches(animeId, episode) }
-            ?.toEpisodeDownload(notMetRequirements = 0)
+        finished(animeId, episode)?.toEpisodeDownload(notMetRequirements = 0)
     }
+
+    /**
+     * The finished download read back as a stream, so the player can open it through the very
+     * path a resolve would have produced.
+     *
+     * One rung, because a download is one file. The address is the expired one the request was
+     * built with: the player reads through the same cache under a key that has no signature in
+     * it, so the bytes are found under that name whether or not the link would still be served.
+     */
+    override suspend fun completedStream(animeId: Int, episode: Int): EpisodeStream? = withContext(io) {
+        val download = finished(animeId, episode) ?: return@withContext null
+        val key = DownloadKey.parse(download.request.id) ?: return@withContext null
+        EpisodeStream(
+            animeId = animeId,
+            episode = episode,
+            // The blob is where the track's name and its Kodik season are; the id alone is what
+            // survives when an older build wrote the row, and it is enough to remember it by.
+            translation = download.payload()?.translation() ?: unnamedTrack(key.translationId),
+            urls = mapOf(key.quality to download.request.uri.toString()),
+            resolvedAt = Instant.ofEpochMilli(download.updateTimeMs),
+        )
+    }
+
+    private fun finished(animeId: Int, episode: Int): Download? = source.current()
+        .firstOrNull { it.state == Download.STATE_COMPLETED && it.matches(animeId, episode) }
+
+    private fun unnamedTrack(id: Int) = Translation(
+        id = id,
+        title = "",
+        type = TranslationKind.VOICE,
+        episodesCount = null,
+        season = 1,
+    )
 
     override suspend fun enqueue(animeId: Int, episode: Int, quality: Quality?): Result<Unit> {
         val policy = settings.downloadPolicy.first()

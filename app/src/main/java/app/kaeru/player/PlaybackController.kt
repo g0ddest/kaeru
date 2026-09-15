@@ -4,6 +4,10 @@ import androidx.media3.common.Player
 import app.kaeru.di.IoDispatcher
 import app.kaeru.di.LocalEngine
 import app.kaeru.di.PlaybackScope
+import app.kaeru.domain.connectivity.Connectivity
+import app.kaeru.domain.download.DownloadRepository
+import app.kaeru.domain.error.SourceUnavailable
+import app.kaeru.domain.error.SourceUnavailableReason
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.EpisodeStream
 import app.kaeru.domain.model.PlaybackTarget
@@ -135,6 +139,8 @@ class DefaultPlaybackController @Inject constructor(
     private val library: LibraryRepository,
     private val prefs: PlaybackPreferences,
     private val headers: StreamHeaders,
+    private val downloads: DownloadRepository,
+    private val connectivity: Connectivity,
     @param:PlaybackScope private val scope: CoroutineScope,
     @param:IoDispatcher private val io: CoroutineDispatcher,
 ) : PlaybackController {
@@ -166,6 +172,15 @@ class DefaultPlaybackController @Inject constructor(
          */
         val advancing: Boolean = false,
     )
+
+    /**
+     * One episode's links, and where they came from.
+     *
+     * [onDevice] is not a fact about the links but about who can use them: a downloaded episode
+     * carries the address it was fetched from, whose signature expired hours ago and whose bytes
+     * are in a cache only this phone can read.
+     */
+    private data class Source(val stream: EpisodeStream, val onDevice: Boolean)
 
     /** Settings are read once per episode: changing them mid-episode should not move the goalposts. */
     private data class Settings(
@@ -199,6 +214,13 @@ class DefaultPlaybackController @Inject constructor(
     private val switching: Boolean get() = transition?.isActive == true
 
     private var markedEpisode = false
+
+    /**
+     * What is playing came off the device rather than off the network. Only one thing turns on
+     * it: handing the episode to a receiver has to resolve it again, because the links a
+     * download carries lead nowhere from anywhere but here.
+     */
+    private var playingDownload = false
     private var reResolved = false
     private var autoplayCancelled = false
     private var lastReportedMs = -1L
@@ -367,8 +389,14 @@ class DefaultPlaybackController @Inject constructor(
             // that just finished. Its own start position is right for the same reasons. The
             // state is only fallen back on when a resolve already failed, where re-opening the
             // episode on screen is the retry the viewer would have pressed.
+            //
+            // An episode playing off the device is the other thing that has to be opened rather
+            // than carried: its links are this phone's expired ones and its bytes are in a cache
+            // no receiver can reach, so a television handed them would sit on a black screen with
+            // nothing to report. The same resolve that would have started it there does it here.
+            val handingOverADownload = playingDownload && casting
             val unopened = unfinished
-                ?: target?.takeIf { stream == null || quality == null }
+                ?: target?.takeIf { stream == null || quality == null || handingOverADownload }
                     ?.let { Opening(it.copy(startPositionMs = carryPositionMs), freshEpisode = false) }
             if (unopened != null) {
                 // A next episode that will not resolve is still a next episode: the viewer gets
@@ -444,6 +472,7 @@ class DefaultPlaybackController @Inject constructor(
         opening = null
         _state.value = PlaybackState(isCasting = casting)
         markedEpisode = false
+        playingDownload = false
         reResolved = false
         autoplayCancelled = false
         lastReportedMs = -1
@@ -460,13 +489,12 @@ class DefaultPlaybackController @Inject constructor(
         // between its decision and this call — is still covered.
         opening = plan
         settings = readSettings()
-        // Resolving reads a player page and picks it apart. That is not main-thread work, and
-        // everything after it is: the state, the player and its surface all live there.
-        val stream = withContext(io) { resolve(target.animeId, target.episode, target.translation) }
-            .getOrElse {
-                opening = null
-                return Result.failure(it)
-            }
+        val source = streamFor(target).getOrElse {
+            opening = null
+            return Result.failure(it)
+        }
+        val stream = source.stream
+        playingDownload = source.onDevice
         // One read, two users: what the notification says this is, and how many episodes there
         // are to go. Read per episode rather than followed, so a catalogue refresh landing
         // mid-episode cannot move the goalposts of a countdown already under way.
@@ -500,6 +528,48 @@ class DefaultPlaybackController @Inject constructor(
         onEngineState(engine.state.value, force = true)
         return Result.success(Unit)
     }
+
+    /**
+     * Where this episode comes from.
+     *
+     * An episode already on the device is a resolve that has already happened: the link was
+     * signed, the segments are in the cache, and asking Kodik for it again would only spend a
+     * network round trip to arrive at the same bytes — or fail, in the tunnel this feature
+     * exists for. So a finished download wins, and nothing is asked of the source at all.
+     *
+     * Except when the viewer asked for a different voice than the one on the device. That is a
+     * request the download cannot answer, and refusing to resolve it would turn «сменить озвучку»
+     * into a control that silently does nothing. With no network even that falls back to what is
+     * there: one voice is what the device has, and it is better than a red line over an episode
+     * that would play.
+     *
+     * All of it on the io dispatcher, including the reads: resolving reads a player page and
+     * picks it apart, the download index is a database query, and asking the platform whether
+     * there is a network is a binder call. Everything after this is main-thread work — the
+     * state, the player and its surface all live there.
+     */
+    private suspend fun streamFor(target: PlaybackTarget): Result<Source> {
+        // Read here, on the thread that owns it. A receiver fetches from the CDN itself and
+        // cannot reach this phone's cache, so an episode on the device is an answer for the
+        // engine on the device and for nothing else: casting always resolves, and offline —
+        // where it cannot — it fails with the same reason as everything else.
+        val onThisDevice = !casting
+        return withContext(io) {
+            val downloaded = if (onThisDevice) downloads.completedStream(target.animeId, target.episode) else null
+            if (downloaded != null && !asksAnotherTrack(target, downloaded)) {
+                return@withContext Result.success(Source(downloaded, onDevice = true))
+            }
+            if (!connectivity.online.first()) {
+                return@withContext downloaded?.let { Result.success(Source(it, onDevice = true)) }
+                    ?: Result.failure(SourceUnavailable(SourceUnavailableReason.OFFLINE))
+            }
+            resolve(target.animeId, target.episode, target.translation).map { Source(it, onDevice = false) }
+        }
+    }
+
+    /** The viewer named a voice, and it is not the one the download was fetched in. */
+    private fun asksAnotherTrack(target: PlaybackTarget, downloaded: EpisodeStream): Boolean =
+        target.translation != null && target.translation.id != downloaded.translation.id
 
     private suspend fun openNext() {
         val current = _state.value.target ?: return

@@ -1,5 +1,7 @@
 package app.kaeru.player
 
+import app.kaeru.domain.connectivity.FakeConnectivity
+import app.kaeru.domain.download.FakeDownloadRepository
 import app.kaeru.domain.error.EpisodeNotAvailable
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.model.Anime
@@ -77,6 +79,8 @@ class PlaybackControllerTest {
             library = library,
             prefs = prefs,
             headers = headers,
+            downloads = FakeDownloadRepository(),
+            connectivity = FakeConnectivity(),
             scope = scope,
             io = dispatcher,
         )

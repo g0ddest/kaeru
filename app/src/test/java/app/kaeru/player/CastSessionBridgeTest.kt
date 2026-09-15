@@ -1,5 +1,7 @@
 package app.kaeru.player
 
+import app.kaeru.domain.connectivity.FakeConnectivity
+import app.kaeru.domain.download.FakeDownloadRepository
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.LibraryEntry
@@ -72,6 +74,8 @@ class CastSessionBridgeTest {
             library = library,
             prefs = prefs,
             headers = headers,
+            downloads = FakeDownloadRepository(),
+            connectivity = FakeConnectivity(),
             scope = scope,
             io = dispatcher,
         )
