@@ -9,6 +9,7 @@ import app.kaeru.data.library.AppPreferences
 import app.kaeru.data.playback.RoomEpisodeProgressRepository
 import app.kaeru.data.playback.RoomPlaybackSampleRepository
 import app.kaeru.data.playback.RoomWatchStateRepository
+import app.kaeru.domain.download.DownloadRepository
 import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.PlaybackNotificationPrompt
 import app.kaeru.domain.playback.PlaybackPreferences
@@ -89,7 +90,8 @@ object PlaybackModule {
         resolve: ResolveEpisodeStream,
         cache: StreamPrefetchCache,
         watchStates: WatchStateRepository,
-    ): PrefetchTopCardStream = PrefetchTopCardStream(resolve, cache, watchStates)
+        downloads: DownloadRepository,
+    ): PrefetchTopCardStream = PrefetchTopCardStream(resolve, cache, watchStates, downloads)
 
     /**
      * A single instance on purpose: the coalescing queue that keeps one position write in

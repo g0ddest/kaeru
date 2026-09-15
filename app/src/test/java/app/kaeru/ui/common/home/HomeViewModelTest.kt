@@ -1,5 +1,6 @@
 package app.kaeru.ui.common.home
 
+import app.kaeru.domain.download.FakeDownloadRepository
 import app.kaeru.domain.discover.Season
 import app.kaeru.domain.discover.SeasonKind
 import app.kaeru.domain.error.HttpError
@@ -128,7 +129,12 @@ class HomeViewModelTest {
     private fun prefetching(prefs: FakePlaybackPreferences): PrefetchTopCardStream {
         val clock = MutableClock(now)
         val cache = StreamPrefetchCache(clock)
-        return PrefetchTopCardStream(ResolveEpisodeStream(source, watchStates, prefs, clock, cache), cache, watchStates)
+        return PrefetchTopCardStream(
+            ResolveEpisodeStream(source, watchStates, prefs, clock, cache),
+            cache,
+            watchStates,
+            FakeDownloadRepository(),
+        )
     }
 
     private fun viewModel(

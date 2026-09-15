@@ -5,6 +5,7 @@ import app.kaeru.domain.download.DownloadKey
 import app.kaeru.domain.download.DownloadState
 import app.kaeru.domain.download.EpisodeDownload
 import app.kaeru.domain.download.FakeDownloadRepository
+import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.error.SourceUnavailable
 import app.kaeru.domain.error.SourceUnavailableReason
 import app.kaeru.domain.model.Anime
@@ -37,6 +38,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.IOException
 import java.time.Instant
 
 /**
@@ -274,9 +276,30 @@ class PlaybackControllerOfflineTest {
     }
 
     @Test
-    fun `an episode resolved for a receiver plays on this phone again without another resolve`() =
+    fun `coming back from a receiver plays the copy on this phone again`() = runTest(dispatcher) {
+        downloaded(episode = 4)
+        controller.play(target(episode = 4))
+        engine.ready(1_440_000)
+        advanceUntilIdle()
+        val receiver = FakePlaybackEngine()
+        controller.switchEngine(receiver, carryPositionMs = 120_000)
+        advanceUntilIdle()
+
+        controller.switchEngine(engine, carryPositionMs = 180_000)
+        advanceUntilIdle()
+
+        // One resolve in the whole session — the one the receiver needed — and the phone lands
+        // back on the file it already has rather than on the television's link, which it would
+        // have re-streamed and, with the network gone, not played at all.
+        assertEquals(listOf(4), source.resolves)
+        val back = engine.prepared.last()
+        assertEquals("https://cdn/100/4/11/720?sign=expired", back.url)
+        assertEquals(180_000L, back.startPositionMs)
+    }
+
+    @Test
+    fun `coming back from a receiver with nothing on the device costs no second resolve`() =
         runTest(dispatcher) {
-            downloaded(episode = 4)
             controller.play(target(episode = 4))
             engine.ready(1_440_000)
             advanceUntilIdle()
@@ -287,9 +310,76 @@ class PlaybackControllerOfflineTest {
             controller.switchEngine(engine, carryPositionMs = 180_000)
             advanceUntilIdle()
 
-            // One resolve in the whole session: the one the receiver needed.
             assertEquals(listOf(4), source.resolves)
             assertEquals("https://cdn/100/4/11/720", engine.prepared.last().url)
+        }
+
+    @Test
+    fun `an episode picked off the list plays from the device whatever voice it is in`() =
+        runTest(dispatcher) {
+            // The voice on screen rides along on every episode the viewer picks from the list.
+            // That is not a request to reconsider it, so it must not turn a file already on the
+            // phone into a stream from Kodik.
+            downloaded(episode = 7, track = studioBanda)
+
+            controller.play(target(episode = 7, translation = anilibria))
+            advanceUntilIdle()
+
+            assertTrue(source.resolves.isEmpty())
+            assertEquals("https://cdn/100/7/22/720?sign=expired", engine.prepared.single().url)
+        }
+
+    @Test
+    fun `autoplay into an episode downloaded in another voice plays it from the device`() =
+        runTest(dispatcher) {
+            downloaded(episode = 5, track = studioBanda)
+            controller.play(target(episode = 4))
+            engine.ready(1_440_000)
+            advanceUntilIdle()
+
+            controller.playNext()
+            advanceUntilIdle()
+
+            // Only the fourth was ever asked for; the fifth was on the device.
+            assertEquals(listOf(4), source.resolves)
+            assertEquals("https://cdn/100/5/22/720?sign=expired", engine.prepared.last().url)
+        }
+
+    @Test
+    fun `a downloaded episode that stops for good says what a viewer can do about it`() =
+        runTest(dispatcher) {
+            downloaded(episode = 4)
+            controller.play(target(episode = 4))
+            engine.ready(1_440_000)
+            advanceUntilIdle()
+
+            // The bytes went away — «удалить» pressed while it played. media3 calls that a source
+            // that would not answer, which is a sentence about a network the file never needed.
+            engine.fail(NetworkUnavailable(IOException("gone")))
+            advanceUntilIdle()
+            engine.fail(NetworkUnavailable(IOException("gone")))
+            advanceUntilIdle()
+
+            val failure = controller.state.value.error
+            assertTrue(failure is SourceUnavailable)
+            assertEquals(SourceUnavailableReason.OFFLINE, (failure as SourceUnavailable).reason)
+        }
+
+    @Test
+    fun `a streamed episode that stops for good still reports what the engine said`() =
+        runTest(dispatcher) {
+            // The same two failures on an episode that was never on the device: nothing about
+            // downloads is said, and the flag that decides it is off after an ordinary open.
+            controller.play(target(episode = 4))
+            engine.ready(1_440_000)
+            advanceUntilIdle()
+
+            engine.fail(NetworkUnavailable(IOException("down")))
+            advanceUntilIdle()
+            engine.fail(NetworkUnavailable(IOException("down")))
+            advanceUntilIdle()
+
+            assertTrue(controller.state.value.error is NetworkUnavailable)
         }
 
     @Test

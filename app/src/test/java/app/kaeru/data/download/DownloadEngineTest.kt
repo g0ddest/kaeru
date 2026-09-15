@@ -60,9 +60,10 @@ class DownloadEngineTest {
     @Before
     fun setUp() {
         app = ApplicationProvider.getApplicationContext()
+        val watchStates = FakeWatchStateRepository()
         val resolve = ResolveEpisodeStream(
             episodes,
-            FakeWatchStateRepository(),
+            watchStates,
             FakePlaybackPreferences(),
             clock,
             StreamPrefetchCache(clock),
@@ -75,6 +76,7 @@ class DownloadEngineTest {
                 resolve = resolve,
                 settings = FakeSettingsStore(),
                 library = Provider { FakeLibraryRepository() },
+                watchStates = watchStates,
                 clock = clock,
                 io = dispatcher,
             ),

@@ -11,6 +11,7 @@ import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.EpisodeStream
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
+import app.kaeru.domain.model.PlaybackTarget
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
@@ -25,6 +26,7 @@ import app.kaeru.domain.source.EpisodeSourceProvider
 import app.kaeru.player.CastSessionBridge
 import app.kaeru.player.FakeCastFramework
 import app.kaeru.player.FakePlaybackEngine
+import app.kaeru.player.PlaybackState
 import app.kaeru.test.MainDispatcherRule
 import app.kaeru.test.MutableClock
 import kotlinx.coroutines.CoroutineScope
@@ -191,6 +193,42 @@ class PlayerViewModelDownloadTest {
 
         assertTrue(downloads.enqueued.isEmpty())
         assertTrue(downloads.removed.isEmpty())
+    }
+
+    @Test
+    fun `nothing is downloaded for a title the controller has not reached yet`() = runTest(main.dispatcher) {
+        // The controller serves the whole process. Between this screen naming its title and
+        // playback reaching it, what the controller still holds is the title before it — and
+        // pairing the two would download episode seven of a show nobody opened.
+        controller.playback.value = PlaybackState(target = PlaybackTarget(100, 7, 0, null))
+
+        viewModel.start(animeId = 200, episode = 1)
+        viewModel.download()
+        viewModel.removeDownload()
+        advanceUntilIdle()
+
+        assertTrue(downloads.enqueued.isEmpty())
+        assertTrue(downloads.removed.isEmpty())
+
+        // Once playback lands on this title it is the ordinary case again.
+        viewModel.download()
+        advanceUntilIdle()
+
+        assertEquals(Triple(200, 1, null), downloads.enqueued.single())
+    }
+
+    @Test
+    fun `no download row is shown for an episode of another title`() = runTest(main.dispatcher) {
+        downloads.put(row(episode = 4, state = DownloadState.COMPLETED, progress = 1f))
+        viewModel.start(animeId = 100, episode = 4)
+        advanceUntilIdle()
+        assertEquals(4, viewModel.uiState.value.download?.episode)
+
+        // Playback moved to another title while this screen is still showing anime 100.
+        controller.playback.value = PlaybackState(target = PlaybackTarget(999, 4, 0, null))
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.download)
     }
 
     @Test

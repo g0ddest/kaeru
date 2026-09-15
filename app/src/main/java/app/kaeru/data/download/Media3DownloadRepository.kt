@@ -19,6 +19,7 @@ import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.repository.LibraryRepository
+import app.kaeru.domain.repository.WatchStateRepository
 import app.kaeru.domain.settings.SettingsStore
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -63,6 +64,7 @@ class Media3DownloadRepository @Inject constructor(
     private val resolve: ResolveEpisodeStream,
     private val settings: SettingsStore,
     private val library: Provider<LibraryRepository>,
+    private val watchStates: WatchStateRepository,
     private val clock: Clock,
     @param:IoDispatcher private val io: CoroutineDispatcher,
 ) : DownloadRepository {
@@ -123,24 +125,36 @@ class Media3DownloadRepository @Inject constructor(
         EpisodeStream(
             animeId = animeId,
             episode = episode,
-            // The blob is where the track's name and its Kodik season are; the id alone is what
-            // survives when an older build wrote the row, and it is enough to remember it by.
-            translation = download.payload()?.translation() ?: unnamedTrack(key.translationId),
+            translation = trackOf(download, key),
             urls = mapOf(key.quality to download.request.uri.toString()),
-            resolvedAt = Instant.ofEpochMilli(download.updateTimeMs),
+            // Never «just resolved»: this is the address the downloader was handed, hours or
+            // weeks ago, and its signature is long dead. Nothing reads this field today, and an
+            // epoch is the one value that cannot be mistaken for a fresh link if anything ever
+            // starts to. What makes the links work is the cache key, not their age.
+            resolvedAt = Instant.EPOCH,
         )
     }
 
     private fun finished(animeId: Int, episode: Int): Download? = source.current()
         .firstOrNull { it.state == Download.STATE_COMPLETED && it.matches(animeId, episode) }
 
-    private fun unnamedTrack(id: Int) = Translation(
-        id = id,
-        title = "",
-        type = TranslationKind.VOICE,
-        episodesCount = null,
-        season = 1,
-    )
+    /**
+     * The track this download was fetched in.
+     *
+     * The blob is where the name and the Kodik season are. When it cannot be read — a row an
+     * older build wrote, or one written in a shape this build does not know — the id survives in
+     * the download's own key and the season is taken from what this anime is already mapped to.
+     * Naming a season here would be a guess written into the watch state by the first progress
+     * sample, where a later resolve would believe it and ask Kodik for the wrong season.
+     */
+    private suspend fun trackOf(download: Download, key: DownloadKey): Translation =
+        download.payload()?.translation() ?: Translation(
+            id = key.translationId,
+            title = "",
+            type = TranslationKind.VOICE,
+            episodesCount = null,
+            season = watchStates.observe(key.animeId).first()?.kodikSeason ?: DEFAULT_SEASON,
+        )
 
     override suspend fun enqueue(animeId: Int, episode: Int, quality: Quality?): Result<Unit> {
         val policy = settings.downloadPolicy.first()
@@ -308,6 +322,9 @@ class Media3DownloadRepository @Inject constructor(
 
         /** Long enough for a service start, short enough that a refused one is not a hang. */
         const val ENGINE_ACK_TIMEOUT_MS = 2_000L
+
+        /** What a freshly parsed Kodik track carries, for an anime this device remembers nothing about. */
+        const val DEFAULT_SEASON = 1
     }
 }
 

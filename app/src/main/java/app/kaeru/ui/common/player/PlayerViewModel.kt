@@ -40,6 +40,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -93,6 +95,12 @@ class PlayerViewModel @Inject constructor(
         val receiverName: String? = null,
         val settledQuality: Quality? = null,
         val offline: Boolean = false,
+        /**
+         * The title [downloads] are about. Carried rather than read off the screen's own field,
+         * because the controller is process-wide: between a screen naming its title and playback
+         * reaching it, the episode on the controller still belongs to the title before it.
+         */
+        val animeId: Int? = null,
         val downloads: List<EpisodeDownload> = emptyList(),
     )
 
@@ -135,10 +143,14 @@ class PlayerViewModel @Inject constructor(
     private val surroundings: Flow<Surroundings> = combine(
         cast.receiverName,
         prefs.defaultQuality,
-        connectivity.online,
-        animeId.flatMapLatest { id -> if (id == null) flowOf(emptyList()) else downloads.observe(id) },
+        // Registering a network callback is three binder calls, and they must not be made on the
+        // thread drawing the player.
+        connectivity.online.flowOn(io),
+        animeId.flatMapLatest { id ->
+            if (id == null) flowOf(null to emptyList()) else downloads.observe(id).map { id to it }
+        },
     ) { receiverName, settledQuality, online, downloaded ->
-        Surroundings(receiverName, settledQuality, offline = !online, downloads = downloaded)
+        Surroundings(receiverName, settledQuality, !online, downloaded.first, downloaded.second)
     }
 
     /** The player a video surface attaches to, or null while there is none to attach to. */
@@ -180,7 +192,9 @@ class PlayerViewModel @Inject constructor(
             receiverName = around.receiverName,
             completedPrompt = screen.completedPrompt,
             offline = around.offline,
-            download = playback.target?.let { live -> around.downloads.firstOrNull { it.episode == live.episode } },
+            download = playback.target
+                ?.takeIf { it.animeId == around.animeId }
+                ?.let { live -> around.downloads.firstOrNull { it.episode == live.episode } },
             toast = screen.toast,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, PlayerUiState())
@@ -342,7 +356,7 @@ class PlayerViewModel @Inject constructor(
      */
     fun download() {
         val id = animeId.value ?: return
-        val episode = controller.state.value.target?.episode ?: return
+        val episode = liveEpisodeOf(id) ?: return
         viewModelScope.launch {
             downloads.enqueue(id, episode)
                 .onFailure { failure -> screen.update { it.copy(toast = failure.toUserMessage()) } }
@@ -352,9 +366,19 @@ class PlayerViewModel @Inject constructor(
     /** Gives the space back. The episode plays from Kodik again, for as long as there is a network. */
     fun removeDownload() {
         val id = animeId.value ?: return
-        val episode = controller.state.value.target?.episode ?: return
+        val episode = liveEpisodeOf(id) ?: return
         viewModelScope.launch { downloads.remove(id, episode) }
     }
+
+    /**
+     * The episode playing right now, but only while it is an episode of [id].
+     *
+     * The controller serves the whole process, so what it holds during the moment between this
+     * screen naming its title and playback reaching it is the *previous* title's episode. Pairing
+     * the two would download episode seven of a show the viewer never opened.
+     */
+    private fun liveEpisodeOf(id: Int): Int? =
+        controller.state.value.target?.takeIf { it.animeId == id }?.episode
 
     /** Loads the tracks on demand and shows them: the sheet costs a request to fill. */
     fun openTranslations() = fetchTranslations(show = true)
