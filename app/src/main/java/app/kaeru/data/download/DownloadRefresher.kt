@@ -17,6 +17,21 @@ import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** What the refresher did with a failed download. */
+enum class RefreshOutcome {
+    /** A fresh request went to the engine; the download is on its way back. */
+    REQUESTED,
+
+    /** Not a failure a fresh link would fix, so whatever went wrong still stands. */
+    DECLINED,
+
+    /**
+     * It did look like an expired link, and it could not be replaced: the hour's attempts are
+     * spent, or the source would not hand one over. Nothing more will be tried by itself.
+     */
+    EXHAUSTED,
+}
+
 /**
  * Puts a fresh signature on a download whose old one expired.
  *
@@ -47,14 +62,15 @@ class DownloadRefresher @Inject constructor(
      * @param cause the exception media3 handed its own listener. It is the only place the HTTP
      *   status is visible — by the time the row is read back, `failureReason` is a single
      *   «unknown» bit.
-     * @return true when a fresh request went to the engine. False means the download stays failed,
-     *   and whoever called can tell the viewer so.
+     * @return [RefreshOutcome.REQUESTED] when a fresh request went to the engine. The other two
+     *   both mean the download stays failed, and they differ in what to tell the viewer: one is an
+     *   expired link nobody will replace, the other is a failure that was never about the link.
      */
-    suspend fun refresh(download: Download, cause: Throwable?): Boolean {
-        if (download.state != Download.STATE_FAILED) return false
-        if (!looksExpired(download, cause)) return false
-        val key = DownloadKey.parse(download.request.id) ?: return false
-        if (!claimAttempt(download.request.id)) return false
+    suspend fun refresh(download: Download, cause: Throwable?): RefreshOutcome {
+        if (download.state != Download.STATE_FAILED) return RefreshOutcome.DECLINED
+        if (!looksExpired(download, cause)) return RefreshOutcome.DECLINED
+        val key = DownloadKey.parse(download.request.id) ?: return RefreshOutcome.DECLINED
+        if (!claimAttempt(download.request.id)) return RefreshOutcome.EXHAUSTED
 
         val payload = download.payload()
         // persist = false: a background repair must not move the row that says where the viewer is.
@@ -63,12 +79,12 @@ class DownloadRefresher @Inject constructor(
             episode = key.episode,
             translationOverride = payload?.translation() ?: key.asTranslation(),
             persist = false,
-        ).getOrNull() ?: return false
+        ).getOrNull() ?: return RefreshOutcome.EXHAUSTED
 
         // The height is part of the download's identity. A source that no longer offers it has
         // nothing to put behind this id, and quietly swapping in another height would hand the
         // player a file the viewer did not ask for.
-        val url = stream.urls[key.quality] ?: return false
+        val url = stream.urls[key.quality] ?: return RefreshOutcome.EXHAUSTED
 
         commands.add(
             DownloadRequest.Builder(download.request.id, url.toUri())
@@ -78,7 +94,7 @@ class DownloadRefresher @Inject constructor(
                 .setData(download.request.data)
                 .build(),
         )
-        return true
+        return RefreshOutcome.REQUESTED
     }
 
     /**
@@ -113,6 +129,11 @@ class DownloadRefresher @Inject constructor(
         }
         if (window.size >= MAX_ATTEMPTS) return@withLock false
         window.addLast(now)
+        // Nothing older than the window can still count against anything, and keeping it would
+        // leave one entry per download ever refreshed for the life of the process.
+        attempts.entries.removeAll { (other, times) ->
+            other != id && (times.isEmpty() || Duration.between(times.last(), now) > WINDOW)
+        }
         true
     }
 

@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.offline.Download
 import androidx.media3.exoplayer.offline.DownloadManager
+import androidx.media3.exoplayer.scheduler.Requirements
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -29,6 +30,17 @@ interface DownloadsSource {
      */
     fun current(): List<Download>
 
+    /**
+     * The downloads in flight, as the engine holds them in memory.
+     *
+     * Not the same rows as [current], and the difference is the whole reason this exists: media3
+     * writes live progress into a `DownloadProgress` object the downloader mutates, and only
+     * flushes it to the index every five seconds — without notifying anybody when it does. The
+     * index rows therefore report the progress of several seconds ago, or nought for a download
+     * that has not been flushed yet. These rows carry the live object.
+     */
+    fun active(): List<Download>
+
     /** The requirements the device does not meet right now; 0 when nothing is holding downloads back. */
     fun notMetRequirements(): Int
 
@@ -47,6 +59,15 @@ interface DownloadsSource {
         fun onChanged(download: Download, finalException: Exception?)
         fun onRemoved(download: Download)
         fun onIdle()
+
+        /**
+         * The device stopped meeting the rules, or started meeting them again.
+         *
+         * No download changes state when Wi-Fi drops — the queue simply stops moving — so without
+         * this a screen would go on showing «в очереди» for a row that is really waiting for a
+         * network.
+         */
+        fun onRequirementsChanged()
     }
 }
 
@@ -77,6 +98,8 @@ class Media3DownloadsSource @Inject constructor(
         emptyList()
     }
 
+    override fun active(): List<Download> = manager.currentDownloads
+
     override fun notMetRequirements(): Int = manager.notMetRequirements
 
     override fun addListener(listener: DownloadsSource.Listener) {
@@ -91,6 +114,17 @@ class Media3DownloadsSource @Inject constructor(
                 listener.onRemoved(download)
 
             override fun onIdle(downloadManager: DownloadManager) = listener.onIdle()
+
+            override fun onRequirementsStateChanged(
+                downloadManager: DownloadManager,
+                requirements: Requirements,
+                notMetRequirements: Int,
+            ) = listener.onRequirementsChanged()
+
+            override fun onWaitingForRequirementsChanged(
+                downloadManager: DownloadManager,
+                waitingForRequirements: Boolean,
+            ) = listener.onRequirementsChanged()
         }
         bridges[listener] = bridge
         manager.addListener(bridge)

@@ -31,14 +31,19 @@ import app.kaeru.domain.source.EpisodeSourceProvider
 import app.kaeru.player.FakeLibraryRepository
 import app.kaeru.test.MutableClock
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -69,7 +74,12 @@ class Media3DownloadRepositoryTest {
     private val watchStates = FakeWatchStateRepository()
     private val settings = FakeSettingsStore()
     private val library = FakeLibraryRepository()
+    private val failures = DownloadFailures()
+    private val shareScope = CoroutineScope(dispatcher + SupervisorJob())
     private lateinit var repository: Media3DownloadRepository
+
+    @After
+    fun tearDown() = shareScope.cancel()
 
     @Before
     fun setUp() {
@@ -99,8 +109,10 @@ class Media3DownloadRepositoryTest {
             ),
             settings = settings,
             library = Provider { library },
+            failures = failures,
             clock = clock,
             io = dispatcher,
+            scope = shareScope,
         )
     }
 
@@ -126,20 +138,93 @@ class Media3DownloadRepositoryTest {
         engine.put(download(key(episode = 7), Download.STATE_QUEUED))
         engine.notMet = Requirements.NETWORK_UNMETERED
 
-        assertEquals(DownloadState.WAITING_FOR_WIFI, repository.observeAll().first().single().state)
+        repository.observeAll().test {
+            assertEquals(DownloadState.WAITING_FOR_WIFI, awaitItem().single().state)
 
-        engine.notMet = 0
-        assertEquals(DownloadState.QUEUED, repository.observeAll().first().single().state)
+            // Wi-Fi comes back. No download changes state, so only the requirements callback can
+            // tell the grid to stop saying «waiting for Wi-Fi».
+            engine.notMet = 0
+
+            assertEquals(DownloadState.QUEUED, awaitItem().single().state)
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 
     @Test
-    fun `a failed download carries copy about the link rather than nothing`() = runTest(dispatcher) {
+    fun `a failed download carries the copy that was recorded for it`() = runTest(dispatcher) {
+        failures.record(key(episode = 7).id, DownloadFailureKind.NO_SPACE)
         engine.put(download(key(episode = 7), Download.STATE_FAILED, failureReason = Download.FAILURE_REASON_UNKNOWN))
 
         val failed = repository.observeAll().first().single()
 
         assertEquals(DownloadState.FAILED, failed.state)
-        assertEquals("Ссылка устарела, попробуйте позже", failed.failure)
+        assertEquals("Недостаточно места", failed.failure)
+    }
+
+    @Test
+    fun `a failure nothing was recorded for says only that it did not work`() = runTest(dispatcher) {
+        // A row that failed before this process started: media3 keeps one «unknown» bit, so
+        // guessing at a cause would be inventing one.
+        engine.put(download(key(episode = 7), Download.STATE_FAILED, failureReason = Download.FAILURE_REASON_UNKNOWN))
+
+        assertEquals("Не удалось скачать", repository.observeAll().first().single().failure)
+    }
+
+    @Test
+    fun `progress moves while a download runs, though the engine never says so`() = runTest(dispatcher) {
+        // media3 writes live progress into an object it mutates and flushes to its index every
+        // five seconds, notifying nobody. A reader driven by the listener alone would show nought
+        // per cent for the whole episode and then a hundred.
+        engine.put(download(key(episode = 7), Download.STATE_DOWNLOADING, bytes = 0, percent = 0f))
+
+        repository.observeAll().test {
+            assertEquals(0f, awaitItem().single().progress, 0.001f)
+
+            engine.live = listOf(download(key(episode = 7), Download.STATE_DOWNLOADING, 50_000, 25f))
+            advanceTimeBy(1_100)
+
+            assertEquals(0.25f, awaitItem().single().progress, 0.001f)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `used bytes move with the download rather than with the index`() = runTest(dispatcher) {
+        engine.put(download(key(episode = 7), Download.STATE_DOWNLOADING, bytes = 0))
+
+        repository.usedBytes.test {
+            assertEquals(0L, awaitItem())
+
+            engine.live = listOf(download(key(episode = 7), Download.STATE_DOWNLOADING, 50_000, 25f))
+            advanceTimeBy(1_100)
+
+            assertEquals(50_000L, awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `nothing is re-read while nothing is downloading`() = runTest(dispatcher) {
+        engine.put(download(key(episode = 7), Download.STATE_COMPLETED, bytes = 100))
+
+        repository.observeAll().test {
+            assertEquals(100L, awaitItem().single().bytes)
+
+            // A finished download is not polled: the tick exists for progress and there is none.
+            engine.live = listOf(download(key(episode = 7), Download.STATE_COMPLETED, 999, 100f))
+            advanceTimeBy(5_000)
+
+            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `an episode being deleted is not counted against the storage limit any more`() = runTest(dispatcher) {
+        engine.put(download(key(episode = 1), Download.STATE_COMPLETED, bytes = 300))
+        engine.put(download(key(episode = 2), Download.STATE_REMOVING, bytes = 700))
+
+        assertEquals(300L, repository.usedBytes.first())
     }
 
     @Test
@@ -347,6 +432,37 @@ class Media3DownloadRepositoryTest {
         }
 
     @Test
+    fun `a second press while the first is still resolving is not a second download`() =
+        runTest(dispatcher) {
+            val gate = CompletableDeferred<Unit>()
+            episodes.beforeResolve = { gate.await() }
+            val scope = this
+
+            val first = scope.async { repository.enqueue(ANIME, 7) }
+            runCurrent()
+            val second = scope.async { repository.enqueue(ANIME, 7) }
+            runCurrent()
+
+            assertTrue(second.await().isSuccess)
+            gate.complete(Unit)
+            assertTrue(first.await().isSuccess)
+
+            assertEquals(1, commands.added.size)
+        }
+
+    @Test
+    fun `a resolve that throws comes back as a failure rather than taking the app down`() =
+        runTest(dispatcher) {
+            episodes.beforeResolve = { throw IllegalStateException("the scraper blew up") }
+
+            val failed = repository.enqueue(ANIME, 7)
+
+            assertTrue(failed.exceptionOrNull() is IllegalStateException)
+            assertTrue(commands.added.isEmpty())
+            assertEquals(emptyList<Any>(), repository.observeAll().first())
+        }
+
+    @Test
     fun `a resolve that fails comes back as the failure and leaves nothing behind`() = runTest(dispatcher) {
         episodes.stream = { _, _, _ -> Result.failure(EpisodeNotAvailable(ANIME, 7)) }
 
@@ -391,40 +507,25 @@ class Media3DownloadRepositoryTest {
         assertTrue(commands.removed.isEmpty())
     }
 
-    // ---- the policy reaching the engine ------------------------------------------------------
-
     @Test
-    fun `the wifi setting reaches the engine as a requirement, and again when it changes`() =
-        runTest(dispatcher) {
-            repository.start(backgroundScope)
-            runCurrent()
+    fun `every reader shares one listener, and the last to leave takes it with it`() = runTest(dispatcher) {
+        engine.put(download(key(episode = 7), Download.STATE_COMPLETED, bytes = 100))
 
-            assertEquals(listOf(Requirements(Requirements.NETWORK_UNMETERED)), commands.requirements)
-
-            settings.downloadPolicy.value = DownloadPolicy.DEFAULT.copy(wifiOnly = false)
-            runCurrent()
-
-            assertEquals(
-                listOf(Requirements(Requirements.NETWORK_UNMETERED), Requirements(Requirements.NETWORK)),
-                commands.requirements,
-            )
+        repository.observeAll().test {
+            awaitItem()
+            repository.usedBytes.test {
+                awaitItem()
+                // The grid, the storage line and the downloads screen between them cost the engine
+                // one listener and one query, not one each.
+                assertEquals(1, engine.listenerCount)
+                cancelAndIgnoreRemainingEvents()
+            }
+            cancelAndIgnoreRemainingEvents()
         }
 
-    @Test
-    fun `a policy change that is not about the network does not disturb the engine`() = runTest(dispatcher) {
-        repository.start(backgroundScope)
-        runCurrent()
-
-        settings.downloadPolicy.value = DownloadPolicy.DEFAULT.copy(deleteWatched = true)
-        runCurrent()
-
-        assertEquals(1, commands.requirements.size)
-    }
-
-    @Test
-    fun `a collector that goes away takes its listener with it`() = runTest(dispatcher) {
-        repository.observeAll().first()
-
+        // The upstream is held briefly, so a rotation does not tear the engine down and build it
+        // again; past that, nothing is left registered.
+        advanceTimeBy(5_100)
         assertEquals(0, engine.listenerCount)
     }
 

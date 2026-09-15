@@ -45,13 +45,31 @@ class FakeDownloadsSource : DownloadsSource {
     private val rows = LinkedHashMap<String, Download>()
     private val listeners = CopyOnWriteArrayList<DownloadsSource.Listener>()
 
-    /** The requirements the device does not meet, as the policy would report them. */
+    /**
+     * The requirements the device does not meet, as the policy would report them. Setting it
+     * tells the listeners, which is what media3 does when Wi-Fi comes and goes.
+     */
     var notMet: Int = 0
+        set(value) {
+            field = value
+            listeners.forEach { it.onRequirementsChanged() }
+        }
+
+    /**
+     * Rows the engine holds in memory, which is where live progress lives.
+     *
+     * Defaults to whatever [current] holds, so a test that does not care about the difference does
+     * not have to. A test that does — progress moves without a notification, which is exactly what
+     * media3 does — sets this instead of calling [put].
+     */
+    var live: List<Download>? = null
 
     /** Collectors that have a listener registered right now; a leak shows up as a number that grows. */
     val listenerCount: Int get() = listeners.size
 
     override fun current(): List<Download> = rows.values.toList()
+
+    override fun active(): List<Download> = live ?: rows.values.filter { !it.isTerminalState }
 
     override fun notMetRequirements(): Int = notMet
 

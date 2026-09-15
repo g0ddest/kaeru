@@ -23,7 +23,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -75,7 +75,7 @@ class DownloadRefresherTest {
     fun `a signature the CDN refuses is resolved again under the same id`() = runTest(dispatcher) {
         episodes.urls = mapOf(Quality.P720 to "https://cdn/720.m3u8?sign=fresh")
 
-        assertTrue(refresher.refresh(failed(), forbidden(403)))
+        assertRequested(refresher.refresh(failed(), forbidden(403)))
 
         val again = commands.added.single()
         assertEquals(key.id, again.id)
@@ -87,50 +87,67 @@ class DownloadRefresherTest {
 
     @Test
     fun `a gone link is refreshed too`() = runTest(dispatcher) {
-        assertTrue(refresher.refresh(failed(), forbidden(410)))
+        assertRequested(refresher.refresh(failed(), forbidden(410)))
     }
 
     @Test
     fun `a link that expired part way through is refreshed whatever the failure says`() = runTest(dispatcher) {
         // Segments already on the device are the proof that the link worked; whatever broke it
         // since, asking for a fresh one costs one request and resumes rather than restarts.
-        assertTrue(refresher.refresh(failed(bytes = 120_000_000), IOException("connection reset")))
+        assertRequested(refresher.refresh(failed(bytes = 120_000_000), IOException("connection reset")))
     }
 
     @Test
     fun `a failure before a single byte that is not a refused signature is left alone`() = runTest(dispatcher) {
-        assertFalse(refresher.refresh(failed(bytes = 0), IOException("no route to host")))
+        assertNotRequested(refresher.refresh(failed(bytes = 0), IOException("no route to host")))
         assertTrue(commands.added.isEmpty())
     }
 
     @Test
     fun `a status that is not about the signature is left alone`() = runTest(dispatcher) {
-        assertFalse(refresher.refresh(failed(bytes = 0), forbidden(404)))
+        assertNotRequested(refresher.refresh(failed(bytes = 0), forbidden(404)))
     }
 
     @Test
     fun `the refused status is found however deeply it is wrapped`() = runTest(dispatcher) {
         val wrapped = IOException("download failed", IllegalStateException("inner", forbidden(403)))
 
-        assertTrue(refresher.refresh(failed(), wrapped))
+        assertRequested(refresher.refresh(failed(), wrapped))
     }
 
     @Test
     fun `three refreshes an hour is the budget`() = runTest(dispatcher) {
-        repeat(3) { assertTrue(refresher.refresh(failed(), forbidden(403))) }
+        repeat(3) { assertRequested(refresher.refresh(failed(), forbidden(403))) }
 
-        assertFalse(refresher.refresh(failed(), forbidden(403)))
+        assertEquals(RefreshOutcome.EXHAUSTED, refresher.refresh(failed(), forbidden(403)))
         assertEquals(3, commands.added.size)
+    }
+
+    @Test
+    fun `a failure that was never about the link is declined rather than exhausted`() = runTest(dispatcher) {
+        // The two read differently to a viewer: one says the link died, the other that the
+        // download did.
+        assertEquals(
+            RefreshOutcome.DECLINED,
+            refresher.refresh(failed(bytes = 0), IOException("no route to host")),
+        )
+    }
+
+    @Test
+    fun `a link the source will not renew is exhausted, not declined`() = runTest(dispatcher) {
+        episodes.urls = mapOf(Quality.P480 to "https://cdn/480.m3u8")
+
+        assertEquals(RefreshOutcome.EXHAUSTED, refresher.refresh(failed(), forbidden(403)))
     }
 
     @Test
     fun `the budget comes back once the hour has passed`() = runTest(dispatcher) {
         repeat(3) { refresher.refresh(failed(), forbidden(403)) }
-        assertFalse(refresher.refresh(failed(), forbidden(403)))
+        assertNotRequested(refresher.refresh(failed(), forbidden(403)))
 
         clock.advance(Duration.ofHours(1).plusSeconds(1))
 
-        assertTrue(refresher.refresh(failed(), forbidden(403)))
+        assertRequested(refresher.refresh(failed(), forbidden(403)))
     }
 
     @Test
@@ -138,7 +155,7 @@ class DownloadRefresherTest {
         repeat(3) { refresher.refresh(failed(), forbidden(403)) }
 
         val other = key.copy(episode = 8)
-        assertTrue(refresher.refresh(failed(key = other), forbidden(403)))
+        assertRequested(refresher.refresh(failed(key = other), forbidden(403)))
     }
 
     @Test
@@ -157,7 +174,7 @@ class DownloadRefresherTest {
         // says 720p, and the player would hand the viewer something they did not ask for.
         episodes.urls = mapOf(Quality.P480 to "https://cdn/480.m3u8")
 
-        assertFalse(refresher.refresh(failed(), forbidden(403)))
+        assertNotRequested(refresher.refresh(failed(), forbidden(403)))
         assertTrue(commands.added.isEmpty())
     }
 
@@ -165,7 +182,7 @@ class DownloadRefresherTest {
     fun `a resolve that fails leaves the download failed`() = runTest(dispatcher) {
         episodes.stream = { Result.failure(EpisodeNotAvailable(ANIME, 7)) }
 
-        assertFalse(refresher.refresh(failed(), forbidden(403)))
+        assertNotRequested(refresher.refresh(failed(), forbidden(403)))
         assertTrue(commands.added.isEmpty())
     }
 
@@ -177,15 +194,21 @@ class DownloadRefresherTest {
             failureReason = Download.FAILURE_REASON_UNKNOWN,
         )
 
-        assertFalse(refresher.refresh(alien, forbidden(403)))
+        assertNotRequested(refresher.refresh(alien, forbidden(403)))
     }
 
     @Test
     fun `a download that has not failed is not refreshed`() = runTest(dispatcher) {
         val running = download(key, Download.STATE_DOWNLOADING, bytes = 100)
 
-        assertFalse(refresher.refresh(running, forbidden(403)))
+        assertNotRequested(refresher.refresh(running, forbidden(403)))
     }
+
+    private fun assertRequested(outcome: RefreshOutcome) =
+        assertEquals(RefreshOutcome.REQUESTED, outcome)
+
+    private fun assertNotRequested(outcome: RefreshOutcome) =
+        assertNotEquals(RefreshOutcome.REQUESTED, outcome)
 
     // ---- fixtures ----------------------------------------------------------------------------
 

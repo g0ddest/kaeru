@@ -20,8 +20,9 @@ import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.playback.StreamPrefetchCache
 import app.kaeru.domain.settings.FakeSettingsStore
 import app.kaeru.domain.source.EpisodeSourceProvider
-import app.kaeru.player.FakeLibraryRepository
 import app.kaeru.test.MutableClock
+import androidx.media3.exoplayer.scheduler.Requirements
+import app.kaeru.domain.download.DownloadPolicy
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runCurrent
@@ -36,7 +37,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import java.io.IOException
 import java.time.Instant
-import javax.inject.Provider
 
 /** The wiring that has to work whether or not a screen is watching. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -55,6 +55,8 @@ class DownloadEngineTest {
     private val commands = FakeDownloadCommands(source)
     private val episodes = FakeEpisodeSource()
     private val outcomes = RecordingOutcomes()
+    private val failures = DownloadFailures()
+    private val settings = FakeSettingsStore()
     private lateinit var engine: DownloadEngine
 
     @Before
@@ -69,17 +71,11 @@ class DownloadEngineTest {
         )
         engine = DownloadEngine(
             context = app,
-            downloads = Media3DownloadRepository(
-                source = source,
-                commands = commands,
-                resolve = resolve,
-                settings = FakeSettingsStore(),
-                library = Provider { FakeLibraryRepository() },
-                clock = clock,
-                io = dispatcher,
-            ),
+            settings = settings,
+            commands = commands,
             refresher = DownloadRefresher(commands, resolve, clock),
             outcomes = outcomes,
+            failures = failures,
             source = source,
             io = dispatcher,
         )
@@ -134,14 +130,59 @@ class DownloadEngineTest {
     }
 
     @Test
-    fun `an unfinished download from the last run brings the service back`() = runTest(dispatcher) {
-        source.put(download(Download.STATE_QUEUED))
+    fun `an unfinished download from the last run brings the service back in the foreground`() =
+        runTest(dispatcher) {
+            source.put(download(Download.STATE_QUEUED))
 
+            engine.start(backgroundScope)
+            runCurrent()
+
+            val started = shadowOf(app).nextStartedService
+            assertEquals(KaeruDownloadService::class.java.name, started?.component?.className)
+            // Without this flag media3 never calls startForeground, and the resumed queue runs in
+            // an ordinary background service that Android stops the moment the app is not on screen.
+            assertTrue(started?.getBooleanExtra("foreground", false) == true)
+        }
+
+    @Test
+    fun `a failure keeps why it failed, so a screen can say it later`() = runTest(dispatcher) {
         engine.start(backgroundScope)
         runCurrent()
 
-        val started = shadowOf(app).nextStartedService
-        assertEquals(KaeruDownloadService::class.java.name, started?.component?.className)
+        source.put(
+            download(Download.STATE_FAILED, Download.FAILURE_REASON_UNKNOWN),
+            IOException("write failed: ENOSPC (No space left on device)"),
+        )
+        runCurrent()
+
+        assertEquals("Недостаточно места", failures.messageFor(key.id))
+    }
+
+    @Test
+    fun `an expired link that nobody will renew is remembered as exactly that`() = runTest(dispatcher) {
+        engine.start(backgroundScope)
+        runCurrent()
+
+        // Three refreshes spend the hour's budget; the fourth failure has nothing left to try.
+        repeat(4) {
+            source.put(download(Download.STATE_FAILED, Download.FAILURE_REASON_UNKNOWN), forbidden())
+            runCurrent()
+        }
+
+        assertEquals("Ссылка устарела, попробуйте позже", failures.messageFor(key.id))
+        assertEquals(listOf(key.id), outcomes.broken)
+    }
+
+    @Test
+    fun `a download that finishes is no longer a failure`() = runTest(dispatcher) {
+        engine.start(backgroundScope)
+        runCurrent()
+        failures.record(key.id, DownloadFailureKind.NETWORK)
+
+        source.put(download(Download.STATE_COMPLETED))
+        runCurrent()
+
+        assertEquals("Не удалось скачать", failures.messageFor(key.id))
     }
 
     @Test
@@ -153,6 +194,54 @@ class DownloadEngineTest {
 
         assertNull(shadowOf(app).nextStartedService)
     }
+
+    // ---- the policy reaching the engine ------------------------------------------------------
+
+    @Test
+    fun `the wifi setting reaches the engine as a requirement, and again when it changes`() =
+        runTest(dispatcher) {
+            engine.start(backgroundScope)
+            runCurrent()
+
+            assertEquals(listOf(Requirements(Requirements.NETWORK_UNMETERED)), commands.requirements)
+
+            settings.downloadPolicy.value = DownloadPolicy.DEFAULT.copy(wifiOnly = false)
+            runCurrent()
+
+            assertEquals(
+                listOf(Requirements(Requirements.NETWORK_UNMETERED), Requirements(Requirements.NETWORK)),
+                commands.requirements,
+            )
+        }
+
+    @Test
+    fun `a policy change that is not about the network does not disturb the engine`() = runTest(dispatcher) {
+        engine.start(backgroundScope)
+        runCurrent()
+
+        settings.downloadPolicy.value = DownloadPolicy.DEFAULT.copy(deleteWatched = true)
+        runCurrent()
+
+        assertEquals(1, commands.requirements.size)
+    }
+
+    @Test
+    fun `turning wifi-only off with a queue waiting starts the service that will run it`() =
+        runTest(dispatcher) {
+            source.put(download(Download.STATE_QUEUED))
+            engine.start(backgroundScope)
+            runCurrent()
+            shadowOf(app).nextStartedService
+
+            settings.downloadPolicy.value = DownloadPolicy.DEFAULT.copy(wifiOnly = false)
+            runCurrent()
+
+            // The requirement alone would change nothing: a DownloadManager is constructed paused
+            // and only the service resumes it.
+            val started = shadowOf(app).nextStartedService
+            assertEquals(KaeruDownloadService::class.java.name, started?.component?.className)
+            assertTrue(started?.getBooleanExtra("foreground", false) == true)
+        }
 
     @Test
     fun `starting twice registers one listener`() = runTest(dispatcher) {

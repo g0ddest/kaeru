@@ -39,11 +39,11 @@ interface DownloadCommands {
 /**
  * The commands as media3 takes them: intents aimed at [KaeruDownloadService].
  *
- * Adding starts the service in the foreground, because the viewer has just pressed a button and
- * the platform allows a foreground app to promote a service; everything else starts it in the
- * background, where there is nothing to show yet. Every call is guarded: a phone that refuses to
- * start the service — the app was woken in the background, say — must not take the process down
- * over a queued episode, and the scheduler will pick the work up when the requirements are met.
+ * Adding starts the service in the foreground, because it is the one command that puts a transfer
+ * on the wire and a transfer with no foreground notification is one Android stops the moment the
+ * app leaves the screen. The rest start it in the background, where there is nothing to show yet.
+ * Every call is guarded: a phone that refuses to start the service — the app was woken in the
+ * background, say — must not take the process down over a queued episode.
  */
 @UnstableApi
 @Singleton
@@ -69,14 +69,19 @@ class Media3DownloadCommands @Inject constructor(
     }
 
     /**
-     * Set on the manager rather than sent to the service, which is the only command here that
-     * does not go through an intent.
+     * Set on the manager, which is the one command here that does not go through an intent.
      *
-     * The service's own handler does exactly this — `downloadManager.setRequirements(...)` — after
-     * filtering by what the scheduler supports, and `PlatformScheduler` supports both requirements
-     * this app ever asks for. Going through the service would start it on every launch, which on
-     * Android 12 and up means promoting it to the foreground: a «Загрузка серий» notification
-     * flashing up and disappearing each time the app opens, for a setting that has not changed.
+     * It cannot start a transfer on its own, which is the thing worth being sure about: a
+     * `DownloadManager` is constructed paused — `downloadsPaused = true` in its constructor — and
+     * the only caller of `resumeDownloads()` in the whole library is `DownloadService`. So a
+     * requirement written here gates a queue that is not moving, and what sets it going is
+     * [DownloadEngine] starting the service whenever there is something to download.
+     *
+     * `DownloadService.sendSetRequirements(..., foreground = true)` would do the same job and start
+     * the service besides — but it would do it on every cold start, where the policy flow always
+     * emits once, promoting a service to the foreground and flashing a «Загрузка серий»
+     * notification at a viewer with nothing downloading. [DownloadEngine] therefore pairs this
+     * call with its own foreground start, and only when the queue has something left in it.
      */
     override fun setRequirements(requirements: Requirements) = guard {
         manager.get().setRequirements(requirements)

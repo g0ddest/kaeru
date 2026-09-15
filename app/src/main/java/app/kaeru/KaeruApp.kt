@@ -9,10 +9,19 @@ import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import javax.inject.Inject
 
+/**
+ * Marked whole rather than member by member, which is the one place in this app that is true.
+ *
+ * Hilt generates a members-injector for this class that names [DownloadEngine], and lint reads the
+ * generated code as part of this file: an `@OptIn` on the property and on `onCreate` still leaves
+ * a file-level `UnsafeOptInUsageError` here, with no declaration left to annotate. Verified by
+ * trying it — `:app:lintDebug` fails on `KaeruApp.kt` with no line number to fix.
+ */
 @UnstableApi
 @HiltAndroidApp
 class KaeruApp : Application() {
     @Inject lateinit var offlineSync: OfflineSyncStarter
+
     @Inject lateinit var downloads: DownloadEngine
 
     /** The one process-long scope: the outbox drain and the download engine both outlive every screen. */
