@@ -80,6 +80,8 @@ fun PlayerScreen(
     onConfirmCompleted: () -> Unit,
     onDismissCompleted: () -> Unit,
     onToastShown: () -> Unit,
+    onDownload: () -> Unit,
+    onRemoveDownload: () -> Unit,
     isInPictureInPicture: Boolean = false,
     onEnterPictureInPicture: (() -> Unit)? = null,
 ) {
@@ -226,6 +228,11 @@ fun PlayerScreen(
                                 onQualities = onOpenQualities,
                                 // Only where there is a picture on this device to put in a window.
                                 onEnterPictureInPicture = onEnterPictureInPicture?.takeIf { !state.isCasting },
+                                download = state.download,
+                                // Nothing to download while the picture is on a television: the
+                                // episode would be kept on a phone that is not playing it.
+                                onDownload = onDownload.takeIf { !state.isCasting },
+                                onRemoveDownload = onRemoveDownload.takeIf { !state.isCasting },
                             )
                             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                                 if (!failed) {
