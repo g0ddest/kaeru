@@ -2,8 +2,6 @@ package app.kaeru.player
 
 import app.kaeru.domain.error.EpisodeNotAvailable
 import app.kaeru.domain.error.NetworkUnavailable
-import app.kaeru.domain.error.SourceUnavailable
-import app.kaeru.domain.error.SourceUnavailableReason
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.LibraryEntry
