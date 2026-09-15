@@ -6,6 +6,7 @@ import app.kaeru.domain.repository.LibraryRepository
 import coil3.ImageLoader
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
+import coil3.request.SuccessResult
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -56,7 +57,6 @@ class PosterWarmer @Inject constructor(
         // the next change to the downloads tries again — by which time the «Загрузки» screen will
         // have asked Shikimori for it.
         val poster = library.observeAnimeDetails(animeId).first()?.posterUrl?.takeIf { it.isNotBlank() } ?: return
-        warmed += animeId
         val request = ImageRequest.Builder(context)
             .data(poster)
             // Memory is for what is on screen. This poster is being fetched for a screen nobody is
@@ -64,8 +64,12 @@ class PosterWarmer @Inject constructor(
             .memoryCachePolicy(CachePolicy.DISABLED)
             .diskCachePolicy(CachePolicy.ENABLED)
             .build()
-        // Failures are silent by design: offline this will fail, and it will be retried on the next
-        // start, which is well before the poster is needed.
-        loader.execute(request)
+        // Only a poster actually on disk counts as done. Marking it before the fetch meant the one
+        // case this exists for — the network going while a queue was being set up — was also the
+        // one case it never retried: the title was already ticked off for the session.
+        //
+        // Failures stay silent otherwise. The next change to the downloads, or the next start, is
+        // another go, and both come well before the poster is needed.
+        if (loader.execute(request) is SuccessResult) warmed += animeId
     }
 }

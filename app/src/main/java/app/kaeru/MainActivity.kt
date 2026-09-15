@@ -12,7 +12,6 @@ import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.media3.common.util.UnstableApi
 import app.kaeru.data.download.DownloadsScreenIntent
 import app.kaeru.player.CastFramework
 import app.kaeru.player.CastSessionBridge
@@ -22,8 +21,6 @@ import app.kaeru.ui.common.player.LocalCastAvailable
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
-// The downloads notification's constants are the only unstable-API surface this file touches.
-@UnstableApi
 @AndroidEntryPoint
 class MainActivity : FragmentActivity() {
 

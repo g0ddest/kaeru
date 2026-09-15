@@ -132,6 +132,9 @@ dependencies {
 
     implementation(libs.coil.compose)
     implementation(libs.coil.okhttp)
+    // Coil's disk cache is addressed by an okio path, so this one is used by name rather than
+    // inherited: declared at the version everything else already resolves it to.
+    implementation(libs.okio)
     implementation(libs.zxing.core)
 
     testImplementation(libs.junit)

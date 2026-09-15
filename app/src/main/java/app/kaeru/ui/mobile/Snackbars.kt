@@ -55,9 +55,15 @@ fun ActionSnackbar(
     val shown by rememberUpdatedState(onShown)
     LaunchedEffect(message) {
         if (message == null) return@LaunchedEffect
-        val result = host.showSnackbar(message, actionLabel = actionLabel, duration = SnackbarDuration.Long)
-        if (result == SnackbarResult.ActionPerformed) act()
-        shown()
+        try {
+            val result = host.showSnackbar(message, actionLabel = actionLabel, duration = SnackbarDuration.Long)
+            if (result == SnackbarResult.ActionPerformed) act()
+        } finally {
+            // Also when this effect is cancelled — the viewer left the screen while the snackbar
+            // was still up. Without it the message stays in the state and the same refusal is
+            // shown again the next time they open the title, as news.
+            shown()
+        }
     }
 }
 
