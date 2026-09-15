@@ -109,4 +109,7 @@ class DownloadFailures @Inject constructor() {
 
     fun messageFor(id: String): String =
         DownloadFailureCopy.message(kinds[id] ?: DownloadFailureKind.UNKNOWN)
+
+    /** What went wrong with this download, or null if it has not failed since the app started. */
+    fun kindOf(id: String): DownloadFailureKind? = kinds[id]
 }

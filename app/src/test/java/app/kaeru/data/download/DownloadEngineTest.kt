@@ -22,6 +22,7 @@ import app.kaeru.domain.playback.FakePlaybackPreferences
 import app.kaeru.domain.playback.FakeWatchStateRepository
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.playback.StreamPrefetchCache
+import app.kaeru.domain.connectivity.FakeConnectivity
 import app.kaeru.domain.settings.FakeSettingsStore
 import app.kaeru.domain.source.EpisodeSourceProvider
 import app.kaeru.test.MutableClock
@@ -61,6 +62,7 @@ class DownloadEngineTest {
     private val outcomes = RecordingOutcomes()
     private val failures = DownloadFailures()
     private val settings = FakeSettingsStore()
+    private val connectivity = FakeConnectivity()
     private lateinit var engine: DownloadEngine
 
     @Before
@@ -80,6 +82,7 @@ class DownloadEngineTest {
         return DownloadEngine(
             context = context,
             settings = settings,
+            connectivity = connectivity,
             commands = commands,
             refresher = DownloadRefresher(commands, resolve, clock),
             outcomes = outcomes,
@@ -125,6 +128,59 @@ class DownloadEngineTest {
         runCurrent()
 
         assertEquals(listOf(key.id), outcomes.broken)
+        assertTrue(commands.added.isEmpty())
+    }
+
+    /**
+     * media3 calls a failure terminal: nothing resumes a failed row — not a requirement change, not
+     * the service, not the next launch — so «загрузка продолжится позже» was a promise the app had
+     * no way of keeping. Now the network's return is what keeps it.
+     */
+    @Test
+    fun `a download the network killed goes back in the queue when the network returns`() =
+        runTest(dispatcher) {
+            engine.start(backgroundScope)
+            runCurrent()
+            source.put(download(Download.STATE_FAILED, Download.FAILURE_REASON_UNKNOWN), IOException("no route"))
+            runCurrent()
+            commands.clear()
+
+            connectivity.goOffline()
+            runCurrent()
+            connectivity.goOnline()
+            runCurrent()
+
+            assertEquals(listOf(key.id), commands.added.map { it.id })
+        }
+
+    @Test
+    fun `a failure that is not the network's is left alone`() = runTest(dispatcher) {
+        engine.start(backgroundScope)
+        runCurrent()
+        // A refused signature: the refresher's business, and it has a budget of its own.
+        source.put(download(Download.STATE_FAILED, Download.FAILURE_REASON_UNKNOWN), forbidden())
+        runCurrent()
+        commands.clear()
+
+        connectivity.goOffline()
+        runCurrent()
+        connectivity.goOnline()
+        runCurrent()
+
+        assertTrue(commands.added.isEmpty())
+    }
+
+    @Test
+    fun `a network that never went away re-queues nothing twice`() = runTest(dispatcher) {
+        engine.start(backgroundScope)
+        runCurrent()
+        source.put(download(Download.STATE_FAILED, Download.FAILURE_REASON_UNKNOWN), IOException("no route"))
+        runCurrent()
+        commands.clear()
+
+        connectivity.goOnline()
+        runCurrent()
+
         assertTrue(commands.added.isEmpty())
     }
 

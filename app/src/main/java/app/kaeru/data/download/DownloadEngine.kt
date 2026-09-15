@@ -7,6 +7,7 @@ import androidx.media3.exoplayer.offline.Download
 import androidx.media3.exoplayer.offline.DownloadService
 import androidx.media3.exoplayer.scheduler.Requirements
 import app.kaeru.di.IoDispatcher
+import app.kaeru.domain.connectivity.Connectivity
 import app.kaeru.domain.settings.SettingsStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
@@ -39,6 +40,7 @@ import javax.inject.Singleton
 class DownloadEngine @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val settings: SettingsStore,
+    private val connectivity: Connectivity,
     private val commands: DownloadCommands,
     private val refresher: DownloadRefresher,
     private val outcomes: DownloadOutcomes,
@@ -86,6 +88,38 @@ class DownloadEngine @Inject constructor(
                     if (source.current().any { !it.isTerminalState }) ensureServiceRunning()
                 }
         }
+        scope.launch(io) {
+            connectivity.online.distinctUntilChanged().collect { online ->
+                if (online) resumeNetworkFailures()
+            }
+        }
+    }
+
+    /**
+     * Puts back every download the network took away, now that it is back.
+     *
+     * media3 treats a failure as terminal: a download that died when the train went into a tunnel
+     * stays failed, and nothing resumes a failed row — not the requirement change, not the service,
+     * not the next launch. So «Нет связи, загрузка продолжится позже» was a sentence the app had no
+     * way of keeping, and the only way back was to find the title again and press «Скачать».
+     *
+     * Re-adding the same request is media3's own retry: the manager merges by id and puts the row
+     * back in the queue. Only failures the classifier called a network failure are touched — an
+     * expired signature belongs to the refresher and a full disk is not going to fix itself — and
+     * only on a transition to «есть сеть», so a flapping connection costs one attempt per return
+     * rather than a loop.
+     */
+    private fun resumeNetworkFailures() {
+        val stranded = source.current().filter {
+            it.state == Download.STATE_FAILED && failures.kindOf(it.request.id) == DownloadFailureKind.NETWORK
+        }
+        if (stranded.isEmpty()) return
+        stranded.forEach { download ->
+            // Not a failed download any more, whatever happens next.
+            failures.forget(download.request.id)
+            commands.add(download.request)
+        }
+        ensureServiceRunning()
     }
 
     /**
@@ -97,7 +131,12 @@ class DownloadEngine @Inject constructor(
      * per process and the policy flow has already emitted. An app the viewer can see is allowed
      * to promote a service, so this is the first moment it can work.
      *
-     * A no-op in the ordinary case, which is every launch the viewer began themselves.
+     * A no-op in the ordinary case, which is every launch the viewer began themselves — and, on a
+     * cold start, possibly a no-op when it should not be: [start] sets `startRefused` from inside
+     * an IO coroutine, and an activity resuming before that coroutine has run finds the flag still
+     * false. The next resume closes the window, and the case this exists for — a process the
+     * platform started in the background, where no activity resumes at all until the viewer opens
+     * the app — cannot hit it.
      */
     fun onForeground() {
         if (!startRefused.compareAndSet(true, false)) return
