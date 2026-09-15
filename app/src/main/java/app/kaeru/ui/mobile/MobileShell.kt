@@ -33,6 +33,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.details.DetailsViewModel
+import app.kaeru.ui.common.downloads.DownloadsViewModel
 import app.kaeru.ui.common.home.HomeViewModel
 import app.kaeru.ui.common.library.LibraryViewModel
 import app.kaeru.ui.common.search.SearchViewModel
@@ -44,6 +45,7 @@ import app.kaeru.ui.common.theme.KaeruElevated
 import app.kaeru.ui.common.theme.KaeruSecondary
 import app.kaeru.ui.common.theme.KaeruSurface
 import app.kaeru.ui.mobile.details.DetailsScreen
+import app.kaeru.ui.mobile.downloads.DownloadsScreen
 import app.kaeru.ui.mobile.home.HomeScreen
 import app.kaeru.ui.mobile.library.LibraryScreen
 import app.kaeru.ui.mobile.pairing.PairingScreen
@@ -66,16 +68,25 @@ fun MobileShell(
     pairing: PairingUiState = PairingUiState(),
     onConfirmPairing: () -> String? = { null },
     onDismissPairing: () -> Unit = {},
+    route: String? = null,
+    onRouteConsumed: () -> Unit = {},
     nav: NavHostController = rememberNavController(),
 ) {
-    val route = nav.currentBackStackEntryAsState().value?.destination?.route
+    val current = nav.currentBackStackEntryAsState().value?.destination?.route
     // A television's QR code arrives as a deep link rather than as a tap, so the screen it opens
     // is pushed from here rather than reached from a tab. Single top, because a second scan while
     // the question is already on screen is the same question.
     LaunchedEffect(pairing.stage) {
-        if (pairing.stage != PairingStage.IDLE && route != Routes.PAIR) {
+        if (pairing.stage != PairingStage.IDLE && current != Routes.PAIR) {
             nav.navigate(Routes.PAIR) { launchSingleTop = true }
         }
+    }
+    // A notification asking for a screen: pushed once and then forgotten, so returning to the app
+    // later lands wherever the viewer left it rather than back on «Загрузки».
+    LaunchedEffect(route) {
+        if (route == null) return@LaunchedEffect
+        if (current != route) nav.navigate(route) { launchSingleTop = true }
+        onRouteConsumed()
     }
     val context = LocalContext.current
     // Playback is its own activity: landscape, immersive, and outliving this back stack.
@@ -90,7 +101,7 @@ fun MobileShell(
         }
     }
     val openAnime: (Int) -> Unit = { animeId -> nav.navigate(Routes.details(animeId)) }
-    Scaffold(bottomBar = { if (route in tabRoutes) BottomBar(route, openTab) }) { padding ->
+    Scaffold(bottomBar = { if (current in tabRoutes) BottomBar(current, openTab) }) { padding ->
         // Only the bottom inset is handed down. The home screen runs its artwork under the status
         // bar and carries that inset in its own top bar; the screens that are not edge-to-edge yet
         // take it here, one wrapper each, until their own task rebuilds them.
@@ -164,6 +175,21 @@ fun MobileShell(
                     onStudiosReset = vm::resetStudios,
                     onKodikToken = vm::setKodikToken,
                     onRetryAccount = vm::refreshAccount,
+                    onDownloads = { nav.navigate(Routes.DOWNLOADS) { launchSingleTop = true } },
+                )
+            }
+            composable(Routes.DOWNLOADS) {
+                val vm: DownloadsViewModel = hiltViewModel()
+                DownloadsScreen(
+                    state = vm.uiState.collectAsStateWithLifecycle().value,
+                    onBack = { nav.popBackStack() },
+                    onRemove = vm::remove,
+                    onRemoveTitle = vm::removeTitle,
+                    onRemoveAll = vm::removeAll,
+                    onQuality = vm::setQuality,
+                    onWifiOnly = vm::setWifiOnly,
+                    onDeleteWatched = vm::setDeleteWatched,
+                    onLimit = vm::setLimit,
                 )
             }
             composable(Routes.PAIR) {

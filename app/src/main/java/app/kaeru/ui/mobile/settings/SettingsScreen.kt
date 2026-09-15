@@ -71,6 +71,10 @@ private const val DUBS_NOTE = "Порядок работает, когда у а
 private const val ADD_STUDIO = "Добавить студию"
 private const val RESET = "Сбросить"
 
+private const val DOWNLOADS = "Загрузки"
+private const val DOWNLOADS_NOTE = "Скачанные серии и правила, по которым они скачиваются"
+private const val OPEN_DOWNLOADS = "Открыть загрузки"
+
 private const val KODIK = "Kodik"
 private const val KODIK_NOTE = "Нужен, только если публичный токен перестанет работать"
 private const val KODIK_PLACEHOLDER = "Токен"
@@ -109,6 +113,7 @@ fun SettingsScreen(
     onStudiosReset: () -> Unit,
     onKodikToken: (String) -> Unit,
     onRetryAccount: () -> Unit,
+    onDownloads: () -> Unit,
 ) {
     var confirming by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
@@ -124,6 +129,7 @@ fun SettingsScreen(
         ) {
             AccountSection(state, onRetryAccount, onSignOutPressed = { confirming = true })
             PlaybackSection(state, onAutoplay, onQuality, onThreshold)
+            DownloadsSection(onDownloads)
             DubsSection(state, onStudioUp, onStudioDown, onStudioRemove, onStudioAdd, onStudiosReset)
             KodikSection(state.kodikToken, onKodikToken)
             AboutSection()
@@ -137,6 +143,21 @@ fun SettingsScreen(
                 onSignOut()
             },
         )
+    }
+}
+
+/**
+ * The way to the one settings screen that is not on this page.
+ *
+ * Downloads have a screen of their own because they are not only settings: what is on the device
+ * has to be listed and deleted, and a list that grows with every episode does not belong inside a
+ * page of switches. So this is a signpost, and the rules live beside the thing they govern.
+ */
+@Composable
+private fun DownloadsSection(onDownloads: () -> Unit) {
+    SettingsSection(DOWNLOADS) {
+        SettingNote(DOWNLOADS_NOTE)
+        SecondaryButton(OPEN_DOWNLOADS, onClick = onDownloads)
     }
 }
 

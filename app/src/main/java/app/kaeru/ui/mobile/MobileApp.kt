@@ -23,6 +23,8 @@ fun MobileApp(
     onCallbackConsumed: () -> Unit,
     pairingLink: String? = null,
     onPairingLinkConsumed: () -> Unit = {},
+    route: String? = null,
+    onRouteConsumed: () -> Unit = {},
     authViewModel: AuthViewModel = hiltViewModel(),
     pairingViewModel: PairingViewModel = hiltViewModel(),
 ) {
@@ -51,6 +53,11 @@ fun MobileApp(
                 pairing = pairing,
                 onConfirmPairing = pairingViewModel::confirm,
                 onDismissPairing = pairingViewModel::dismiss,
+                // A notification can ask for a screen. It is handed to the shell rather than acted
+                // on here, because only the shell has a back stack to push it onto — and it is
+                // dropped while signed out, where there is no shell to push anything onto.
+                route = route,
+                onRouteConsumed = onRouteConsumed,
             )
             // Signing a television in does not need this phone to be signed in: what crosses the
             // network is a code from the browser's own Shikimori session, so the hand-off works

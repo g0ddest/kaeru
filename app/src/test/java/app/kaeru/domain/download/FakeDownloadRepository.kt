@@ -37,6 +37,17 @@ class FakeDownloadRepository : DownloadRepository {
 
     private val usage = MutableStateFlow(0L)
 
+    /**
+     * What the engine says is on the device, which is not the sum of [rows].
+     *
+     * The two are separate on purpose: the real engine counts bytes on disk, and a screen that
+     * added its own rows up would quietly disagree with it the first time a partial download or a
+     * shared segment appeared.
+     */
+    fun setUsedBytes(bytes: Long) {
+        usage.value = bytes
+    }
+
     /** One finished episode, as both the row and the stream the player would open. */
     fun downloaded(
         animeId: Int,
