@@ -1,11 +1,15 @@
 package app.kaeru.di
 
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.SimpleCache
+import app.kaeru.data.download.DownloadCache
 import app.kaeru.data.kodik.KodikConstants
 import app.kaeru.data.library.AppPreferences
 import app.kaeru.data.playback.RoomEpisodeProgressRepository
 import app.kaeru.data.playback.RoomPlaybackSampleRepository
 import app.kaeru.data.playback.RoomWatchStateRepository
+import app.kaeru.domain.download.DownloadRepository
 import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.PlaybackNotificationPrompt
 import app.kaeru.domain.playback.PlaybackPreferences
@@ -86,7 +90,8 @@ object PlaybackModule {
         resolve: ResolveEpisodeStream,
         cache: StreamPrefetchCache,
         watchStates: WatchStateRepository,
-    ): PrefetchTopCardStream = PrefetchTopCardStream(resolve, cache, watchStates)
+        downloads: DownloadRepository,
+    ): PrefetchTopCardStream = PrefetchTopCardStream(resolve, cache, watchStates, downloads)
 
     /**
      * A single instance on purpose: the coalescing queue that keeps one position write in
@@ -116,6 +121,35 @@ object PlaybackModule {
         userAgent = KodikConstants.BROWSER_UA,
         referer = KodikConstants.PLAYER_HOST + "/",
     )
+
+    /**
+     * What the local engine reads every byte through: the download cache first, Kodik only for
+     * what is not in it.
+     *
+     * Assembled here rather than in `player` so that nothing in that package has to know where
+     * the downloads live, and by the very calls the downloader is assembled from
+     * ([DownloadCache.cacheFactory], [DownloadCache.httpFactory]) so the two cannot drift apart
+     * on the one thing they must agree about — what a cached segment is called. Keyed by the
+     * whole URL, which is a `CacheDataSource`'s default, a re-signed Kodik link would be a file
+     * nobody had ever downloaded.
+     *
+     * **Read-only.** A `CacheDataSource` writes what it reads unless told not to, and this cache
+     * never evicts and is never measured: an evening of ordinary online watching would settle
+     * several gigabytes into app storage that the «Загрузки» line cannot see, the storage limit
+     * cannot count and nothing in the app can delete. Downloads are what this cache is for, and
+     * they are written by the download engine alone.
+     *
+     * `FLAG_IGNORE_CACHE_ON_ERROR` is the safety net over a cache that is not a source of truth:
+     * a corrupt span drops the read through to the network instead of failing the episode.
+     * Offline that fallback fails too, which is correct — there is nothing to play.
+     */
+    @UnstableApi
+    @Provides
+    @Singleton
+    fun playbackDataSource(headers: StreamHeaders, cache: SimpleCache): CacheDataSource.Factory =
+        DownloadCache.cacheFactory(cache, DownloadCache.httpFactory(headers.userAgent, headers.requestProperties))
+            .setCacheWriteDataSinkFactory(null)
+            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
     @Provides
     @Singleton

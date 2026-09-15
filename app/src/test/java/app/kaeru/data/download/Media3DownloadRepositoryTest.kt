@@ -112,6 +112,7 @@ class Media3DownloadRepositoryTest {
             settings = settings,
             library = Provider { library },
             failures = failures,
+            watchStates = watchStates,
             clock = clock,
             io = dispatcher,
             scope = shareScope,
@@ -260,6 +261,59 @@ class Media3DownloadRepositoryTest {
         assertEquals(DownloadState.COMPLETED, repository.completed(ANIME, 7)?.state)
         assertNull(repository.completed(ANIME, 8))
     }
+
+    @Test
+    fun `a finished download reads back as one rung the player can open`() = runTest(dispatcher) {
+        engine.put(download(key(episode = 7), Download.STATE_COMPLETED, bytes = 320))
+
+        val stream = repository.completedStream(ANIME, 7)
+
+        // The link it was fetched with, expired signature and all: the player reads through the
+        // same cache under a key that has no signature in it.
+        assertEquals(mapOf(Quality.P720 to "https://cdn/720.m3u8"), stream?.urls)
+        assertEquals(7, stream?.episode)
+        assertEquals(anilibria.id, stream?.translation?.id)
+        assertEquals("AniLibria.TV", stream?.translation?.title)
+    }
+
+    @Test
+    fun `an episode still arriving is not a stream to open`() = runTest(dispatcher) {
+        engine.put(download(key(episode = 7), Download.STATE_DOWNLOADING, bytes = 10))
+
+        assertNull(repository.completedStream(ANIME, 7))
+        assertNull(repository.completedStream(ANIME, 8))
+    }
+
+    @Test
+    fun `a row with no readable blob still plays, under the track its id names`() = runTest(dispatcher) {
+        // An older build, or a blob this one cannot read. The id is the part that survives, and
+        // it carries enough to remember the voice by.
+        engine.put(unreadable(episode = 7))
+
+        val stream = repository.completedStream(ANIME, 7)
+
+        assertEquals(anilibria.id, stream?.translation?.id)
+        assertEquals("", stream?.translation?.title)
+    }
+
+    @Test
+    fun `a row with no readable blob keeps the season this anime is already mapped to`() =
+        runTest(dispatcher) {
+            // The blob is where the season lives. Naming one here would be a guess the first
+            // progress sample writes down, and a later resolve would ask Kodik for it.
+            watchStates.seed(WatchState(ANIME, 3, 0, 0, anilibria.id, kodikSeason = 2, updatedAt = now))
+            engine.put(unreadable(episode = 7))
+
+            assertEquals(2, repository.completedStream(ANIME, 7)?.translation?.season)
+        }
+
+    /** A finished download media3 is holding with nothing this build can read in its blob. */
+    private fun unreadable(episode: Int): Download = downloadOf(
+        DownloadRequest.Builder(key(episode).id, "https://cdn/720.m3u8".toUri())
+            .setMimeType(MimeTypes.APPLICATION_M3U8)
+            .build(),
+        Download.STATE_COMPLETED,
+    )
 
     // ---- enqueueing --------------------------------------------------------------------------
 

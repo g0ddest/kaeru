@@ -1,5 +1,6 @@
 package app.kaeru.domain.download
 
+import app.kaeru.domain.model.EpisodeStream
 import app.kaeru.domain.model.Quality
 import kotlinx.coroutines.flow.Flow
 
@@ -25,6 +26,17 @@ interface DownloadRepository {
      * to play from.
      */
     suspend fun completed(animeId: Int, episode: Int): EpisodeDownload?
+
+    /**
+     * The same finished download, as something to play: the link it was fetched with, at the one
+     * height it was fetched at, in the track it was fetched in. Null when this episode is not
+     * fully on the device.
+     *
+     * The link is the expired one the downloader was given, and that is deliberate — the player
+     * reads through the same cache under the same key, where the signature is not part of the
+     * name. Nothing is asked of the source, which is the point: offline there is nothing to ask.
+     */
+    suspend fun completedStream(animeId: Int, episode: Int): EpisodeStream?
 
     /**
      * Resolves a link for this episode and hands it to the engine.

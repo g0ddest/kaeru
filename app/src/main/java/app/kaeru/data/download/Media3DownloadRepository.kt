@@ -15,8 +15,11 @@ import app.kaeru.domain.download.EpisodeDownload
 import app.kaeru.domain.error.DownloadLimitReached
 import app.kaeru.domain.model.EpisodeStream
 import app.kaeru.domain.model.Quality
+import app.kaeru.domain.model.Translation
+import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.repository.LibraryRepository
+import app.kaeru.domain.repository.WatchStateRepository
 import app.kaeru.domain.settings.SettingsStore
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -63,6 +66,7 @@ class Media3DownloadRepository @Inject constructor(
     private val settings: SettingsStore,
     private val library: Provider<LibraryRepository>,
     private val failures: DownloadFailures,
+    private val watchStates: WatchStateRepository,
     private val clock: Clock,
     @param:IoDispatcher private val io: CoroutineDispatcher,
     @param:ApplicationScope private val scope: CoroutineScope,
@@ -168,10 +172,54 @@ class Media3DownloadRepository @Inject constructor(
         .distinctUntilChanged()
 
     override suspend fun completed(animeId: Int, episode: Int): EpisodeDownload? = withContext(io) {
-        source.current()
-            .firstOrNull { it.state == Download.STATE_COMPLETED && it.matches(animeId, episode) }
+        finished(animeId, episode)
             ?.toEpisodeDownload(notMetRequirements = 0, failureOf = failures::messageFor)
     }
+
+    /**
+     * The finished download read back as a stream, so the player can open it through the very
+     * path a resolve would have produced.
+     *
+     * One rung, because a download is one file. The address is the expired one the request was
+     * built with: the player reads through the same cache under a key that has no signature in
+     * it, so the bytes are found under that name whether or not the link would still be served.
+     */
+    override suspend fun completedStream(animeId: Int, episode: Int): EpisodeStream? = withContext(io) {
+        val download = finished(animeId, episode) ?: return@withContext null
+        val key = DownloadKey.parse(download.request.id) ?: return@withContext null
+        EpisodeStream(
+            animeId = animeId,
+            episode = episode,
+            translation = trackOf(download, key),
+            urls = mapOf(key.quality to download.request.uri.toString()),
+            // Never «just resolved»: this is the address the downloader was handed, hours or
+            // weeks ago, and its signature is long dead. Nothing reads this field today, and an
+            // epoch is the one value that cannot be mistaken for a fresh link if anything ever
+            // starts to. What makes the links work is the cache key, not their age.
+            resolvedAt = Instant.EPOCH,
+        )
+    }
+
+    private fun finished(animeId: Int, episode: Int): Download? = source.current()
+        .firstOrNull { it.state == Download.STATE_COMPLETED && it.matches(animeId, episode) }
+
+    /**
+     * The track this download was fetched in.
+     *
+     * The blob is where the name and the Kodik season are. When it cannot be read — a row an
+     * older build wrote, or one written in a shape this build does not know — the id survives in
+     * the download's own key and the season is taken from what this anime is already mapped to.
+     * Naming a season here would be a guess written into the watch state by the first progress
+     * sample, where a later resolve would believe it and ask Kodik for the wrong season.
+     */
+    private suspend fun trackOf(download: Download, key: DownloadKey): Translation =
+        download.payload()?.translation() ?: Translation(
+            id = key.translationId,
+            title = "",
+            type = TranslationKind.VOICE,
+            episodesCount = null,
+            season = watchStates.observe(key.animeId).first()?.kodikSeason ?: DEFAULT_SEASON,
+        )
 
     override suspend fun enqueue(animeId: Int, episode: Int, quality: Quality?): Result<Unit> {
         val policy = settings.downloadPolicy.first()
@@ -330,6 +378,9 @@ class Media3DownloadRepository @Inject constructor(
 
         /** A screen rotation must not tear the upstream down and build the engine again. */
         const val SHARE_KEEPALIVE_MS = 5_000L
+
+        /** What a freshly parsed Kodik track carries, for an anime this device remembers nothing about. */
+        const val DEFAULT_SEASON = 1
     }
 }
 

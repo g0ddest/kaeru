@@ -1,5 +1,6 @@
 package app.kaeru.domain.playback
 
+import app.kaeru.domain.download.FakeDownloadRepository
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.model.EpisodeStream
 import app.kaeru.domain.model.Quality
@@ -36,7 +37,8 @@ class PrefetchTopCardStreamTest {
     private val cache = StreamPrefetchCache(clock)
     private val source = RecordingSource()
     private val resolve = ResolveEpisodeStream(source, watchStates, prefs, clock, cache)
-    private val prefetch = PrefetchTopCardStream(resolve, cache, watchStates)
+    private val downloads = FakeDownloadRepository()
+    private val prefetch = PrefetchTopCardStream(resolve, cache, watchStates, downloads)
 
     private class RecordingSource : EpisodeSourceProvider {
         var failure: Throwable? = null
@@ -94,6 +96,20 @@ class PrefetchTopCardStreamTest {
         prefetch(animeId = 100, episode = 4)
 
         assertTrue(watchStates.saved.isEmpty())
+    }
+
+    @Test
+    fun `an episode already on the device is not prepared at all`() = runTest(dispatcher) {
+        // The press will play it from the device without resolving anything, so a prepared link
+        // is a Kodik round trip nobody takes — and with no network it is a failure quietly
+        // logged about an episode that is about to play perfectly well.
+        remembering(episode = 4)
+        downloads.downloaded(animeId = 100, episode = 4, translation = anilibria, url = "https://cdn/100/4/720.m3u8")
+
+        prefetch(animeId = 100, episode = 4)
+
+        assertTrue(source.resolves.isEmpty())
+        assertNull(cache.take(100, 4, anilibria.id))
     }
 
     @Test

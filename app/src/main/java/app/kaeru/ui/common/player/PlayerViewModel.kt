@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.Player
 import app.kaeru.di.IoDispatcher
+import app.kaeru.domain.connectivity.Connectivity
+import app.kaeru.domain.download.DownloadRepository
+import app.kaeru.domain.download.EpisodeDownload
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.EpisodeProgress
@@ -37,6 +40,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -61,6 +66,8 @@ class PlayerViewModel @Inject constructor(
     private val watchStates: WatchStateRepository,
     private val episodeProgress: EpisodeProgressRepository,
     private val prefs: PlaybackPreferences,
+    private val downloads: DownloadRepository,
+    private val connectivity: Connectivity,
     @param:IoDispatcher private val io: CoroutineDispatcher,
 ) : ViewModel() {
 
@@ -75,6 +82,27 @@ class PlayerViewModel @Inject constructor(
 
     /** The anime, and the season as the remote control lists it. Read together, shown together. */
     private data class Shown(val anime: Anime? = null, val episodes: List<EpisodeCell> = emptyList())
+
+    /**
+     * Everything around the episode rather than about it: where the picture is going, what the
+     * viewer settled on, whether there is a network at all, and what of this title is already on
+     * the device.
+     *
+     * Gathered into one value because none of the four depends on which episode is playing, and
+     * because `combine` is typed up to five flows — the episode itself already spends four of them.
+     */
+    private data class Surroundings(
+        val receiverName: String? = null,
+        val settledQuality: Quality? = null,
+        val offline: Boolean = false,
+        /**
+         * The title [downloads] are about. Carried rather than read off the screen's own field,
+         * because the controller is process-wide: between a screen naming its title and playback
+         * reaching it, the episode on the controller still belongs to the title before it.
+         */
+        val animeId: Int? = null,
+        val downloads: List<EpisodeDownload> = emptyList(),
+    )
 
     private val animeId = MutableStateFlow<Int?>(null)
     private val screen = MutableStateFlow(ScreenState())
@@ -108,6 +136,23 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    /**
+     * The downloads of this title, so the player can say whether the episode on screen is on the
+     * device — and follow one that is arriving while it plays.
+     */
+    private val surroundings: Flow<Surroundings> = combine(
+        cast.receiverName,
+        prefs.defaultQuality,
+        // Registering a network callback is three binder calls, and they must not be made on the
+        // thread drawing the player.
+        connectivity.online.flowOn(io),
+        animeId.flatMapLatest { id ->
+            if (id == null) flowOf(null to emptyList()) else downloads.observe(id).map { id to it }
+        },
+    ) { receiverName, settledQuality, online, downloaded ->
+        Surroundings(receiverName, settledQuality, !online, downloaded.first, downloaded.second)
+    }
+
     /** The player a video surface attaches to, or null while there is none to attach to. */
     val videoPlayer: StateFlow<Player?> get() = controller.videoPlayer
 
@@ -115,9 +160,8 @@ class PlayerViewModel @Inject constructor(
         controller.state,
         shown,
         screen,
-        cast.receiverName,
-        prefs.defaultQuality,
-    ) { playback, shown, screen, receiverName, settledQuality ->
+        surroundings,
+    ) { playback, shown, screen, around ->
         val anime = shown.anime
         PlayerUiState(
             title = anime?.title.orEmpty(),
@@ -133,7 +177,7 @@ class PlayerViewModel @Inject constructor(
             durationMs = playback.durationMs,
             quality = playback.quality,
             qualities = playback.stream?.urls?.keys.orEmpty().sortedBy { it.height },
-            rememberQuality = settledQuality != null,
+            rememberQuality = around.settledQuality != null,
             translations = screen.translations,
             loadingTranslations = screen.loadingTranslations,
             sheet = screen.sheet,
@@ -145,8 +189,12 @@ class PlayerViewModel @Inject constructor(
             autoplayCountdownSec = playback.autoplayCountdownSec,
             errorMessage = playback.error?.toUserMessage(),
             isCasting = playback.isCasting,
-            receiverName = receiverName,
+            receiverName = around.receiverName,
             completedPrompt = screen.completedPrompt,
+            offline = around.offline,
+            download = playback.target
+                ?.takeIf { it.animeId == around.animeId }
+                ?.let { live -> around.downloads.firstOrNull { it.episode == live.episode } },
             toast = screen.toast,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, PlayerUiState())
@@ -297,6 +345,40 @@ class PlayerViewModel @Inject constructor(
     fun retry() {
         viewModelScope.launch { controller.retry() }
     }
+
+    /**
+     * Keeps the episode on screen on the device.
+     *
+     * No height is named, so the download settings decide it. The rung the viewer is watching at
+     * is not an instruction about storage: someone who set «720p» for downloads did not ask for
+     * 1080p by having one episode open at it, and the phone they are saving space on is the same
+     * phone either way.
+     */
+    fun download() {
+        val id = animeId.value ?: return
+        val episode = liveEpisodeOf(id) ?: return
+        viewModelScope.launch {
+            downloads.enqueue(id, episode)
+                .onFailure { failure -> screen.update { it.copy(toast = failure.toUserMessage()) } }
+        }
+    }
+
+    /** Gives the space back. The episode plays from Kodik again, for as long as there is a network. */
+    fun removeDownload() {
+        val id = animeId.value ?: return
+        val episode = liveEpisodeOf(id) ?: return
+        viewModelScope.launch { downloads.remove(id, episode) }
+    }
+
+    /**
+     * The episode playing right now, but only while it is an episode of [id].
+     *
+     * The controller serves the whole process, so what it holds during the moment between this
+     * screen naming its title and playback reaching it is the *previous* title's episode. Pairing
+     * the two would download episode seven of a show the viewer never opened.
+     */
+    private fun liveEpisodeOf(id: Int): Int? =
+        controller.state.value.target?.takeIf { it.animeId == id }?.episode
 
     /** Loads the tracks on demand and shows them: the sheet costs a request to fill. */
     fun openTranslations() = fetchTranslations(show = true)

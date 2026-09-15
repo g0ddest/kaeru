@@ -8,7 +8,6 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.util.Util
 import androidx.media3.datasource.DataSource
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
@@ -53,16 +52,18 @@ object MediaItemFactory {
     fun castMediaItem(url: String, metadata: StreamMetadata?): MediaItem =
         mediaItem(url, metadata, MimeTypes.APPLICATION_M3U8)
 
-    fun mediaSource(item: MediaItem, headers: StreamHeaders): MediaSource {
-        val http: DataSource.Factory = DefaultHttpDataSource.Factory()
-            .setUserAgent(headers.userAgent)
-            .setDefaultRequestProperties(headers.requestProperties)
-            .setAllowCrossProtocolRedirects(true)
+    /**
+     * @param dataSource what every byte is read through — the download cache first and Kodik
+     *   only for what is not in it, assembled in `di.PlaybackModule`. Reading through it always,
+     *   rather than only for a downloaded episode, is what makes an episode on the device play
+     *   with no network and no resolve.
+     */
+    fun mediaSource(item: MediaItem, dataSource: DataSource.Factory): MediaSource {
         val uri = item.localConfiguration?.uri
         return if (uri != null && Util.inferContentType(uri) == C.CONTENT_TYPE_HLS) {
-            HlsMediaSource.Factory(http).createMediaSource(item)
+            HlsMediaSource.Factory(dataSource).createMediaSource(item)
         } else {
-            DefaultMediaSourceFactory(http).createMediaSource(item)
+            DefaultMediaSourceFactory(dataSource).createMediaSource(item)
         }
     }
 }
