@@ -1,6 +1,8 @@
 package app.kaeru
 
+import android.app.Activity
 import android.app.Application
+import android.os.Bundle
 import androidx.media3.common.util.UnstableApi
 import app.kaeru.data.download.DownloadEngine
 import app.kaeru.data.library.OfflineSyncStarter
@@ -34,5 +36,27 @@ class KaeruApp : Application() {
         // Kodik signature has to be replaced, and whatever last night's queue left unfinished
         // has to start again — none of which anything on screen is around to ask for.
         downloads.start(appScope)
+        registerActivityLifecycleCallbacks(ForegroundWatch())
+    }
+
+    /**
+     * Tells the download engine when the app is somewhere the platform will let it start a
+     * service.
+     *
+     * A process the system started in the background — restarting the download service, say —
+     * runs `onCreate` where Android refuses a foreground start outright, and nothing after that
+     * would try again. A resumed activity is the first moment it can work. Registered rather than
+     * observed through `ProcessLifecycleOwner`, which would mean a dependency this app does not
+     * have; the engine ignores the call unless a start was actually refused.
+     */
+    private inner class ForegroundWatch : ActivityLifecycleCallbacks {
+        override fun onActivityResumed(activity: Activity) = downloads.onForeground()
+
+        override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
+        override fun onActivityStarted(activity: Activity) = Unit
+        override fun onActivityPaused(activity: Activity) = Unit
+        override fun onActivityStopped(activity: Activity) = Unit
+        override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
+        override fun onActivityDestroyed(activity: Activity) = Unit
     }
 }

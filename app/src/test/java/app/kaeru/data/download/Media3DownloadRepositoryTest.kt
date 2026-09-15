@@ -37,11 +37,13 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.After
 import org.junit.Assert.assertTrue
@@ -461,6 +463,25 @@ class Media3DownloadRepositoryTest {
             assertTrue(commands.added.isEmpty())
             assertEquals(emptyList<Any>(), repository.observeAll().first())
         }
+
+    @Test
+    fun `a cancelled enqueue unwinds instead of answering with a failure`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        episodes.beforeResolve = { gate.await() }
+        var answered = false
+
+        val job = launch {
+            repository.enqueue(ANIME, 7)
+            // Only reached if enqueue returned. A screen whose scope has gone is not waiting for
+            // an answer, and the coroutine that was told to stop must not run on past it.
+            answered = true
+        }
+        runCurrent()
+        job.cancel()
+        runCurrent()
+
+        assertFalse(answered)
+    }
 
     @Test
     fun `a resolve that fails comes back as the failure and leaves nothing behind`() = runTest(dispatcher) {

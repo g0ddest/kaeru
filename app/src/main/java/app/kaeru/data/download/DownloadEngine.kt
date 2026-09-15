@@ -49,6 +49,12 @@ class DownloadEngine @Inject constructor(
 
     private val started = AtomicBoolean(false)
 
+    /** Set when the platform refused a foreground start, so [onForeground] knows there is work. */
+    private val startRefused = AtomicBoolean(false)
+
+    /** Kept from [start] so [onForeground] has somewhere to run; written once, read from anywhere. */
+    @Volatile private var scope: CoroutineScope? = null
+
     /**
      * Applies the policy's network rule and, whenever there is work to do, makes sure a service is
      * running to do it.
@@ -59,14 +65,18 @@ class DownloadEngine @Inject constructor(
      * unfinished queue does both — and a cold start with nothing to download does neither, so no
      * notification appears for a viewer who is not downloading anything.
      *
-     * All of it on io: reading the index is what builds the engine, and `SimpleCache`'s
-     * constructor blocks on a scan of the downloads directory. Doing it here first also means the
-     * service, which media3 asks for the manager on the main thread, finds one already built.
+     * **Every line of it is inside the coroutine, including registering the listener.** This is
+     * called from `Application.onCreate`, on the main thread, and the first thing that asks the
+     * engine for anything is what builds it: the `DownloadManager`, its database, its handler
+     * thread, and a `getExternalFilesDir` call that hits real disk. Registering a listener looks
+     * free and is not — it resolves the manager to add itself to. Doing it here also means the
+     * service, which media3 asks for the manager on the main thread, usually finds one built.
      */
     fun start(scope: CoroutineScope) {
         if (!started.compareAndSet(false, true)) return
-        source.addListener(Outcome(scope))
+        this.scope = scope
         scope.launch(io) {
+            source.addListener(Outcome(scope))
             settings.downloadPolicy
                 .map { it.wifiOnly }
                 .distinctUntilChanged()
@@ -75,6 +85,25 @@ class DownloadEngine @Inject constructor(
                     commands.setRequirements(Requirements(network))
                     if (source.current().any { !it.isTerminalState }) ensureServiceRunning()
                 }
+        }
+    }
+
+    /**
+     * The app came back to the screen; try again if the platform turned us away while it was not.
+     *
+     * The one case this is for: the process was started in the background — by the platform
+     * restarting the service, say — with a queue still unfinished, so [start] ran and its
+     * foreground start was refused. Nothing after that would try again, because [start] runs once
+     * per process and the policy flow has already emitted. An app the viewer can see is allowed
+     * to promote a service, so this is the first moment it can work.
+     *
+     * A no-op in the ordinary case, which is every launch the viewer began themselves.
+     */
+    fun onForeground() {
+        if (!startRefused.compareAndSet(true, false)) return
+        val scope = scope ?: return
+        scope.launch(io) {
+            if (source.current().any { !it.isTerminalState }) ensureServiceRunning()
         }
     }
 
@@ -118,8 +147,7 @@ class DownloadEngine @Inject constructor(
         when (refresher.refresh(download, cause)) {
             RefreshOutcome.REQUESTED -> failures.forget(id)
             RefreshOutcome.EXHAUSTED -> {
-                // It was an expired link; nothing will replace it now.
-                failures.record(id, DownloadFailureKind.EXPIRED_LINK)
+                failures.record(id, exhaustedKind(cause))
                 outcomes.failed(download)
             }
             RefreshOutcome.DECLINED -> {
@@ -130,26 +158,42 @@ class DownloadEngine @Inject constructor(
     }
 
     /**
+     * What to say about a download the refresher tried to save and could not.
+     *
+     * Not «ссылка устарела» by reflex. The refresher takes on anything that failed after a byte
+     * had already arrived, because a link that worked and then stopped is usually a signature that
+     * ran out — but a network that dropped mid-episode looks exactly the same to it, and the
+     * resolve it then attempts fails for the same reason. Telling that viewer their link expired
+     * sends them to look for a problem they do not have. So the exception is asked first, and the
+     * expired-link answer is the fallback for when it has nothing to say.
+     */
+    private fun exhaustedKind(cause: Exception?): DownloadFailureKind =
+        when (val kind = DownloadFailureCopy.classify(cause)) {
+            DownloadFailureKind.UNKNOWN -> DownloadFailureKind.EXPIRED_LINK
+            else -> kind
+        }
+
+    /**
      * Starts the download service in the foreground.
      *
      * `DownloadService.start` would not do: it sends no foreground flag, so media3 never calls
      * `startForeground`, the queue runs inside an ordinary background service, and Android stops
-     * it as soon as the app is no longer on screen. `startForeground` is refused outright when
-     * the app itself is in the background on Android 12 and up — hence the catch, and hence the
-     * fallback, which at least gets the work moving while the app is still up.
+     * it as soon as the app is no longer on screen.
+     *
+     * There is deliberately no fallback to that plain start when this is refused. On API 26 and up
+     * a background app is turned away from both calls, so a fallback would be dead code nearly
+     * always — and on the phone where it did get through it would produce exactly the state this
+     * fix was about: a transfer inside a background service, with no notification, that Android
+     * stops without telling anybody. Refusal is recorded instead, and [onForeground] tries again
+     * the moment the app is somewhere the platform will allow it.
      */
     private fun ensureServiceRunning() {
         try {
             DownloadService.startForeground(context, KaeruDownloadService::class.java)
+            startRefused.set(false)
         } catch (refused: IllegalStateException) {
-            Log.w(TAG, "Foreground start refused; falling back to a plain start", refused)
-            try {
-                DownloadService.start(context, KaeruDownloadService::class.java)
-            } catch (alsoRefused: IllegalStateException) {
-                // Nothing left to try from the background. The next time the viewer opens the app
-                // this runs again, and the queue picks up there.
-                Log.w(TAG, "Downloads will resume the next time the app is opened", alsoRefused)
-            }
+            startRefused.set(true)
+            Log.w(TAG, "Foreground start refused; downloads resume when the app is next open", refused)
         }
     }
 

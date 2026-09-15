@@ -127,13 +127,15 @@ class DownloadRefresher @Inject constructor(
         while (window.isNotEmpty() && Duration.between(window.first(), now) > WINDOW) {
             window.removeFirst()
         }
-        if (window.size >= MAX_ATTEMPTS) return@withLock false
-        window.addLast(now)
-        // Nothing older than the window can still count against anything, and keeping it would
-        // leave one entry per download ever refreshed for the life of the process.
+        // Before the budget check rather than after it: the ids worth dropping are exactly the
+        // ones that keep failing, and those are the calls that return early. Nothing older than
+        // the window can still count against anything, and keeping it would leave one entry per
+        // download ever refreshed for the life of the process.
         attempts.entries.removeAll { (other, times) ->
             other != id && (times.isEmpty() || Duration.between(times.last(), now) > WINDOW)
         }
+        if (window.size >= MAX_ATTEMPTS) return@withLock false
+        window.addLast(now)
         true
     }
 

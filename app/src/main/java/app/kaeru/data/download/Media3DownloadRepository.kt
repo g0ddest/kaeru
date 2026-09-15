@@ -18,6 +18,7 @@ import app.kaeru.domain.model.Quality
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.settings.SettingsStore
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
@@ -196,7 +197,8 @@ class Media3DownloadRepository @Inject constructor(
         try {
             // Every failure leaves as a Result, including one thrown rather than returned: the
             // interface promises a Result, and a screen that let an exception through would take
-            // the app down for a link that did not resolve.
+            // the app down for a link that did not resolve. A cancellation is the exception to
+            // that, below — it is not a failure to report, it is this coroutine being told to stop.
             return runCatching {
                 // persist = false: preparing episode 12 must not move the row that says the viewer
                 // is on episode 3 — that row carries their position, and rewriting it loses it.
@@ -224,6 +226,11 @@ class Media3DownloadRepository @Inject constructor(
                 // A fresh request is not a failed one any more, whatever the last one said.
                 failures.forget(key.id)
                 awaitEngine(animeId, episode)
+            }.onFailure {
+                // A ViewModel scope that went away while the link was resolving cancels this
+                // coroutine. Answering it with a Result would leave the body running past its own
+                // cancellation and hand a screen that no longer exists a failure to render.
+                if (it is CancellationException) throw it
             }
         } finally {
             resolving.update { it - placeholder }

@@ -1,6 +1,10 @@
 package app.kaeru.data.download
 
 import android.app.Application
+import android.content.ComponentName
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.Intent
 import androidx.core.net.toUri
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
@@ -62,6 +66,10 @@ class DownloadEngineTest {
     @Before
     fun setUp() {
         app = ApplicationProvider.getApplicationContext()
+        engine = engineWith(app)
+    }
+
+    private fun engineWith(context: Context): DownloadEngine {
         val resolve = ResolveEpisodeStream(
             episodes,
             FakeWatchStateRepository(),
@@ -69,8 +77,8 @@ class DownloadEngineTest {
             clock,
             StreamPrefetchCache(clock),
         )
-        engine = DownloadEngine(
-            context = app,
+        return DownloadEngine(
+            context = context,
             settings = settings,
             commands = commands,
             refresher = DownloadRefresher(commands, resolve, clock),
@@ -79,6 +87,20 @@ class DownloadEngineTest {
             source = source,
             io = dispatcher,
         )
+    }
+
+    @Test
+    fun `starting reaches the engine on io, never on the thread that called it`() = runTest(dispatcher) {
+        engine.start(backgroundScope)
+
+        // Registering a listener is not free: it resolves the DownloadManager provider, which
+        // opens a database, builds the cache and asks for an external files directory. This is
+        // called from Application.onCreate, so doing any of it here would be on the main thread.
+        assertEquals(0, source.listenerCount)
+
+        runCurrent()
+
+        assertEquals(1, source.listenerCount)
     }
 
     @Test
@@ -145,6 +167,41 @@ class DownloadEngineTest {
         }
 
     @Test
+    fun `a foreground start the platform refuses is tried again when the app comes forward`() =
+        runTest(dispatcher) {
+            val platform = RefusingContext(app)
+            val engine = engineWith(platform)
+            source.put(download(Download.STATE_QUEUED))
+
+            engine.start(backgroundScope)
+            runCurrent()
+
+            // Nothing fell back to a plain background start. That is the service Android stops as
+            // soon as the app is off the screen, which is the state this whole path exists to avoid.
+            assertNull(shadowOf(app).nextStartedService)
+
+            platform.refusing = false
+            engine.onForeground()
+            runCurrent()
+
+            val started = shadowOf(app).nextStartedService
+            assertEquals(KaeruDownloadService::class.java.name, started?.component?.className)
+            assertTrue(started?.getBooleanExtra("foreground", false) == true)
+        }
+
+    @Test
+    fun `coming forward after a start that was never refused touches nothing`() = runTest(dispatcher) {
+        source.put(download(Download.STATE_COMPLETED))
+        engine.start(backgroundScope)
+        runCurrent()
+
+        engine.onForeground()
+        runCurrent()
+
+        assertNull(shadowOf(app).nextStartedService)
+    }
+
+    @Test
     fun `a failure keeps why it failed, so a screen can say it later`() = runTest(dispatcher) {
         engine.start(backgroundScope)
         runCurrent()
@@ -172,6 +229,42 @@ class DownloadEngineTest {
         assertEquals("Ссылка устарела, попробуйте позже", failures.messageFor(key.id))
         assertEquals(listOf(key.id), outcomes.broken)
     }
+
+    @Test
+    fun `a network that dropped part way through does not read as an expired link`() =
+        runTest(dispatcher) {
+            // The refresher takes on anything that failed after a byte arrived, so a lost network
+            // reaches it looking like an expired signature — and the resolve it tries then fails
+            // for the same reason. The exception is the only thing that knows better.
+            episodes.urls = mapOf(Quality.P480 to "https://cdn/480.m3u8")
+            engine.start(backgroundScope)
+            runCurrent()
+
+            source.put(
+                download(Download.STATE_FAILED, Download.FAILURE_REASON_UNKNOWN, bytes = 120_000_000),
+                IOException("connection reset"),
+            )
+            runCurrent()
+
+            assertEquals("Нет связи, загрузка продолжится позже", failures.messageFor(key.id))
+            assertEquals(listOf(key.id), outcomes.broken)
+        }
+
+    @Test
+    fun `a link nobody will renew still reads as expired when nothing says otherwise`() =
+        runTest(dispatcher) {
+            episodes.urls = mapOf(Quality.P480 to "https://cdn/480.m3u8")
+            engine.start(backgroundScope)
+            runCurrent()
+
+            source.put(
+                download(Download.STATE_FAILED, Download.FAILURE_REASON_UNKNOWN, bytes = 120_000_000),
+                IllegalStateException("nothing about the transfer"),
+            )
+            runCurrent()
+
+            assertEquals("Ссылка устарела, попробуйте позже", failures.messageFor(key.id))
+        }
 
     @Test
     fun `a download that finishes is no longer a failure`() = runTest(dispatcher) {
@@ -254,14 +347,39 @@ class DownloadEngineTest {
 
     // ---- fixtures ----------------------------------------------------------------------------
 
-    private fun download(state: Int, failureReason: Int = Download.FAILURE_REASON_NONE) = downloadOf(
+    private fun download(
+        state: Int,
+        failureReason: Int = Download.FAILURE_REASON_NONE,
+        bytes: Long = 0,
+    ) = downloadOf(
         DownloadRequest.Builder(key.id, "https://cdn/720.m3u8?sign=stale".toUri())
             .setMimeType(MimeTypes.APPLICATION_M3U8)
             .setData(DownloadPayload.of(key, "Фрирен", anilibria).encode())
             .build(),
         state,
+        bytes = bytes,
         failureReason = failureReason,
     )
+
+    /**
+     * A phone that turns a background app away from a foreground service, as Android 12 and up
+     * does — but lets a plain `startService` through, as a lenient OEM might.
+     *
+     * That combination is the point. It is the only phone where falling back to
+     * `DownloadService.start` would succeed, and succeeding there is worse than failing: the
+     * queue would transfer inside an ordinary background service with no notification, which
+     * Android stops without telling anybody.
+     */
+    private class RefusingContext(base: Context) : ContextWrapper(base) {
+        var refusing = true
+
+        override fun startForegroundService(service: Intent): ComponentName? =
+            if (refusing) {
+                throw IllegalStateException("not allowed to start a foreground service in the background")
+            } else {
+                super.startForegroundService(service)
+            }
+    }
 
     private fun forbidden() = HttpDataSource.InvalidResponseCodeException(
         403,
@@ -286,6 +404,9 @@ class DownloadEngineTest {
     }
 
     private class FakeEpisodeSource : EpisodeSourceProvider {
+        /** What the source has to offer. A height the download wants is what a refresh needs. */
+        var urls: Map<Quality, String> = mapOf(Quality.P720 to "https://cdn/720.m3u8?sign=fresh")
+
         override suspend fun translations(shikimoriId: Int) = Result.success(emptyList<Translation>())
 
         override suspend fun resolve(
@@ -297,7 +418,7 @@ class DownloadEngineTest {
                 animeId = shikimoriId,
                 episode = episode,
                 translation = translation ?: Translation(0, "", TranslationKind.VOICE, null),
-                urls = mapOf(Quality.P720 to "https://cdn/720.m3u8?sign=fresh"),
+                urls = urls,
                 resolvedAt = Instant.parse("2026-09-15T10:00:00Z"),
             ),
         )
