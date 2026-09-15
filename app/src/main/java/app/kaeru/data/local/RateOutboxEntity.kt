@@ -22,13 +22,15 @@ data class RateOutboxEntity(
     val value: String,
     val createdAt: Instant,
 ) {
-    fun toDomain() = RateOp(
-        id = id,
-        animeId = animeId,
-        kind = RateOpKind.valueOf(kind),
-        value = value,
-        createdAt = createdAt,
-    )
+    /**
+     * Null for a row this build cannot read.
+     *
+     * A kind written by a newer build, or a corrupted one, must not throw: the parse happens to
+     * the whole queue at once, so one bad row would wedge every good row behind it.
+     */
+    fun toDomainOrNull(): RateOp? = RateOpKind.entries.firstOrNull { it.name == kind }?.let { parsed ->
+        RateOp(id = id, animeId = animeId, kind = parsed, value = value, createdAt = createdAt)
+    }
 }
 
 fun RateOp.toEntity() = RateOutboxEntity(

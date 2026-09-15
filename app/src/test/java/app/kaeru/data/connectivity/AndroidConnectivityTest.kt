@@ -16,13 +16,14 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.shadows.ShadowConnectivityManager
 import org.robolectric.shadows.ShadowNetworkCapabilities
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 
 /** Whether the device can reach anything, as the banners and the write queue read it. */
 @RunWith(RobolectricTestRunner::class)
 class AndroidConnectivityTest {
     private lateinit var context: Context
     private lateinit var manager: ConnectivityManager
-    private lateinit var connectivity: AndroidConnectivity
 
     private val shadow: ShadowConnectivityManager get() = shadowOf(manager)
 
@@ -30,8 +31,14 @@ class AndroidConnectivityTest {
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
         manager = context.getSystemService(ConnectivityManager::class.java)
-        connectivity = AndroidConnectivity(context)
     }
+
+    /**
+     * Shared on the test's own scheduler, with no tail: in the app the sharing keeps the callback
+     * for a few seconds past the last collector, which is time a virtual clock would have to be
+     * told to pass before anything could be asserted about unregistration.
+     */
+    private fun TestScope.connectivity() = AndroidConnectivity(context, backgroundScope, stopTimeoutMs = 0)
 
     private fun capabilities(vararg wanted: Int): NetworkCapabilities {
         val caps = ShadowNetworkCapabilities.newInstance()
@@ -59,7 +66,7 @@ class AndroidConnectivityTest {
     fun `the state at the moment of collection comes first`() = runTest {
         connect()
 
-        connectivity.online.test {
+        connectivity().online.test {
             assertTrue(awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
@@ -69,7 +76,7 @@ class AndroidConnectivityTest {
     fun `a device with no network at all is offline`() = runTest {
         shadow.setDefaultNetworkActive(false)
 
-        connectivity.online.test {
+        connectivity().online.test {
             assertEquals(false, awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
@@ -79,7 +86,7 @@ class AndroidConnectivityTest {
     fun `a network that has not been validated reaches nothing`() = runTest {
         connect(capabilities(NetworkCapabilities.NET_CAPABILITY_INTERNET))
 
-        connectivity.online.test {
+        connectivity().online.test {
             assertEquals(false, awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
@@ -89,7 +96,7 @@ class AndroidConnectivityTest {
     fun `losing and finding a network is one change each way`() = runTest {
         val network = connect()
 
-        connectivity.online.test {
+        connectivity().online.test {
             assertTrue(awaitItem())
 
             fire { onLost(network) }
@@ -109,7 +116,7 @@ class AndroidConnectivityTest {
     fun `a captive portal that never validates never reads as online`() = runTest {
         val network = connect(capabilities(NetworkCapabilities.NET_CAPABILITY_INTERNET))
 
-        connectivity.online.test {
+        connectivity().online.test {
             assertEquals(false, awaitItem())
 
             fire { onCapabilitiesChanged(network, capabilities(NetworkCapabilities.NET_CAPABILITY_INTERNET)) }
@@ -125,13 +132,33 @@ class AndroidConnectivityTest {
         // shadow would otherwise be read as one of ours.
         val before = shadow.networkCallbacks.toSet()
 
-        connectivity.online.test {
+        connectivity().online.test {
             assertTrue(awaitItem())
             assertEquals(1, (shadow.networkCallbacks - before).size)
             cancelAndIgnoreRemainingEvents()
         }
-        testScheduler.advanceUntilIdle()
+        // A tick of virtual time, not `advanceUntilIdle`: the sharing that lets several screens
+        // share one callback lets go of it a moment after the last of them does.
+        advanceTimeBy(1)
 
         assertEquals(before, shadow.networkCallbacks.toSet())
+    }
+
+    @Test
+    fun `several screens watching at once are one registration`() = runTest {
+        connect()
+        val before = shadow.networkCallbacks.toSet()
+        val watched = connectivity()
+
+        watched.online.test {
+            assertTrue(awaitItem())
+            watched.online.test {
+                assertTrue(awaitItem())
+
+                assertEquals(1, (shadow.networkCallbacks - before).size)
+                cancelAndIgnoreRemainingEvents()
+            }
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 }

@@ -6,12 +6,20 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import app.kaeru.domain.connectivity.Connectivity
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.shareIn
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/** Long enough to survive a rotation, short enough that nothing watches a network nobody asked about. */
+private const val STOP_TIMEOUT_MS = 5_000L
 
 /**
  * The device's own answer to «is there a network».
@@ -20,15 +28,30 @@ import javax.inject.Singleton
  * interface that carries no traffic, and treating either as online would send the write queue out
  * to be refused rather than leaving it to wait. The default network is the one asked about, since
  * it is the one every request in this app goes over.
+ *
+ * Shared, so the home screen, the player and the television banner are one registration rather
+ * than three. The replay cache is dropped the moment the last collector leaves, so a collector
+ * that arrives after a gap is answered by a fresh read rather than by a remembered one.
  */
 @Singleton
-class AndroidConnectivity @Inject constructor(
-    @param:ApplicationContext private val context: Context,
+class AndroidConnectivity(
+    context: Context,
+    scope: CoroutineScope,
+    stopTimeoutMs: Long,
 ) : Connectivity {
 
-    private val manager: ConnectivityManager? get() = context.getSystemService(ConnectivityManager::class.java)
+    @Inject
+    constructor(@ApplicationContext context: Context) : this(
+        context,
+        // Lives as long as the process. Registering a network callback is not work worth a
+        // lifecycle, and the sharing itself stops whenever nothing is collecting.
+        CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        STOP_TIMEOUT_MS,
+    )
 
-    override val online: Flow<Boolean> = callbackFlow {
+    private val manager: ConnectivityManager? = context.getSystemService(ConnectivityManager::class.java)
+
+    private val state: Flow<Boolean> = callbackFlow {
         val manager = manager
         if (manager == null) {
             // No connectivity service to ask — a stripped image, or a context without one. Saying
@@ -52,6 +75,11 @@ class AndroidConnectivity @Inject constructor(
         trySend(manager.isOnline())
         awaitClose { manager.unregisterNetworkCallback(callback) }
     }.distinctUntilChanged()
+
+    override val online: Flow<Boolean> = state
+        .shareIn(scope, SharingStarted.WhileSubscribed(stopTimeoutMs, replayExpirationMillis = 0), replay = 1)
+        // Per collector, because the shared flow replays its last value to each new one.
+        .distinctUntilChanged()
 
     private fun ConnectivityManager.isOnline(): Boolean =
         getNetworkCapabilities(activeNetwork ?: return false).reachesInternet

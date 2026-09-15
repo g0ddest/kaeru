@@ -15,6 +15,9 @@ interface RateOutboxRepository {
      */
     fun observePendingAnimeIds(): Flow<Set<Int>>
 
+    /** The same set, asked once. A refresh needs the answer now, not a flow of answers. */
+    suspend fun pendingAnimeIds(): Set<Int>
+
     suspend fun enqueue(animeId: Int, kind: RateOpKind, value: String): Long
 
     suspend fun remove(id: Long)

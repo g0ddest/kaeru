@@ -47,6 +47,7 @@ import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
 import javax.inject.Provider
+import app.kaeru.domain.sync.ReplayOutcome
 
 /**
  * What a rate write does when the network is simply not there.
@@ -67,6 +68,7 @@ class ShikimoriLibraryRepositoryOfflineTest {
     private lateinit var api: ShikimoriApi
     private lateinit var outbox: RoomRateOutboxRepository
     private lateinit var repo: ShikimoriLibraryRepository
+    private lateinit var clock: Clock
     private var replays = 0
 
     @Before
@@ -83,14 +85,18 @@ class ShikimoriLibraryRepositoryOfflineTest {
             .client(OkHttpClient())
             .addConverterFactory(shikimoriJson().asConverterFactory("application/json".toMediaType()))
             .build().create(ShikimoriApi::class.java)
-        val clock = Clock.fixed(now, ZoneOffset.UTC)
+        clock = Clock.fixed(now, ZoneOffset.UTC)
         outbox = RoomRateOutboxRepository(db.rateOutboxDao(), clock)
-        val syncer = OutboxSyncer { replays++; Result.success(0) }
-        repo = ShikimoriLibraryRepository(
-            api, db.animeDao(), db.userRateDao(), db.watchStateDao(), db.episodeProgressDao(), prefs, session,
-            PosterEnricher(api), outbox, Provider { syncer }, Dispatchers.IO, clock,
-        )
+        repo = repositoryWith(OutboxSyncer { replays++; Result.success(ReplayOutcome(0, emptySet())) })
     }
+
+    private fun repositoryWith(syncer: OutboxSyncer) = ShikimoriLibraryRepository(
+        api, db, db.animeDao(), db.userRateDao(), db.watchStateDao(), db.episodeProgressDao(), prefs, session,
+        PosterEnricher(api), outbox, Provider { syncer }, Dispatchers.IO, clock,
+    )
+
+    /** The real drain, so a refresh and a replay meet the way they do in the app. */
+    private fun realSyncer() = ShikimoriOutboxSyncer(api, db, db.userRateDao(), db.rateOutboxDao(), prefs, clock)
 
     @After
     fun tearDown() {
@@ -209,11 +215,18 @@ class ShikimoriLibraryRepositoryOfflineTest {
     }
 
     /** Shikimori's own answers for a library of one released title the viewer is watching. */
-    private fun serveLibrary(episodes: Int) {
+    private fun serveLibrary(episodes: Int, refuseWrites: Boolean = false) {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val path = request.path.orEmpty()
+                val isWrite = path.startsWith("/api/v2/user_rates/") || request.method == "POST" &&
+                    path == "/api/v2/user_rates"
                 return when {
+                    isWrite && refuseWrites -> MockResponse().setResponseCode(422).setBody("""{"errors":["nope"]}""")
+                    isWrite -> MockResponse().setBody(
+                        """{"id":5,"target_id":10,"status":"watching","episodes":$episodes,""" +
+                            """"updated_at":"2026-09-01T00:00:00.000+03:00"}""",
+                    )
                     path.startsWith("/api/v2/user_rates") && path.contains("status=watching") ->
                         MockResponse().setBody(
                             """[{"id":5,"target_id":10,"status":"watching","episodes":$episodes,""" +
@@ -229,6 +242,78 @@ class ShikimoriLibraryRepositoryOfflineTest {
                 }
             }
         }
+    }
+
+    /** Anything asked of Shikimori here is a mistake, and says so rather than hanging on an empty queue. */
+    private fun serveNothing() {
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest) = MockResponse().setResponseCode(500)
+        }
+    }
+
+    @Test
+    fun `a status set against a rate Shikimori has never seen is queued rather than sent`() = runTest {
+        seedAnime(10)
+        db.userRateDao().upsertAll(
+            listOf(UserRateEntity(-10, 10, ListStatus.PLANNED, 0, Instant.parse("2026-09-01T00:00:00Z"))),
+        )
+        serveNothing()
+
+        assertTrue(repo.setStatus(10, ListStatus.WATCHING).isSuccess)
+
+        assertEquals(0, server.requestCount)
+        assertEquals(ListStatus.WATCHING, rate(10)?.status)
+        assertEquals(-10L, rate(10)?.id)
+        assertEquals(listOf(RateOp(1, 10, RateOpKind.STATUS, "watching", now)), queued())
+    }
+
+    @Test
+    fun `an episode count against a rate Shikimori has never seen is queued rather than sent`() = runTest {
+        seedAnime(10)
+        db.userRateDao().upsertAll(
+            listOf(UserRateEntity(-10, 10, ListStatus.WATCHING, 0, Instant.parse("2026-09-01T00:00:00Z"))),
+        )
+        serveNothing()
+
+        assertTrue(repo.setEpisodes(10, 3).isSuccess)
+
+        assertEquals(0, server.requestCount)
+        assertEquals(3, rate(10)?.episodes)
+        assertEquals(listOf(RateOp(1, 10, RateOpKind.EPISODES, "3", now)), queued())
+    }
+
+    /**
+     * The whole of the offline path, end to end, with the real drain inside the real refresh.
+     *
+     * A rejected write used to send the drain back through `refreshAnime`, which takes the account
+     * lock the refresh was already holding — this call would never return, and neither would any
+     * account write after it.
+     */
+    @Test
+    fun `a refresh completes when a queued write is refused`() = runTest {
+        seedAnime(10)
+        seedRate(animeId = 10, rateId = 5, episodes = 6)
+        outbox.enqueue(10, RateOpKind.EPISODES, "7")
+        serveLibrary(episodes = 2, refuseWrites = true)
+
+        assertTrue(repositoryWith(realSyncer()).refresh().isSuccess)
+
+        assertTrue(queued().isEmpty())
+        // Refused, so the server's word wins rather than the local claim it never accepted.
+        assertEquals(2, rate(10)?.episodes)
+    }
+
+    @Test
+    fun `a refresh that drains the queue takes the server's word for what it just sent`() = runTest {
+        seedAnime(10)
+        seedRate(animeId = 10, rateId = 5, episodes = 6)
+        outbox.enqueue(10, RateOpKind.EPISODES, "7")
+        serveLibrary(episodes = 7)
+
+        assertTrue(repositoryWith(realSyncer()).refresh().isSuccess)
+
+        assertTrue(queued().isEmpty())
+        assertEquals(7, rate(10)?.episodes)
     }
 
     @Test

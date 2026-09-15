@@ -1,6 +1,10 @@
 package app.kaeru.data.library
 
+import android.util.Log
+import androidx.room.withTransaction
+import app.kaeru.data.local.KaeruDatabase
 import app.kaeru.data.local.RateOutboxDao
+import app.kaeru.data.local.RateOutboxEntity
 import app.kaeru.data.local.UserRateDao
 import app.kaeru.data.local.UserRateEntity
 import app.kaeru.data.shikimori.ShikimoriApi
@@ -9,11 +13,11 @@ import app.kaeru.data.shikimori.UserRatePayload
 import app.kaeru.data.shikimori.UserRateRequest
 import app.kaeru.data.shikimori.toDomainFailure
 import app.kaeru.domain.model.ListStatus
-import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.sync.OutboxReplayPlan
 import app.kaeru.domain.sync.OutboxSyncer
 import app.kaeru.domain.sync.RateOp
 import app.kaeru.domain.sync.RateOpKind
+import app.kaeru.domain.sync.ReplayOutcome
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -21,8 +25,12 @@ import retrofit2.HttpException
 import java.io.IOException
 import java.time.Clock
 import javax.inject.Inject
-import javax.inject.Provider
 import javax.inject.Singleton
+
+private const val TAG = "OutboxSyncer"
+
+/** SQLite binds at most 999 variables to one statement, and a superseded run has no bound. */
+private const val DELETE_CHUNK = 500
 
 /** Shikimori answers 4xx when it has looked at the write and refused it; 5xx means ask again later. */
 private val HttpException.isRejection: Boolean get() = code() in 400..499
@@ -34,24 +42,27 @@ private val HttpException.isRejection: Boolean get() = code() in 400..499
  * can be long. A drain stops at the first sign the network is gone again and leaves everything
  * after it queued, so the order the viewer acted in survives however many attempts it takes.
  *
- * No account lock is taken here, and none can be: a refresh calls this from inside the lock it
- * already holds. The account is read rather than held, and the queue is emptied with the rest of
- * the account's rows on the way out, so a replay cannot outlive the account that filled it.
+ * Nothing here takes the account lock, and nothing here calls back into anything that does. A
+ * refresh replays from inside that lock, which is not reentrant, so a drain that reached back
+ * through `LibraryRepository` would suspend forever and take every later account write with it.
+ * What the drain cannot do itself it reports in [ReplayOutcome] for the caller to do outside.
+ *
+ * The account is read rather than held: it is re-read before every op, and a drain stops the
+ * moment it changes, so a queue cannot be sent as somebody else. A logout empties the queue in the
+ * same transaction as the rest of the account's rows, so there is usually nothing left to stop.
  */
 @Singleton
 class ShikimoriOutboxSyncer @Inject constructor(
     private val api: ShikimoriApi,
+    private val db: KaeruDatabase,
     private val userRateDao: UserRateDao,
     private val outboxDao: RateOutboxDao,
     private val prefs: AppPreferences,
-    // Lazily: the library repository asks for a replay at the start of every refresh, and a
-    // rejected write asks it back for the server's version of the title.
-    private val library: Provider<LibraryRepository>,
     private val clock: Clock,
 ) : OutboxSyncer {
     private val draining = Mutex()
 
-    override suspend fun replay(): Result<Int> = draining.withLock {
+    override suspend fun replay(): Result<ReplayOutcome> = draining.withLock {
         try {
             Result.success(drain())
         } catch (cancelled: CancellationException) {
@@ -61,79 +72,106 @@ class ShikimoriOutboxSyncer @Inject constructor(
         }
     }
 
-    private suspend fun drain(): Int {
-        val plan = OutboxReplayPlan.of(outboxDao.getAll().map { it.toDomain() })
+    private suspend fun drain(): ReplayOutcome {
+        val rows = outboxDao.getAll()
+        // A row this build cannot read is dropped rather than skipped: skipping would leave its
+        // anime pending forever, and a refresh never takes the server's rate for a pending anime.
+        val (readable, unreadable) = rows.partition { it.toDomainOrNull() != null }
+        if (unreadable.isNotEmpty()) {
+            Log.w(TAG, "Dropping ${unreadable.size} queued writes of an unknown kind")
+            delete(unreadable.map { it.id })
+        }
+        val plan = OutboxReplayPlan.of(readable.mapNotNull(RateOutboxEntity::toDomainOrNull))
         // A run of taps on one episode counter is one intent; only the last of them is worth a
         // request, and the rest go before anything is sent so a failed drain does not keep them.
-        if (plan.superseded.isNotEmpty()) outboxDao.deleteByIds(plan.superseded.toList())
-        if (plan.toSend.isEmpty()) return 0
+        delete(plan.superseded.toList())
+        val refused = linkedSetOf<Int>()
+        if (plan.toSend.isEmpty()) return ReplayOutcome(sent = 0, refused = refused)
         // No account, no queue to speak for: whatever is here belongs to a sign-in that has not
         // finished, and it waits rather than being sent as somebody else.
-        val userId = prefs.userId() ?: return 0
+        val account = prefs.userId() ?: return ReplayOutcome(sent = 0, refused = refused)
 
         var sent = 0
-        val refused = linkedSetOf<Int>()
         for ((index, op) in plan.toSend.withIndex()) {
+            // Re-read rather than trusted: a logout partway through a long queue must not send the
+            // rest as whoever signs in next. What is left keeps its place, and a logout has
+            // usually deleted it already.
+            if (prefs.userId() != account) break
             val local = userRateDao.getByAnimeId(op.animeId)
+            if (op.kind == RateOpKind.EPISODES && local.hasNoServerRate) {
+                // Nothing to PATCH and nothing that can create one — the status write that would
+                // have is either not queued or was itself refused. Dropped rather than retried:
+                // one unsendable row must never block the rows behind it.
+                Log.w(TAG, "Dropping an episode count for anime ${op.animeId}: Shikimori has no rate for it")
+                outboxDao.deleteById(op.id)
+                refused += op.animeId
+                continue
+            }
             val dto = try {
-                send(op, local, userId)
+                send(op, local, account)
             } catch (offline: IOException) {
                 // Gone again. Everything from here on keeps its place.
                 break
             } catch (http: HttpException) {
                 if (!http.isRejection) break
                 // Shikimori read the write and said no. Keeping it would mean sending it forever,
-                // so it goes, and the title is re-read to show whatever the server does hold.
+                // so it goes, and the caller re-reads the title to show what the server does hold.
                 outboxDao.deleteById(op.id)
                 refused += op.animeId
                 continue
             }
-            outboxDao.deleteById(op.id)
             // The half this write did not speak for is only the server's to set if nothing else
             // is queued for it: otherwise the answer carries a value the viewer has already
             // changed, and taking it would undo a mark that is still on its way out.
             val queuedAfter = plan.toSend.drop(index + 1).filter { it.animeId == op.animeId }.map { it.kind }.toSet()
-            userRateDao.apply {
+            db.withTransaction {
+                outboxDao.deleteById(op.id)
                 // A rate created here arrives with the server's own id, and the placeholder the
                 // offline write left behind holds the anime's unique index until it is gone.
-                if (local == null || local.id < 0) deleteByAnimeId(op.animeId)
-                upsertAll(listOf(merge(local, dto, op.animeId, queuedAfter)))
+                if (local.hasNoServerRate) userRateDao.deleteByAnimeId(op.animeId)
+                userRateDao.upsertAll(listOf(merge(local, dto, op, queuedAfter)))
             }
             sent++
         }
-        // After the loop rather than inside it: the server's version of a title is worth one
-        // request, however many of its writes it just refused.
-        refused.forEach { library.get().refreshAnime(it) }
-        return sent
+        return ReplayOutcome(sent, refused)
     }
+
+    private suspend fun delete(ids: List<Long>) =
+        ids.chunked(DELETE_CHUNK).forEach { outboxDao.deleteByIds(it) }
 
     private suspend fun send(op: RateOp, local: UserRateEntity?, userId: Long): UserRateDto = when (op.kind) {
         RateOpKind.STATUS ->
-            if (local == null || local.id < 0) {
+            if (local.hasNoServerRate) {
                 api.createUserRate(UserRateRequest(UserRatePayload(
                     userId = userId, targetId = op.animeId, targetType = "Anime", status = op.value,
                 )))
             } else {
-                api.updateUserRate(local.id, UserRateRequest(UserRatePayload(status = op.value)))
+                api.updateUserRate(requireNotNull(local).id, UserRateRequest(UserRatePayload(status = op.value)))
             }
 
-        RateOpKind.EPISODES -> {
-            val rateId = local?.id?.takeIf { it >= 0 }
-                ?: error("No Shikimori rate for anime ${op.animeId} to set episodes on")
-            api.updateUserRate(rateId, UserRateRequest(UserRatePayload(episodes = op.value.toInt())))
-        }
+        RateOpKind.EPISODES -> api.updateUserRate(
+            requireNotNull(local).id,
+            UserRateRequest(UserRatePayload(episodes = op.value.toInt())),
+        )
     }
 
     private fun merge(
         local: UserRateEntity?,
         dto: UserRateDto,
-        animeId: Int,
+        op: RateOp,
         queuedAfter: Set<RateOpKind>,
     ) = UserRateEntity(
         id = dto.id,
-        animeId = animeId,
+        animeId = op.animeId,
         status = if (RateOpKind.STATUS in queuedAfter && local != null) local.status else ListStatus.fromApi(dto.status),
         episodes = if (RateOpKind.EPISODES in queuedAfter && local != null) local.episodes else dto.episodes,
-        updatedAt = clock.instant(),
+        // The moment the viewer acted, not the moment the queue happened to drain. The home rows
+        // are ordered by this, and a flight's worth of marks landing at once would otherwise
+        // reshuffle the screen to the order the network came back in. The later of the two,
+        // because a write still queued for the other half was made after this one.
+        updatedAt = maxOf(op.createdAt, local?.updatedAt ?: op.createdAt),
     )
 }
+
+/** A missing row, or the negative-id placeholder an offline status change leaves: nothing to PATCH. */
+private val UserRateEntity?.hasNoServerRate: Boolean get() = this == null || id < 0

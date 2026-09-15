@@ -51,6 +51,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import retrofit2.HttpException
+import app.kaeru.domain.sync.ReplayOutcome
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -79,9 +80,9 @@ class ShikimoriLibraryRepositoryTest {
     }
 
     private fun repositoryAt(at: Instant) = ShikimoriLibraryRepository(
-        api, db.animeDao(), db.userRateDao(), db.watchStateDao(), db.episodeProgressDao(), prefs, session,
+        api, db, db.animeDao(), db.userRateDao(), db.watchStateDao(), db.episodeProgressDao(), prefs, session,
         PosterEnricher(api), RoomRateOutboxRepository(db.rateOutboxDao(), Clock.fixed(at, ZoneOffset.UTC)),
-        Provider { OutboxSyncer { Result.success(0) } }, dispatcher, Clock.fixed(at, ZoneOffset.UTC),
+        Provider { OutboxSyncer { Result.success(ReplayOutcome(0, emptySet())) } }, dispatcher, Clock.fixed(at, ZoneOffset.UTC),
     )
 
     @After

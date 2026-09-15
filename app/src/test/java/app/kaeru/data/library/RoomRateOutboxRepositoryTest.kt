@@ -22,6 +22,7 @@ import org.robolectric.RobolectricTestRunner
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+import app.kaeru.data.local.RateOutboxEntity
 
 /** The queue of marks a viewer made without a network, as the syncer and a refresh read it. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -96,6 +97,23 @@ class RoomRateOutboxRepositoryTest {
             assertEquals(emptyList<RateOp>(), awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    @Test
+    fun `the anime still waiting can be asked for once instead of watched`() = scope.runTest {
+        repo.enqueue(100, RateOpKind.EPISODES, "7")
+        repo.enqueue(100, RateOpKind.STATUS, "watching")
+        repo.enqueue(200, RateOpKind.EPISODES, "1")
+
+        assertEquals(setOf(100, 200), repo.pendingAnimeIds())
+    }
+
+    @Test
+    fun `a row of a kind this build cannot read is passed over rather than thrown on`() = scope.runTest {
+        db.rateOutboxDao().insert(RateOutboxEntity(animeId = 100, kind = "FUTURE", value = "?", createdAt = now))
+        repo.enqueue(200, RateOpKind.EPISODES, "1")
+
+        assertEquals(listOf(200), repo.observeAll().first().map { it.animeId })
     }
 
     @Test

@@ -26,7 +26,7 @@ class RoomRateOutboxRepository @Inject constructor(
 ) : RateOutboxRepository {
 
     override fun observeAll(): Flow<List<RateOp>> = dao.observeAll()
-        .map { rows -> rows.map { it.toDomain() } }
+        .map { rows -> rows.mapNotNull { it.toDomainOrNull() } }
         .distinctUntilChanged()
 
     override fun observePendingAnimeIds(): Flow<Set<Int>> = dao.observePendingAnimeIds()
@@ -34,6 +34,8 @@ class RoomRateOutboxRepository @Inject constructor(
         // Draining one of several queued writes for the same anime leaves the set unchanged, and
         // a refresh has no reason to start over because of it.
         .distinctUntilChanged()
+
+    override suspend fun pendingAnimeIds(): Set<Int> = dao.pendingAnimeIds().toSet()
 
     override suspend fun enqueue(animeId: Int, kind: RateOpKind, value: String): Long =
         dao.insert(RateOutboxEntity(animeId = animeId, kind = kind.name, value = value, createdAt = clock.instant()))

@@ -1,8 +1,10 @@
 package app.kaeru.data.library
 
+import androidx.room.withTransaction
 import app.kaeru.data.auth.AccountSession
 import app.kaeru.data.local.AnimeDao
 import app.kaeru.data.local.EpisodeProgressDao
+import app.kaeru.data.local.KaeruDatabase
 import app.kaeru.data.local.UserRateDao
 import app.kaeru.data.local.UserRateEntity
 import app.kaeru.data.local.WatchStateDao
@@ -30,7 +32,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.transform
@@ -46,6 +47,7 @@ import javax.inject.Singleton
 @Singleton
 class ShikimoriLibraryRepository @Inject constructor(
     private val api: ShikimoriApi,
+    private val db: KaeruDatabase,
     private val animeDao: AnimeDao,
     private val userRateDao: UserRateDao,
     private val watchStateDao: WatchStateDao,
@@ -102,11 +104,17 @@ class ShikimoriLibraryRepository @Inject constructor(
      * rates untouched. A failed detail enrichment retains the refreshed rates and old details,
      * returns failure, and does not advance lastFullSync.
      */
-    override suspend fun refresh(): Result<Unit> = accountWrite { userId ->
-        // Anything still queued goes out before the server is asked what it holds, so a mark made
-        // on a train is part of the answer rather than something the answer has to be defended
-        // against. Whatever will not send stays queued and is defended against below.
-        syncer.get().replay()
+    override suspend fun refresh(): Result<Unit> {
+        // Outside the account lock, and before it is taken. Anything still queued goes out before
+        // the server is asked what it holds, so a mark made on a train is part of the answer
+        // rather than something the answer has to be defended against — and a drain that reached
+        // back into this repository from inside the lock would suspend on it forever.
+        val refused = withContext(io) { syncer.get().replay() }.getOrNull()?.refused.orEmpty()
+        return accountWrite { userId -> fetchLibrary(userId, refused) }
+    }
+
+    /** The refused titles need no separate re-read: the list this fetches is the server's truth. */
+    private suspend fun fetchLibrary(userId: Long, refused: Set<Int>) {
         val rates = ListStatus.entries.flatMap { fetchRates(userId, it) }
         val ids = rates.map { it.animeId }.distinct()
         val cached = ids.chunked(50).flatMap { animeDao.getByIds(it) }.associateBy { it.id }
@@ -118,10 +126,17 @@ class ShikimoriLibraryRepository @Inject constructor(
         })
         // A title with a write still waiting keeps the local rate: the server's copy of it is
         // behind the viewer by exactly the marks that have not left the device yet, and merging it
-        // would put an episode they have already ticked off back in front of them.
-        val pending = outbox.observePendingAnimeIds().first()
-        val unsent = pending.mapNotNull { userRateDao.getByAnimeId(it) }
-        userRateDao.replaceAll(rates.filterNot { it.animeId in pending }.map { it.toEntity() } + unsent)
+        // would put an episode they have already ticked off back in front of them. A title whose
+        // write Shikimori just refused is the opposite case and takes the server's row.
+        //
+        // In one transaction because a replay running on the application scope writes the same two
+        // tables: read the queue and the rows it protects apart from the replacement, and the
+        // replacement can put back a rate that has since been sent.
+        db.withTransaction {
+            val pending = outbox.pendingAnimeIds() - refused
+            val unsent = pending.mapNotNull { userRateDao.getByAnimeId(it) }
+            userRateDao.replaceAll(rates.filterNot { it.animeId in pending }.map { it.toEntity() } + unsent)
+        }
 
         val watchingIds = rates.filter {
             it.status == ListStatus.WATCHING || it.status == ListStatus.REWATCHING
@@ -163,6 +178,13 @@ class ShikimoriLibraryRepository @Inject constructor(
 
     override suspend fun setStatus(animeId: Int, status: ListStatus): Result<Unit> = accountWrite { userId ->
         val existing = userRateDao.getByAnimeId(animeId)
+        // A rate Shikimori has never been told about has no id to send anything to, and the id
+        // standing in for it is not one: PATCHing it would 404, and a 404 is not the failure that
+        // queues. The create is already queued, and this change rides the same queue behind it.
+        if (existing != null && existing.id < 0) {
+            queue(existing.copy(status = status), RateOpKind.STATUS, status.apiValue)
+            return@accountWrite
+        }
         // Resolve the card first: a remote create must not succeed with no displayable anime.
         val missingAnime = if (animeDao.getById(animeId) == null) {
             api.animesByIds(animeId.toString()).firstOrNull { it.id == animeId }
@@ -192,6 +214,12 @@ class ShikimoriLibraryRepository @Inject constructor(
 
     override suspend fun setEpisodes(animeId: Int, episodes: Int): Result<Unit> = accountWrite {
         val existing = userRateDao.getByAnimeId(animeId) ?: error("No user_rate for anime $animeId")
+        // Same as a status change against a rate that does not exist on Shikimori yet: the count
+        // waits behind the create instead of being sent to an id that would 404.
+        if (existing.id < 0) {
+            queue(existing.copy(episodes = episodes), RateOpKind.EPISODES, episodes.toString())
+            return@accountWrite
+        }
         val dto = try {
             api.updateUserRate(existing.id, UserRateRequest(UserRatePayload(episodes = episodes)))
         } catch (offline: IOException) {
@@ -217,8 +245,11 @@ class ShikimoriLibraryRepository @Inject constructor(
      * The viewer is told it worked, because as far as their library is concerned it did: the row
      * they are looking at now says what they set, and the queue is what makes that true on
      * Shikimori as well. Both happen under the account lock the write already holds.
+     *
+     * One transaction, because half of this is a lie: a changed rate with nothing queued behind it
+     * is a mark that will never be sent and that the next refresh quietly reverts.
      */
-    private suspend fun queue(local: UserRateEntity, kind: RateOpKind, value: String) {
+    private suspend fun queue(local: UserRateEntity, kind: RateOpKind, value: String): Unit = db.withTransaction {
         userRateDao.upsertAll(listOf(local.copy(updatedAt = clock.instant())))
         outbox.enqueue(local.animeId, kind, value)
     }

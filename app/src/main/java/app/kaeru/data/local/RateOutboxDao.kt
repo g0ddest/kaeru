@@ -21,9 +21,13 @@ interface RateOutboxDao {
     @Query("SELECT DISTINCT animeId FROM rate_outbox")
     fun observePendingAnimeIds(): Flow<List<Int>>
 
+    @Query("SELECT DISTINCT animeId FROM rate_outbox")
+    suspend fun pendingAnimeIds(): List<Int>
+
     @Query("DELETE FROM rate_outbox WHERE id = :id")
     suspend fun deleteById(id: Long)
 
+    /** Callers chunk: SQLite binds at most 999 variables to one statement. */
     @Query("DELETE FROM rate_outbox WHERE id IN (:ids)")
     suspend fun deleteByIds(ids: List<Long>)
 
