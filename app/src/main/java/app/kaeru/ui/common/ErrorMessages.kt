@@ -3,6 +3,7 @@ package app.kaeru.ui.common
 import app.kaeru.domain.error.AccountSessionChanged
 import app.kaeru.domain.error.AuthCallbackRejected
 import app.kaeru.domain.error.CastLoadFailed
+import app.kaeru.domain.error.DownloadLimitReached
 import app.kaeru.domain.error.EpisodeNotAvailable
 import app.kaeru.domain.error.HttpError
 import app.kaeru.domain.error.NetworkUnavailable
@@ -21,6 +22,8 @@ private const val SESSION_CHANGED = "Сессия изменилась, обно
 private const val CALLBACK_REJECTED = "Не удалось подтвердить вход. Войдите заново"
 private const val SOURCE_NO_KEY = "Kodik недоступен: не удалось получить ключ"
 private const val SOURCE_REJECTED = "Kodik временно недоступен, попробуйте позже"
+private const val SOURCE_OFFLINE = "Нет сети. Скачайте серию заранее"
+private const val DOWNLOAD_LIMIT = "Лимит места исчерпан. Удалите загрузки или увеличьте лимит в настройках"
 private const val EPISODE_MISSING = "Серия ещё не появилась в Kodik"
 private const val CAST_LOAD_FAILED = "Chromecast не смог загрузить видео"
 private const val SOURCE_CHANGED = "Источник обновился, ждите обновления приложения"
@@ -42,12 +45,14 @@ fun Throwable.toUserMessage(): String = when {
     this is HttpError && code in 500..599 -> SHIKIMORI_DOWN
     this is AuthCallbackRejected -> CALLBACK_REJECTED
     this is SourceUnavailable && reason == SourceUnavailableReason.NO_KEY -> SOURCE_NO_KEY
+    this is SourceUnavailable && reason == SourceUnavailableReason.OFFLINE -> SOURCE_OFFLINE
     this is SourceUnavailable -> SOURCE_REJECTED
     this is EpisodeNotAvailable -> EPISODE_MISSING
     this is CastLoadFailed -> CAST_LOAD_FAILED
     this is SourceFormatChanged -> SOURCE_CHANGED
     this is AccountSessionChanged -> SESSION_CHANGED
     this is StorageFailure -> STORAGE_FAILED
+    this is DownloadLimitReached -> DOWNLOAD_LIMIT
     this is PairingFailed && reason == PairingFailureReason.BAD_LINK -> PAIR_BAD_LINK
     this is PairingFailed && reason == PairingFailureReason.UNREACHABLE -> PAIR_UNREACHABLE
     this is PairingFailed && reason == PairingFailureReason.NO_LOCAL_ADDRESS -> PAIR_NO_ADDRESS
