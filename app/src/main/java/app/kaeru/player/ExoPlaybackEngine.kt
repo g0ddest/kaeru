@@ -8,7 +8,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.HttpDataSource
-import androidx.media3.datasource.cache.SimpleCache
+import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import app.kaeru.di.PlaybackScope
 import app.kaeru.domain.error.NetworkUnavailable
@@ -25,7 +25,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.IOException
 import javax.inject.Inject
-import javax.inject.Provider
 import javax.inject.Singleton
 
 /**
@@ -45,11 +44,11 @@ class ExoPlaybackEngine @Inject constructor(
     @param:ApplicationContext private val context: Context,
     @param:PlaybackScope private val scope: CoroutineScope,
     /**
-     * The cache the download engine fills, asked for on the first [prepare] rather than held
-     * from construction: opening it scans a directory and a media3 database, and this engine is
-     * built on the main thread by whichever screen asks for a player first.
+     * Already built, so [prepare] never opens anything: assembling this factory opens the
+     * download cache, which scans a directory and a media3 database, and [prepare] runs on the
+     * main thread. See `di.PlaybackModule.playbackDataSource` for what it reads through.
      */
-    private val cache: Provider<SimpleCache>,
+    private val dataSource: CacheDataSource.Factory,
 ) : PlaybackEngine {
 
     private val _state = MutableStateFlow(EngineState())
@@ -94,8 +93,10 @@ class ExoPlaybackEngine @Inject constructor(
 
     override fun prepare(url: String, headers: StreamHeaders, startPositionMs: Long, metadata: StreamMetadata?) {
         val player = acquirePlayer()
-        val item = MediaItemFactory.mediaItem(url, metadata)
-        player.setMediaSource(MediaItemFactory.mediaSource(item, headers, cache.get()))
+        // [headers] are not read here: they ride on [dataSource], which is built from the very
+        // StreamHeaders the controller passes in, and are needed on every cache miss rather than
+        // on one request.
+        player.setMediaSource(MediaItemFactory.mediaSource(MediaItemFactory.mediaItem(url, metadata), dataSource))
         player.seekTo(startPositionMs)
         player.prepare()
         // Stated rather than read back: until the manifest is parsed the player reports

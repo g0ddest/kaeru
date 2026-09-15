@@ -1,5 +1,6 @@
 package app.kaeru.player
 
+import android.content.Context
 import androidx.core.net.toUri
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
@@ -12,10 +13,13 @@ import androidx.media3.datasource.cache.NoOpCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.test.core.app.ApplicationProvider
-import android.content.Context
 import app.kaeru.data.download.DownloadCacheKeys
+import app.kaeru.di.PlaybackModule
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -27,9 +31,12 @@ import org.robolectric.RobolectricTestRunner
 
 /**
  * The local player reads every byte through the download cache, under the same key the
- * downloader wrote them with. That is the whole of offline playback: without the shared cache
- * an episode on the device would still be fetched from Kodik, and without the shared key
- * factory the player would look for a name nothing was ever written under.
+ * downloader wrote them with — and writes nothing back.
+ *
+ * Both halves matter. Without the shared cache and the shared key factory an episode on the
+ * device would still be fetched from Kodik. With writes left on, every episode watched online
+ * would settle into a cache that never evicts, is never counted against the storage limit and
+ * cannot be cleared from inside the app.
  */
 @UnstableApi
 @RunWith(RobolectricTestRunner::class)
@@ -38,6 +45,7 @@ class MediaItemFactoryCacheTest {
     @get:Rule val folder = TemporaryFolder()
 
     private val headers = StreamHeaders("Chrome/128.0", "https://kodikplayer.com/")
+    private val server = MockWebServer()
     private lateinit var database: StandaloneDatabaseProvider
     private lateinit var cache: SimpleCache
 
@@ -45,33 +53,34 @@ class MediaItemFactoryCacheTest {
     fun setUp() {
         database = StandaloneDatabaseProvider(ApplicationProvider.getApplicationContext<Context>())
         cache = SimpleCache(folder.newFolder("downloads"), NoOpCacheEvictor(), database)
+        server.start()
     }
 
     @After
     fun tearDown() {
+        server.shutdown()
         cache.release()
         database.close()
     }
 
+    /** Exactly what Hilt hands the engine. */
+    private fun factory(): CacheDataSource.Factory = PlaybackModule.playbackDataSource(headers, cache)
+
     @Test
     fun `the player reads through the cache the downloader writes to`() {
-        val factory = MediaItemFactory.dataSourceFactory(headers, cache)
-
-        assertSame(cache, factory.cache)
+        assertSame(cache, factory().cache)
     }
 
     @Test
     fun `the player names a cached segment the way the downloader named it`() {
-        val factory = MediaItemFactory.dataSourceFactory(headers, cache)
-
-        assertSame(DownloadCacheKeys, factory.cacheKeyFactory)
+        assertSame(DownloadCacheKeys, factory().cacheKeyFactory)
     }
 
     @Test
     fun `a manifest is still played as HLS`() {
         val item = MediaItemFactory.mediaItem("https://cdn/100/4/720.m3u8?sign=1", metadata = null)
 
-        assertTrue(MediaItemFactory.mediaSource(item, headers, cache) is HlsMediaSource)
+        assertTrue(MediaItemFactory.mediaSource(item, factory()) is HlsMediaSource)
     }
 
     @Test
@@ -82,15 +91,49 @@ class MediaItemFactoryCacheTest {
         val segment = "segment bytes".toByteArray()
         seed("https://cloud.kodik/100/4/720.m3u8:hls:seg-1.ts?e=1&s=old", segment)
 
-        val read = MediaItemFactory.dataSourceFactory(headers, cache).createDataSource()
-        val played = try {
-            read.open(DataSpec("https://cloud.kodik/100/4/720.m3u8:hls:seg-1.ts?e=2&s=new".toUri()))
-            DataSourceUtil.readToEnd(read)
-        } finally {
-            read.close()
-        }
+        val played = readThrough(factory(), "https://cloud.kodik/100/4/720.m3u8:hls:seg-1.ts?e=2&s=new")
 
         assertArrayEquals(segment, played)
+    }
+
+    @Test
+    fun `nothing that was streamed is written into the download cache`() {
+        // An evening of ordinary watching must leave the cache exactly as it found it. It never
+        // evicts, its size is not counted against the storage limit, and nothing in the app can
+        // clear what playback would put there.
+        val episode = "episode bytes".toByteArray()
+        server.enqueue(MockResponse().setBody(String(episode)))
+        val url = server.url("/100/4/720.m3u8?sign=fresh").toString()
+
+        val played = readThrough(factory(), url)
+
+        assertArrayEquals(episode, played)
+        assertEquals(1, server.requestCount)
+        assertEquals(0L, cache.cacheSpace)
+        assertTrue(cache.keys.isEmpty())
+    }
+
+    @Test
+    fun `a downloaded episode still plays while the player writes nothing`() {
+        // The other half of the same rule: read-only is about writes, not about reads.
+        val segment = "downloaded bytes".toByteArray()
+        seed("https://cloud.kodik/100/4/720.m3u8?e=1", segment)
+        val before = cache.cacheSpace
+
+        val played = readThrough(factory(), "https://cloud.kodik/100/4/720.m3u8?e=2")
+
+        assertArrayEquals(segment, played)
+        assertEquals(before, cache.cacheSpace)
+    }
+
+    private fun readThrough(factory: CacheDataSource.Factory, url: String): ByteArray {
+        val source = factory.createDataSource()
+        return try {
+            source.open(DataSpec(url.toUri()))
+            DataSourceUtil.readToEnd(source)
+        } finally {
+            source.close()
+        }
     }
 
     /** What the download engine leaves behind, written through the very same key factory. */
