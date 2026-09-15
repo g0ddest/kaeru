@@ -7,9 +7,11 @@ import app.kaeru.domain.model.FeedItem
 import app.kaeru.domain.model.FeedKind
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
+import app.kaeru.domain.model.Quality
 import java.time.Instant
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
+import java.util.Locale
 
 /**
  * Every user-facing string the component library builds out of numbers and dates, and the fixed
@@ -29,6 +31,52 @@ import java.time.temporal.ChronoUnit
 
 private const val MINUTE_MS = 60_000L
 private const val HOUR_MS = 3_600_000L
+
+private const val KB = 1024L
+private const val MB = KB * 1024
+private const val GB = MB * 1024
+
+/**
+ * A size on a screen of downloads: `320 МБ`, `1,2 ГБ`, `0 Б`.
+ *
+ * Megabytes are whole, gigabytes carry one decimal, and that split is not a formatting nicety —
+ * it is the size of the decision being made. Nobody frees space by a tenth of a megabyte, so the
+ * digit would be noise; the difference between `4,1 ГБ` and `4,9 ГБ` of a 5 GB limit is a whole
+ * episode, so there the digit is the whole point. The separator is a comma, which is how a decimal
+ * is written in Russian.
+ *
+ * A negative count reads as nothing rather than as a minus sign: the only way to get one is a
+ * subtraction the engine got wrong, and `-2 ГБ занято` would be the app reporting its own bug to
+ * the viewer.
+ */
+fun formatBytes(bytes: Long): String {
+    val size = bytes.coerceAtLeast(0)
+    return when {
+        size < KB -> "$size Б"
+        size < MB -> "${size / KB} КБ"
+        size < GB -> "${size / MB} МБ"
+        else -> "${decimal(size.toDouble() / GB)} ГБ"
+    }
+}
+
+/** `1,2` — one decimal with a comma, as every number in this app that carries one is written. */
+private fun decimal(value: Double): String = String.format(Locale.ROOT, "%.1f", value).replace('.', ',')
+
+/**
+ * What a download-quality chip says: `720p`, or the sentence that stands in for having no opinion.
+ *
+ * «Как при просмотре» rather than «Авто» or «Лучшее»: the setting really is a reference to another
+ * setting, and naming the thing it follows is what lets a viewer predict what they will get.
+ */
+fun downloadQualityLabel(quality: Quality?): String = quality?.let { "${it.height}p" } ?: "Как при просмотре"
+
+/**
+ * What a storage-limit chip says: `5 ГБ`, or «Без лимита».
+ *
+ * Whole gigabytes, without the decimal [formatBytes] gives a usage line. A limit is a round number
+ * the viewer picked from four of them, and `5,0 ГБ` on a chip would suggest it was measured.
+ */
+fun downloadLimitLabel(bytes: Long?): String = bytes?.let { "${it / GB} ГБ" } ?: "Без лимита"
 
 /** `1:02:34` for anything an hour or longer, `12:34` otherwise. */
 fun formatTime(ms: Long): String {
@@ -141,6 +189,13 @@ fun episodeLine(item: FeedItem, now: Instant, zone: ZoneId = ZoneId.systemDefaul
         }
         FeedKind.NEW_EPISODE -> "Вышла ${item.episode} серия"
         FeedKind.NEXT_UP -> "${item.episode} серия"
+        // The row it sits in already says these are on the device, so the card says only which
+        // episode — and how much of it is left, when the viewer stopped part way through one.
+        FeedKind.DOWNLOADED -> {
+            val row = item.entry.progressAt(item.episode)
+            val left = row?.let { remainingLine(it.positionMs, it.durationMs) }
+            if (left == null) "${item.episode} серия" else "${item.episode} серия, $left"
+        }
         FeedKind.UPCOMING -> {
             val day = anime.nextEpisodeAt?.let { relativeDay(it, now, zone) } ?: "скоро"
             "${item.episode} серия $day"

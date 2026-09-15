@@ -15,6 +15,7 @@ import java.time.ZoneId
  * The rows of the home screen, in the order they are read — on the phone and on the television
  * alike, which is why they are not private to either.
  */
+internal const val DOWNLOADED = "Скачано"
 internal const val NEW_EPISODES = "Новые серии"
 internal const val CONTINUE = "Продолжить"
 internal const val NEXT_UP = "Дальше по списку"
@@ -44,7 +45,16 @@ data class HomeCard(
     val subtitle: String? = null,
     /** How far into the badged episode the viewer is, or null when nothing honest can be shown. */
     val progress: Float? = null,
-)
+) {
+    /**
+     * What makes this card unique inside its row.
+     *
+     * The anime's id alone is not it: «Скачано» lists episodes, so two cards of one title sit in
+     * the same row, and a lazy list given the same key twice throws. The badge is what separates
+     * them, and it is already the episode.
+     */
+    val key: String get() = if (badge == null) "$animeId" else "$animeId:$badge"
+}
 
 /** A titled row of cards. A row with nothing in it is never built, so the title always has content. */
 data class HomeRow(val title: String, val items: List<HomeCard>)
@@ -60,6 +70,9 @@ data class FeedRow(val title: String, val items: List<FeedItem>)
  * empty: a heading with a gap under it is a row that says nothing.
  */
 fun feedRows(feed: HomeFeed): List<FeedRow> = listOf(
+    // First, and above «Новые серии» on purpose: with no network it is the only row on this screen
+    // that can be acted on, and with a network it is what the viewer deliberately put there.
+    FeedRow(DOWNLOADED, feed.downloaded),
     FeedRow(NEW_EPISODES, feed.newEpisodes),
     FeedRow(CONTINUE, feed.continueWatching),
     FeedRow(NEXT_UP, feed.nextUp),
@@ -101,6 +114,14 @@ fun homeCard(
         card(item, badge = episodeBadge(item.episode), subtitle = day)
     }
     FeedKind.PLANNED -> card(item, subtitle = item.seasonLength())
+    // Drawn exactly like «Продолжить»: the episode is on the device and may be half watched, so
+    // both the badge and the strip are about the same episode, which is the rule above.
+    FeedKind.DOWNLOADED -> card(
+        item,
+        badge = episodeBadge(item.episode),
+        subtitle = item.remaining(),
+        progress = item.entry.episodeFraction(item.episode, threshold),
+    )
 }
 
 /** The home screen's rows, built from the feed and the clock rather than from the composition. */

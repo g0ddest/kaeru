@@ -40,6 +40,7 @@ import app.kaeru.ui.common.design.HeroBanner
 import app.kaeru.ui.common.design.IconAction
 import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.design.KaeruTopBar
+import app.kaeru.ui.common.design.OfflineStrip
 import app.kaeru.ui.common.design.PosterCard
 import app.kaeru.ui.common.design.RowHeader
 import app.kaeru.ui.common.design.SkeletonHero
@@ -115,33 +116,56 @@ fun HomeScreen(
     // Built here rather than inside a list content lambda: it allocates a card per title and
     // formats a line per card, and that lambda re-runs on every recomposition of the screen.
     val catalogue = remember(state.discover) { state.discover?.let(::discoverRows) }
+    // Whether the content still has to leave room for the floating bar. Offline it does not: the
+    // strip above already reserved that height, and a second reservation would be a hole.
+    val barSpace = !state.offline
     // The first sync says what it is doing in words and an amber strip. Material pins its spinner
     // open for the whole of any refresh, gesture or not, so on a first launch the screen would say
     // the same thing twice in two vocabularies. The gesture stays armed; only its indicator waits.
     val spinning = state.isRefreshing && content != HomeContent.FirstSync
     Box(Modifier.fillMaxSize()) {
-        PullToRefreshBox(
-            isRefreshing = spinning,
-            onRefresh = onRefresh,
-            state = pull,
-            indicator = {
-                PullToRefreshDefaults.Indicator(
-                    state = pull,
-                    isRefreshing = spinning,
-                    modifier = Modifier.align(Alignment.TopCenter)
-                        .windowInsetsPadding(WindowInsets.statusBars),
-                    containerColor = KaeruElevated,
-                    color = KaeruAccent,
-                )
-            },
-        ) {
-            when (content) {
-                HomeContent.Loading -> HomeLoading()
-                HomeContent.FirstSync -> HomeFirstSync()
-                is HomeContent.Error -> HomeError(content.message, onRefresh)
-                HomeContent.Empty -> HomeEmpty(onSearch, catalogue, onAnime, onSeason, onRetrySeason)
-                HomeContent.Feed ->
-                    FeedList(state, catalogue, now, listState, onPlay, onAnime, onSeason, onRetrySeason)
+        Column(Modifier.fillMaxSize()) {
+            // With no network the strip takes real space under the bar rather than floating over
+            // the hero. It is one line the viewer has to be able to read, and the bar is the one
+            // thing on this screen that is allowed to sit on top of artwork.
+            if (state.offline) {
+                Spacer(Modifier.windowInsetsPadding(WindowInsets.statusBars).height(BarHeight))
+                OfflineStrip()
+            }
+            PullToRefreshBox(
+                isRefreshing = spinning,
+                onRefresh = onRefresh,
+                state = pull,
+                indicator = {
+                    PullToRefreshDefaults.Indicator(
+                        state = pull,
+                        isRefreshing = spinning,
+                        // The inset belongs to whatever is at the top of the window. Offline the
+                        // strip is, and the spinner is already below it.
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .then(
+                                if (barSpace) {
+                                    Modifier.windowInsetsPadding(WindowInsets.statusBars)
+                                } else {
+                                    Modifier
+                                },
+                            ),
+                        containerColor = KaeruElevated,
+                        color = KaeruAccent,
+                    )
+                },
+            ) {
+                when (content) {
+                    HomeContent.Loading -> HomeLoading()
+                    HomeContent.FirstSync -> HomeFirstSync(barSpace)
+                    is HomeContent.Error -> HomeError(content.message, onRefresh)
+                    HomeContent.Empty ->
+                        HomeEmpty(onSearch, catalogue, onAnime, onSeason, onRetrySeason, barSpace)
+                    HomeContent.Feed -> FeedList(
+                        state, catalogue, now, listState, onPlay, onAnime, onSeason, onRetrySeason, barSpace,
+                    )
+                }
             }
         }
         HomeBar(listState, onSettings)
@@ -182,6 +206,7 @@ private fun FeedList(
     onAnime: (Int) -> Unit,
     onSeason: (Season) -> Unit,
     onRetrySeason: () -> Unit,
+    barSpace: Boolean,
 ) {
     // `now` is remembered on the same feed, so keying on it as well would buy nothing.
     val rows = remember(state.feed, state.watchedThreshold) {
@@ -195,7 +220,7 @@ private fun FeedList(
         val top = state.feed.top
         if (top != null) {
             item(key = "hero", contentType = HERO) { Hero(top, state.watchedThreshold, now, onPlay, onAnime) }
-        } else {
+        } else if (barSpace) {
             // Nothing for the floating bar to float over, so the first row starts below it.
             item(key = "bar", contentType = BAR_SPACE) {
                 Spacer(Modifier.windowInsetsPadding(WindowInsets.statusBars).height(BarHeight))
@@ -246,7 +271,9 @@ private fun FeedRow(row: HomeRow, onAnime: (Int) -> Unit) {
             contentPadding = PaddingValues(horizontal = KaeruTokens.GutterPhone),
             horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space3),
         ) {
-            items(row.items, key = { it.animeId }) { card ->
+            // Keyed on the card rather than on the title: «Скачано» can hold two episodes of one
+            // anime, and two items under the same key is a crash.
+            items(row.items, key = { it.key }) { card ->
                 PosterCard(
                     posterUrl = card.posterUrl,
                     title = card.title,
@@ -285,11 +312,15 @@ private fun HomeLoading() = Column(Modifier.fillMaxSize().clipToBounds()) {
  * first line read, and when the list lands it is the hero that takes its place.
  */
 @Composable
-private fun HomeFirstSync() = Column(Modifier.fillMaxSize().clipToBounds()) {
+private fun HomeFirstSync(barSpace: Boolean) = Column(Modifier.fillMaxSize().clipToBounds()) {
     SyncingNotice(
         Modifier
-            .windowInsetsPadding(WindowInsets.statusBars)
-            .padding(top = BarHeight, start = KaeruTokens.GutterPhone, end = KaeruTokens.GutterPhone)
+            .then(if (barSpace) Modifier.windowInsetsPadding(WindowInsets.statusBars) else Modifier)
+            .padding(
+                top = if (barSpace) BarHeight else KaeruTokens.Space4,
+                start = KaeruTokens.GutterPhone,
+                end = KaeruTokens.GutterPhone,
+            )
             .padding(bottom = KaeruTokens.Space6),
     )
     SkeletonHero()
@@ -330,6 +361,7 @@ private fun HomeEmpty(
     onAnime: (Int) -> Unit,
     onSeason: (Season) -> Unit,
     onRetrySeason: () -> Unit,
+    barSpace: Boolean,
 ) = LazyColumn(
     Modifier.fillMaxSize(),
     contentPadding = PaddingValues(bottom = KaeruTokens.Space8),
@@ -338,11 +370,17 @@ private fun HomeEmpty(
         EmptyState(
             title = EMPTY_TITLE,
             text = EMPTY_TEXT,
-            // Clear of the floating bar, which has no hero to float over on this screen.
+            // Clear of the floating bar, which has no hero to float over on this screen — unless
+            // the offline strip is already holding that space open.
             modifier = Modifier
                 .fillMaxWidth()
-                .windowInsetsPadding(WindowInsets.statusBars)
-                .padding(top = BarHeight),
+                .then(
+                    if (barSpace) {
+                        Modifier.windowInsetsPadding(WindowInsets.statusBars).padding(top = BarHeight)
+                    } else {
+                        Modifier
+                    },
+                ),
             actionLabel = FIND_ANIME,
             onAction = onSearch,
         )

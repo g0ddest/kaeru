@@ -1,9 +1,11 @@
 package app.kaeru.ui.common.home
 
+import app.kaeru.domain.connectivity.FakeConnectivity
 import app.kaeru.domain.discover.Season
 import app.kaeru.domain.discover.SeasonKind
 import app.kaeru.domain.error.HttpError
 import app.kaeru.domain.error.NetworkUnavailable
+import app.kaeru.domain.download.FakeDownloadRepository
 import app.kaeru.domain.feed.HomeFeedBuilder
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
@@ -137,7 +139,7 @@ class HomeViewModelTest {
         prefs: FakePlaybackPreferences = FakePlaybackPreferences(),
     ) = HomeViewModel(
         library, discover, HomeFeedBuilder(), Clock.fixed(now, ZoneOffset.UTC), prefs,
-        prefetching(prefs), main.dispatcher,
+        prefetching(prefs), FakeDownloadRepository(), FakeConnectivity(), main.dispatcher,
     )
 
     /** The phone's home screen asks for the catalogue; nothing else does. */

@@ -2,7 +2,10 @@ package app.kaeru.ui.common.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.kaeru.domain.connectivity.Connectivity
 import app.kaeru.domain.discover.Season
+import app.kaeru.domain.download.DownloadRepository
+import app.kaeru.domain.download.EpisodeDownload
 import app.kaeru.domain.feed.HomeFeedBuilder
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.HomeFeed
@@ -19,6 +22,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -28,6 +32,9 @@ import java.time.ZoneId
 import javax.inject.Inject
 
 private data class RefreshState(val active: Boolean = false, val error: String? = null)
+
+/** What the device itself can answer with: whether there is a network, and what is downloaded. */
+private data class DeviceState(val online: Boolean, val downloads: List<EpisodeDownload>)
 
 /**
  * The discovery rows as the view model keeps them.
@@ -64,6 +71,8 @@ class HomeViewModel @Inject constructor(
     private val clock: Clock,
     prefs: PlaybackPreferences,
     private val prefetchStream: PrefetchTopCardStream,
+    downloads: DownloadRepository,
+    private val connectivity: Connectivity,
     @param:IoDispatcher private val io: CoroutineDispatcher,
 ) : ViewModel() {
     private val refreshState = MutableStateFlow(RefreshState())
@@ -81,19 +90,34 @@ class HomeViewModel @Inject constructor(
     private var prepared: Pair<Int, Int>? = null
     private var prefetchJob: Job? = null
 
+    /**
+     * The network and what is on the device, as one value.
+     *
+     * Together rather than as two more arms of the combine below, because they answer one question
+     * between them — what can this screen still offer — and because `combine` takes five flows
+     * before it starts taking an array of them.
+     */
+    private val device = combine(connectivity.online, downloads.observeAll(), ::DeviceState)
+
     val uiState: StateFlow<HomeUiState> = combine(
         repository.observeLibrary(),
         refreshState,
         prefs.watchedThreshold,
         discoverState,
-    ) { entries, refresh, threshold, discovered ->
+        device,
+    ) { entries, refresh, threshold, discovered, device ->
         HomeUiState(
-            feed = feedBuilder.build(entries, clock.instant(), threshold),
+            feed = feedBuilder.build(entries, clock.instant(), threshold, device.downloads),
             isLoading = false,
             isRefreshing = refresh.active,
             errorMessage = refresh.error,
             watchedThreshold = threshold,
-            discover = discovered.toUiState(),
+            // The catalogue is the one part of this screen that cannot be answered from the
+            // device, so with no network it goes away rather than sitting there as four rows of
+            // skeletons that will never fill in. The seasons already read are kept in
+            // `discoverState`, so the rows come straight back when the network does.
+            discover = discovered.toUiState().takeIf { device.online },
+            offline = !device.online,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -179,7 +203,12 @@ class HomeViewModel @Inject constructor(
         refreshJob = viewModelScope.launch {
             refreshState.value = RefreshState(active = true)
             val result = repository.refresh()
-            refreshState.value = RefreshState(active = false, error = result.errorMessageOrNull())
+            // «Нет сети» is already on screen in one line, and a red bar under it saying the
+            // same thing in more words is the same news twice. With a network, a failure is still
+            // worth reporting: it is something other than the network, and the viewer cannot see
+            // it anywhere else.
+            val message = result.errorMessageOrNull()?.takeIf { connectivity.online.first() }
+            refreshState.value = RefreshState(active = false, error = message)
         }
     }
 
