@@ -6,6 +6,7 @@ import androidx.media3.database.DatabaseProvider
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheKeyFactory
 import androidx.media3.datasource.cache.NoOpCacheEvictor
@@ -60,7 +61,7 @@ object DownloadCache {
      * [upstream]. The engine and the player each build one of these, and they have to agree on
      * the key factory or the player would look for a name nothing was written under.
      */
-    fun cacheFactory(cache: SimpleCache, upstream: DataSource.Factory): CacheDataSource.Factory =
+    fun cacheFactory(cache: Cache, upstream: DataSource.Factory): CacheDataSource.Factory =
         CacheDataSource.Factory()
             .setCache(cache)
             .setUpstreamDataSourceFactory(upstream)
