@@ -9,7 +9,14 @@ import androidx.media3.exoplayer.offline.DefaultDownloadIndex
 import androidx.media3.exoplayer.offline.DefaultDownloaderFactory
 import androidx.media3.exoplayer.offline.DownloadManager
 import app.kaeru.data.download.DownloadCache
+import app.kaeru.data.download.DownloadCommands
+import app.kaeru.data.download.DownloadsSource
+import app.kaeru.data.download.Media3DownloadCommands
+import app.kaeru.data.download.Media3DownloadRepository
+import app.kaeru.data.download.Media3DownloadsSource
+import app.kaeru.domain.download.DownloadRepository
 import app.kaeru.player.StreamHeaders
+import dagger.Binds
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -70,4 +77,24 @@ object DownloadModule {
 
     private const val PARALLEL_SEGMENTS = 2
     private const val MAX_PARALLEL_DOWNLOADS = 2
+}
+
+/**
+ * The engine behind its two seams, and the repository behind its domain interface.
+ *
+ * Unscoped bindings on purpose: each implementation is already a `@Singleton`, so these hand out
+ * the one instance rather than making a second.
+ */
+@UnstableApi
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class DownloadBindings {
+    @Binds
+    abstract fun downloadCommands(impl: Media3DownloadCommands): DownloadCommands
+
+    @Binds
+    abstract fun downloadsSource(impl: Media3DownloadsSource): DownloadsSource
+
+    @Binds
+    abstract fun downloadRepository(impl: Media3DownloadRepository): DownloadRepository
 }
