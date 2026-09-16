@@ -1,16 +1,28 @@
 {
-  "name": "relay",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "name": "kaeru-relay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Worker + Durable Object relay for Kaeru «Смотреть вместе»",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "wrangler dev",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
   "devDependencies": {
-    "wrangler": "^4.132.0"
+    "@cloudflare/vitest-pool-workers": "0.22.0",
+    "@cloudflare/workers-types": "5.20260915.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11",
+    "wrangler": "4.132.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "workerd@1.20260815.1": true,
+    "workerd@1.20260915.1": true
   }
 }
