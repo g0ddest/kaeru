@@ -87,6 +87,7 @@ fun PlayerTopBar(
     onWatchTogether: (() -> Unit)? = null,
     togetherPeer: String? = null,
     onLeaveTogether: (() -> Unit)? = null,
+    canInvite: Boolean = true,
 ) {
     Row(modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         DiscButton(Icons.AutoMirrored.Filled.ArrowBack, "Назад", onBack)
@@ -111,8 +112,8 @@ fun PlayerTopBar(
                 )
             }
         }
-        if (onWatchTogether != null) {
-            TogetherButton(togetherPeer, onWatchTogether, onLeaveTogether)
+        if (onWatchTogether != null && (togetherPeer != null || canInvite)) {
+            TogetherButton(togetherPeer, onWatchTogether, onLeaveTogether, canInvite)
             Spacer(Modifier.width(4.dp))
         }
         if (onDownload != null && onRemoveDownload != null) {
@@ -369,9 +370,12 @@ private fun DownloadButton(download: EpisodeDownload?, onDownload: () -> Unit, o
  * running, which is whether to be in it.
  */
 @Composable
-private fun TogetherButton(peer: String?, onShare: () -> Unit, onLeave: (() -> Unit)?) {
+private fun TogetherButton(peer: String?, onShare: () -> Unit, onLeave: (() -> Unit)?, canInvite: Boolean) {
     if (peer == null) {
-        DiscButton(Icons.Default.Groups, TogetherCopy.WATCH_TOGETHER, onShare)
+        // Nothing to start while the picture is on a television. A session already running is a
+        // different matter: this chip is the only way out of one, and hiding it would strand the
+        // viewer in a shared viewing with no exit.
+        if (canInvite) DiscButton(Icons.Default.Groups, TogetherCopy.WATCH_TOGETHER, onShare)
         return
     }
     var menu by remember { mutableStateOf(false) }

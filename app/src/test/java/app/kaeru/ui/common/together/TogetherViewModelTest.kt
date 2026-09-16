@@ -1,5 +1,6 @@
 package app.kaeru.ui.common.together
 
+import app.kaeru.data.together.PendingWatchLink
 import app.kaeru.domain.model.Account
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
@@ -95,8 +96,25 @@ class TogetherViewModelTest {
     private val library = FakeLibraryRepository()
     private val clock = Clock.fixed(Instant.parse("2026-09-16T19:42:00Z"), ZoneOffset.UTC)
 
+    private val parked = PendingWatchLink()
+
     private fun viewModel(nickname: String? = "vitaliy") =
-        TogetherViewModel(session, FakeAccounts(nickname), library, clock)
+        TogetherViewModel(session, FakeAccounts(nickname), library, parked, clock)
+
+    private fun hello(name: String, animeId: Int = 42, episode: Int = 3) = PeerHello(
+        name = name,
+        animeId = animeId,
+        episode = episode,
+        translationId = 1,
+        positionMs = 10_000,
+        playing = true,
+    )
+
+    private fun entry(id: Int, title: String) = LibraryEntry(
+        anime = anime(id, title),
+        rate = UserRate(0, id, ListStatus.WATCHING, 1, Instant.EPOCH),
+        watch = null,
+    )
 
     private fun anime(id: Int, title: String) = Anime(
         id = id,
@@ -423,12 +441,40 @@ class TogetherViewModelTest {
     }
 
     @Test
-    fun `a link that is not one of ours is refused on the spot`() = runTest {
+    fun `a link that is not one of ours is refused on the spot, with nothing to retry`() = runTest {
         val vm = viewModel()
         vm.open("https://example.com/w/nope")
         runCurrent()
         assertTrue(session.joins.isEmpty())
-        assertEquals("Ссылка не подошла", vm.uiState.value.join?.error)
+        assertEquals("Ссылка не подходит", vm.uiState.value.join?.error)
+        assertFalse("there is no room behind a link that is not one", vm.uiState.value.join!!.retryable)
+    }
+
+    @Test
+    fun `an invitation that arrives signed out waits for the sign-in and then opens`() = runTest {
+        val vm = viewModel()
+        vm.offer(link.toHttps())
+        runCurrent()
+        // Nothing has been joined and nothing is on screen: there is no shell to put it on yet.
+        assertTrue(session.joins.isEmpty())
+        assertNull(vm.uiState.value.join)
+        assertEquals(link.toHttps(), vm.invitationWaiting.value)
+
+        vm.openPending()
+        runCurrent()
+        assertEquals(link, session.joins.single().first)
+        assertTrue(vm.uiState.value.join!!.loading)
+        assertNull("taken once and only once", vm.invitationWaiting.value)
+    }
+
+    @Test
+    fun `a parked invitation is opened by whichever shell asks first`() = runTest {
+        val vm = viewModel()
+        vm.offer(link.toHttps())
+        vm.openPending()
+        vm.openPending()
+        runCurrent()
+        assertEquals(1, session.joins.size)
     }
 
     @Test
@@ -504,14 +550,155 @@ class TogetherViewModelTest {
     }
 
     @Test
-    fun `saying no to an invitation closes the room behind it`() = runTest {
+    fun `saying no to an invitation abandons the attempt and closes the room behind it`() = runTest {
         val vm = viewModel()
         vm.open(link.toHttps())
         runCurrent()
         vm.dismissJoin()
         runCurrent()
+        assertEquals(1, session.alone)
         assertEquals(1, session.left)
         assertNull(vm.uiState.value.join)
+        assertNull(vm.uiState.value.wait)
+    }
+
+    @Test
+    fun `the clock on joining runs from the knock to the session, not to the hello`() = runTest {
+        val vm = viewModel()
+        vm.open(link.toHttps())
+        runCurrent()
+        advanceTimeBy(20_000)
+        // The other phone answers. Everything that can still stall is ahead of this moment.
+        session.sessionState.value = SessionState.Joining(link, hello("Вася"))
+        runCurrent()
+        assertNull(vm.uiState.value.join?.error)
+        advanceTimeBy(11_000)
+        assertEquals("Не удалось подключиться", vm.uiState.value.wait?.text)
+        assertEquals(WaitExit.WATCH_ALONE, vm.uiState.value.wait?.exit)
+        assertEquals("Не удалось подключиться", vm.uiState.value.join?.error)
+    }
+
+    @Test
+    fun `reaching the session stops that clock`() = runTest {
+        val vm = viewModel()
+        vm.open(link.toHttps())
+        runCurrent()
+        advanceTimeBy(20_000)
+        session.sessionState.value = SessionState.Live("Вася", offsetMs = 0, driftMs = 0)
+        runCurrent()
+        advanceTimeBy(30_000)
+        assertNull(vm.uiState.value.wait)
+        assertEquals(TogetherPhase.LIVE, vm.uiState.value.phase)
+    }
+
+    // --- catching up ---------------------------------------------------------------------------
+
+    @Test
+    fun `a friend who is behind is a wait with a way out, not a remark that scrolls past`() = runTest {
+        val vm = viewModel()
+        live()
+        session.bus.emit(TogetherEvent.Notice(NoticeKind.CATCHING_UP, "Вася"))
+        runCurrent()
+        assertEquals("Вася догоняет…", vm.uiState.value.wait?.text)
+        assertEquals(WaitExit.KEEP_WATCHING, vm.uiState.value.wait?.exit)
+        assertNull("the corner is for people talking, not for this", vm.uiState.value.notice)
+        // No clock: it ends when the gap does, and a timer would take it away while he is behind.
+        advanceTimeBy(60_000)
+        assertEquals("Вася догоняет…", vm.uiState.value.wait?.text)
+    }
+
+    @Test
+    fun `it goes when the gap closes`() = runTest {
+        val vm = viewModel()
+        live()
+        session.bus.emit(TogetherEvent.Notice(NoticeKind.CATCHING_UP, "Вася"))
+        runCurrent()
+        session.sessionState.value = SessionState.Live("Вася", offsetMs = 0, driftMs = 4_000)
+        runCurrent()
+        assertNotNull("four seconds apart is still behind", vm.uiState.value.wait)
+        session.sessionState.value = SessionState.Live("Вася", offsetMs = 0, driftMs = 400)
+        runCurrent()
+        assertNull(vm.uiState.value.wait)
+    }
+
+    @Test
+    fun `and it goes when the friend does anything at all`() = runTest {
+        val vm = viewModel()
+        live()
+        session.bus.emit(TogetherEvent.Notice(NoticeKind.CATCHING_UP, "Вася"))
+        runCurrent()
+        session.bus.emit(TogetherEvent.Notice(NoticeKind.PLAYED, "Вася"))
+        runCurrent()
+        assertNull(vm.uiState.value.wait)
+        assertEquals("Вася включил(а)", vm.uiState.value.notice?.text)
+    }
+
+    @Test
+    fun `pressing «смотреть дальше» on it only dismisses the line`() = runTest {
+        val vm = viewModel()
+        live()
+        session.bus.emit(TogetherEvent.Notice(NoticeKind.CATCHING_UP, "Вася"))
+        runCurrent()
+        vm.leaveWait()
+        runCurrent()
+        assertNull(vm.uiState.value.wait)
+        assertEquals(TogetherPhase.LIVE, vm.uiState.value.phase)
+        assertEquals(0, session.left)
+        session.sessionState.value = SessionState.Live("Вася", offsetMs = 0, driftMs = 9_000)
+        runCurrent()
+        assertNull("dismissed means dismissed, not until the next state", vm.uiState.value.wait)
+    }
+
+    // --- one session at a time ------------------------------------------------------------------
+
+    @Test
+    fun `a new session does not start with the last one's conversation in the corner`() = runTest {
+        val vm = viewModel()
+        live()
+        session.bus.emit(TogetherEvent.ChatItem(1, fromPeer = true, text = "это тот самый кадр", at = 0))
+        runCurrent()
+        session.sessionState.value = SessionState.Lost(LostReason.CONNECTION)
+        runCurrent()
+        assertEquals(1, vm.uiState.value.history.size)
+        session.sessionState.value = SessionState.Hosting(link, waiting = true)
+        runCurrent()
+        assertTrue(vm.uiState.value.stack.isEmpty())
+        assertTrue(vm.uiState.value.history.isEmpty())
+    }
+
+    @Test
+    fun `a session that is merely getting going keeps what has been said in it`() = runTest {
+        val vm = viewModel()
+        session.sessionState.value = SessionState.Hosting(link, waiting = true)
+        runCurrent()
+        session.sessionState.value = SessionState.Live("Вася", 0, 0)
+        runCurrent()
+        session.bus.emit(TogetherEvent.ChatItem(1, fromPeer = true, text = "ага", at = 0))
+        runCurrent()
+        session.sessionState.value = SessionState.Hosting(link, waiting = false)
+        runCurrent()
+        assertEquals(1, vm.uiState.value.history.size)
+    }
+
+    @Test
+    fun `a second invitation describes the show it is actually about`() = runTest {
+        val vm = viewModel()
+        library.put(entry(42, "Проводы в последний путь"))
+        library.put(entry(77, "Другой тайтл"))
+        vm.open(link.toHttps())
+        runCurrent()
+        session.sessionState.value = SessionState.Joining(link, hello("Вася", animeId = 42))
+        runCurrent()
+        assertEquals("https://poster/42.jpg", vm.uiState.value.join?.posterUrl)
+
+        session.sessionState.value = SessionState.Idle
+        runCurrent()
+        vm.open(link.toHttps())
+        runCurrent()
+        session.sessionState.value = SessionState.Joining(link, hello("Петя", animeId = 77))
+        runCurrent()
+        assertEquals("https://poster/77.jpg", vm.uiState.value.join?.posterUrl)
+        assertEquals("Петя смотрит «Другой тайтл», 3 серия, 0:10", vm.uiState.value.join?.line)
     }
 
     /**

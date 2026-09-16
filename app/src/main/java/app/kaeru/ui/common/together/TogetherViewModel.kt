@@ -2,8 +2,10 @@ package app.kaeru.ui.common.together
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.kaeru.data.together.PendingWatchLink
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.repository.AccountRepository
+import app.kaeru.domain.together.NoticeKind
 import app.kaeru.domain.together.PeerHello
 import app.kaeru.domain.together.ReactionKind
 import app.kaeru.domain.together.RoomLink
@@ -20,6 +22,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Clock
+import kotlin.math.abs
 import javax.inject.Inject
 
 /** How long a line stays in the corner before it fades. Long enough to look away from the video. */
@@ -38,6 +41,14 @@ private const val REACTION_MAX = 3
 
 /** Nothing waits longer than this for anybody. */
 private const val WAIT_TIMEOUT_MS = 30_000L
+
+/**
+ * How close the two have to get before «догоняет» stops being true.
+ *
+ * The same two seconds the sync policy uses as the line between «pull with playback speed» and
+ * «seek»: under it the gap is being closed silently and there is nothing left to tell anybody.
+ */
+private const val CAUGHT_UP_MS = 2_000L
 
 /**
  * A shared viewing as the two screens that show one need it.
@@ -62,6 +73,7 @@ class TogetherViewModel @Inject constructor(
     private val session: TogetherSessionApi,
     private val accounts: AccountRepository,
     private val library: LibraryRepository,
+    private val pending: PendingWatchLink,
     private val clock: Clock,
 ) : ViewModel() {
 
@@ -72,7 +84,7 @@ class TogetherViewModel @Inject constructor(
     private var localId = 0L
 
     /** The room the join screen is about, kept so «Повторить» has something to knock on again. */
-    private var pending: RoomLink? = null
+    private var room: RoomLink? = null
 
     /** Whether things in the corner are allowed to disappear on a timer. TalkBack says no. */
     private var autoHide = true
@@ -81,6 +93,13 @@ class TogetherViewModel @Inject constructor(
     private var waitJob: Job? = null
     private var timedWait: TimedWait? = null
     private var animeJob: Job? = null
+
+    /** Which show the join screen is currently describing, so a second invitation redescribes. */
+    private var describedAnime: Int? = null
+
+    /** Whether «<имя> догоняет…» is up. It has no clock: it ends when the gap does. */
+    private var catchingUp = false
+
     private val expiryJobs = mutableMapOf<Long, Job>()
 
     /** The two waits this screen times itself rather than trusting somebody else to end. */
@@ -108,6 +127,24 @@ class TogetherViewModel @Inject constructor(
     fun shareShown() = _uiState.update { it.copy(share = null) }
 
     /**
+     * An invitation has arrived, but not necessarily anywhere it can be shown.
+     *
+     * Parked rather than opened, because the flow the landing page prescribes — install the APK,
+     * open the link again — always arrives at a signed-out app, and a room joined behind a login
+     * screen is a room nobody is in with a clock running against nobody.
+     */
+    fun offer(uri: String) = pending.offer(uri)
+
+    /** Whether something is waiting, for a login screen that owes the person an explanation. */
+    val invitationWaiting: StateFlow<String?> get() = pending.link
+
+    /** Takes whatever was parked, once there is a signed-in shell to put it on. Once only. */
+    fun openPending() {
+        val uri = pending.take() ?: return
+        open(uri)
+    }
+
+    /**
      * Knocks on the room a link names, which is what makes the other phone say what it is watching.
      *
      * The knock happens before the viewer agrees to anything, because the screen they are deciding
@@ -117,11 +154,13 @@ class TogetherViewModel @Inject constructor(
     fun open(uri: String) {
         val link = RoomLink.parse(uri).getOrNull()
         if (link == null) {
-            pending = null
-            _uiState.update { it.copy(join = JoinUiState(loading = false, error = TogetherCopy.BAD_LINK)) }
+            room = null
+            _uiState.update {
+                it.copy(join = JoinUiState(loading = false, error = TogetherCopy.BAD_LINK, retryable = false))
+            }
             return
         }
-        pending = link
+        room = link
         _uiState.update { it.copy(join = JoinUiState(loading = true)) }
         viewModelScope.launch { session.join(link, displayName()) }
     }
@@ -134,7 +173,7 @@ class TogetherViewModel @Inject constructor(
      * left alone, and one that timed out or dropped is knocked on again rather than assumed.
      */
     fun join() {
-        val link = pending ?: return
+        val link = room ?: return
         val current = session.state.value
         if (current is SessionState.Joining || current is SessionState.Live) return
         _uiState.update { it.copy(join = (it.join ?: JoinUiState()).copy(loading = true, error = null)) }
@@ -150,10 +189,19 @@ class TogetherViewModel @Inject constructor(
      */
     fun joinScreenDone() = _uiState.update { it.copy(join = null) }
 
-    /** «Не сейчас»: the room is let go of, not left open behind a closed screen. */
+    /**
+     * «Не сейчас», and the system back button, which means the same thing.
+     *
+     * Both halves are needed. [TogetherSessionApi.watchAlone] is what abandons a join that has not
+     * become a session yet, and [TogetherSessionApi.leave] is what closes the room behind it — a
+     * guest who said no and left the connection open is a host still being told somebody is on
+     * their way.
+     */
     fun dismissJoin() {
-        pending = null
-        _uiState.update { it.copy(join = null) }
+        room = null
+        armWait(null)
+        session.watchAlone()
+        _uiState.update { it.copy(join = null, wait = null) }
         viewModelScope.launch { session.leave() }
     }
 
@@ -166,6 +214,7 @@ class TogetherViewModel @Inject constructor(
      */
     fun leaveWait() {
         armWait(null)
+        catchingUp = false
         val phase = _uiState.value.phase
         if (phase == TogetherPhase.LOST || phase == TogetherPhase.ENDED) {
             leave()
@@ -250,6 +299,7 @@ class TogetherViewModel @Inject constructor(
                 _uiState.update { it.copy(phase = TogetherPhase.IDLE, peerName = null, wait = null) }
             }
             is SessionState.Hosting -> {
+                if (startingFresh()) forget()
                 armWait(if (state.waiting) TimedWait.HOSTING else null)
                 _uiState.update {
                     it.copy(
@@ -259,7 +309,13 @@ class TogetherViewModel @Inject constructor(
                 }
             }
             is SessionState.Joining -> {
-                armWait(if (state.hello == null) TimedWait.JOINING else null)
+                if (startingFresh()) forget()
+                // One clock for the whole of joining, from the knock until `Live`. The hello
+                // arriving is the other phone answering, not the session starting: everything
+                // that can still stall — resolving this viewer's own stream, the first frames,
+                // the first sync — happens after it, and a wait that loses its timeout at the
+                // moment it becomes permanent is the failure this feature is built against.
+                armWait(TimedWait.JOINING)
                 state.hello?.let(::describe)
                 _uiState.update {
                     it.copy(
@@ -272,8 +328,15 @@ class TogetherViewModel @Inject constructor(
             }
             is SessionState.Live -> {
                 armWait(null)
+                // «Догоняет» ends when the gap does, which is the only honest end for it: a clock
+                // would take the line away while the friend was still behind.
+                if (catchingUp && abs(state.driftMs) < CAUGHT_UP_MS) catchingUp = false
                 _uiState.update {
-                    it.copy(phase = TogetherPhase.LIVE, peerName = state.peerName, wait = null)
+                    it.copy(
+                        phase = TogetherPhase.LIVE,
+                        peerName = state.peerName,
+                        wait = it.wait.takeIf { _ -> catchingUp },
+                    )
                 }
             }
             is SessionState.Lost -> stop(TogetherPhase.LOST, TogetherCopy.lost(state.reason))
@@ -294,7 +357,22 @@ class TogetherViewModel @Inject constructor(
 
     private fun applyEvent(event: TogetherEvent) {
         when (event) {
-            is TogetherEvent.Notice -> notice(TogetherCopy.notice(event))
+            // «Догоняет» is a wait, not a remark: the viewer's own video is fine and the friend is
+            // behind, so what the screen owes them is the state and a way to stop caring about it.
+            // Everything else the other phone does is a remark, and a later one is proof that the
+            // catching up finished.
+            is TogetherEvent.Notice -> if (event.kind == NoticeKind.CATCHING_UP) {
+                catchingUp = true
+                _uiState.update {
+                    it.copy(wait = WaitLine(TogetherCopy.notice(event), WaitExit.KEEP_WATCHING))
+                }
+            } else {
+                if (catchingUp) {
+                    catchingUp = false
+                    _uiState.update { it.copy(wait = null) }
+                }
+                notice(TogetherCopy.notice(event))
+            }
             is TogetherEvent.ChatItem -> if (event.fromPeer) {
                 add(ConversationItem(event.id, mine = false, author = peer(), text = event.text, at = event.at))
             }
@@ -386,9 +464,21 @@ class TogetherViewModel @Inject constructor(
         }
     }
 
-    /** What the other phone is watching, named and illustrated out of this device's own catalogue. */
+    /** Whether the next session is a new one, so the last one's conversation goes with it. */
+    private fun startingFresh(): Boolean = _uiState.value.phase in
+        setOf(TogetherPhase.IDLE, TogetherPhase.LOST, TogetherPhase.ENDED)
+
+    /**
+     * What the other phone is watching, named and illustrated out of this device's own catalogue.
+     *
+     * Keyed on the show rather than on whether a job exists: the collection never ends, so a
+     * second invitation — a different friend, a different show — would otherwise find the old job
+     * still running and leave the new screen on skeletons for good.
+     */
     private fun describe(hello: PeerHello) {
-        if (animeJob != null) return
+        if (describedAnime == hello.animeId) return
+        describedAnime = hello.animeId
+        animeJob?.cancel()
         animeJob = viewModelScope.launch {
             launch { library.refreshAnime(hello.animeId) }
             library.observeAnimeDetails(hello.animeId).collect { anime ->
@@ -415,6 +505,8 @@ class TogetherViewModel @Inject constructor(
         noticeJob?.cancel()
         animeJob?.cancel()
         animeJob = null
+        describedAnime = null
+        catchingUp = false
         _uiState.update {
             it.copy(
                 stack = emptyList(),

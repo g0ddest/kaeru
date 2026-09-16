@@ -87,6 +87,13 @@ data class JoinUiState(
     /** «Вася смотрит «…», 7 серия, 12:04», once there is something to say. */
     val line: String? = null,
     val error: String? = null,
+    /**
+     * Whether [error] is worth another attempt.
+     *
+     * False for a link that was never a room: there is nothing to knock on again, and a
+     * «Повторить» that cannot do anything is worse than no button at all.
+     */
+    val retryable: Boolean = true,
 )
 
 /**

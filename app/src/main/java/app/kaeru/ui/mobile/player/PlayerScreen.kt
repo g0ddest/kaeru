@@ -303,11 +303,13 @@ fun PlayerScreen(
                                 // episode would be kept on a phone that is not playing it.
                                 onDownload = onDownload.takeIf { !state.isCasting },
                                 onRemoveDownload = onRemoveDownload.takeIf { !state.isCasting },
-                                // Nothing to share while the picture is on a television: the two
-                                // phones would be watching one room from opposite ends of it.
-                                onWatchTogether = together.onShare.takeIf { together.enabled && !state.isCasting },
+                                onWatchTogether = together.onShare.takeIf { together.enabled },
                                 togetherPeer = TogetherCopy.sessionChip(together.state.phase, together.state.peerName),
                                 onLeaveTogether = together.onLeave,
+                                // Nothing to start while the picture is on a television: the two
+                                // phones would be watching one room from opposite ends of it. A
+                                // session already running keeps its chip, which is its only exit.
+                                canInvite = !state.isCasting,
                             )
                             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                                 if (!failed) {

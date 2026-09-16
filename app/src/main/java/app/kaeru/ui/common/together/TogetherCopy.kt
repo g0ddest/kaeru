@@ -44,8 +44,11 @@ object TogetherCopy {
     const val JOIN = "Присоединиться"
     const val NOT_NOW = "Не сейчас"
     const val MIC_NOTE = "Микрофон включается только пока держите кнопку."
-    const val BAD_LINK = "Ссылка не подошла"
+    const val BAD_LINK = "Ссылка не подходит"
     const val UNREACHABLE = "Не удалось подключиться"
+    const val RETRY = "Повторить"
+    const val CLOSE = "Закрыть"
+    const val CANCEL = "Отмена"
 
     // --- talking -------------------------------------------------------------------------------
 

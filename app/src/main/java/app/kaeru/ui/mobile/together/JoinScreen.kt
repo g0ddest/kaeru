@@ -74,7 +74,7 @@ fun JoinScreen(
         Poster(state)
         Box(Modifier.height(KaeruTokens.Space6))
         when {
-            state.error != null -> Failed(state.error, onRetry, onDismiss)
+            state.error != null -> Failed(state.error, state.retryable, onRetry, onDismiss)
             state.loading || state.line == null -> Waiting(state)
             else -> Invitation(state, onJoin, onDismiss)
         }
@@ -150,21 +150,36 @@ private fun Waiting(state: JoinUiState) {
     }
 }
 
-/** It did not work. What is said is what happened, and both buttons still lead somewhere. */
+/**
+ * It did not work, and what is said is what happened.
+ *
+ * [retryable] is the difference between a room that did not answer and a link that was never a
+ * room. The first is worth another knock; the second has nothing to knock on, and a «Повторить»
+ * that cannot do anything is worse than no button at all — so that case gets one way out and it
+ * closes the screen.
+ */
 @Composable
-private fun Failed(message: String, onRetry: () -> Unit, onDismiss: () -> Unit) {
+private fun Failed(message: String, retryable: Boolean, onRetry: () -> Unit, onDismiss: () -> Unit) {
     Text(
         message,
         style = MaterialTheme.typography.headlineMedium,
         color = KaeruError,
         textAlign = TextAlign.Center,
     )
-    PrimaryButton(
-        "Повторить",
-        onRetry,
-        Modifier.fillMaxWidth().padding(top = KaeruTokens.Space8),
-    )
-    TextAction(TogetherCopy.WATCH_ALONE, onDismiss, Modifier.padding(top = KaeruTokens.Space2))
+    if (retryable) {
+        PrimaryButton(
+            TogetherCopy.RETRY,
+            onRetry,
+            Modifier.fillMaxWidth().padding(top = KaeruTokens.Space8),
+        )
+        TextAction(TogetherCopy.WATCH_ALONE, onDismiss, Modifier.padding(top = KaeruTokens.Space2))
+    } else {
+        PrimaryButton(
+            TogetherCopy.CLOSE,
+            onDismiss,
+            Modifier.fillMaxWidth().padding(top = KaeruTokens.Space8),
+        )
+    }
 }
 
 // --- previews -------------------------------------------------------------------------------------
@@ -200,6 +215,17 @@ private fun JoinLoadingPreview() = KaeruTheme {
 private fun JoinFailedPreview() = KaeruTheme {
     JoinScreen(
         state = JoinUiState(loading = false, error = TogetherCopy.UNREACHABLE),
+        onJoin = {},
+        onRetry = {},
+        onDismiss = {},
+    )
+}
+
+@Preview(name = "Ссылка не подходит", showBackground = true, backgroundColor = 0xFF0B0C10, widthDp = 360, heightDp = 720)
+@Composable
+private fun JoinBadLinkPreview() = KaeruTheme {
+    JoinScreen(
+        state = JoinUiState(loading = false, error = TogetherCopy.BAD_LINK, retryable = false),
         onJoin = {},
         onRetry = {},
         onDismiss = {},

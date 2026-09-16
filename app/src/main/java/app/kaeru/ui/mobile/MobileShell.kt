@@ -1,5 +1,6 @@
 package app.kaeru.ui.mobile
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -212,6 +213,9 @@ fun MobileShell(
             composable(Routes.WATCH) {
                 val join = together.join
                 if (join != null) {
+                    // Back is «Не сейчас». Without this the entry pops while the session stays
+                    // joining, and nothing re-pushes the screen or ends the room behind it.
+                    BackHandler { onDismissTogether() }
                     JoinScreen(
                         state = join,
                         // Two halves of one press: the room is already known to the session, and
