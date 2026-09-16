@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -20,19 +21,21 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import app.kaeru.ui.common.theme.KaeruAccent
-import app.kaeru.ui.common.theme.KaeruElevated
 import app.kaeru.ui.common.theme.KaeruSecondary
 import app.kaeru.ui.common.theme.KaeruText
 
 /**
  * The poster card as a television sees it.
  *
- * Focus is shown twice over, because from three metres away one signal is not enough: the artwork
+ * Focus is shown twice over, because from three metres away one signal is not enough: the card
  * grows by six per cent and takes a 3dp amber border. No glow — a bloom around every card in a row
  * turns the row into a smear, and the border is already unambiguous.
  *
- * Only the artwork is inside the focusable surface, so the name under it stays put while the
- * picture lifts. [onLongClick] is the quick menu the spec asks for on a long press of OK.
+ * **The whole tile is one focusable node**, artwork and name together, and that is the point rather
+ * than a detail of the markup. A focused node is what the D-pad asks the lists above it to scroll
+ * into view, so while the artwork alone was focusable a television brought the picture onto the
+ * panel and left the name under it below the bottom edge — cards with no names, and a viewer
+ * pressing down to read one. One node, one border, one thing to bring into view.
  *
  * [width] is the row pitch the design system fixes, which is what a horizontally scrolling row
  * wants: every card the same width whatever is beside it. A grid wants the opposite — the cell
@@ -55,50 +58,57 @@ fun TvPosterCard(
     width: Dp = KaeruTokens.PosterWidthTv,
     titleMaxLines: Int = 2,
 ) {
-    Column(modifier.then(if (width.isSpecified) Modifier.width(width) else Modifier)) {
-        Surface(
-            onClick = onClick,
-            onLongClick = onLongClick,
-            modifier = Modifier.fillMaxWidth().aspectRatio(KaeruTokens.PosterAspect),
-            shape = ClickableSurfaceDefaults.shape(shape = KaeruTokens.CardShape),
-            colors = ClickableSurfaceDefaults.colors(
-                containerColor = KaeruElevated,
-                contentColor = KaeruText,
-                focusedContainerColor = KaeruElevated,
-                focusedContentColor = KaeruText,
-                pressedContainerColor = KaeruElevated,
-                pressedContentColor = KaeruText,
+    Surface(
+        onClick = onClick,
+        onLongClick = onLongClick,
+        modifier = modifier.then(if (width.isSpecified) Modifier.width(width) else Modifier),
+        shape = ClickableSurfaceDefaults.shape(shape = KaeruTokens.CardShape),
+        // Transparent, because the artwork carries its own background and the name underneath it
+        // belongs on the screen's own artwork rather than on a slab. The surface is here for the
+        // focus border and for the node it makes, not for a colour.
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = Color.Transparent,
+            contentColor = KaeruText,
+            focusedContainerColor = Color.Transparent,
+            focusedContentColor = KaeruText,
+            pressedContainerColor = Color.Transparent,
+            pressedContentColor = KaeruText,
+        ),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = KaeruTokens.FocusScale),
+        border = ClickableSurfaceDefaults.border(
+            focusedBorder = Border(
+                border = BorderStroke(KaeruTokens.FocusBorder, KaeruAccent),
+                shape = KaeruTokens.CardShape,
             ),
-            scale = ClickableSurfaceDefaults.scale(focusedScale = KaeruTokens.FocusScale),
-            border = ClickableSurfaceDefaults.border(
-                focusedBorder = Border(
-                    border = BorderStroke(KaeruTokens.FocusBorder, KaeruAccent),
-                    shape = KaeruTokens.CardShape,
-                ),
-            ),
-        ) {
-            Box(Modifier.fillMaxSize()) {
+        ),
+    ) {
+        Column {
+            Box(Modifier.fillMaxWidth().aspectRatio(KaeruTokens.PosterAspect)) {
                 PosterImage(posterUrl, title, Modifier.fillMaxSize())
                 PosterOverlays(badge, progress)
             }
-        }
-        Text(
-            title,
-            style = MaterialTheme.typography.titleSmall,
-            color = KaeruText,
-            maxLines = titleMaxLines,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = KaeruTokens.Space2),
-        )
-        if (subtitle != null) {
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.labelMedium,
-                color = KaeruSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 2.dp),
-            )
+            // The bottom inset is not spacing but clearance: a `Surface` clips its content to its
+            // own shape, and the rounded corner would otherwise take a bite out of the last line's
+            // descenders — «у», «р», «д» — along the bottom edge of the card.
+            Column(Modifier.padding(top = KaeruTokens.Space2, bottom = KaeruTokens.Space2)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = KaeruText,
+                    maxLines = titleMaxLines,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (subtitle != null) {
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = KaeruSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+            }
         }
     }
 }

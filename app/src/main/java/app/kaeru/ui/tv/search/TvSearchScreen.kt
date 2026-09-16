@@ -128,10 +128,11 @@ fun TvSearchScreen(
 private fun TvResultGrid(state: SearchUiState, onPlanned: (Int) -> Unit, onOpen: (Int) -> Unit) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(GRID_COLUMNS),
-        contentPadding = PaddingValues(
-            top = KaeruTokens.Space2,
-            bottom = TvLayout.SafeVertical,
-        ),
+        // Outside the scrolling viewport rather than inside it, for the reason the library grid
+        // says: a focused cell brought flush to the bottom of the panel lands in the part of the
+        // picture a television does not draw.
+        modifier = Modifier.padding(bottom = TvLayout.SafeVertical),
+        contentPadding = PaddingValues(top = KaeruTokens.Space2),
         horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
         verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
     ) {

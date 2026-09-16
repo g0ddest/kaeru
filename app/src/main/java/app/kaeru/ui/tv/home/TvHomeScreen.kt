@@ -271,8 +271,12 @@ private fun TvHomeFeed(
             TvHeroBand(hero)
             LazyColumn(
                 state = listState,
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(bottom = TvLayout.SafeVertical),
+                // The safe area is held outside the scrolling viewport rather than being content
+                // padding inside it. A focused card asks to be brought into the viewport, and a
+                // viewport that ran to the bottom of the panel brought it flush against the five
+                // per cent a television crops — so the name under the card landed in the part of
+                // the picture the panel does not draw.
+                modifier = Modifier.weight(1f).padding(bottom = TvLayout.SafeVertical),
                 verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
             ) {
                 if (rows.isEmpty() && onSearch != null) {
