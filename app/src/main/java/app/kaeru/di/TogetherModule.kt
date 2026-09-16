@@ -6,11 +6,11 @@ import app.kaeru.data.together.LanTogetherEndpoints
 import app.kaeru.data.together.RelayTransport
 import app.kaeru.data.together.TogetherEndpoints
 import app.kaeru.data.together.TogetherTimeouts
+import app.kaeru.data.together.HostChannel
+import app.kaeru.data.together.HostTransports
+import app.kaeru.data.together.TogetherSession
 import app.kaeru.domain.pairing.PairingRequest
-import app.kaeru.domain.together.HostChannel
-import app.kaeru.domain.together.HostTransports
 import app.kaeru.domain.together.PlaybackPort
-import app.kaeru.domain.together.TogetherSession
 import app.kaeru.domain.together.TogetherSessionApi
 import app.kaeru.domain.together.TransportFactory
 import app.kaeru.player.TogetherPlaybackPort
@@ -19,7 +19,9 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CoroutineScope
 import okhttp3.OkHttpClient
+import java.time.Clock
 import java.util.concurrent.TimeUnit
 import javax.inject.Qualifier
 import javax.inject.Singleton
@@ -88,6 +90,24 @@ object TogetherModule {
         if (endpoint != null) HostChannel(lan, endpoint) else HostChannel(relay, null)
     }
 
+    /**
+     * One for the process, like the playback it drives. Two sessions would mean two rooms, two
+     * ping loops and two phones' worth of corrections applied to one picture.
+     *
+     * Its dependencies are named here rather than on its constructor because it is a use case
+     * with no injection annotations of its own, exactly as `resolveEpisodeStream` and
+     * `watchProgress` are put together.
+     */
+    @Provides
+    @Singleton
+    fun togetherSession(
+        transports: TransportFactory,
+        hosting: HostTransports,
+        port: PlaybackPort,
+        clock: Clock,
+        @PlaybackScope scope: CoroutineScope,
+    ): TogetherSessionApi = TogetherSession(transports, hosting, port, clock, scope)
+
     @Provides
     @Singleton
     fun transportFactory(lan: LanSocketTransport, relay: RelayTransport): TransportFactory =
@@ -105,12 +125,4 @@ abstract class TogetherBindings {
 
     @Binds
     abstract fun playbackPort(impl: TogetherPlaybackPort): PlaybackPort
-
-    /**
-     * One for the process, like the playback it drives. Two sessions would mean two rooms, two
-     * ping loops and two phones' worth of corrections applied to one picture.
-     */
-    @Binds
-    @Singleton
-    abstract fun togetherSession(impl: TogetherSession): TogetherSessionApi
 }

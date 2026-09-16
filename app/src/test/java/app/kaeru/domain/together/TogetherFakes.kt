@@ -34,9 +34,13 @@ class FakeTransport : WatchTogetherTransport {
 
     var endpoint: LanEndpoint? = null
 
+    /** While set, the flow throws rather than carrying a failure — a transport with a bug in it. */
+    var connectFailure: Throwable? = null
+
     override fun connect(link: RoomLink, asHost: Boolean): Flow<Result<TogetherMessage>> = flow {
         connectedTo = link
         connectedAsHost = asHost
+        connectFailure?.let { throw it }
         _state.value = ConnectionState.CONNECTED
         for (message in inbound) emit(message)
         _state.value = ConnectionState.CLOSED
@@ -93,6 +97,9 @@ class FakePlaybackPort : PlaybackPort {
     /** What the player ends up with when a voice is asked for that this device cannot get. */
     var fallbackTranslationId: Int? = null
 
+    /** While set, seeking throws — a player that broke where nothing is waiting to hear about it. */
+    var seekFailure: Throwable? = null
+
     override suspend fun play() {
         plays += 1
         _state.update { it.copy(playing = true) }
@@ -104,6 +111,7 @@ class FakePlaybackPort : PlaybackPort {
     }
 
     override suspend fun seekTo(positionMs: Long) {
+        seekFailure?.let { throw it }
         seeks += positionMs
         _state.update { it.copy(positionMs = positionMs) }
     }
@@ -141,9 +149,16 @@ class FakePlaybackPort : PlaybackPort {
 
     fun buffering(buffering: Boolean) = _state.update { it.copy(buffering = buffering) }
 
-    /** This viewer did something. */
+    /**
+     * This viewer did something.
+     *
+     * A shared flow with buffer and no replay accepts a value with nobody subscribed and drops it,
+     * so the subscriber count is what the check has to be about — otherwise a test that forgot to
+     * start a session passes quietly.
+     */
     fun did(action: LocalAction) {
-        check(_localActions.tryEmit(action)) { "nobody was listening for $action" }
+        check(_localActions.subscriptionCount.value > 0) { "nobody was listening for $action" }
+        check(_localActions.tryEmit(action)) { "$action did not fit in the buffer" }
     }
 }
 
