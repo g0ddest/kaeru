@@ -99,3 +99,38 @@ class PairingFailed(val reason: PairingFailureReason, cause: Throwable? = null) 
  */
 class DownloadLimitReached(val limitBytes: Long, val usedBytes: Long) :
     Exception("Download limit reached: $usedBytes of $limitBytes bytes used")
+
+/** Why a shared viewing would not start, or would not carry on. */
+enum class TogetherFailureReason {
+    /** The `kaeru://watch` or https link was malformed, or its LAN address was not a private one. */
+    BAD_LINK,
+
+    /** Nothing answered at the address in the link, or the connection died and would not come back. */
+    UNREACHABLE,
+
+    /** A frame arrived larger than the protocol allows. Nobody sends one of those by accident. */
+    FRAME_TOO_LARGE,
+
+    /**
+     * A frame did not decrypt under the room key: the wrong room, a corrupted frame, or somebody
+     * writing into the channel who was never given the link.
+     */
+    TAMPERED,
+
+    /** There is no live channel to write to. Said for a send, never for a read. */
+    DISCONNECTED,
+}
+
+/** A shared viewing could not be opened, or could not be kept. */
+class TogetherFailed(val reason: TogetherFailureReason, cause: Throwable? = null) :
+    Exception("Watch together failed: $reason", cause)
+
+/**
+ * This build carries no relay address, so the only shared viewing it can open is one over the
+ * local network.
+ *
+ * Its own type rather than a [TogetherFailureReason] because it is not a failure of the network or
+ * of the link — it is a build that was assembled without `TOGETHER_RELAY_URL`, and the only honest
+ * thing to tell a viewer is that friends elsewhere cannot be reached from this copy of the app.
+ */
+class RelayNotConfigured : Exception("No watch-together relay was built into this app")
