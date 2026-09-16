@@ -3,6 +3,7 @@ package app.kaeru.ui.mobile.together
 import app.kaeru.domain.together.RoomLink
 import org.json.JSONArray
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -27,6 +28,9 @@ class AssetLinksTest {
 
     private val debug = "BD:BF:74:BA:85:55:20:B1:F6:05:AB:27:F9:35:F5:61:" +
         "6B:E1:0C:0B:85:1E:D3:EF:E8:B5:56:0A:54:A9:37:0C"
+
+    /** Where a person with no app is sent. The list, not `/latest`, which skips pre-releases. */
+    private val RELEASES = "https://github.com/g0ddest/kaeru/releases"
 
     private fun fingerprints(): List<String> {
         val statements = JSONArray(File(site, ".well-known/assetlinks.json").readText())
@@ -67,11 +71,65 @@ class AssetLinksTest {
     @Test
     fun `the landing page offers the app to somebody who has it and to somebody who has not`() {
         val page = File(site, "w/index.html").readText()
-        assertTrue("the page must retry the link in the app", page.contains("Открыть в Kaeru"))
+        assertTrue("the page must hand the link back to the app", page.contains("Открыть в Kaeru"))
         assertTrue("the page must offer the build", page.contains("Скачать APK"))
-        assertTrue(page.contains("https://github.com/g0ddest/kaeru/releases/latest"))
         assertTrue("the page names the feature", page.contains("совместный просмотр"))
         assertTrue("the page declares its language", page.contains("lang=\"ru\""))
+        assertTrue("a messenger needs a picture", page.contains("og:image"))
+    }
+
+    /**
+     * Pages is a static host with no rewrites, and every invitation is `/w/<roomId>` — a path
+     * with no file behind it. The custom 404 is the only document those links can land on, so it
+     * has to be the landing page rather than a page about a landing page.
+     */
+    @Test
+    fun `the page a real invitation lands on is the same page`() {
+        val landing = File(site, "w/index.html").readBytes()
+        val fallback = File(site, "404.html")
+        assertTrue("docs/cast/404.html is what /w/<room> actually serves", fallback.exists())
+        assertTrue(
+            "404.html and w/index.html have drifted apart; publish them together",
+            fallback.readBytes().contentEquals(landing),
+        )
+    }
+
+    /**
+     * «latest» excludes pre-releases and every Kaeru build so far is one, so the released-version
+     * URL is a 404. The list page is not, and the script upgrades it to the APK itself.
+     */
+    @Test
+    fun `the build is offered from a url that exists`() {
+        val page = File(site, "w/index.html").readText()
+        assertFalse("/releases/latest 404s while every build is a pre-release", page.contains("/releases/latest"))
+        assertTrue(page.contains("https://github.com/g0ddest/kaeru/releases"))
+        assertTrue("the newest pre-release has to be asked for by name", page.contains("api.github.com"))
+    }
+
+    /** Nothing but that one API call leaves this origin, and least of all a font. */
+    @Test
+    fun `the page fetches nothing else from anywhere else`() {
+        val page = File(site, "w/index.html").readText()
+        listOf("fonts.googleapis.com", "fonts.gstatic.com", "cdn.", "unpkg", "analytics").forEach {
+            assertFalse("$it has no business on an invitation page", page.contains(it))
+        }
+        // The one external call, and it must never carry the room: the fragment is not part of a
+        // request, and the referrer is turned off so the room id does not travel either.
+        assertTrue(page.contains("referrerPolicy: 'no-referrer'"))
+        val fetched = page.substringAfter("fetch(").substringBefore(",")
+        assertFalse("nothing about the room may travel to github", fetched.contains("location"))
+    }
+
+    /** With no script there is still one thing to do, and it is not the site root. */
+    @Test
+    fun `the buttons lead somewhere without javascript`() {
+        val page = File(site, "w/index.html").readText()
+        val anchors = Regex("""<a class="button[^"]*" id="[^"]*" href="([^"]+)"""").findAll(page).map { it.groupValues[1] }.toList()
+        assertEquals(2, anchors.size)
+        anchors.forEach { href ->
+            assertEquals("a button with no script behind it must still install the app", RELEASES, href)
+        }
+        assertTrue("the no-script label has to be honest about what it does", page.contains("Установить Kaeru"))
     }
 
     @Test
