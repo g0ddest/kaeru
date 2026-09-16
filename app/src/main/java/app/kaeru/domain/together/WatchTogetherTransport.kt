@@ -35,12 +35,18 @@ interface WatchTogetherTransport {
      * protocol allows, is one frame's problem — the collector is told and the channel carries on,
      * because a corrupted packet is not a reason to end somebody's film. The flow ends only when
      * the channel is finished: the peer left, or reconnection ran out of time.
+     *
+     * **A guest must send its first message straight away** — as soon as this has returned, before
+     * the flow is collected and before any socket exists. On the local network each side proves
+     * itself to the other with that first frame and neither reports [ConnectionState.CONNECTED]
+     * until it has one, so a guest that waits to be told it is connected waits for ever. The reason
+     * is the host's door: an advertised port is reachable by anything on the same Wi-Fi, and a
+     * connection that cannot produce a frame sealed with the room key never gets the seat.
+     *
+     * @param asHost whether this device made the link. It decides which side seals a frame, so
+     *   passing the wrong one means nothing either side says will open.
      */
     fun connect(link: RoomLink, asHost: Boolean): Flow<Result<TogetherMessage>>
-    // A guest must send its first message straight away. A host on the local network treats a new
-    // connection as provisional and gives the session to nobody until one frame decrypts under the
-    // room key, because an advertised port is reachable by anything on the same Wi-Fi. Until then
-    // the host's [state] stays [ConnectionState.CONNECTING].
 
     /**
      * Throws [app.kaeru.domain.error.TogetherFailed] when there is nothing to write to. Callers

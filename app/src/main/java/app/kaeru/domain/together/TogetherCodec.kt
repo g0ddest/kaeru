@@ -8,6 +8,17 @@ import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
+/** Which of the two seals a frame. One byte of it rides in every frame's associated data. */
+enum class Side {
+    HOST,
+    GUEST,
+    ;
+
+    val tag: Byte get() = if (this == HOST) 0 else 1
+
+    val other: Side get() = if (this == HOST) GUEST else HOST
+}
+
 /**
  * What actually goes on the wire: one message, as JSON, sealed under the key from the link.
  *
@@ -26,17 +37,6 @@ import javax.crypto.spec.SecretKeySpec
  * over the authentication key, so [newNonce] draws fresh bytes for every frame and [encode] takes
  * the nonce as an argument rather than keeping a counter that a reconnect could reset.
  */
-/** Which of the two seals a frame. One byte of it rides in every frame's associated data. */
-enum class Side {
-    HOST,
-    GUEST,
-    ;
-
-    val tag: Byte get() = if (this == HOST) 0 else 1
-
-    val other: Side get() = if (this == HOST) GUEST else HOST
-}
-
 object TogetherCodec {
 
     /**
