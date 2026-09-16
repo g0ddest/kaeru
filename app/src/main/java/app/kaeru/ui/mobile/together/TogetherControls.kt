@@ -37,6 +37,8 @@ data class TogetherControls(
     val onClipPlayed: () -> Unit = {},
     val onLeaveWait: () -> Unit = {},
     val onMessageShown: () -> Unit = {},
+    /** This screen has opened. Clears a receipt left behind by a session that ended elsewhere. */
+    val onPlayerAttached: () -> Unit = {},
     /** Whether the corner may empty itself on a timer; false while a screen reader is running. */
     val onAutoHide: (Boolean) -> Unit = {},
     /** Whether the player offers to start one at all. Off on a build with no session behind it. */

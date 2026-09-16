@@ -1041,6 +1041,21 @@ class TogetherSessionTest {
     }
 
     @Test
+    fun `leaving what has already been left changes nothing`() = sessionTest {
+        live()
+        session.leave()
+        runCurrent()
+        transport.sent.clear()
+
+        session.leave()
+        runCurrent()
+
+        assertEquals(SessionState.Ended, session.state.value)
+        assertTrue(transport.sent.isEmpty())
+        assertEquals(1, transport.closes)
+    }
+
+    @Test
     fun `a session that is over sends nothing more`() = sessionTest {
         live()
         session.leave()

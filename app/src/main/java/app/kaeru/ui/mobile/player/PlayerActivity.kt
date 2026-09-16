@@ -267,6 +267,7 @@ class PlayerActivity : FragmentActivity() {
                             onClipPlayed = together::clipPlayed,
                             onLeaveWait = together::leaveWait,
                             onMessageShown = together::messageShown,
+                            onPlayerAttached = together::playerAttached,
                             onAutoHide = together::setAutoHide,
                             enabled = true,
                         ),

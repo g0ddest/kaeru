@@ -46,6 +46,15 @@ private const val REACTION_MAX = 3
 private const val WAIT_TIMEOUT_MS = 30_000L
 
 /**
+ * How long «Сессия закончилась» stays up.
+ *
+ * It is a receipt for something the viewer just did, not a state to be got out of — the session is
+ * already over and its chip is already gone, so a line with an exit button and nothing behind it
+ * would be the only thing on screen that could not be dismissed.
+ */
+private const val ENDED_LINE_MS = 3_000L
+
+/**
  * How close the two have to get before «догоняет» stops being true.
  *
  * The same two seconds the sync policy uses as the line between «pull with playback speed» and
@@ -105,8 +114,12 @@ class TogetherViewModel @Inject constructor(
 
     private val expiryJobs = mutableMapOf<Long, Job>()
 
-    /** The two waits this screen times itself rather than trusting somebody else to end. */
-    private enum class TimedWait { HOSTING, JOINING }
+    /** The waits this screen times itself rather than trusting somebody else to end. */
+    private enum class TimedWait(val afterMs: Long) {
+        HOSTING(WAIT_TIMEOUT_MS),
+        JOINING(WAIT_TIMEOUT_MS),
+        ENDED(ENDED_LINE_MS),
+    }
 
     init {
         viewModelScope.launch { session.state.collect(::applySession) }
@@ -221,6 +234,7 @@ class TogetherViewModel @Inject constructor(
         val phase = _uiState.value.phase
         if (phase == TogetherPhase.LOST || phase == TogetherPhase.ENDED) {
             leave()
+            _uiState.update { it.copy(wait = null) }
             return
         }
         session.watchAlone()
@@ -230,8 +244,25 @@ class TogetherViewModel @Inject constructor(
     /** The chip's «Выйти из совместного просмотра». Said out loud, because it was deliberate. */
     fun leave() {
         armWait(null)
-        _uiState.update { it.copy(message = TogetherCopy.LEFT_SESSION) }
+        // The corner is emptied here rather than left to the state that follows: the engine settles
+        // in `Ended` and a `StateFlow` does not re-emit a value it is already holding, so a second
+        // press of an exit would otherwise have nothing to act on.
+        _uiState.update { it.copy(wait = null, message = TogetherCopy.LEFT_SESSION) }
         viewModelScope.launch { session.leave() }
+    }
+
+    /**
+     * A player screen has just opened on this view model.
+     *
+     * The session is one per process and stays where it settled, so a screen opened after one
+     * ended would draw its receipt over an ordinary episode that has nothing to do with it. Only
+     * that one line is cleared: a screen opening into a session that is still running has waits
+     * worth keeping.
+     */
+    fun playerAttached() {
+        if (_uiState.value.phase != TogetherPhase.ENDED) return
+        armWait(null)
+        _uiState.update { it.copy(wait = null) }
     }
 
     fun sendChat(text: String) {
@@ -345,7 +376,10 @@ class TogetherViewModel @Inject constructor(
                 }
             }
             is SessionState.Lost -> stop(TogetherPhase.LOST, TogetherCopy.lost(state.reason))
-            SessionState.Ended -> stop(TogetherPhase.ENDED, TogetherCopy.ENDED)
+            SessionState.Ended -> {
+                stop(TogetherPhase.ENDED, TogetherCopy.ENDED)
+                armWait(TimedWait.ENDED)
+            }
         }
     }
 
@@ -464,7 +498,7 @@ class TogetherViewModel @Inject constructor(
         waitJob?.cancel()
         if (kind == null) return
         waitJob = viewModelScope.launch {
-            delay(WAIT_TIMEOUT_MS)
+            delay(kind.afterMs)
             timedWait = null
             when (kind) {
                 // The friend may still be reading the message. The line goes; the room stays.
@@ -475,6 +509,8 @@ class TogetherViewModel @Inject constructor(
                         join = it.join?.copy(loading = false, error = TogetherCopy.UNREACHABLE),
                     )
                 }
+                // Said, read and gone. Nothing is waiting on the other side of this one.
+                TimedWait.ENDED -> _uiState.update { it.copy(wait = null) }
             }
         }
     }

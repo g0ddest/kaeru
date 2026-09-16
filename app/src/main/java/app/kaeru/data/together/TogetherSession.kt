@@ -207,6 +207,11 @@ class TogetherSession(
     }
 
     override suspend fun leave() {
+        // Nothing to leave twice. Re-assigning the state it is already holding emits nothing —
+        // a StateFlow conflates an equal value — so a screen that redraws itself from that state
+        // would be left holding whatever it drew the first time.
+        val settled = _state.value
+        if (settled is SessionState.Ended || settled is SessionState.Idle) return
         val open = channel
         if (open != null) send(TogetherMessage.Bye(nextSeq()))
         // Whatever the last correction left behind is not this viewer's speed to keep.

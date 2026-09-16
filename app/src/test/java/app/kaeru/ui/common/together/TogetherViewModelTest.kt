@@ -77,8 +77,12 @@ class TogetherViewModelTest {
             sessionState.value = SessionState.Joining(link, hello = null)
         }
         override suspend fun leave() {
+            // As the engine does: `Ended` is where it settles, and leaving what has already been
+            // left changes nothing — which is the whole of what the screen has to cope with.
+            val settled = sessionState.value
+            if (settled is SessionState.Ended || settled is SessionState.Idle) return
             left++
-            sessionState.value = SessionState.Idle
+            sessionState.value = SessionState.Ended
         }
         override suspend fun sendChat(text: String) { chats += text }
         override suspend fun sendReaction(kind: ReactionKind) { reactions += kind }
@@ -415,13 +419,60 @@ class TogetherViewModelTest {
     }
 
     @Test
+    fun `the receipt for a session that ended takes itself off the screen`() = runTest {
+        val vm = viewModel()
+        live()
+        session.sessionState.value = SessionState.Ended
+        runCurrent()
+        assertEquals("Сессия закончилась", vm.uiState.value.wait?.text)
+
+        advanceTimeBy(3_001)
+        runCurrent()
+
+        assertNull(vm.uiState.value.wait)
+    }
+
+    @Test
+    fun `pressing the exit on an ended session clears it, however often it is pressed`() = runTest {
+        val vm = viewModel()
+        live()
+        vm.leave()
+        runCurrent()
+        assertEquals("Сессия закончилась", vm.uiState.value.wait?.text)
+
+        vm.leaveWait()
+        runCurrent()
+        assertNull(vm.uiState.value.wait)
+
+        // And the engine, already settled, says nothing new — so nothing puts it back.
+        vm.leaveWait()
+        runCurrent()
+        assertNull(vm.uiState.value.wait)
+    }
+
+    @Test
+    fun `a player opened after somebody else's session ended draws none of it`() = runTest {
+        // The session is one per process and is still parked where the last screen left it.
+        session.sessionState.value = SessionState.Ended
+        val vm = viewModel()
+        runCurrent()
+        assertEquals("Сессия закончилась", vm.uiState.value.wait?.text)
+
+        vm.playerAttached()
+        runCurrent()
+
+        assertNull(vm.uiState.value.wait)
+    }
+
+    @Test
     fun `leaving a shared viewing leaves it`() = runTest {
         val vm = viewModel()
         live()
         vm.leave()
         runCurrent()
         assertEquals(1, session.left)
-        assertEquals(TogetherPhase.IDLE, vm.uiState.value.phase)
+        // `Ended`, not `Idle`: the engine says so, and the receipt on screen goes by itself.
+        assertEquals(TogetherPhase.ENDED, vm.uiState.value.phase)
         assertTrue(vm.uiState.value.history.isEmpty())
     }
 

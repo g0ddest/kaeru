@@ -158,6 +158,9 @@ fun PlayerScreen(
                 snackbar.showSnackbar(message)
                 onToastShown()
             }
+            // A session is one per process and stays where it ended, so a player opened after one
+            // finished has a receipt to clear that belongs to an episode nobody here was watching.
+            LaunchedEffect(Unit) { together.onPlayerAttached() }
             // A refused microphone and a link that would not open are said in the same place as
             // everything else the player says in passing.
             LaunchedEffect(together.state.message) {
