@@ -15,6 +15,7 @@ import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.model.UserRate
+import app.kaeru.domain.playback.AddStartedTitleToList
 import app.kaeru.domain.playback.FakePlaybackSampleRepository
 import app.kaeru.domain.playback.FakePlaybackPreferences
 import app.kaeru.domain.playback.FakeWatchStateRepository
@@ -85,6 +86,7 @@ class PlaybackControllerTest {
             resolve = ResolveEpisodeStream(source, watchStates, prefs, clock, StreamPrefetchCache(clock)),
             progress = WatchProgress(watchStates, FakePlaybackSampleRepository(watchStates), clock),
             markWatched = MarkEpisodeWatched(library, watchStates, clock, deleteWatched),
+            addToList = AddStartedTitleToList(library),
             suppressedMarks = suppressedMarks,
             deleteWatchedDownloads = deleteWatched,
             library = library,
@@ -711,5 +713,42 @@ class PlaybackControllerTest {
         assertEquals(5, last.episode)
         assertEquals(6_000L, last.positionMs)
         assertTrue(watchStates.saved.any { it.episode == 4 && it.positionMs == 950_000L })
+    }
+
+    // --- a title that was in no list at all ------------------------------------------------------
+
+    /**
+     * Opened from search and played: there was no rate, so no library entry, so no card anywhere
+     * to find the half-watched episode by. Starting it is what puts the title in the list.
+     */
+    @Test
+    fun `starting a title that is in no list adds it as watching`() = runTest(dispatcher) {
+        controller.play(PlaybackTarget(animeId = 555, episode = 1, startPositionMs = 0, translation = null))
+        engine.ready(1_440_000)
+        advanceUntilIdle()
+
+        assertEquals(listOf(555 to ListStatus.WATCHING), library.statusWrites)
+    }
+
+    /** A title already in a list keeps the status the viewer gave it, whatever that status is. */
+    @Test
+    fun `starting a title already in the list writes no status at all`() = runTest(dispatcher) {
+        start(episode = 4)
+        advanceUntilIdle()
+
+        assertTrue(library.statusWrites.isEmpty())
+    }
+
+    /** A retry, a change of voice and a change of quality are all one title being started. */
+    @Test
+    fun `re-opening the same episode does not add the title twice`() = runTest(dispatcher) {
+        controller.play(PlaybackTarget(animeId = 555, episode = 1, startPositionMs = 0, translation = null))
+        engine.ready(1_440_000)
+        advanceUntilIdle()
+        controller.changeTranslation(studioBanda)
+        engine.ready(1_440_000)
+        advanceUntilIdle()
+
+        assertEquals(listOf(555 to ListStatus.WATCHING), library.statusWrites)
     }
 }

@@ -12,6 +12,7 @@ import app.kaeru.data.playback.RoomWatchStateRepository
 import app.kaeru.domain.download.DeferredDownloadRemoval
 import app.kaeru.domain.download.DeferredRemovals
 import app.kaeru.domain.download.DownloadRepository
+import app.kaeru.domain.playback.AddStartedTitleToList
 import app.kaeru.domain.playback.MarkEpisodeUnwatched
 import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.PlaybackNotificationPrompt
@@ -164,6 +165,16 @@ object PlaybackModule {
         clock: Clock,
         deleteWatchedDownloads: DeferredDownloadRemoval,
     ): MarkEpisodeWatched = MarkEpisodeWatched(library, watchStates, clock, deleteWatchedDownloads)
+
+    /**
+     * A single instance on purpose: the lock that keeps one rate create in flight at a time lives
+     * inside it, and two instances would each keep their own — which is a duplicate rate on
+     * Shikimori the first time a viewer changes voice while the first create is still going out.
+     */
+    @Provides
+    @Singleton
+    fun addStartedTitleToList(library: LibraryRepository): AddStartedTitleToList =
+        AddStartedTitleToList(library)
 
     /**
      * The other direction, and deliberately not the mark's mirror image: nothing about downloads
