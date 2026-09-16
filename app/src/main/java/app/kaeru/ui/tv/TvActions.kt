@@ -14,6 +14,30 @@ data class TvEpisodeCell(
     val progress: Float?,
 )
 
+/** One row of the panel a long press of OK opens over an episode, in the order it lists them. */
+enum class TvEpisodeAction {
+    WATCH,
+    MARK_WATCHED,
+    MARK_UNWATCHED,
+}
+
+/**
+ * What a long press of OK offers for one episode.
+ *
+ * The phone's version of this list is `ui.common.details.episodeActions`, and the difference
+ * between them is the two entries about downloads: they exist on the phone only, so on a
+ * television the panel is the mark and the way out of it.
+ *
+ * Both marks are here where the phone offers one and an «Отменить» snackbar. A television has no
+ * snackbar, so the panel itself has to be the way back: an episode un-marked by a stray press of
+ * OK is marked again from the same place, rather than being a change the remote cannot undo.
+ */
+fun tvEpisodeActions(cell: TvEpisodeCell): List<TvEpisodeAction> {
+    if (!cell.aired) return emptyList()
+    val mark = if (cell.watched) TvEpisodeAction.MARK_UNWATCHED else TvEpisodeAction.MARK_WATCHED
+    return listOf(TvEpisodeAction.WATCH, mark)
+}
+
 /**
  * The season as a grid, as the television draws it.
  *
