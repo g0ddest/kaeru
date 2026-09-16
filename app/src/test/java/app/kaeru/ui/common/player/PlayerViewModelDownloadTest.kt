@@ -262,6 +262,29 @@ class PlayerViewModelDownloadTest {
         assertEquals(1, controller.retries)
     }
 
+    /**
+     * M-5: `remove` is a plain `startService`, refused the same way [DownloadCommands.add] can be
+     * — and the screen already knows, from its own return value, without spending the whole
+     * timeout waiting for a row that was never actually asked to go.
+     */
+    @Test
+    fun `a removal the platform refuses retries at once, without waiting out the timeout`() =
+        runTest(main.dispatcher) {
+            downloads.put(row(episode = 4, state = DownloadState.COMPLETED, progress = 1f))
+            downloads.refuseRemovals = true
+            viewModel.start(animeId = 100, episode = 4)
+            advanceUntilIdle()
+
+            viewModel.removeDownloadAndRetry()
+            // `runCurrent`, not `advanceUntilIdle`: retrying only once the full timeout elapses
+            // would also leave retries at 1 once the virtual clock ran that far — this has to
+            // catch it before that, the same way the test above catches the opposite case.
+            runCurrent()
+
+            assertEquals(100 to 4, downloads.removed.single())
+            assertEquals(1, controller.retries)
+        }
+
     @Test
     fun `nothing is downloaded for a title the controller has not reached yet`() = runTest(main.dispatcher) {
         // The controller serves the whole process. Between this screen naming its title and

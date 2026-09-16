@@ -418,9 +418,17 @@ class DetailsViewModel @Inject constructor(
         viewModelScope.launch { downloads.remove(animeId, episode) }
     }
 
-    /** The snackbar has been shown, so the next refusal is news again rather than a repeat. */
-    fun storageMessageShown() {
-        work.value = work.value.copy(storageMessage = null)
+    /**
+     * The snackbar has been shown, so the next refusal is news again rather than a repeat.
+     *
+     * [message] is the one the snackbar was actually showing, compared against the current
+     * snapshot before clearing — the M-7 sibling of [unwatchedMessageShown]: a second refusal
+     * landing before the first snackbar's effect is torn down replaces [DetailsUiState.storageMessage]
+     * with a new one, and a stale report bound to the first must not take the replacement down
+     * with it.
+     */
+    fun storageMessageShown(message: String) {
+        work.value = work.value.copy(storageMessage = work.value.storageMessage?.takeUnless { it == message })
     }
 
     /**

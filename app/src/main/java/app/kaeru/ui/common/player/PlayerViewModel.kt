@@ -400,7 +400,14 @@ class PlayerViewModel @Inject constructor(
         val id = animeId.value ?: return
         val episode = liveEpisodeOf(id) ?: return
         viewModelScope.launch {
-            downloads.remove(id, episode)
+            if (!downloads.remove(id, episode)) {
+                // The command never reached the engine — refused the same way a foreground add
+                // can be. The row is still finished either way, so there is nothing to wait for:
+                // waiting out the timeout would only delay a retry that was always going to open
+                // the same file again.
+                controller.retry()
+                return@launch
+            }
             // Waited for, not assumed. Removing only *sends* the request — the engine's service
             // picks it up later — while opening an episode reads the download index, so a retry
             // fired on the next line would find the row still finished, re-open the very file the

@@ -691,4 +691,36 @@ class DetailsViewModelTest {
 
         assertEquals(10, downloads.enqueued.size)
     }
+
+    /**
+     * M-7: the storage snackbar got the same key shape N-11 gave the un-mark one, for the same
+     * reason — a second refusal landing before the first snackbar closes replaces the message,
+     * and a stale report from the torn-down effect must be bound to the one it actually showed.
+     */
+    @Test
+    fun `a stale onShown for a superseded refusal does not drop the newer message`() =
+        runTest(main.dispatcher) {
+            downloads.setUsedBytes(4 * GB)
+            settings.downloadPolicy.value = DownloadPolicy.DEFAULT.copy(limitBytes = 5 * GB)
+            val vm = viewModel(FakeRepository(item))
+            advanceUntilIdle()
+
+            vm.download((1..10).toList(), DownloadQualityChoice.FollowPlayback)
+            advanceUntilIdle()
+            val first = vm.uiState.value.storageMessage!!
+
+            downloads.setUsedBytes(5 * GB)
+            vm.download(listOf(7, 8, 9))
+            advanceUntilIdle()
+            val second = vm.uiState.value.storageMessage!!
+            assertTrue(first != second)
+
+            // The snackbar that was showing the first refusal is torn down by the second landing
+            // before the viewer dismissed it; its cancelled effect still reports itself shown,
+            // bound to the first message — never to whichever one is current by the time it runs.
+            vm.storageMessageShown(first)
+            advanceUntilIdle()
+
+            assertEquals(second, vm.uiState.value.storageMessage)
+        }
 }

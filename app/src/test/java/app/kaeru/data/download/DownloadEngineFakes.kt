@@ -113,7 +113,12 @@ class FakeDownloadCommands(private val engine: FakeDownloadsSource? = null) : Do
     /** While set, every add is turned away, as Android turns away a background foreground start. */
     var refuseAdds = false
 
-    /** While set, every remove is turned away the same way. */
+    /**
+     * While set, every remove is turned away — but not quite the same shape as [refuseAdds]: this
+     * records into [removed] before refusing, where [add] records into [added] only on acceptance.
+     * Nothing depends on the difference either way; noted so a reader does not assume the [add]
+     * shape and get surprised by a refused id still showing up in [removed].
+     */
     var refuseRemoves = false
 
     override fun add(request: DownloadRequest): Boolean {

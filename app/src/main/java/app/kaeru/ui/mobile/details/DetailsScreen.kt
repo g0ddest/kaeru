@@ -148,7 +148,7 @@ fun DetailsScreen(
     onUnwatchedMessageShown: (episode: Int) -> Unit,
     onDownload: (episodes: List<Int>, quality: DownloadQualityChoice?) -> Unit,
     onRemoveDownload: (episode: Int) -> Unit,
-    onStorageMessageShown: () -> Unit,
+    onStorageMessageShown: (message: String) -> Unit,
     onDownloads: () -> Unit,
 ) {
     val content = detailsContentState(state)
@@ -158,7 +158,20 @@ fun DetailsScreen(
     RetrySnackbar(state.errorMessage.takeIf { content is DetailsContent.Ready }, snackbar, onRetry)
     // A device that is full is a different message with a different way out: «Повторить» would only
     // fail again, so this one leads to the screen where the space can be freed.
-    ActionSnackbar(state.storageMessage, DOWNLOADS, snackbar, onDownloads, onStorageMessageShown)
+    //
+    // Keyed the same way N-11 keyed the un-mark snackbar (M-7): a second refusal landing before
+    // the first snackbar closes must replace this slot outright, so a stale report from the torn
+    // down effect is bound to the message it was actually showing.
+    val storageMessage = state.storageMessage
+    key(storageMessage) {
+        ActionSnackbar(
+            storageMessage,
+            DOWNLOADS,
+            snackbar,
+            onDownloads,
+            onShown = { storageMessage?.let(onStorageMessageShown) },
+        )
+    }
     // The confirmation the menu deliberately does not ask for, after the fact instead of before it:
     // the viewer sees the check come off the tile, and «Отменить» is right there if it was a slip.
     //
