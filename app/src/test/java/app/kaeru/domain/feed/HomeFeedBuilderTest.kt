@@ -366,4 +366,26 @@ class HomeFeedBuilderTest {
         assertTrue(feed.continueWatching.isEmpty())
         assertEquals(listOf(1), feed.planned.map { it.entry.anime.id })
     }
+
+    /**
+     * «Завершено» is the viewer saying they are done with it, and the app has no business arguing.
+     *
+     * The count is not the thing that settles it: setting the status from the title screen writes
+     * the status alone, so somebody who stops half-way through the fifth episode and then marks the
+     * show finished keeps a position ahead of a count of four — and the row would have offered them
+     * the episode they had just declared themselves done with, at the top of the screen.
+     */
+    @Test
+    fun `a title marked finished mid-episode is not offered to continue`() {
+        val a = anime(1, AnimeStatus.ONGOING, episodes = 24, aired = 10)
+        val feed = builder.build(
+            listOf(
+                entry(a, ListStatus.COMPLETED, watched = 4, progress = listOf(stopped(1, 5, 0.4f))),
+            ),
+            now, DEFAULT,
+        )
+
+        assertTrue(feed.continueWatching.isEmpty())
+        assertNull(feed.top)
+    }
 }
