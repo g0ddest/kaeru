@@ -16,6 +16,7 @@ import app.kaeru.domain.model.PlaybackTarget
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.playback.MarkEpisodeWatched
+import app.kaeru.domain.playback.SuppressedMarks
 import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.playback.WatchProgress
@@ -140,6 +141,7 @@ class DefaultPlaybackController @Inject constructor(
     private val deleteWatchedDownloads: DeferredDownloadRemoval,
     private val progress: WatchProgress,
     private val markWatched: MarkEpisodeWatched,
+    private val suppressedMarks: SuppressedMarks,
     private val library: LibraryRepository,
     private val prefs: PlaybackPreferences,
     private val headers: StreamHeaders,
@@ -570,6 +572,9 @@ class DefaultPlaybackController @Inject constructor(
         // nine tenths of an episode, while its file is still under the engine.
         playbackGeneration++
         deleteWatchedDownloads.nowPlaying(target.animeId, target.episode)
+        // Whatever the last playback was told not to count belongs to that playback. This one is
+        // the viewer choosing to watch an episode, including when it is the same one.
+        suppressedMarks.clear()
         opening = null
         // Everything the engine said while this transition ran was ignored on purpose. Take its
         // word now, or a player that reports nothing further would leave the screen mid-swap.
@@ -784,6 +789,10 @@ class DefaultPlaybackController @Inject constructor(
     private fun markIfWatched(positionMs: Long, durationMs: Long) {
         if (markedEpisode || !EpisodeQueue.watched(positionMs, durationMs, settings.threshold)) return
         val target = _state.value.target ?: return
+        // The viewer said this episode is not watched while it was playing — from a title screen in
+        // front of a cast session, or behind picture-in-picture. Counting it now would put the mark
+        // back minutes later with nothing on screen to say so.
+        if (suppressedMarks.isSuppressed(target.animeId, target.episode)) return
         markedEpisode = true
         scope.launch {
             markWatched(target.animeId, target.episode).onSuccess { outcome ->
