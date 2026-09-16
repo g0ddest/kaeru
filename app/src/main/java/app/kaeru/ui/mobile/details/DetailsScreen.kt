@@ -38,6 +38,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -144,7 +145,7 @@ fun DetailsScreen(
     onMarkWatched: (episode: Int) -> Unit,
     onMarkUnwatched: (episode: Int) -> Unit,
     onUndoUnwatched: () -> Unit,
-    onUnwatchedMessageShown: () -> Unit,
+    onUnwatchedMessageShown: (episode: Int) -> Unit,
     onDownload: (episodes: List<Int>, quality: DownloadQualityChoice?) -> Unit,
     onRemoveDownload: (episode: Int) -> Unit,
     onStorageMessageShown: () -> Unit,
@@ -160,13 +161,21 @@ fun DetailsScreen(
     ActionSnackbar(state.storageMessage, DOWNLOADS, snackbar, onDownloads, onStorageMessageShown)
     // The confirmation the menu deliberately does not ask for, after the fact instead of before it:
     // the viewer sees the check come off the tile, and «Отменить» is right there if it was a slip.
-    ActionSnackbar(
-        state.unwatched?.let { unwatchedMessage(it.episode) },
-        UNDO,
-        snackbar,
-        onUndoUnwatched,
-        onUnwatchedMessageShown,
-    )
+    //
+    // Keyed on the episode, not just the message: a second un-mark landing before the first
+    // snackbar closes must replace this slot outright, so the effect it tears down is bound to
+    // the episode it was actually showing — its own report of being shown fires for that episode,
+    // never for whichever one happens to be current by the time the cancellation runs.
+    val unwatchedEpisode = state.unwatched?.episode
+    key(unwatchedEpisode) {
+        ActionSnackbar(
+            unwatchedEpisode?.let(::unwatchedMessage),
+            UNDO,
+            snackbar,
+            onUndoUnwatched,
+            onShown = { unwatchedEpisode?.let(onUnwatchedMessageShown) },
+        )
+    }
     val scroll = rememberScrollState()
     Box(Modifier.fillMaxSize().background(KaeruBackground)) {
         Column(Modifier.fillMaxSize()) {

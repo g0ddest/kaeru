@@ -509,7 +509,7 @@ class DetailsViewModelTest {
 
         vm.markUnwatched(15)
         advanceUntilIdle()
-        vm.unwatchedMessageShown()
+        vm.unwatchedMessageShown(15)
         advanceUntilIdle()
         vm.markWatched(15)
         advanceUntilIdle()
@@ -524,11 +524,40 @@ class DetailsViewModelTest {
 
         vm.markUnwatched(20)
         advanceUntilIdle()
-        vm.unwatchedMessageShown()
+        vm.unwatchedMessageShown(20)
         advanceUntilIdle()
 
         assertNull(vm.uiState.value.unwatched?.episode)
     }
+
+    /**
+     * N-11: `ActionSnackbar`'s effect for the first un-mark's snackbar can be cancelled — a
+     * second un-mark landing before the viewer dismissed it replaces the snapshot outright — and
+     * its cancellation still fires `onShown`, bound to the episode *that* effect was showing. This
+     * is what that stale report looks like from here: it must not swallow the newer undo.
+     */
+    @Test
+    fun `a stale onShown for a superseded un-mark does not drop the newer undo snapshot`() =
+        runTest(main.dispatcher) {
+            val repo = FakeRepository(item)
+            val vm = viewModel(repo)
+            advanceUntilIdle()
+
+            vm.markUnwatched(20)
+            advanceUntilIdle()
+            vm.markUnwatched(15)
+            advanceUntilIdle()
+            // The snackbar that was showing episode 20's undo is torn down by the second un-mark
+            // before the viewer dismissed it; its cancelled effect still reports itself shown,
+            // bound to episode 20 — never to whichever episode is current by the time it runs.
+            vm.unwatchedMessageShown(20)
+
+            vm.undoUnwatched()
+            advanceUntilIdle()
+
+            assertEquals(listOf(7 to 19, 7 to 14, 7 to 19), repo.episodeWrites)
+            assertEquals(19, vm.uiState.value.entry?.rate?.episodes)
+        }
 
     @Test
     fun `a refused un-mark is a message, and there is nothing to undo`() = runTest(main.dispatcher) {
