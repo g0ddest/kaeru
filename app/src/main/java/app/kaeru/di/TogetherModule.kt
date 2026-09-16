@@ -7,7 +7,13 @@ import app.kaeru.data.together.RelayTransport
 import app.kaeru.data.together.TogetherEndpoints
 import app.kaeru.data.together.TogetherTimeouts
 import app.kaeru.domain.pairing.PairingRequest
+import app.kaeru.domain.together.HostChannel
+import app.kaeru.domain.together.HostTransports
+import app.kaeru.domain.together.PlaybackPort
+import app.kaeru.domain.together.TogetherSession
+import app.kaeru.domain.together.TogetherSessionApi
 import app.kaeru.domain.together.TransportFactory
+import app.kaeru.player.TogetherPlaybackPort
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -61,6 +67,27 @@ object TogetherModule {
      * The address is checked again here and not merely trusted from the link, because this is the
      * last place before a socket is opened.
      */
+    /**
+     * How this phone offers a room, which is the one case there is no link to route by yet.
+     *
+     * Sockets when there is a network to find a friend on and no relay in this build; the relay
+     * whenever there is one, because a link that only works in one room is a link that mostly
+     * does not work — a friend on mobile data can follow the other kind from anywhere.
+     *
+     * Reading the endpoint is what opens the port, so it is read here, before the link that
+     * advertises it exists.
+     */
+    @Provides
+    @Singleton
+    fun hostTransports(
+        lan: LanSocketTransport,
+        relay: RelayTransport,
+        @TogetherRelayUrl relayUrl: String,
+    ): HostTransports = HostTransports {
+        val endpoint = if (relayUrl.isBlank()) lan.hostEndpoint() else null
+        if (endpoint != null) HostChannel(lan, endpoint) else HostChannel(relay, null)
+    }
+
     @Provides
     @Singleton
     fun transportFactory(lan: LanSocketTransport, relay: RelayTransport): TransportFactory =
@@ -75,4 +102,15 @@ object TogetherModule {
 abstract class TogetherBindings {
     @Binds
     abstract fun togetherEndpoints(impl: LanTogetherEndpoints): TogetherEndpoints
+
+    @Binds
+    abstract fun playbackPort(impl: TogetherPlaybackPort): PlaybackPort
+
+    /**
+     * One for the process, like the playback it drives. Two sessions would mean two rooms, two
+     * ping loops and two phones' worth of corrections applied to one picture.
+     */
+    @Binds
+    @Singleton
+    abstract fun togetherSession(impl: TogetherSession): TogetherSessionApi
 }
