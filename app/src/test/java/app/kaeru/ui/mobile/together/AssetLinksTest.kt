@@ -132,6 +132,52 @@ class AssetLinksTest {
         assertTrue("the no-script label has to be honest about what it does", page.contains("Установить Kaeru"))
     }
 
+    /**
+     * A same-site address is never handed to an app, and a press on `#fragment` alone is not a
+     * navigation at all — so «Открыть в Kaeru» has to be an intent URI: Chrome resolves it on the
+     * phone, opens the package it names, and goes to the fallback when there is no such package.
+     * Built by the script, because with no script the button must still be the releases page.
+     */
+    @Test
+    fun `the button opens the app through an intent uri and falls back to the releases`() {
+        val page = File(site, "w/index.html").readText()
+        val script = page.substringAfter("<script>").substringBefore("</script>")
+        assertTrue("the room goes in the query", script.contains("'intent://${RoomLink.AUTHORITY}?${RoomLink.ROOM_PARAM}='"))
+        assertTrue("so does the key: the fragment is Chrome's", script.contains("'&${RoomLink.KEY_PARAM}='"))
+        assertTrue(script.contains("'#Intent;scheme=${RoomLink.SCHEME};package=app.kaeru;S.browser_fallback_url='"))
+        assertTrue(
+            "the fallback is encoded, so no `;` or `#` of its own can end the intent early",
+            script.contains("encodeURIComponent('$RELEASES')"),
+        )
+        assertTrue(script.contains("';end'"))
+        // Only an address the app would accept becomes the button: a room of eight bytes and a
+        // key of sixteen, in base64url without padding. Anything else stays «Установить Kaeru».
+        val roomChars = (RoomLink.ROOM_ID_BYTES * 8 + 5) / 6
+        val keyChars = (RoomLink.KEY_BYTES * 8 + 5) / 6
+        assertTrue(script.contains("/^[A-Za-z0-9_-]{$roomChars}$/.test(room)"))
+        assertTrue(script.contains("/^[A-Za-z0-9_-]{$keyChars}$/.test(key)"))
+        assertTrue(
+            "the visitor is told what to do when the button does nothing",
+            page.contains("Если кнопка не сработала — нажмите ссылку в чате ещё раз: после установки Android откроет её в Kaeru"),
+        )
+    }
+
+    /** The key is read once, checked, and written into that one address — and nowhere else. */
+    @Test
+    fun `the hash is used only to build the intent uri`() {
+        val page = File(site, "w/index.html").readText()
+        val script = page.substringAfter("<script>").substringBefore("</script>")
+        assertEquals("the hash is read in one place", 1, Regex("location\\.hash").findAll(page).count())
+        assertTrue("and that place is before the one request the page makes", script.indexOf("location.hash") in 0 until script.indexOf("fetch("))
+        // Comments aside, the identifier the hash lands in appears three times — read, checked,
+        // written into the intent — and never after the intent is finished.
+        val code = script.lines().filterNot { it.trimStart().startsWith("//") }.joinToString("\n")
+            .replace(Regex("/\\*.*?\\*/", RegexOption.DOT_MATCHES_ALL), "")
+        val key = Regex("\\bkey\\b")
+        assertEquals(3, key.findAll(code).count())
+        assertFalse(key.containsMatchIn(code.substringAfter("';end'")))
+    }
+
     @Test
     fun `the page is served from the host the links point at`() {
         assertEquals("kaeru.vitaliy.velikodniy.name", File(site, "CNAME").readText().trim())

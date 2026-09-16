@@ -105,6 +105,8 @@
     outline-offset: 2px;
   }
 
+  .hint { color: var(--muted); font-size: 14px; margin: 0; }
+
   .note { color: var(--muted); font-size: 14px; margin: 0 0 40px; }
 
   .about { border-top: 1px solid var(--line); padding-top: 24px; }
@@ -148,10 +150,14 @@
     <!--
       Without JavaScript this is «Установить Kaeru» and it goes to the releases list, because a
       visitor with no app is the only one who can be helped from here and the site root would help
-      nobody. The script turns it into the invitation itself: a verified App Link hands the whole
-      address, fragment and all, to the app.
+      nobody. The script turns it into the invitation itself, as an intent URI that opens the app
+      by name: a browser hands a same-site address to no app, so the page has to say
+      `kaeru://watch` itself. The hint is for the phone where even that does nothing — an in-app
+      browser that knows no intents, or an app installed a moment ago: the link in the chat is
+      still there, and Android now knows whose it is.
     -->
     <a class="button primary" id="open" href="https://github.com/g0ddest/kaeru/releases">Установить Kaeru</a>
+    <p class="hint">Если кнопка не сработала — нажмите ссылку в чате ещё раз: после установки Android откроет её в Kaeru.</p>
     <a class="button secondary" id="apk" href="https://github.com/g0ddest/kaeru/releases">Скачать APK</a>
   </div>
   <p class="note">
@@ -183,14 +189,24 @@
       document.getElementById('room').hidden = false;
     }
 
-    // «Открыть в Kaeru» only where there is a Kaeru to open it in. On anything else the same
-    // press reloads this page and looks like a button that does nothing, so the primary action
-    // stays the one that helps: install it. The App Link opens the app before this page is ever
-    // drawn, so a phone that has it rarely sees this at all.
+    // «Открыть в Kaeru» only where there is a Kaeru to open it in, and only as an intent URI: a
+    // browser hands a same-site address to no app, and a press on the page's own address is not
+    // even a navigation. The intent names the package, so Chrome opens it directly and goes to
+    // the releases list when it is not there. The key still never leaves the phone — a
+    // custom-scheme intent is resolved on it — and rides in the query because the `#` is taken:
+    // it introduces the intent's own `#Intent;…;end`. The fallback is encoded, so no `;` or `#`
+    // of its own can end that section early. On anything but Android, and for an address that is
+    // not a room and a key the app would take, the primary action stays the one that helps:
+    // install it.
     var open = document.getElementById('open');
     if (/android/i.test(navigator.userAgent)) {
-      open.href = window.location.pathname + window.location.hash;
-      open.textContent = 'Открыть в Kaeru';
+      var key = window.location.hash.replace(/^#/, '');
+      if (/^[A-Za-z0-9_-]{11}$/.test(room) && /^[A-Za-z0-9_-]{22}$/.test(key)) {
+        open.href = 'intent://watch?r=' + room + '&k=' + key +
+          '#Intent;scheme=kaeru;package=app.kaeru;S.browser_fallback_url=' +
+          encodeURIComponent('https://github.com/g0ddest/kaeru/releases') + ';end';
+        open.textContent = 'Открыть в Kaeru';
+      }
     }
 
     // «latest» on GitHub means «latest full release», and every Kaeru build so far is a

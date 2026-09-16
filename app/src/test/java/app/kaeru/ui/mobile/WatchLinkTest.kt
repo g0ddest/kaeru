@@ -1,5 +1,6 @@
 package app.kaeru.ui.mobile
 
+import android.content.Intent
 import android.net.Uri
 import app.kaeru.domain.together.RoomLink
 import org.junit.Assert.assertEquals
@@ -41,6 +42,23 @@ class WatchLinkTest {
         val relay = "kaeru://watch?r=${room.roomId}&k=${room.toHttps().substringAfter('#')}"
         assertEquals(relay, watchLinkOf(Uri.parse(relay)))
         assertEquals(room, RoomLink.parse(relay).getOrNull())
+    }
+
+    @Test
+    fun `the address the landing page fires arrives as that relay form`() {
+        // The button's href, as `docs/cast/w/index.html` builds it. Android splits it at the last
+        // `#`, keeps what is before as the data and reads the package and the fallback from the
+        // rest — so what reaches `watchLinkOf` is the app's own scheme with the key in the query.
+        val key = room.toHttps().substringAfter('#')
+        val fallback = Uri.encode("https://github.com/g0ddest/kaeru/releases")
+        val fired = "intent://watch?r=${room.roomId}&k=$key#Intent;scheme=kaeru;package=app.kaeru;S.browser_fallback_url=$fallback;end"
+
+        val intent = Intent.parseUri(fired, Intent.URI_INTENT_SCHEME)
+
+        assertEquals("app.kaeru", intent.`package`)
+        assertEquals("https://github.com/g0ddest/kaeru/releases", intent.getStringExtra("browser_fallback_url"))
+        assertEquals("kaeru://watch?r=${room.roomId}&k=$key", watchLinkOf(intent.data))
+        assertEquals(room, RoomLink.parse(watchLinkOf(intent.data)!!).getOrNull())
     }
 
     @Test
