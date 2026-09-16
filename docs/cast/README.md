@@ -1,4 +1,20 @@
-# Скин Chromecast-приёмника
+# GitHub Pages: скин Chromecast и совместный просмотр
+
+Эта папка целиком уезжает в ветку `gh-pages` (см. «Как обновить»). Кроме скина приёмника
+в ней лежат две вещи, от которых зависят ссылки «Смотреть вместе»:
+
+| Путь | Зачем |
+| --- | --- |
+| `.well-known/assetlinks.json` | Android App Links: отпечатки релизного и отладочного ключей и `app.kaeru`. Без него ссылка `https://kaeru.vitaliy.velikodniy.name/w/<room>` открывается в браузере, а не в приложении. |
+| `w/index.html` | Посадочная страница приглашения. |
+| `404.html` | Та же страница байт в байт: Pages — статика без рерайтов, и `/w/<room>` — не файл, поэтому реальные ссылки попадают именно сюда. |
+
+Менять `w/index.html` и `404.html` только вместе: `app/src/test/.../AssetLinksTest.kt` падает, если
+они разошлись. Проверка после публикации — `adb shell pm get-app-links app.kaeru`: у
+`kaeru.vitaliy.velikodniy.name` должно быть `verified`. Проверка асинхронная и занимает до
+полуминуты после установки.
+
+## Скин Chromecast-приёмника
 
 Kaeru кастует на Styled Media Receiver, зарегистрированный в Google Cast SDK Developer Console
 (Application ID `0EEA38FE`, статус Published). Эта папка — его оформление: `kaeru.css` и картинки,

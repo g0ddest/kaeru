@@ -20,6 +20,15 @@ object Routes {
 
     /** Reached from a `kaeru://pair` deep link, never from a tab. */
     const val PAIR = "pair"
+
+    /**
+     * Reached from an invitation to watch together, never from a tab.
+     *
+     * The link itself is not in the route. It carries the room key in its fragment, and a key that
+     * went into a back stack entry would be a secret written into somebody's saved state; the
+     * session holds it instead, and this route is only the screen that asks about it.
+     */
+    const val WATCH = "watch"
     const val DETAILS = "details/{animeId}"
     fun details(animeId: Int) = "details/$animeId"
 }

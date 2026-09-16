@@ -11,6 +11,7 @@ import app.kaeru.ui.common.theme.KaeruTheme
 import app.kaeru.ui.common.auth.AuthViewModel
 import app.kaeru.ui.common.pairing.PairingStage
 import app.kaeru.ui.common.pairing.PairingViewModel
+import app.kaeru.ui.common.together.TogetherViewModel
 import app.kaeru.ui.mobile.auth.LoginScreen
 import app.kaeru.ui.mobile.pairing.PairingScreen
 
@@ -25,11 +26,30 @@ fun MobileApp(
     onPairingLinkConsumed: () -> Unit = {},
     route: String? = null,
     onRouteConsumed: () -> Unit = {},
+    watchLink: String? = null,
+    onWatchLinkConsumed: () -> Unit = {},
     authViewModel: AuthViewModel = hiltViewModel(),
     pairingViewModel: PairingViewModel = hiltViewModel(),
+    togetherViewModel: TogetherViewModel = hiltViewModel(),
 ) {
     val auth = authViewModel.uiState.collectAsStateWithLifecycle().value
     val pairing = pairingViewModel.uiState.collectAsStateWithLifecycle().value
+    val together = togetherViewModel.uiState.collectAsStateWithLifecycle().value
+    // The activity's part is over once the link is parked; what happens to it depends on whether
+    // there is a shell to show it on, which is not this effect's business.
+    LaunchedEffect(watchLink) {
+        if (watchLink != null) {
+            togetherViewModel.offer(watchLink)
+            onWatchLinkConsumed()
+        }
+    }
+    val invitation = togetherViewModel.invitationWaiting.collectAsStateWithLifecycle().value
+    // Only once somebody is signed in, because only then is there a screen to put it on. The link
+    // waits through the whole of a sign-in, which is exactly the path the landing page prescribes:
+    // install, open the link, sign in, and the invitation is still there on the other side.
+    LaunchedEffect(auth.loggedIn, invitation) {
+        if (auth.loggedIn == true && invitation != null) togetherViewModel.openPending()
+    }
     LaunchedEffect(pairingLink) {
         if (pairingLink != null) {
             pairingViewModel.open(pairingLink)
@@ -58,6 +78,10 @@ fun MobileApp(
                 // dropped while signed out, where there is no shell to push anything onto.
                 route = route,
                 onRouteConsumed = onRouteConsumed,
+                together = together,
+                onJoinTogether = togetherViewModel::join,
+                onJoinedTogether = togetherViewModel::joinScreenDone,
+                onDismissTogether = togetherViewModel::dismissJoin,
             )
             // Signing a television in does not need this phone to be signed in: what crosses the
             // network is a code from the browser's own Shikimori session, so the hand-off works
@@ -67,7 +91,11 @@ fun MobileApp(
                 onConfirm = pairingViewModel::confirm,
                 onDismiss = pairingViewModel::dismiss,
             )
-            else -> LoginScreen(authViewModel::mobileAuthorizeUrl, auth)
+            else -> LoginScreen(
+                authorizeUrl = authViewModel::mobileAuthorizeUrl,
+                state = auth,
+                invitationWaiting = invitation != null,
+            )
         }
     }
 }

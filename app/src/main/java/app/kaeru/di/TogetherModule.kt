@@ -9,10 +9,14 @@ import app.kaeru.data.together.TogetherTimeouts
 import app.kaeru.data.together.HostChannel
 import app.kaeru.data.together.HostTransports
 import app.kaeru.data.together.TogetherSession
+import app.kaeru.data.together.VoicePlayer
+import app.kaeru.data.together.VoiceRecorder
 import app.kaeru.domain.pairing.PairingRequest
 import app.kaeru.domain.together.PlaybackPort
 import app.kaeru.domain.together.TogetherSessionApi
 import app.kaeru.domain.together.TransportFactory
+import app.kaeru.domain.together.VoiceCapture
+import app.kaeru.domain.together.VoicePlayback
 import app.kaeru.player.TogetherPlaybackPort
 import dagger.Binds
 import dagger.Module
@@ -133,4 +137,14 @@ abstract class TogetherBindings {
 
     @Binds
     abstract fun playbackPort(impl: TogetherPlaybackPort): PlaybackPort
+
+    /**
+     * The microphone and the speaker, behind the two interfaces the screens know them by, so that
+     * nothing under `ui` imports anything under `data`.
+     */
+    @Binds
+    abstract fun voiceCapture(impl: VoiceRecorder): VoiceCapture
+
+    @Binds
+    abstract fun voicePlayback(impl: VoicePlayer): VoicePlayback
 }

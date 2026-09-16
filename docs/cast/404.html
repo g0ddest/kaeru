@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kaeru — совместный просмотр</title>
+<meta name="description" content="Вас зовут смотреть аниме вместе в Kaeru.">
+<meta name="color-scheme" content="dark">
+<meta name="referrer" content="no-referrer">
+<meta property="og:title" content="Kaeru — совместный просмотр">
+<meta property="og:description" content="Вас зовут смотреть аниме вместе.">
+<meta property="og:image" content="https://kaeru.vitaliy.velikodniy.name/logo.png">
+<meta property="og:type" content="website">
+<style>
+  :root {
+    --ground: #0B0C10;
+    --surface: #15171E;
+    --line: #2A2E3A;
+    --text: #F2F3F5;
+    --muted: #9AA0AA;
+    --accent: #F5A524;
+    --on-accent: #1A1200;
+    /* Nothing is fetched from anywhere: the page is one file on the same origin as the
+       invitation, and a font from a third party would be a request this page has no business
+       making on somebody else's invitation. */
+    --stack: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { margin: 0; }
+
+  body {
+    background: var(--ground);
+    color: var(--text);
+    font: 400 16px/1.55 var(--stack);
+    -webkit-font-smoothing: antialiased;
+    padding: 32px 24px 48px;
+    display: flex;
+    justify-content: center;
+  }
+
+  main { width: 100%; max-width: 30rem; }
+
+  .mark {
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--muted);
+    margin: 0 0 40px;
+  }
+
+  .mark b { color: var(--text); font-weight: 700; }
+
+  h1 {
+    font-weight: 700;
+    font-size: clamp(28px, 8vw, 38px);
+    line-height: 1.12;
+    letter-spacing: -0.02em;
+    margin: 0 0 12px;
+  }
+
+  .lede { color: var(--muted); margin: 0 0 32px; max-width: 26rem; }
+
+  /* The room itself. It is the one thing this page knows that a product page would not, so it
+     is the one thing set large: it is also what you read out loud when the link does not arrive. */
+  .room {
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    padding: 20px 0;
+    margin: 0 0 32px;
+  }
+
+  .room dt { color: var(--muted); font-size: 13px; font-weight: 600; margin: 0 0 6px; }
+
+  .room dd {
+    margin: 0;
+    font-weight: 700;
+    font-size: clamp(30px, 11vw, 46px);
+    letter-spacing: 0.06em;
+    color: var(--accent);
+    word-break: break-all;
+  }
+
+  .actions { display: flex; flex-direction: column; gap: 12px; margin: 0 0 14px; }
+
+  a.button {
+    display: block;
+    text-align: center;
+    text-decoration: none;
+    font: 600 17px/1 var(--stack);
+    padding: 18px 24px;
+    border-radius: 12px;
+    border: 1px solid transparent;
+    transition: transform 120ms ease;
+  }
+
+  a.primary { background: var(--accent); color: var(--on-accent); }
+
+  a.secondary { background: var(--surface); color: var(--text); border-color: var(--line); }
+
+  a.button:active { transform: scale(0.99); }
+
+  a.button:focus-visible, a:focus-visible {
+    outline: 3px solid var(--text);
+    outline-offset: 2px;
+  }
+
+  .note { color: var(--muted); font-size: 14px; margin: 0 0 40px; }
+
+  .about { border-top: 1px solid var(--line); padding-top: 24px; }
+
+  .about h2 { font-size: 15px; font-weight: 600; color: var(--muted); margin: 0 0 12px; }
+
+  .about ul { margin: 0; padding: 0; list-style: none; }
+
+  .about li { margin: 0 0 10px; }
+
+  .about li b { font-weight: 600; }
+
+  footer { color: var(--muted); font-size: 13px; margin-top: 40px; }
+
+  footer a { color: var(--muted); }
+
+  [hidden] { display: none !important; }
+
+  @media (prefers-reduced-motion: reduce) {
+    a.button { transition: none; }
+    a.button:active { transform: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <p class="mark"><b>Kaeru</b> — аниме на телефоне и телевизоре</p>
+
+  <h1>Вас зовут смотреть вместе</h1>
+  <p class="lede">
+    Друг открыл серию и отправил эту ссылку. В Kaeru вы попадёте на ту же минуту:
+    пауза, перемотка и следующая серия работают у обоих.
+  </p>
+
+  <dl class="room" id="room" hidden>
+    <dt>Код сессии</dt>
+    <dd id="code"></dd>
+  </dl>
+
+  <div class="actions">
+    <!--
+      Without JavaScript this is «Установить Kaeru» and it goes to the releases list, because a
+      visitor with no app is the only one who can be helped from here and the site root would help
+      nobody. The script turns it into the invitation itself: a verified App Link hands the whole
+      address, fragment and all, to the app.
+    -->
+    <a class="button primary" id="open" href="https://github.com/g0ddest/kaeru/releases">Установить Kaeru</a>
+    <a class="button secondary" id="apk" href="https://github.com/g0ddest/kaeru/releases">Скачать APK</a>
+  </div>
+  <p class="note">
+    Приложения ещё нет? Скачайте APK, установите, подождите полминуты и откройте ссылку из
+    сообщения ещё раз — Android проверяет ссылки не сразу.
+  </p>
+
+  <section class="about">
+    <h2>Что такое Kaeru</h2>
+    <ul>
+      <li><b>Список с Shikimori.</b> Что смотрите и на какой серии остановились.</li>
+      <li><b>Телефон и телевизор.</b> Одна серия, одна позиция, Chromecast и Android TV.</li>
+      <li><b>Совместный просмотр.</b> Вдвоём по ссылке: чат, реакции и голосовые поверх видео.</li>
+    </ul>
+  </section>
+
+  <footer>
+    Открытый исходный код: <a href="https://github.com/g0ddest/kaeru">github.com/g0ddest/kaeru</a>
+  </footer>
+</main>
+<script>
+  (function () {
+    // The room is in the path; the key is in the fragment, which a browser never puts in a
+    // request. So the code shown here is the half that is safe to read out loud, and the only
+    // place the fragment is ever used is the address handed back to Android below.
+    var room = window.location.pathname.replace(/^\/w\/?/, '').replace(/\/$/, '');
+    if (/^[A-Za-z0-9_-]{6,32}$/.test(room)) {
+      document.getElementById('code').textContent = room;
+      document.getElementById('room').hidden = false;
+    }
+
+    var open = document.getElementById('open');
+    open.href = window.location.pathname + window.location.hash;
+    open.textContent = 'Открыть в Kaeru';
+
+    // «latest» on GitHub means «latest full release», and every Kaeru build so far is a
+    // pre-release, so the newest release has to be asked for by hand. The list page is what the
+    // button already points at and stays the answer if this fails. Nothing about the invitation
+    // is sent: no referrer, and the fragment is not part of a request in the first place.
+    fetch('https://api.github.com/repos/g0ddest/kaeru/releases?per_page=1', {
+      referrerPolicy: 'no-referrer',
+      headers: { 'Accept': 'application/vnd.github+json' }
+    })
+      .then(function (response) { return response.ok ? response.json() : null; })
+      .then(function (releases) {
+        if (!releases || !releases.length) return;
+        var assets = releases[0].assets || [];
+        for (var i = 0; i < assets.length; i++) {
+          if (/\.apk$/i.test(assets[i].name || '')) {
+            document.getElementById('apk').href = assets[i].browser_download_url;
+            return;
+          }
+        }
+      })
+      .catch(function () { /* the releases list is already in the href */ });
+  })();
+</script>
+</body>
+</html>
