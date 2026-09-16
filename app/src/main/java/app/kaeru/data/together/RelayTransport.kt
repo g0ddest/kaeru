@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
@@ -82,6 +83,9 @@ class RelayTransport @Inject constructor(
 
     /** The one being dialled, kept only so [close] can cut a handshake short. */
     private var dialing: WebSocket? = null
+
+    /** Completed when the socket that is up has finished dying, so a goodbye can be waited for. */
+    private var ended: CompletableDeferred<Unit>? = null
     private var room: RoomLink? = null
     private var mine: Side = Side.GUEST
     private var closedByUs = false
@@ -131,11 +135,15 @@ class RelayTransport @Inject constructor(
             val closeCode = AtomicInteger(NO_CLOSE_CODE)
             val died = CompletableDeferred<Unit>()
             val socket = client.newWebSocket(request, Peer(link, mine.other, out, opened, closeCode, died))
-            synchronized(lock) { dialing = socket }
+            synchronized(lock) {
+                dialing = socket
+                ended = died
+            }
             died.await()
             synchronized(lock) {
                 dialing = null
                 live = null
+                ended = null
             }
             if (synchronized(lock) { closedByUs } || !out.isActive) return
             // Three of the relay's close codes are answers, not accidents, and dialling again would
@@ -196,8 +204,26 @@ class RelayTransport @Inject constructor(
         open?.send(frame.toByteString())
     }
 
+    /**
+     * Closes politely, because the last thing written to this socket is usually a goodbye.
+     *
+     * `send` only enqueues, and OkHttp's `cancel` throws the queue away — so a session ending with
+     * `Bye` on the wire delivered nothing, and the friend saw a bare socket drop and waited half a
+     * minute to be told the connection was lost instead of being told somebody left. `close`
+     * transmits what is queued and then the close frame; the grace below is the ceiling on how
+     * long that is worth waiting for, after which the socket is cut the way [cut] would.
+     */
     override suspend fun close() {
-        synchronized(lock) { closedByUs = true }
+        val (open, finished) = synchronized(lock) {
+            closedByUs = true
+            live to ended
+        }
+        if (open != null) {
+            runCatching { open.close(NORMAL_CLOSURE, null) }
+            // Not a handshake this waits out: the queue is flushed by the writer thread, and a
+            // relay that has stopped answering must not hold a screen that is going away.
+            withTimeoutOrNull(GOODBYE_GRACE_MS) { finished?.await() }
+        }
         cut()
         _state.value = ConnectionState.CLOSED
     }
@@ -323,6 +349,9 @@ class RelayTransport @Inject constructor(
         private const val ROOM_PATH = "/w/"
         private const val HEALTH_PATH = "/health"
         private const val NORMAL_CLOSURE = 1000
+
+        /** Long enough for a queued goodbye to reach the wire, short enough to be unnoticeable. */
+        private const val GOODBYE_GRACE_MS = 1_000L
         private const val NO_CLOSE_CODE = -1
         private const val PROBE_SECONDS = 5L
 

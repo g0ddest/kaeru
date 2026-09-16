@@ -80,6 +80,16 @@ class RelayTransportTest {
         override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
             heard.trySend(bytes)
         }
+
+        /**
+         * Answers a close with a close, as a real relay does.
+         *
+         * Without it a socket the client shuts down politely stays half-open here, and the server
+         * cannot be torn down at the end of the test.
+         */
+        override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+            webSocket.close(code, reason)
+        }
     }
 
     @Before
@@ -343,6 +353,20 @@ class RelayTransportTest {
         // A build with no relay in it has nothing to probe, and says so without a request.
         assertFalse(relayAt("").healthy())
         assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `a goodbye written just before closing still reaches the friend`() = runBlocking<Unit> {
+        val relay = upgrade()
+        inbox()
+        soon { relay.sockets.receive() }
+
+        // Exactly what `leave()` does: the last word, and then the door.
+        transport.send(TogetherMessage.Bye(seq = 7))
+        transport.close()
+
+        val delivered = soon { relay.heard.receive() }
+        assertEquals(TogetherMessage.Bye(seq = 7), decode(delivered).getOrNull())
     }
 
     @Test

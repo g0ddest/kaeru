@@ -505,7 +505,8 @@ class TogetherSession(
                 offsets.record(message.pingSentAt, message.receivedAt, message.sentAt, clock.millis())
                 republishLive()
             }
-            is TogetherMessage.Bye, is TogetherMessage.PeerLeft -> departed()
+            is TogetherMessage.Bye -> departed(deliberate = true)
+            is TogetherMessage.PeerLeft -> departed(deliberate = false)
         }
     }
 
@@ -594,11 +595,24 @@ class TogetherSession(
      * The friend's socket went away. It is not the end: a room keeps the seat for half a minute,
      * which is about how long a train takes to leave a tunnel.
      */
-    private suspend fun departed() {
+    private suspend fun departed(deliberate: Boolean) {
         if (peerName.isNotEmpty()) announce(TogetherEvent.Notice(NoticeKind.LEFT, peerName))
         rejoin?.cancel()
+        rejoin = null
+        if (deliberate) {
+            // Somebody pressed «выйти». There is nobody to wait half a minute for, and «связь с
+            // другом потеряна» after that wait would be an account of what happened that is simply
+            // untrue.
+            forceNormalSpeed()
+            stop()
+            _state.value = SessionState.Ended
+            return
+        }
         rejoin = scope.launch(failures) {
             delay(REJOIN_WINDOW_MS)
+            // Nulled before the window's own verdict, so the exception the guard makes for a
+            // returning hello lasts the window rather than the rest of the session.
+            rejoin = null
             lose(LostReason.CONNECTION)
         }
     }
