@@ -1,14 +1,22 @@
 package app.kaeru.domain.playback
 
+import app.kaeru.domain.download.DeferredDownloadRemoval
+import app.kaeru.domain.download.DownloadPolicy
+import app.kaeru.domain.download.DownloadedEpisode
+import app.kaeru.domain.download.FakeDeferredRemovals
+import app.kaeru.domain.download.FakeDownloadRepository
 import app.kaeru.domain.error.HttpError
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
+import app.kaeru.domain.model.Translation
+import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.model.WatchState
 import app.kaeru.domain.repository.LibraryRepository
+import app.kaeru.domain.settings.FakeSettingsStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -32,7 +40,8 @@ class MarkEpisodeUnwatchedTest {
     private val library = FakeLibraryRepository()
     private val samples = FakePlaybackSampleRepository()
     private val suppressed = SuppressedMarks()
-    private val unmark = MarkEpisodeUnwatched(library, samples.episodes, samples, suppressed, clock)
+    private val promises = FakeDeferredRemovals()
+    private val unmark = MarkEpisodeUnwatched(library, samples.episodes, samples, suppressed, clock, promises)
 
     private fun anime(id: Int = 100, episodes: Int = 12) = Anime(
         id = id, nameRu = "Имя", nameRomaji = "Name", posterUrl = null, screenshotUrls = emptyList(),
@@ -323,5 +332,54 @@ class MarkEpisodeUnwatchedTest {
 
         assertEquals(listOf("episodes:100:4"), library.calls)
         assertNull(watch())
+    }
+
+    // --- what «Удалять просмотренные» may have promised -------------------------------------
+
+    /**
+     * The regression this guards against: episode 5 is downloaded and playing; at the threshold
+     * the mark records a deletion for it and [DeferredDownloadRemoval] defers it because the
+     * episode is being read; the viewer un-marks episode 5 from the title screen. Without this,
+     * playback moving on afterwards deletes a download the viewer just said they have not
+     * watched.
+     */
+    @Test
+    fun `un-marking an episode revokes a deletion promised for it`() = runTest {
+        seed(episodes = 7)
+        promises.seed(DownloadedEpisode(100, 5))
+
+        assertTrue(unmark(animeId = 100, episode = 5).isSuccess)
+
+        assertTrue(promises.pending().isEmpty())
+    }
+
+    @Test
+    fun `a promise for a different episode is left alone`() = runTest {
+        seed(episodes = 7)
+        promises.seed(DownloadedEpisode(100, 6))
+
+        assertTrue(unmark(animeId = 100, episode = 5).isSuccess)
+
+        assertEquals(setOf(DownloadedEpisode(100, 6)), promises.pending())
+    }
+
+    /** The end-to-end shape of the regression: the revoked promise never reaches a deletion. */
+    @Test
+    fun `revoking the promise means playback moving off the episode deletes nothing`() = runTest {
+        seed(episodes = 7)
+        val downloads = FakeDownloadRepository()
+        downloads.downloaded(100, 5, Translation(3, "AniLibria", TranslationKind.VOICE, 12), "file:///5.m3u8")
+        val settings = FakeSettingsStore()
+        settings.downloadPolicy.value = DownloadPolicy.DEFAULT.copy(deleteWatched = true)
+        val deferred = DeferredDownloadRemoval(downloads, settings, promises)
+        // The mark at the watched threshold, while episode 5 is still the one playing: the
+        // deletion is promised and deferred rather than acted on at once.
+        deferred.nowPlaying(100, 5)
+        deferred.onWatched(100, 5)
+
+        assertTrue(unmark(animeId = 100, episode = 5).isSuccess)
+        deferred.nowPlaying(100, 6)
+
+        assertTrue(downloads.removed.isEmpty())
     }
 }

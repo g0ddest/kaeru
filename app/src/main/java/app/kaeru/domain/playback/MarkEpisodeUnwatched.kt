@@ -1,5 +1,7 @@
 package app.kaeru.domain.playback
 
+import app.kaeru.domain.download.DeferredRemovals
+import app.kaeru.domain.download.DownloadedEpisode
 import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.repository.EpisodeProgressRepository
 import app.kaeru.domain.repository.LibraryRepository
@@ -50,6 +52,13 @@ data class UnwatchedOutcome(
  * this would say, so nothing is sent and nothing local is thrown away.
  *
  * Everything it took is returned in an [UnwatchedOutcome], and [restore] is how that is put back.
+ *
+ * [promises] is the one exception to "downloads are untouched" above, and it is not one: nothing
+ * here deletes or adds a download. «Удалять просмотренные» may have promised to delete this exact
+ * download the moment playback moves off it — recorded when the mark that triggered it was still
+ * ahead of this one — and a viewer un-marking the episode is saying the opposite of what that
+ * promise assumes. Revoking the note is not touching the file; leaving the note standing would be
+ * the file going anyway, the next time playback moves on.
  */
 class MarkEpisodeUnwatched(
     private val library: LibraryRepository,
@@ -57,6 +66,7 @@ class MarkEpisodeUnwatched(
     private val samples: PlaybackSampleRepository,
     private val suppressed: SuppressedMarks,
     private val clock: Clock,
+    private val promises: DeferredRemovals,
 ) {
     suspend operator fun invoke(animeId: Int, episode: Int): Result<UnwatchedOutcome> {
         val counted = library.observeAnime(animeId).first()?.rate?.episodes ?: 0
@@ -77,6 +87,11 @@ class MarkEpisodeUnwatched(
         // Whatever is playing this episode right now must not quietly count it again: a cast
         // session and picture-in-picture both outlive the screen this was pressed on.
         suppressed.suppress(animeId, episode)
+        // «Удалять просмотренные» may have promised to delete this exact download the moment
+        // playback moves off it. The viewer un-marking the episode is saying the opposite of what
+        // that promise assumes, so the promise is revoked — not a download touched, only the note
+        // that would have deleted it.
+        promises.forget(DownloadedEpisode(animeId, episode))
         return Result.success(UnwatchedOutcome(episode, counted, losing))
     }
 

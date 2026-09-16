@@ -178,7 +178,8 @@ object PlaybackModule {
         samples: PlaybackSampleRepository,
         suppressed: SuppressedMarks,
         clock: Clock,
-    ): MarkEpisodeUnwatched = MarkEpisodeUnwatched(library, progress, samples, suppressed, clock)
+        promises: DeferredRemovals,
+    ): MarkEpisodeUnwatched = MarkEpisodeUnwatched(library, progress, samples, suppressed, clock, promises)
 
     /**
      * One instance, because it is a conversation between two things that never meet: a title screen

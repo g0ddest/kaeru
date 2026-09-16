@@ -112,7 +112,8 @@ class DetailsViewModelTest {
         streams = streams,
         watchStates = watchStates,
         markEpisodeWatched = MarkEpisodeWatched(repo, watchStates, clock, DeferredDownloadRemoval(downloads, settings, FakeDeferredRemovals())),
-        markEpisodeUnwatched = MarkEpisodeUnwatched(repo, samples.episodes, samples, SuppressedMarks(), clock),
+        markEpisodeUnwatched =
+            MarkEpisodeUnwatched(repo, samples.episodes, samples, SuppressedMarks(), clock, FakeDeferredRemovals()),
         clock = clock,
         downloads = downloads,
         settings = settings,
