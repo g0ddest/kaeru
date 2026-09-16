@@ -108,6 +108,12 @@ sealed interface TogetherMessage {
         val durationMs: Long,
         override val seq: Long,
     ) : TogetherMessage {
+        init {
+            require(bytes.size <= MAX_VOICE_CHUNK_BYTES) {
+                "A voice slice is at most $MAX_VOICE_CHUNK_BYTES bytes, not ${bytes.size}"
+            }
+        }
+
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
             if (other !is Voice) return false

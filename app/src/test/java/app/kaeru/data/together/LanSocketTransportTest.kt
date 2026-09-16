@@ -319,6 +319,26 @@ class LanSocketTransportTest {
     }
 
     @Test
+    fun `a length of nothing is nonsense on the wire, not a frame that was too big`() = runBlocking<Unit> {
+        val host = transport()
+        val endpoint = requireNotNull(host.hostEndpoint())
+        val link = RoomLink.random(random).copy(lan = endpoint)
+        val heard = inbox(host, link, asHost = true)
+
+        Socket().use { peer ->
+            peer.connect(InetSocketAddress("127.0.0.1", endpoint.port), 1_000)
+            val out = peer.greet(host, link)
+            soon { heard.receive() }.getOrThrow()
+
+            out.writeInt(0)
+            out.flush()
+
+            assertEquals(TogetherFailureReason.TAMPERED, reasonOf(soon { heard.receive() }))
+            soon { host.state.first { it == ConnectionState.CLOSED } }
+        }
+    }
+
+    @Test
     fun `what goes on the wire is a length and then a sealed frame`() = runBlocking<Unit> {
         val host = transport()
         val endpoint = requireNotNull(host.hostEndpoint())

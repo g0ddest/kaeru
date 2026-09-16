@@ -15,6 +15,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
+import javax.inject.Provider
 import javax.inject.Qualifier
 import javax.inject.Singleton
 
@@ -60,14 +61,21 @@ object TogetherModule {
      *
      * The address is checked again here and not merely trusted from the link, because this is the
      * last place before a socket is opened.
+     *
+     * A fresh transport every time, because one of them carries one session: a port, a socket, a
+     * backlog and a state are all instance state. A host has to hold on to the one it was given —
+     * the port in its link came out of that object — which is what asking once and keeping the
+     * answer means here.
      */
     @Provides
     @Singleton
-    fun transportFactory(lan: LanSocketTransport, relay: RelayTransport): TransportFactory =
-        TransportFactory { link ->
-            val endpoint = link.lan
-            if (endpoint != null && PairingRequest.isLanAddress(endpoint.host)) lan else relay
-        }
+    fun transportFactory(
+        lan: Provider<LanSocketTransport>,
+        relay: Provider<RelayTransport>,
+    ): TransportFactory = TransportFactory { link ->
+        val endpoint = link.lan
+        if (endpoint != null && PairingRequest.isLanAddress(endpoint.host)) lan.get() else relay.get()
+    }
 }
 
 @Module

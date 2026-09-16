@@ -18,6 +18,11 @@ enum class ConnectionState { CONNECTING, CONNECTED, RECONNECTING, CLOSED }
  * There are two, and the session above does not know which it has: direct sockets when both phones
  * are on one Wi-Fi, and a relay when they are not. Both deliver in order, both carry frames from
  * [TogetherCodec], and neither of them ever sees a plaintext message.
+ *
+ * One of these carries one session. A port, a socket, a backlog and a state are all instance
+ * state, so a second [connect] on the same object would trample the first. [TransportFactory]
+ * hands out a fresh one each time it is asked, and the way to keep the same one — which a host
+ * must, since the port in its link came from [hostEndpoint] — is to hold the object it gave you.
  */
 interface WatchTogetherTransport {
 
@@ -49,7 +54,13 @@ interface WatchTogetherTransport {
     /**
      * Where a friend on the same Wi-Fi should knock, or `null` when this transport does not take
      * incoming connections. Reading it is what opens the port, so the host can put the address in
-     * a link before anybody is listening for messages on it; [close] gives the port back.
+     * a link before anybody is listening for messages on it; [close] gives the port back. Asking
+     * twice answers the same thing, because the port stops being listened on once the friend
+     * arrives and a second bind would name one nothing is on.
+     *
+     * Does real work on the thread that calls it — it reads the device's network interfaces and
+     * binds a socket — so it does not belong on the main thread. Both are local and fast, but
+     * StrictMode will say so.
      */
     fun hostEndpoint(): LanEndpoint?
 }

@@ -187,6 +187,38 @@ class RelayTransportTest {
     }
 
     @Test
+    fun `a message too large to be a frame is refused before it is opened`() = runBlocking<Unit> {
+        val relay = upgrade()
+        val heard = inbox()
+
+        val socket = soon { relay.sockets.receive() }
+        socket.send(ByteArray(TogetherCodec.MAX_FRAME_BYTES + 1).toByteString())
+        socket.send(frame(TogetherMessage.Bye(seq = 8)))
+
+        assertEquals(TogetherFailureReason.FRAME_TOO_LARGE, reasonOf(soon { heard.receive() }))
+        // One frame's problem. A relay pushing junk does not end somebody's film.
+        assertEquals(TogetherMessage.Bye(seq = 8), soon { heard.receive() }.getOrThrow())
+        assertEquals(ConnectionState.CONNECTED, transport.state.first())
+    }
+
+    @Test
+    fun `a session that dropped is reconnecting, never connecting for the first time again`() = runBlocking<Unit> {
+        val first = upgrade()
+        upgrade()
+        inbox()
+
+        val dropped = soon { first.sockets.receive() }
+        soon { transport.state.first { it == ConnectionState.CONNECTED } }
+        states.clear()
+        dropped.close(1001, null)
+        soon { transport.state.first { it == ConnectionState.RECONNECTING } }
+        soon { transport.state.first { it == ConnectionState.CONNECTED } }
+
+        // «Подключаемся» and «Связь потеряна, пробуем снова» are different sentences to read.
+        assertFalse(states.contains(ConnectionState.CONNECTING))
+    }
+
+    @Test
     fun `the backlog is bounded, and it is the newest actions that survive`() = runBlocking<Unit> {
         val first = upgrade()
         val second = upgrade()

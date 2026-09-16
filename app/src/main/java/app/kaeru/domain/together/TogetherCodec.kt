@@ -72,6 +72,11 @@ object TogetherCodec {
      * Throws [TogetherFailed] with [TogetherFailureReason.FRAME_TOO_LARGE] rather than writing a
      * frame nobody will accept. Only a voice clip can get near the cap, and the sender cuts those
      * into slices before they reach here — so a throw means a bug on this side, not bad input.
+     *
+     * The two `require`s are a different thing again: a key or a nonce of the wrong size cannot
+     * arrive from the network, only from a caller that built one, so they stay
+     * `IllegalArgumentException` — programmer error, not a failure a viewer is ever told about.
+     * A caller catching [TogetherFailed] is catching everything this can do about bad input.
      */
     fun encode(msg: TogetherMessage, link: RoomLink, from: Side, nonce: ByteArray): ByteArray {
         require(link.key.size == RoomLink.KEY_BYTES) { "A room key is ${RoomLink.KEY_BYTES} bytes" }
@@ -101,7 +106,16 @@ object TogetherCodec {
         val plaintext = runCatching { cipher(Cipher.DECRYPT_MODE, link, from, nonce).doFinal(sealed) }
             .getOrElse { return failure(TogetherFailureReason.TAMPERED, it) }
         return runCatching { json.decodeFromString<TogetherMessage>(plaintext.toString(Charsets.UTF_8)) }
-            .fold({ Result.success(it) }, { failure(TogetherFailureReason.TAMPERED, it) })
+            .fold(
+                { message ->
+                    // A transport says a friend's socket went away; a friend cannot say it about
+                    // themselves. One arriving over the wire is somebody holding the key trying to
+                    // convince this side that the other one left, and it is not believed.
+                    if (message is TogetherMessage.PeerLeft) failure(TogetherFailureReason.TAMPERED)
+                    else Result.success(message)
+                },
+                { failure(TogetherFailureReason.TAMPERED, it) },
+            )
     }
 
     private fun cipher(mode: Int, link: RoomLink, from: Side, nonce: ByteArray): Cipher =

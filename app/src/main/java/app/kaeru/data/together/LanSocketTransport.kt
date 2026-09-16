@@ -8,6 +8,7 @@ import app.kaeru.domain.pairing.PairingRequest
 import app.kaeru.domain.together.ConnectionState
 import app.kaeru.domain.together.LanEndpoint
 import app.kaeru.domain.together.RoomLink
+import app.kaeru.domain.together.TransportFactory
 import app.kaeru.domain.together.Side
 import app.kaeru.domain.together.TogetherCodec
 import app.kaeru.domain.together.TogetherMessage
@@ -95,11 +96,12 @@ class LanTogetherEndpoints @Inject constructor() : TogetherEndpoints {
  * length-prefixed — four bytes, big-endian, then that many bytes of sealed frame — because a TCP
  * stream has no idea where one message stops.
  *
+ * One of these carries one session; [TransportFactory] makes a fresh one for the next.
+ *
  * A length larger than a frame may ever be is the one error this cannot carry on from. A bad tag
  * is one frame's problem and the next frame is still where it should be; a length that is a lie
  * means the stream cannot be found again, so the collector is told and the connection ends.
  */
-@Singleton
 class LanSocketTransport @Inject constructor(
     private val addresses: LanAddresses,
     private val endpoints: TogetherEndpoints,
@@ -227,7 +229,9 @@ class LanSocketTransport @Inject constructor(
         socket.soTimeout = minOf(POLL_MS, timeouts.idleMs)
         val out = DataOutputStream(BufferedOutputStream(socket.getOutputStream()))
         synchronized(lock) {
-            live = Live(socket, out, link, mine)
+            // A copy, so [shutdown] has something of its own to wipe. Zeroing the caller's array
+            // would pull the key out from under whoever is still holding the link.
+            live = Live(socket, out, link.copy(key = link.key.copyOf()), mine)
             closeServerLocked()
         }
         _state.value = ConnectionState.CONNECTED
@@ -264,10 +268,16 @@ class LanSocketTransport @Inject constructor(
                 }
             }
             val length = lengthOf(header)
-            if (length <= 0 || length > TogetherCodec.MAX_FRAME_BYTES) {
-                // A length that is a lie cannot be skipped past: whatever follows it is no longer
-                // findable as a frame, so this is the one error the connection does not survive.
+            // A length that is a lie cannot be skipped past: whatever follows it is no longer
+            // findable as a frame, so either of these ends the connection. They are told apart
+            // because they read differently — one side sent something too big, or somebody who is
+            // not speaking this protocol at all is writing into the socket.
+            if (length > TogetherCodec.MAX_FRAME_BYTES) {
                 emit(failure(TogetherFailureReason.FRAME_TOO_LARGE))
+                return
+            }
+            if (length <= 0) {
+                emit(failure(TogetherFailureReason.TAMPERED))
                 return
             }
             val frame = ByteArray(length)
@@ -322,8 +332,10 @@ class LanSocketTransport @Inject constructor(
 
     override suspend fun send(message: TogetherMessage) {
         val open = synchronized(lock) { live } ?: throw TogetherFailed(TogetherFailureReason.DISCONNECTED)
-        val frame = TogetherCodec.encode(message, open.link, open.mine, TogetherCodec.newNonce(random))
         withContext(dispatcher) {
+            // Sealing a 32 KB voice slice is not main-thread work, so it happens here rather than
+            // on the caller's thread.
+            val frame = TogetherCodec.encode(message, open.link, open.mine, TogetherCodec.newNonce(random))
             writes.withLock {
                 try {
                     open.out.writeInt(frame.size)
@@ -340,7 +352,14 @@ class LanSocketTransport @Inject constructor(
 
     private fun shutdown() {
         synchronized(lock) {
-            live?.let { runCatching { it.socket.close() } }
+            live?.let {
+                runCatching { it.socket.close() }
+                // Best effort, and no more than that: a JVM copies arrays wherever it likes, so
+                // this wipes the one copy this object is known to hold and claims nothing else.
+                // A `send` that read the key a microsecond ago can still be encoding with it, and
+                // the worst that costs is one frame the friend refuses while the session is ending.
+                it.link.key.fill(0)
+            }
             live = null
             advertised = null
             closeServerLocked()

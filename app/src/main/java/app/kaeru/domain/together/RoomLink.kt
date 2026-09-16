@@ -90,6 +90,12 @@ data class RoomLink(val roomId: String, val key: ByteArray, val lan: LanEndpoint
             }
         }
 
+        /**
+         * The host is deliberately not checked. Nothing is ever dialled at it: a relay session
+         * goes to the address built into the app, and App Links only hand this app a link from the
+         * one verified domain anyway. Extra query parameters are ignored for the same reason —
+         * chat applications append tracking junk, and a room should survive it.
+         */
         private fun https(uri: URI, key: ByteArray): Result<RoomLink> {
             val path = uri.path ?: return rejected()
             if (!path.startsWith(HTTPS_PATH)) return rejected()
@@ -110,7 +116,21 @@ data class RoomLink(val roomId: String, val key: ByteArray, val lan: LanEndpoint
             return Result.success(RoomLink(roomId, key, LanEndpoint(host, port)))
         }
 
-        private fun isRoomId(value: String): Boolean = decode(value)?.size == ROOM_ID_BYTES
+        /**
+         * Exactly how this app writes a room name, and nothing else that happens to decode to
+         * eight bytes.
+         *
+         * Base64 ignores the unused trailing bits of the last character, so `AAAAAAAAAAA`,
+         * `AAAAAAAAAAB` and `AAAAAAAAAAC` all decode to the same eight zero bytes — three names
+         * for one room, and a link that survives a typo into a room nobody is in. Padding is worse
+         * still: `=` is outside the relay's own room-id pattern, so such a link would parse here
+         * and earn an HTTP 400 there. Re-encoding what came back and demanding the same string
+         * settles both in one line.
+         */
+        private fun isRoomId(value: String): Boolean {
+            val bytes = decode(value) ?: return false
+            return bytes.size == ROOM_ID_BYTES && encode(bytes) == value
+        }
 
         private fun encode(bytes: ByteArray): String =
             Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)

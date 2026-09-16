@@ -28,7 +28,6 @@ class TogetherCodecTest {
         TogetherMessage.Ping(sentAt = 1_700_000_000_001, seq = 12),
         TogetherMessage.Pong(pingSentAt = 1, receivedAt = 2, sentAt = 3, seq = 13),
         TogetherMessage.Bye(seq = 14),
-        TogetherMessage.PeerLeft(),
     )
 
     private fun encode(msg: TogetherMessage, from: Side = Side.HOST) =
@@ -104,6 +103,32 @@ class TogetherCodecTest {
     }
 
     @Test
+    fun `a peer cannot announce that the peer left`() {
+        // Nothing in this app sends one, but the type is in the sealed hierarchy and so is
+        // encodable. What a receiver must never do is believe one that arrived over the wire.
+        val frame = encode(TogetherMessage.PeerLeft())
+
+        assertEquals(TogetherFailureReason.TAMPERED, reasonOf(decode(frame)))
+    }
+
+    @Test
+    fun `a voice slice larger than the protocol allows is not a voice slice`() {
+        val overCap = runCatching {
+            TogetherMessage.Voice(
+                chunk = 0,
+                total = 1,
+                bytes = ByteArray(TogetherMessage.MAX_VOICE_CHUNK_BYTES + 1),
+                durationMs = 30_000,
+                seq = 1,
+            )
+        }.exceptionOrNull()
+
+        assertTrue(overCap is IllegalArgumentException)
+        // And one exactly at the cap is fine, so the boundary is where the constant says.
+        TogetherMessage.Voice(0, 1, ByteArray(TogetherMessage.MAX_VOICE_CHUNK_BYTES), 30_000, 1)
+    }
+
+    @Test
     fun `a frame too short to hold anything is refused rather than read`() {
         assertEquals(TogetherFailureReason.TAMPERED, reasonOf(decode(ByteArray(0))))
         assertEquals(
@@ -118,8 +143,8 @@ class TogetherCodecTest {
 
         assertEquals(TogetherFailureReason.FRAME_TOO_LARGE, reasonOf(decode(tooBig)))
 
-        val clip = TogetherMessage.Voice(chunk = 0, total = 1, bytes = ByteArray(TogetherCodec.MAX_FRAME_BYTES), durationMs = 30_000, seq = 1)
-        val thrown = runCatching { encode(clip) }.exceptionOrNull()
+        val shout = TogetherMessage.Chat("а".repeat(TogetherCodec.MAX_FRAME_BYTES), seq = 1)
+        val thrown = runCatching { encode(shout) }.exceptionOrNull()
 
         assertEquals(TogetherFailureReason.FRAME_TOO_LARGE, (thrown as? TogetherFailed)?.reason)
     }
