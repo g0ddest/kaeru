@@ -75,12 +75,16 @@ class FakeTransport : WatchTogetherTransport {
         order += if (collector?.isActive != false) "close-first" else "cancelled-first"
         order += "close"
         closes += 1
-        // A graceful close suspends — it puts a close frame on the wire and waits for the answer —
-        // and that suspension is where a coroutine already cancelled gives up. Anything a session
-        // does after this must not depend on the throw being swallowed somewhere.
-        yield()
+        // The channel is finished first and the call winds down afterwards, which is the shape of
+        // a real graceful close: it puts a close frame on the wire and waits for the answer. The
+        // suspension in the middle is what gives whoever is collecting this channel a turn to
+        // notice it has ended — and a session that ends its state after this rather than before
+        // will have published «connection lost» by the time it gets back here.
         _state.value = ConnectionState.CLOSED
         inbound.close()
+        // More than one turn, because a real graceful close waits up to a second for the peer's
+        // answer and whoever is collecting this channel gets every turn in between.
+        repeat(YIELDS_WHILE_CLOSING) { yield() }
     }
 
     override fun hostEndpoint(): LanEndpoint? = endpoint
@@ -101,6 +105,8 @@ class FakeTransport : WatchTogetherTransport {
     /** Everything of one type this side sent, which is what most assertions are about. */
     inline fun <reified T : TogetherMessage> sentOf(): List<T> = sent.filterIsInstance<T>()
 }
+
+private const val YIELDS_WHILE_CLOSING = 4
 
 /** A player that does exactly what it is told and remembers every word of it. */
 class FakePlaybackPort : PlaybackPort {

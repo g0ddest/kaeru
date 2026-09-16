@@ -860,6 +860,24 @@ class TogetherSessionTest {
     }
 
     @Test
+    fun `a deliberate leave never shows the connection as lost`() = sessionTest {
+        live()
+        val states = mutableListOf<SessionState>()
+        val watching = launch { session.state.toList(states) }
+        runCurrent()
+
+        session.leave()
+        runCurrent()
+
+        // Closing the channel ends the flow the session is collecting, and the line after that
+        // collect is what calls a finished channel a lost connection. Nothing the viewer chose
+        // may go through that door.
+        assertTrue(states.none { it is SessionState.Lost })
+        assertEquals(SessionState.Ended, states.last())
+        watching.cancel()
+    }
+
+    @Test
     fun `the goodbye is written and the channel closed before the collector is taken down`() =
         sessionTest {
             live()

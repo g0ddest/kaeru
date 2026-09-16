@@ -231,8 +231,13 @@ class TogetherSession(
             if (open != null) send(TogetherMessage.Bye(nextSeq()))
             // Whatever the last correction left behind is not this viewer's speed to keep.
             forceNormalSpeed()
-            stop()
+            // Settled before the channel comes down, as a friend's goodbye already is. Closing the
+            // channel ends the flow being collected, and the collector's own next line is the one
+            // that calls a finished channel a lost connection — so a leave done the other way
+            // round puts «связь с другом потеряна» on screen on its way out of a session the
+            // viewer chose to end.
             _state.value = SessionState.Ended
+            stop()
         }.join()
     }
 
