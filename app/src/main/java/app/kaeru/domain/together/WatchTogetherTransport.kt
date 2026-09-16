@@ -32,6 +32,10 @@ interface WatchTogetherTransport {
      * the channel is finished: the peer left, or reconnection ran out of time.
      */
     fun connect(link: RoomLink, asHost: Boolean): Flow<Result<TogetherMessage>>
+    // A guest must send its first message straight away. A host on the local network treats a new
+    // connection as provisional and gives the session to nobody until one frame decrypts under the
+    // room key, because an advertised port is reachable by anything on the same Wi-Fi. Until then
+    // the host's [state] stays [ConnectionState.CONNECTING].
 
     /**
      * Throws [app.kaeru.domain.error.TogetherFailed] when there is nothing to write to. Callers

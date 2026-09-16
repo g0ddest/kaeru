@@ -36,7 +36,7 @@ import java.security.SecureRandom
  */
 class LanSocketTransportTest {
     private val random = SecureRandom()
-    private val timeouts = TogetherTimeouts(acceptMs = 3_000, connectMs = 1_000, idleMs = 3_000)
+    private val timeouts = TogetherTimeouts(acceptMs = 3_000, connectMs = 1_000, idleMs = 3_000, authMs = 400)
     private val advertised = "192.168.1.42"
     private val opened = mutableListOf<LanSocketTransport>()
 
@@ -81,6 +81,22 @@ class LanSocketTransportTest {
 
     private fun reasonOf(result: Result<*>) = (result.exceptionOrNull() as? TogetherFailed)?.reason
 
+    /** One length-prefixed, sealed frame, exactly as the transport writes them. */
+    private fun DataOutputStream.frame(message: TogetherMessage, key: ByteArray) {
+        val sealed = TogetherCodec.encode(message, key, TogetherCodec.newNonce(random))
+        writeInt(sealed.size)
+        write(sealed)
+        flush()
+    }
+
+    /** A raw peer that has proved it holds the key, so the host has given it the seat. */
+    private suspend fun Socket.greet(host: LanSocketTransport, link: RoomLink): DataOutputStream {
+        val out = DataOutputStream(getOutputStream())
+        out.frame(TogetherMessage.Hello("Гость", animeId = 1, episode = 1, positionMs = 0, playing = false, seq = 1), link.key)
+        soon { host.state.first { it == ConnectionState.CONNECTED } }
+        return out
+    }
+
     @Test
     fun `two phones on one network hear each other`() = runBlocking<Unit> {
         val host = transport()
@@ -90,18 +106,52 @@ class LanSocketTransportTest {
 
         val heardByHost = inbox(host, link, asHost = true)
         val heardByGuest = inbox(guest, link, asHost = false)
-        soon { host.state.first { it == ConnectionState.CONNECTED } }
         soon { guest.state.first { it == ConnectionState.CONNECTED } }
 
         val hello = TogetherMessage.Hello("Виталий", animeId = 51_009, episode = 3, translationId = 610, positionMs = 0, playing = false, seq = 1)
         val state = TogetherMessage.State(positionMs = 12_000, playing = true, buffering = false, sentAt = 7, seq = 2)
+        // The greeting is what vouches for the guest; until one arrives the host has given nobody
+        // the seat, which is the whole point of the provisional slot.
         guest.send(hello)
+        soon { host.state.first { it == ConnectionState.CONNECTED } }
         host.send(state)
 
         assertEquals(advertised, endpoint.host)
         assertTrue(endpoint.port in 1..65535)
         assertEquals(hello, soon { heardByHost.receive() }.getOrThrow())
         assertEquals(state, soon { heardByGuest.receive() }.getOrThrow())
+    }
+
+    @Test
+    fun `a stranger on the network does not take the seat the link was sent to`() = runBlocking<Unit> {
+        val host = transport()
+        val endpoint = requireNotNull(host.hostEndpoint())
+        val link = RoomLink.random(random).copy(lan = endpoint)
+        val heard = inbox(host, link, asHost = true)
+
+        // Somebody else on the same Wi-Fi, connecting first and saying nothing at all.
+        Socket().use { silent ->
+            silent.connect(InetSocketAddress("127.0.0.1", endpoint.port), 1_000)
+            // And somebody who talks, but not with this room's key.
+            Socket().use { wrongKey ->
+                wrongKey.connect(InetSocketAddress("127.0.0.1", endpoint.port), 1_000)
+                DataOutputStream(wrongKey.getOutputStream())
+                    .frame(TogetherMessage.Bye(seq = 1), RoomLink.random(random).key)
+
+                // Neither of them is the friend, so neither of them gets the seat.
+                assertEquals(ConnectionState.CONNECTING, host.state.first())
+            }
+        }
+
+        // The friend arrives afterwards and finds the door still open.
+        val guest = transport(siteLocal = null)
+        inbox(guest, link, asHost = false)
+        val hello = TogetherMessage.Hello("Виталий", animeId = 51_009, episode = 3, translationId = 610, positionMs = 0, playing = false, seq = 1)
+        soon { guest.state.first { it == ConnectionState.CONNECTED } }
+        guest.send(hello)
+
+        assertEquals(hello, soon { heard.receive() }.getOrThrow())
+        soon { host.state.first { it == ConnectionState.CONNECTED } }
     }
 
     @Test
@@ -149,7 +199,7 @@ class LanSocketTransportTest {
                 override fun siteLocalIpv4() = advertised
             },
             TogetherEndpoints { InetSocketAddress("127.0.0.1", it.port) },
-            TogetherTimeouts(acceptMs = 300, connectMs = 300, idleMs = 300),
+            TogetherTimeouts(acceptMs = 300, connectMs = 300, idleMs = 300, authMs = 300),
             Dispatchers.IO,
         ).also(opened::add)
         val link = RoomLink.random(random).copy(lan = requireNotNull(host.hostEndpoint()))
@@ -171,6 +221,8 @@ class LanSocketTransportTest {
             ended.send(Unit)
         }
         inbox(guest, link, asHost = false)
+        soon { guest.state.first { it == ConnectionState.CONNECTED } }
+        guest.send(TogetherMessage.Hello("Гость", animeId = 1, episode = 1, positionMs = 0, playing = false, seq = 1))
         soon { host.state.first { it == ConnectionState.CONNECTED } }
 
         host.close()
@@ -190,14 +242,14 @@ class LanSocketTransportTest {
 
         Socket().use { peer ->
             peer.connect(InetSocketAddress("127.0.0.1", endpoint.port), 1_000)
-            val out = DataOutputStream(peer.getOutputStream())
+            val out = peer.greet(host, link)
+            soon { heard.receive() }.getOrThrow()
+
             val junk = ByteArray(64) { it.toByte() }
             out.writeInt(junk.size)
             out.write(junk)
-            val good = TogetherCodec.encode(TogetherMessage.Bye(seq = 9), link.key, TogetherCodec.newNonce(random))
-            out.writeInt(good.size)
-            out.write(good)
             out.flush()
+            out.frame(TogetherMessage.Bye(seq = 9), link.key)
 
             assertEquals(TogetherFailureReason.TAMPERED, reasonOf(soon { heard.receive() }))
             assertEquals(TogetherMessage.Bye(seq = 9), soon { heard.receive() }.getOrThrow())
@@ -213,10 +265,11 @@ class LanSocketTransportTest {
 
         Socket().use { peer ->
             peer.connect(InetSocketAddress("127.0.0.1", endpoint.port), 1_000)
-            DataOutputStream(peer.getOutputStream()).apply {
-                writeInt(TogetherCodec.MAX_FRAME_BYTES + 1)
-                flush()
-            }
+            val out = peer.greet(host, link)
+            soon { heard.receive() }.getOrThrow()
+
+            out.writeInt(TogetherCodec.MAX_FRAME_BYTES + 1)
+            out.flush()
 
             assertEquals(TogetherFailureReason.FRAME_TOO_LARGE, reasonOf(soon { heard.receive() }))
             soon { host.state.first { it == ConnectionState.CLOSED } }
@@ -232,7 +285,7 @@ class LanSocketTransportTest {
 
         Socket().use { peer ->
             peer.connect(InetSocketAddress("127.0.0.1", endpoint.port), 1_000)
-            soon { host.state.first { it == ConnectionState.CONNECTED } }
+            peer.greet(host, link)
             val chat = TogetherMessage.Chat("Дальше!", seq = 4)
             host.send(chat)
 
