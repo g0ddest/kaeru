@@ -4,6 +4,8 @@ import androidx.media3.common.Player
 import app.kaeru.domain.model.PlaybackTarget
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
+import app.kaeru.domain.together.LocalAction
+import app.kaeru.player.ActionOrigin
 import app.kaeru.player.PlaybackController
 import app.kaeru.player.PlaybackEngine
 import app.kaeru.player.PlaybackEvent
@@ -22,6 +24,9 @@ class FakePlaybackController : PlaybackController {
     override val events: Flow<PlaybackEvent> = announced
 
     override val videoPlayer: StateFlow<Player?> = MutableStateFlow(null)
+
+    val announcedActions = MutableSharedFlow<LocalAction>(extraBufferCapacity = 8)
+    override val localActions: Flow<LocalAction> = announcedActions
 
     val played = mutableListOf<PlaybackTarget>()
     val seeks = mutableListOf<Long>()
@@ -43,7 +48,12 @@ class FakePlaybackController : PlaybackController {
     var releases = 0
         private set
 
-    override suspend fun play(target: PlaybackTarget) {
+    /** Every `setPlaying`, in order, as the value it asked for. */
+    val playPauses = mutableListOf<Boolean>()
+    var rate = 1.0f
+        private set
+
+    override suspend fun play(target: PlaybackTarget, origin: ActionOrigin) {
         played += target
         playback.value = PlaybackState(target = target, isBuffering = true, positionMs = target.startPositionMs)
     }
@@ -52,8 +62,16 @@ class FakePlaybackController : PlaybackController {
         toggles += 1
     }
 
-    override fun seekTo(positionMs: Long) {
+    override fun setPlaying(playing: Boolean, origin: ActionOrigin) {
+        playPauses += playing
+    }
+
+    override fun seekTo(positionMs: Long, origin: ActionOrigin) {
         seeks += positionMs
+    }
+
+    override fun setRate(factor: Float) {
+        rate = factor
     }
 
     override fun seekBy(deltaMs: Long) = seekTo(playback.value.positionMs + deltaMs)

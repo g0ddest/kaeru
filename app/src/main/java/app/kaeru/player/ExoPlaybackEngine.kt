@@ -118,6 +118,10 @@ class ExoPlaybackEngine @Inject constructor(
         push()
     }
 
+    override fun setRate(factor: Float) {
+        instance?.setPlaybackSpeed(factor)
+    }
+
     override fun release() {
         stopPolling()
         instance?.stop()
