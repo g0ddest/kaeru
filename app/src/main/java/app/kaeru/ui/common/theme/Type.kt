@@ -2,11 +2,13 @@ package app.kaeru.ui.common.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Typography as TvTypography
 import app.kaeru.R
@@ -31,12 +33,32 @@ val Manrope = FontFamily(
     },
 )
 
+/**
+ * One style of the scale, with the two settings that decide whether a letter survives its line.
+ *
+ * Compose turns the platform's font padding off by default, and a line box is then exactly the
+ * line height: everything the font draws outside it is simply not painted. What Cyrillic draws
+ * outside it is the tails of «у», «р», «д» and «ф» below the baseline and the breve of «й» above
+ * the cap height — so the text came out shaved along the bottom of a line, and along the top of
+ * one inside a box tight enough to matter. [PlatformTextStyle] puts that padding back.
+ *
+ * [LineHeightStyle] decides where the leading goes. Compose's default trims it off the first and
+ * last lines of a paragraph, which is exactly where it is needed: the last line of a card's
+ * caption is the one whose descenders meet the edge of the card. Centred and untrimmed, every line
+ * of every paragraph gets the same room above and below it.
+ */
+@Suppress("DEPRECATION")
 private fun manrope(weight: FontWeight, size: Int, lineHeight: Int, letterSpacing: Double = 0.0) = TextStyle(
     fontFamily = Manrope,
     fontWeight = weight,
     fontSize = size.sp,
     lineHeight = lineHeight.sp,
     letterSpacing = letterSpacing.sp,
+    platformStyle = PlatformTextStyle(includeFontPadding = true),
+    lineHeightStyle = LineHeightStyle(
+        alignment = LineHeightStyle.Alignment.Center,
+        trim = LineHeightStyle.Trim.None,
+    ),
 )
 
 /**
@@ -108,14 +130,22 @@ private val PhoneRoles = KaeruRoles(
     labelSmall = manrope(FontWeight.SemiBold, 11, 16),
 )
 
-/** The same scale at ×1.35 — the distance between a phone in the hand and a television across the room. */
+/**
+ * The same scale at ×1.35 — the distance between a phone in the hand and a television across the
+ * room.
+ *
+ * With one difference beyond the size: nothing here is tracked tighter than the font draws it.
+ * Negative tracking is a phone-sized decision, made so a long title fits the hand; at three metres
+ * it pulls the glyphs into each other, and on the largest styles it pulls the first and last of
+ * them into the edge of whatever box holds the line.
+ */
 private val TvRoles = KaeruRoles(
-    displayLarge = manrope(FontWeight.ExtraBold, 70, 80, -1.6),
-    displayMedium = manrope(FontWeight.ExtraBold, 57, 65, -1.3),
-    displaySmall = manrope(FontWeight.ExtraBold, 46, 54, -1.0),
-    headlineLarge = manrope(FontWeight.Bold, 38, 46, -0.7),
-    headlineMedium = manrope(FontWeight.Bold, 32, 40, -0.5),
-    headlineSmall = manrope(FontWeight.Bold, 27, 34, -0.3),
+    displayLarge = manrope(FontWeight.ExtraBold, 70, 80),
+    displayMedium = manrope(FontWeight.ExtraBold, 57, 65),
+    displaySmall = manrope(FontWeight.ExtraBold, 46, 54),
+    headlineLarge = manrope(FontWeight.Bold, 38, 46),
+    headlineMedium = manrope(FontWeight.Bold, 32, 40),
+    headlineSmall = manrope(FontWeight.Bold, 27, 34),
     titleLarge = manrope(FontWeight.SemiBold, 27, 34),
     titleMedium = manrope(FontWeight.SemiBold, 23, 30),
     titleSmall = manrope(FontWeight.SemiBold, 20, 26),

@@ -82,6 +82,7 @@ internal fun CardBadge(text: String, modifier: Modifier = Modifier) {
         style = MaterialTheme.typography.labelMedium,
         color = KaeruText,
         maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
         modifier = modifier
             .clip(KaeruTokens.ChipShape)
             .background(KaeruBackground.copy(alpha = 0.82f))

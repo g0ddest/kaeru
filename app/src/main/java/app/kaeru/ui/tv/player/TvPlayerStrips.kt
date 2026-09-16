@@ -294,7 +294,13 @@ private fun TvStripLoading(label: String, text: String, modifier: Modifier = Mod
                 .padding(horizontal = KaeruTokens.Space4),
             contentAlignment = Alignment.Center,
         ) {
-            Text(text, style = MaterialTheme.typography.titleSmall, color = KaeruSecondary, maxLines = 1)
+            Text(
+                text,
+                style = MaterialTheme.typography.titleSmall,
+                color = KaeruSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

@@ -362,6 +362,7 @@ private fun TvHeroBand(hero: TvHero?) {
                                     style = MaterialTheme.typography.titleMedium,
                                     color = KaeruAccent,
                                     maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
                         }

@@ -512,9 +512,16 @@ private fun TvEpisodeTile(
                 style = MaterialTheme.typography.titleMedium,
                 color = if (cell.aired) KaeruText else KaeruSecondary,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             if (!cell.aired) {
-                Text(NOT_AIRED, style = MaterialTheme.typography.labelSmall, color = KaeruSecondary, maxLines = 1)
+                Text(
+                    NOT_AIRED,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = KaeruSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
         if (cell.watched) {
