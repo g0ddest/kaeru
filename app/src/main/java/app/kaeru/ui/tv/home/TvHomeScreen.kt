@@ -401,6 +401,14 @@ private fun TvCardRow(
             // and both are destroyed when a title card replaces the screen. Without it the vertical
             // position came back and every row reopened at its first card.
             state = rowState,
+            // The side margins stay *inside* the viewport, where the safe area above and below does
+            // not — and that is a decision rather than an oversight. A card the D-pad walks right to
+            // is brought flush to the panel edge rather than to the 56dp margin, which is a card
+            // sitting closer to the edge than the design system's gutter. The alternative is worse
+            // on a television: padding outside the list makes the row start and end at the margin,
+            // so cards scroll out of existence at the rail rather than sliding under it, and the
+            // row stops looking like a row that continues. Flush at the edge while scrubbing is
+            // what every television launcher does.
             modifier = Modifier.padding(top = KaeruTokens.Space3),
             contentPadding = PaddingValues(
                 start = TvLayout.Gutter,
