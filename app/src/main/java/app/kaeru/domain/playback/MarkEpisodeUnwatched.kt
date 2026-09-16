@@ -53,11 +53,17 @@ data class UnwatchedOutcome(
  * Everything it took is returned in an [UnwatchedOutcome], and [restore] is how that is put back.
  *
  * [promises] is the one exception to "downloads are untouched" above, and it is not one: nothing
- * here deletes or adds a download. «Удалять просмотренные» may have promised to delete this exact
- * download the moment playback moves off it — recorded when the mark that triggered it was still
- * ahead of this one — and a viewer un-marking the episode is saying the opposite of what that
- * promise assumes. Revoking the note is not touching the file; leaving the note standing would be
- * the file going anyway, the next time playback moves on.
+ * here deletes or adds a download, only a note that would have. «Удалять просмотренные» may have
+ * promised to delete a download the moment playback moves off it, and every such promise for this
+ * anime at this episode or later is revoked — the same reading [forgetPositions] gives the
+ * positions below, since un-marking episode 5 un-watches 5, 6 and 7 together. A promise left
+ * standing would be the file going anyway, the next time playback moves on.
+ *
+ * Revoked ahead of the Shikimori write, not after it like the positions and the suppression below,
+ * and unconditional on whether that write succeeds: an un-mark is the same instruction about a
+ * download whether or not the count needed to move, or whether Shikimori took the write — and the
+ * safer failure direction is a download that outlives a policy it no longer applies to, not one
+ * deleted out from under a viewer who has just said the opposite.
  */
 class MarkEpisodeUnwatched(
     private val library: LibraryRepository,

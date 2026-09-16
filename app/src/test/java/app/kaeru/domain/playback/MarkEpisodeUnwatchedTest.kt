@@ -390,6 +390,24 @@ class MarkEpisodeUnwatchedTest {
         assertEquals(setOf(DownloadedEpisode(100, 4)), promises.pending())
     }
 
+    /**
+     * Pins the deliberate deviation the KDoc now documents: revocation runs ahead of the
+     * Shikimori write and does not wait to see whether it succeeds, unlike everything else
+     * [invoke] does once it is past the no-op branch. A refactor that moved the revocation back
+     * below the write — matching how [forgetPositions] and `suppressed.suppress` are gated —
+     * would pass every other test in this file and fail only this one.
+     */
+    @Test
+    fun `a failed Shikimori write still revokes the promises`() = runTest {
+        seed(episodes = 7)
+        promises.seed(DownloadedEpisode(100, 5), DownloadedEpisode(100, 6))
+        library.episodesResult = Result.failure(HttpError(500))
+
+        assertTrue(unmark(animeId = 100, episode = 5).isFailure)
+
+        assertTrue(promises.pending().isEmpty())
+    }
+
     /** The end-to-end shape of the regression: the revoked promise never reaches a deletion. */
     @Test
     fun `revoking the promise means playback moving off the episode deletes nothing`() = runTest {
