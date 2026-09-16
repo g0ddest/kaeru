@@ -1,7 +1,6 @@
 package app.kaeru.ui.common.theme
 
 import androidx.compose.material3.Typography
-import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.LineHeightStyle
 import org.junit.Assert.assertEquals
@@ -10,31 +9,20 @@ import org.junit.Test
 import androidx.tv.material3.Typography as TvTypography
 
 /**
- * The type scale, measured rather than looked at.
+ * The type scale, measured against the font rather than against a habit.
  *
  * Letters were being cut off along the bottom of a line and, here and there, along the side of a
- * box. None of it is the font: Compose turns the platform's own font padding off by default, so a
- * line box is exactly the line height and anything the font draws outside it — the tails of «у»,
- * «р», «д», «ф», and the accents Cyrillic capitals carry — is simply not painted. A line height
- * close to the font size makes that certain rather than likely.
+ * box, and the cause is in `manrope.ttf`: `unitsPerEm` 2000 with an `hhea` ascender of 2132 and a
+ * descender of −600, which the `OS/2` table agrees with on every metric it publishes. The font
+ * draws itself in [MANROPE_BOX] of the font size — where most Latin faces want about 1.2 — and a
+ * scale built on the usual ratios therefore asked for a line box smaller than the glyphs. What
+ * falls outside the box is not painted, and what falls outside it in Cyrillic is «у», «р», «д»,
+ * «ф» and the breve of «й».
  *
- * So three things are asserted of every style on both scales, and they are the three that decide
- * whether a glyph survives: enough room in the line box, the platform padding that keeps what the
- * font asks for, and a line height spent evenly above and below the text rather than trimmed off
- * the first and last lines.
+ * So the bar here is the font's own box with room on top, not a number borrowed from a design
+ * system built for a shorter face. Change the family and [MANROPE_BOX] changes with it.
  */
 class TypeScaleTest {
-
-    /**
-     * Room for a descender, as a multiple of the font size.
-     *
-     * A fifth of the size is what a text face wants for the parts of it that hang below the
-     * baseline and rise above the cap height. Display sizes are allowed less, because at forty-six
-     * points a tenth is already more room than a descender needs and the alternative is a hero
-     * whose two lines drift apart.
-     */
-    private val bodyRatio = 1.2
-    private val displayRatio = 1.1
 
     private fun Typography.styles(): Map<String, TextStyle> = mapOf(
         "displayLarge" to displayLarge, "displayMedium" to displayMedium, "displaySmall" to displaySmall,
@@ -52,61 +40,66 @@ class TypeScaleTest {
         "labelLarge" to labelLarge, "labelMedium" to labelMedium, "labelSmall" to labelSmall,
     )
 
-    private fun assertLineHeights(scale: String, styles: Map<String, TextStyle>) {
-        styles.forEach { (name, style) ->
-            val wanted = if (name.startsWith("display")) displayRatio else bodyRatio
-            val ratio = style.lineHeight.value / style.fontSize.value
-            assertTrue(
-                "$scale $name is ${style.fontSize.value}/${style.lineHeight.value}, a ratio of $ratio",
-                ratio >= wanted,
-            )
+    private fun everyScale(): Map<String, Map<String, TextStyle>> = mapOf(
+        "phone" to KaeruTypography.styles(),
+        "television" to KaeruTvTypography.styles(),
+        "television material" to KaeruTvMaterialTypography.styles(),
+    )
+
+    @Test
+    fun `no line box is smaller than the glyphs Manrope draws in it`() {
+        everyScale().forEach { (scale, styles) ->
+            styles.forEach { (name, style) ->
+                val ratio = style.lineHeight.value.toDouble() / style.fontSize.value.toDouble()
+                assertTrue(
+                    "$scale $name is ${style.fontSize.value}/${style.lineHeight.value}, a ratio of $ratio, " +
+                        "and Manrope needs $MANROPE_BOX",
+                    ratio >= MANROPE_BOX,
+                )
+            }
         }
     }
 
-    @Suppress("DEPRECATION")
-    private fun assertFontPaddingKept(scale: String, styles: Map<String, TextStyle>) {
-        styles.forEach { (name, style) ->
-            assertEquals(
-                "$scale $name keeps the platform's font padding",
-                PlatformTextStyle(includeFontPadding = true),
-                style.platformStyle,
-            )
+    /** And with room on top of the box, so a line has leading and not only clearance. */
+    @Test
+    fun `every style leaves room above the font's own box`() {
+        everyScale().forEach { (scale, styles) ->
+            styles.forEach { (name, style) ->
+                val ratio = style.lineHeight.value.toDouble() / style.fontSize.value.toDouble()
+                assertTrue(
+                    "$scale $name is ${style.fontSize.value}/${style.lineHeight.value}, a ratio of $ratio",
+                    ratio >= MIN_LINE_RATIO,
+                )
+            }
         }
-    }
-
-    private fun assertLineHeightCentred(scale: String, styles: Map<String, TextStyle>) {
-        styles.forEach { (name, style) ->
-            assertEquals(
-                "$scale $name spends its line height evenly and trims nothing",
-                LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
-                style.lineHeightStyle,
-            )
-        }
-    }
-
-    @Test
-    fun `every phone style leaves room for what hangs below the baseline`() {
-        assertLineHeights("phone", KaeruTypography.styles())
-    }
-
-    @Test
-    fun `every television style leaves room for what hangs below the baseline`() {
-        assertLineHeights("television", KaeruTvTypography.styles())
-        assertLineHeights("television material", KaeruTvMaterialTypography.styles())
-    }
-
-    @Test
-    fun `every style keeps the font padding that holds the tails of the letters`() {
-        assertFontPaddingKept("phone", KaeruTypography.styles())
-        assertFontPaddingKept("television", KaeruTvTypography.styles())
-        assertFontPaddingKept("television material", KaeruTvMaterialTypography.styles())
     }
 
     @Test
     fun `every style spends its line height above and below the text rather than trimming it`() {
-        assertLineHeightCentred("phone", KaeruTypography.styles())
-        assertLineHeightCentred("television", KaeruTvTypography.styles())
-        assertLineHeightCentred("television material", KaeruTvMaterialTypography.styles())
+        everyScale().forEach { (scale, styles) ->
+            styles.forEach { (name, style) ->
+                assertEquals(
+                    "$scale $name spends its line height evenly and trims nothing",
+                    LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
+                    style.lineHeightStyle,
+                )
+            }
+        }
+    }
+
+    /**
+     * `LineHeightStyle`'s own contract is that trimming applies only while the platform's font
+     * padding is off, and Manrope has no padding to put back — `usWinAscent`/`usWinDescent` are the
+     * same pair as `hhea`. Setting it would be a combination the library does not promise to keep
+     * working, bought for nothing.
+     */
+    @Test
+    fun `no style asks for the platform's font padding`() {
+        everyScale().forEach { (scale, styles) ->
+            styles.forEach { (name, style) ->
+                assertEquals("$scale $name leaves the platform style alone", null, style.platformStyle)
+            }
+        }
     }
 
     /**
