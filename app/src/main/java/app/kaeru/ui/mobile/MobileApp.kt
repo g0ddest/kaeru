@@ -35,13 +35,20 @@ fun MobileApp(
     val auth = authViewModel.uiState.collectAsStateWithLifecycle().value
     val pairing = pairingViewModel.uiState.collectAsStateWithLifecycle().value
     val together = togetherViewModel.uiState.collectAsStateWithLifecycle().value
-    // Opening the room is what makes the other phone say what it is watching, which is the whole
-    // of the screen the viewer then decides on. Consumed once: a rotation must not knock twice.
+    // The activity's part is over once the link is parked; what happens to it depends on whether
+    // there is a shell to show it on, which is not this effect's business.
     LaunchedEffect(watchLink) {
         if (watchLink != null) {
-            togetherViewModel.open(watchLink)
+            togetherViewModel.offer(watchLink)
             onWatchLinkConsumed()
         }
+    }
+    val invitation = togetherViewModel.invitationWaiting.collectAsStateWithLifecycle().value
+    // Only once somebody is signed in, because only then is there a screen to put it on. The link
+    // waits through the whole of a sign-in, which is exactly the path the landing page prescribes:
+    // install, open the link, sign in, and the invitation is still there on the other side.
+    LaunchedEffect(auth.loggedIn, invitation) {
+        if (auth.loggedIn == true && invitation != null) togetherViewModel.openPending()
     }
     LaunchedEffect(pairingLink) {
         if (pairingLink != null) {
@@ -84,7 +91,11 @@ fun MobileApp(
                 onConfirm = pairingViewModel::confirm,
                 onDismiss = pairingViewModel::dismiss,
             )
-            else -> LoginScreen(authViewModel::mobileAuthorizeUrl, auth)
+            else -> LoginScreen(
+                authorizeUrl = authViewModel::mobileAuthorizeUrl,
+                state = auth,
+                invitationWaiting = invitation != null,
+            )
         }
     }
 }
