@@ -5,6 +5,7 @@ import app.kaeru.domain.error.TogetherFailed
 import app.kaeru.domain.error.TogetherFailureReason
 import app.kaeru.domain.together.ConnectionState
 import app.kaeru.domain.together.RoomLink
+import app.kaeru.domain.together.Side
 import app.kaeru.domain.together.TogetherCodec
 import app.kaeru.domain.together.TogetherMessage
 import kotlinx.coroutines.CoroutineScope
@@ -16,12 +17,16 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import okhttp3.mockwebserver.Dispatcher as MockDispatcher
 import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.RecordedRequest
 import okhttp3.mockwebserver.MockWebServer
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
@@ -106,10 +111,11 @@ class RelayTransportTest {
 
     private suspend fun <T> soon(block: suspend () -> T): T = withTimeout(15_000) { block() }
 
+    /** The transport under test joins as a guest, so its friend on the far end is the host. */
     private fun frame(message: TogetherMessage) =
-        TogetherCodec.encode(message, link.key, TogetherCodec.newNonce(random)).toByteString()
+        TogetherCodec.encode(message, link, Side.HOST, TogetherCodec.newNonce(random)).toByteString()
 
-    private fun decode(bytes: ByteString) = TogetherCodec.decode(bytes.toByteArray(), link.key)
+    private fun decode(bytes: ByteString) = TogetherCodec.decode(bytes.toByteArray(), link, Side.GUEST)
 
     private fun reasonOf(result: Result<*>) = (result.exceptionOrNull() as? TogetherFailed)?.reason
 
@@ -178,6 +184,38 @@ class RelayTransportTest {
         soon { transport.state.first { it == ConnectionState.CONNECTED } }
         assertEquals(2, server.requestCount)
         assertTrue(states.containsAll(listOf(ConnectionState.CONNECTING, ConnectionState.CONNECTED, ConnectionState.RECONNECTING)))
+    }
+
+    @Test
+    fun `a message too large to be a frame is refused before it is opened`() = runBlocking<Unit> {
+        val relay = upgrade()
+        val heard = inbox()
+
+        val socket = soon { relay.sockets.receive() }
+        socket.send(ByteArray(TogetherCodec.MAX_FRAME_BYTES + 1).toByteString())
+        socket.send(frame(TogetherMessage.Bye(seq = 8)))
+
+        assertEquals(TogetherFailureReason.FRAME_TOO_LARGE, reasonOf(soon { heard.receive() }))
+        // One frame's problem. A relay pushing junk does not end somebody's film.
+        assertEquals(TogetherMessage.Bye(seq = 8), soon { heard.receive() }.getOrThrow())
+        assertEquals(ConnectionState.CONNECTED, transport.state.first())
+    }
+
+    @Test
+    fun `a session that dropped is reconnecting, never connecting for the first time again`() = runBlocking<Unit> {
+        val first = upgrade()
+        upgrade()
+        inbox()
+
+        val dropped = soon { first.sockets.receive() }
+        soon { transport.state.first { it == ConnectionState.CONNECTED } }
+        states.clear()
+        dropped.close(1001, null)
+        soon { transport.state.first { it == ConnectionState.RECONNECTING } }
+        soon { transport.state.first { it == ConnectionState.CONNECTED } }
+
+        // «Подключаемся» and «Связь потеряна, пробуем снова» are different sentences to read.
+        assertFalse(states.contains(ConnectionState.CONNECTING))
     }
 
     @Test
@@ -305,6 +343,53 @@ class RelayTransportTest {
         // A build with no relay in it has nothing to probe, and says so without a request.
         assertFalse(relayAt("").healthy())
         assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `a session whose screen went away is closed, not left looking connected`() = runBlocking<Unit> {
+        val relay = upgrade()
+        val collecting = scope.launch { transport.connect(link, asHost = false).collect { } }
+
+        soon { relay.sockets.receive() }
+        soon { transport.state.first { it == ConnectionState.CONNECTED } }
+        collecting.cancelAndJoin()
+
+        soon { transport.state.first { it == ConnectionState.CLOSED } }
+        val thrown = runCatching { transport.send(TogetherMessage.Bye(seq = 1)) }.exceptionOrNull()
+        assertEquals(TogetherFailureReason.DISCONNECTED, (thrown as? TogetherFailed)?.reason)
+    }
+
+
+    /**
+     * On virtual time, so the half-minute the spec promises costs no wall clock. The relay answers
+     * every dial with a 503, which is a failure the client is supposed to keep retrying through.
+     */
+    @Test
+    fun `reconnection follows the agreed schedule and stops on the half-minute`() = runTest {
+        val dialledAt = CopyOnWriteArrayList<Long>()
+        server.dispatcher = object : MockDispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                dialledAt += testScheduler.currentTime
+                return MockResponse().setResponseCode(503)
+            }
+        }
+        val shipped = TogetherTimeouts()
+        val dialling = RelayTransport(
+            client,
+            server.url("/").toString().removeSuffix("/"),
+            shipped,
+            StandardTestDispatcher(testScheduler),
+        )
+        val emitted = CopyOnWriteArrayList<Result<TogetherMessage>>()
+
+        backgroundScope.launch { dialling.connect(link, asHost = false).collect(emitted::add) }.join()
+
+        assertEquals(listOf(1_000L, 2_000L, 4_000L, 8_000L, 16_000L), shipped.backoffMs)
+        // Six dials: the first, then one after each wait. The last wait is clipped to what is left
+        // of the budget, so the client stops exactly on the half-minute instead of a second past it.
+        assertEquals(listOf(1_000L, 2_000L, 4_000L, 8_000L, 15_000L), dialledAt.zipWithNext { a, b -> b - a })
+        assertEquals(30_000L, dialledAt.last() - dialledAt.first())
+        assertEquals(TogetherFailureReason.UNREACHABLE, reasonOf(emitted.last()))
     }
 
     @Test

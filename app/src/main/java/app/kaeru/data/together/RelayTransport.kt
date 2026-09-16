@@ -9,8 +9,10 @@ import app.kaeru.domain.error.TogetherFailureReason
 import app.kaeru.domain.together.ConnectionState
 import app.kaeru.domain.together.LanEndpoint
 import app.kaeru.domain.together.RoomLink
+import app.kaeru.domain.together.Side
 import app.kaeru.domain.together.TogetherCodec
 import app.kaeru.domain.together.TogetherMessage
+import app.kaeru.domain.together.TransportFactory
 import app.kaeru.domain.together.WatchTogetherTransport
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -22,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -55,12 +58,13 @@ import javax.inject.Singleton
  * anime, not the episode, not a word of what was said: everything inside a frame is sealed under
  * the key that never left the two phones.
  *
+ * One of these carries one session; [TransportFactory] makes a fresh one for the next.
+ *
  * Dropping is ordinary. A phone changes cell, a screen locks, a train goes into a tunnel — so a
  * dropped socket is not the end of a session, it is [ConnectionState.RECONNECTING] and a handful
  * of attempts over half a minute. What was said meanwhile is kept and sent when the socket comes
  * back, newest first to survive, because the protocol's own rule is that the last action wins.
  */
-@Singleton
 class RelayTransport @Inject constructor(
     @param:TogetherClient private val client: OkHttpClient,
     @param:TogetherRelayUrl private val baseUrl: String,
@@ -78,7 +82,8 @@ class RelayTransport @Inject constructor(
 
     /** The one being dialled, kept only so [close] can cut a handshake short. */
     private var dialing: WebSocket? = null
-    private var key: ByteArray? = null
+    private var room: RoomLink? = null
+    private var mine: Side = Side.GUEST
     private var closedByUs = false
     private val backlog = ArrayDeque<ByteArray>()
     private val random = SecureRandom()
@@ -90,27 +95,42 @@ class RelayTransport @Inject constructor(
             _state.value = ConnectionState.CLOSED
             trySend(Result.failure(RelayNotConfigured()))
         } else {
+            // A copy of the key, so [cut] has something of its own to wipe rather than reaching
+            // into the link the caller is still holding.
+            val owned = link.copy(key = link.key.copyOf())
             synchronized(lock) {
-                key = link.key
+                room = owned
+                mine = if (asHost) Side.HOST else Side.GUEST
                 closedByUs = false
                 backlog.clear()
             }
-            keepConnected(link, this)
+            keepConnected(owned, this)
         }
-        close()
+        channel.close()
         awaitClose { cut() }
-    }.flowOn(dispatcher)
+    }
+        .flowOn(dispatcher)
+        // Downstream of `flowOn`, the way the LAN transport does it, and for a reason the
+        // `awaitClose` above cannot cover: a cancelled collector unwinds the producer out of
+        // whatever it was awaiting, so the body never reaches its own cleanup. This runs either
+        // way, and it is what makes a session end when the screen it was on goes away.
+        .onCompletion { cut() }
 
     private suspend fun keepConnected(link: RoomLink, out: ProducerScope<Result<TogetherMessage>>) {
         val request = Request.Builder().url("${baseUrl.trimEnd('/')}$ROOM_PATH${link.roomId}").build()
         var attempt = 0
-        var giveUpAt = 0L
+        var waited = 0L
+        var everConnected = false
         while (out.isActive) {
-            _state.value = if (attempt == 0) ConnectionState.CONNECTING else ConnectionState.RECONNECTING
+            // «Подключаемся» is only ever true once. After a session has been up, everything that
+            // follows is «связь потеряна, пробуем снова», and a screen that says otherwise reads
+            // as though the friend were never there.
+            _state.value =
+                if (attempt == 0 && !everConnected) ConnectionState.CONNECTING else ConnectionState.RECONNECTING
             val opened = AtomicBoolean(false)
             val closeCode = AtomicInteger(NO_CLOSE_CODE)
             val died = CompletableDeferred<Unit>()
-            val socket = client.newWebSocket(request, Peer(link.key, out, opened, closeCode, died))
+            val socket = client.newWebSocket(request, Peer(link, mine.other, out, opened, closeCode, died))
             synchronized(lock) { dialing = socket }
             died.await()
             synchronized(lock) {
@@ -131,12 +151,21 @@ class RelayTransport @Inject constructor(
                 // A socket that worked is a fresh start: the half-minute is per outage, not per
                 // session, or a long evening would run out of it.
                 attempt = 0
-                giveUpAt = 0
+                waited = 0
+                everConnected = true
             }
-            if (giveUpAt == 0L) giveUpAt = System.currentTimeMillis() + timeouts.reconnectBudgetMs
-            val wait = timeouts.backoffMs.getOrElse(attempt) { timeouts.backoffMs.lastOrNull() ?: 0 }
+            val step = timeouts.backoffMs.getOrElse(attempt) { timeouts.backoffMs.lastOrNull() ?: 0 }
             attempt++
-            if (System.currentTimeMillis() + wait > giveUpAt) break
+            // What is left of the half-minute, counted in the waits themselves rather than off the
+            // wall clock — they are the same thing on a phone, and only the former can be tested
+            // without sitting through it. The last wait is clipped to the remainder instead of
+            // being abandoned for overshooting: with 1/2/4/8/16 the fifth would land at 31 s, and
+            // breaking there gave up at 15 — half the window the spec promises, with the last step
+            // of the schedule unreachable.
+            val remaining = timeouts.reconnectBudgetMs - waited
+            if (remaining <= 0) break
+            val wait = minOf(step, remaining)
+            waited += wait
             _state.value = ConnectionState.RECONNECTING
             delay(wait)
         }
@@ -149,11 +178,14 @@ class RelayTransport @Inject constructor(
      * two-second reconnect is a pause the viewer meant. Throws once there is no session at all.
      */
     override suspend fun send(message: TogetherMessage) {
-        val room = synchronized(lock) { key }
-        if (room == null || _state.value == ConnectionState.CLOSED) {
+        val (link, side) = synchronized(lock) { room to mine }
+        if (link == null || _state.value == ConnectionState.CLOSED) {
             throw TogetherFailed(TogetherFailureReason.DISCONNECTED)
         }
-        val frame = TogetherCodec.encode(message, room, TogetherCodec.newNonce(random))
+        // Sealing a 32 KB voice slice is not main-thread work.
+        val frame = withContext(dispatcher) {
+            TogetherCodec.encode(message, link, side, TogetherCodec.newNonce(random))
+        }
         val open = synchronized(lock) {
             live ?: run {
                 backlog.addLast(frame)
@@ -201,16 +233,27 @@ class RelayTransport @Inject constructor(
             live = null
             dialing = null
             backlog.clear()
+            // Best effort, and no more: a JVM copies arrays wherever it likes, so this wipes the
+            // one copy this object is known to hold and claims nothing about the rest.
+            room?.key?.fill(0)
+            room = null
             pair
         }
         // `cancel` rather than `close`: a closing handshake waits for an answer from a relay that
         // may be the reason this is being cut in the first place.
         runCatching { open?.cancel() }
         runCatching { pending?.cancel() }
+        // Said here rather than only in `close`, because the ordinary way a session ends is the
+        // collector being cancelled with the screen it was on — and this is all that runs then.
+        // Without it the state reports CONNECTED for the life of the transport and `send` buffers
+        // into a backlog that nothing will ever flush, instead of saying there is nowhere to write.
+        _state.value = ConnectionState.CLOSED
     }
 
     private inner class Peer(
-        private val roomKey: ByteArray,
+        private val link: RoomLink,
+        /** The side the friend seals with. A frame bearing this one's own side is a reflection. */
+        private val from: Side,
         private val out: ProducerScope<Result<TogetherMessage>>,
         private val opened: AtomicBoolean,
         private val closeCode: AtomicInteger,
@@ -229,7 +272,17 @@ class RelayTransport @Inject constructor(
         }
 
         override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-            out.trySend(TogetherCodec.decode(bytes.toByteArray(), roomKey))
+            // Checked here as well as inside `decode`, because this is the first place the size is
+            // known and it costs nothing. What it does not do is prevent the allocation: OkHttp
+            // reads a whole message into memory before saying a word about it and offers no cap to
+            // set, so a hostile relay can still make this process hold one oversized message. That
+            // is the residual risk of relaying through somebody else's machine, and it is bounded
+            // by the relay's own 64 KiB limit for as long as the relay is the one we deployed.
+            if (bytes.size > TogetherCodec.MAX_FRAME_BYTES) {
+                out.trySend(Result.failure(TogetherFailed(TogetherFailureReason.FRAME_TOO_LARGE)))
+                return
+            }
+            out.trySend(TogetherCodec.decode(bytes.toByteArray(), link, from))
         }
 
         /**

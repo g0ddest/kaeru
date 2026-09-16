@@ -67,6 +67,24 @@ class RoomLinkTest {
     }
 
     @Test
+    fun `a room name that is not exactly how this app writes one is not this app's room`() {
+        val link = RoomLink.random(random)
+        val key = link.toHttps().substringAfter('#')
+
+        fun https(roomId: String) = reason("${RoomLink.HTTPS_BASE}$roomId#$key")
+
+        // Padded, which the relay's own room-id pattern rejects, so the link would parse here and
+        // earn an HTTP 400 there.
+        assertEquals(TogetherFailureReason.BAD_LINK, https("AAAAAAAAAAA="))
+        // Two spellings of the same eight bytes: base64 ignores the unused trailing bits, so these
+        // would otherwise be two names for one room.
+        assertEquals("AAAAAAAAAAA", java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(8)))
+        assertEquals(TogetherFailureReason.BAD_LINK, https("AAAAAAAAAAB"))
+        assertEquals(TogetherFailureReason.BAD_LINK, https("AAAAAAAAAAC"))
+        assertTrue(RoomLink.parse("${RoomLink.HTTPS_BASE}AAAAAAAAAAA#$key").isSuccess)
+    }
+
+    @Test
     fun `a local link to anywhere but the local network is refused`() {
         val link = RoomLink.random(random)
         val key = link.toHttps().substringAfter('#')
