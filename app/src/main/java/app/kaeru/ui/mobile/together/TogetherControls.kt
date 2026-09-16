@@ -2,10 +2,10 @@ package app.kaeru.ui.mobile.together
 
 import androidx.compose.runtime.Immutable
 import app.kaeru.domain.together.ReactionKind
-import app.kaeru.ui.common.together.NoVoiceCapture
+import app.kaeru.domain.together.NoVoiceCapture
 import app.kaeru.ui.common.together.TogetherUiState
-import app.kaeru.ui.common.together.VoiceCapture
-import app.kaeru.ui.common.together.VoicePlayback
+import app.kaeru.domain.together.VoiceCapture
+import app.kaeru.domain.together.VoicePlayback
 
 /**
  * Everything the player screen needs in order to carry a shared viewing.

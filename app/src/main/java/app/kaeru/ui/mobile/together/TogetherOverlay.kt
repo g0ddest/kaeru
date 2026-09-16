@@ -65,12 +65,12 @@ import app.kaeru.ui.common.theme.KaeruSurface
 import app.kaeru.ui.common.theme.KaeruText
 import app.kaeru.ui.common.theme.KaeruTheme
 import app.kaeru.ui.common.together.ConversationItem
-import app.kaeru.ui.common.together.NoVoiceCapture
+import app.kaeru.domain.together.NoVoiceCapture
 import app.kaeru.ui.common.together.NoticeLine
 import app.kaeru.ui.common.together.TogetherCopy
 import app.kaeru.ui.common.together.TogetherPhase
 import app.kaeru.ui.common.together.TogetherUiState
-import app.kaeru.ui.common.together.VoiceCapture
+import app.kaeru.domain.together.VoiceCapture
 import app.kaeru.ui.common.together.VoiceClipItem
 import app.kaeru.ui.common.together.WaitExit
 import app.kaeru.ui.common.together.WaitLine

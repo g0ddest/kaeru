@@ -4,8 +4,8 @@ import app.kaeru.data.together.NoopTogetherSession
 import app.kaeru.data.together.VoicePlayer
 import app.kaeru.data.together.VoiceRecorder
 import app.kaeru.domain.together.TogetherSessionApi
-import app.kaeru.ui.common.together.VoiceCapture
-import app.kaeru.ui.common.together.VoicePlayback
+import app.kaeru.domain.together.VoiceCapture
+import app.kaeru.domain.together.VoicePlayback
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn

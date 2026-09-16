@@ -25,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -38,11 +39,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import app.kaeru.ui.common.design.KaeruTokens
@@ -50,7 +56,7 @@ import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruError
 import app.kaeru.ui.common.theme.KaeruTheme
 import app.kaeru.ui.common.together.TogetherCopy
-import app.kaeru.ui.common.together.VoiceCapture
+import app.kaeru.domain.together.VoiceCapture
 import kotlinx.coroutines.delay
 
 private val Disc = Color.Black.copy(alpha = 0.32f)
@@ -67,6 +73,9 @@ private const val BARS = 14
 
 /** When the counter turns amber: five seconds left to say the rest of it. */
 private const val WARNING_MS = 25_000
+
+/** Long enough to read six words while looking at a video. */
+private const val HINT_MS = 2_000L
 
 /**
  * Hold to speak.
@@ -98,8 +107,10 @@ fun VoiceButton(
     var recording by remember { mutableStateOf(false) }
     var locked by remember { mutableStateOf(false) }
     var cancelling by remember { mutableStateOf(false) }
+    var hinting by remember { mutableStateOf(false) }
     var elapsed by remember { mutableIntStateOf(0) }
     val levels = remember { mutableStateListOf<Float>() }
+    val microphoneOpen by recorder.recording.collectAsState()
     var granted by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
@@ -115,6 +126,10 @@ fun VoiceButton(
 
     fun finish(send: Boolean) {
         val clip = if (send) recorder.stop() else null.also { recorder.cancel() }
+        // A press too short to be speech is a tap, and a tap on this button means the person does
+        // not know it is held. Saying so is the only affordance a sighted viewer gets: the label
+        // is a content description, which they never hear.
+        if (send && clip == null) hinting = true
         recording = false
         locked = false
         cancelling = false
@@ -123,25 +138,62 @@ fun VoiceButton(
         clip?.let { onClip(it.bytes, it.durationMs) }
     }
 
-    // The microphone is closed with the screen, whatever the finger was doing at the time.
-    DisposableEffect(recorder) { onDispose { recorder.cancel() } }
+    /**
+     * The microphone closes when the app leaves the screen, not when the composition goes.
+     *
+     * Compose keeps a composition through a pause, so `onDispose` fires far too late: pressing
+     * home mid-hold would leave `MediaRecorder` open. From Android 11 the system mutes a
+     * backgrounded capture, which makes the clip silence rather than eavesdropping, but silence
+     * is not worth sending either — so this drops it.
+     */
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle, recorder) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                recorder.cancel()
+                recording = false
+                locked = false
+                cancelling = false
+                elapsed = 0
+                levels.clear()
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose {
+            lifecycle.removeObserver(observer)
+            recorder.cancel()
+        }
+    }
+
+    // The framework owns the thirty-second ceiling and closes the microphone itself when it is
+    // reached. Noticing that is what sends the clip — the alternative is discarding half a minute
+    // of somebody's speech because a counter in the UI was not being drawn.
+    LaunchedEffect(microphoneOpen) {
+        if (recording && !microphoneOpen) finish(send = true)
+    }
+
+    LaunchedEffect(hinting) {
+        if (!hinting) return@LaunchedEffect
+        delay(HINT_MS)
+        hinting = false
+    }
 
     LaunchedEffect(recording) {
         if (!recording) return@LaunchedEffect
         while (true) {
             delay(LEVEL_TICK_MS)
-            if (!recorder.recording) break
+            if (!recorder.recording.value) break
             levels += recorder.level()
             if (levels.size > BARS) levels.removeAt(0)
             elapsed = recorder.elapsedMs()
-            if (elapsed >= recorder.maxDurationMs) {
-                finish(send = true)
-                break
-            }
         }
     }
 
     Column(modifier, horizontalAlignment = Alignment.Start) {
+        if (hinting && !recording) {
+            Hint(TogetherCopy.VOICE_HINT)
+            Spacer(Modifier.height(KaeruTokens.Space2))
+        }
         if (recording) {
             RecordingBar(
                 levels = levels,
@@ -225,6 +277,21 @@ fun VoiceButton(
             )
         }
     }
+}
+
+/** One line saying how this button works, for the person who has just tapped it. */
+@Composable
+private fun Hint(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelMedium,
+        color = OnVideo,
+        modifier = Modifier
+            .clip(RoundedCornerShape(KaeruTokens.RadiusChip))
+            .background(Color.Black.copy(alpha = 0.72f))
+            .padding(horizontal = KaeruTokens.Space3, vertical = KaeruTokens.Space2)
+            .semantics { liveRegion = LiveRegionMode.Polite },
+    )
 }
 
 /** What is being recorded, while it is being recorded: the level, the clock and the two ways out. */

@@ -14,6 +14,12 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <uses-feature android:name="android.software.leanback" android:required="false" />
+    <!--
+      Declared optional, like the two below it. A RECORD_AUDIO permission on its own makes Play
+      treat a microphone as required hardware and filter the app off every device without one —
+      which includes television boxes, and this app ships a television build.
+    -->
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
     <application

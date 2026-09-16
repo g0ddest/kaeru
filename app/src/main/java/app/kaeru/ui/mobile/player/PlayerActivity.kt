@@ -47,8 +47,8 @@ import app.kaeru.R
 import app.kaeru.ui.common.player.LocalCastAvailable
 import app.kaeru.ui.common.player.PlayerViewModel
 import app.kaeru.ui.common.together.TogetherViewModel
-import app.kaeru.ui.common.together.VoiceCapture
-import app.kaeru.ui.common.together.VoicePlayback
+import app.kaeru.domain.together.VoiceCapture
+import app.kaeru.domain.together.VoicePlayback
 import app.kaeru.ui.mobile.together.TogetherControls
 import app.kaeru.ui.common.theme.KaeruTheme
 import dagger.hilt.android.AndroidEntryPoint

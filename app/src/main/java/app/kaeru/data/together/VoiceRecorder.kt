@@ -4,9 +4,12 @@ import android.content.Context
 import android.media.MediaRecorder
 import android.os.Build
 import android.os.SystemClock
-import app.kaeru.ui.common.together.RecordedClip
-import app.kaeru.ui.common.together.VoiceCapture
+import app.kaeru.domain.together.RecordedClip
+import app.kaeru.domain.together.VoiceCapture
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -35,7 +38,18 @@ class VoiceRecorder @Inject constructor(
     private var file: File? = null
     private var startedAt = 0L
 
-    override val recording: Boolean get() = recorder != null
+    /**
+     * Whether the framework stopped itself at the ceiling.
+     *
+     * It matters because a `MediaRecorder` that has already stopped throws on a second `stop()`,
+     * and reading that as a failed recording would throw away the thirty seconds it was told to
+     * keep — which is the one thing this button must never do.
+     */
+    private var reachedCeiling = false
+
+    private val _recording = MutableStateFlow(false)
+
+    override val recording: StateFlow<Boolean> = _recording.asStateFlow()
 
     /**
      * Opens the microphone. False when the phone would not give it up, which is the answer to a
@@ -58,11 +72,24 @@ class VoiceRecorder @Inject constructor(
             media.setAudioSamplingRate(SAMPLE_RATE)
             media.setAudioEncodingBitRate(BIT_RATE)
             media.setOutputFile(target.absolutePath)
+            // The ceiling belongs here rather than to a timer in the UI: a composable that is no
+            // longer being drawn stops counting, and the microphone would not.
+            media.setMaxDuration(MAX_DURATION_MS)
+            media.setOnInfoListener { _, what, _ ->
+                if (what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED) {
+                    reachedCeiling = true
+                    // Saying so is what makes the screen send it; the framework has already
+                    // closed the microphone by the time this arrives.
+                    _recording.value = false
+                }
+            }
             media.prepare()
             media.start()
             recorder = media
             file = target
+            reachedCeiling = false
             startedAt = SystemClock.elapsedRealtime()
+            _recording.value = true
         }.onFailure {
             runCatching { media.release() }
             target.delete()
@@ -89,8 +116,11 @@ class VoiceRecorder @Inject constructor(
         val target = file
         recorder = null
         file = null
+        _recording.value = false
         val elapsed = (SystemClock.elapsedRealtime() - startedAt).toInt()
-        val stopped = runCatching { media.stop() }.isSuccess
+        // Already stopped by the framework at the ceiling: stopping it again would throw, and
+        // reading that as a failure would discard exactly the clip it was told to keep.
+        val stopped = reachedCeiling || runCatching { media.stop() }.isSuccess
         runCatching { media.release() }
         val bytes = target?.takeIf { stopped && elapsed >= MIN_DURATION_MS }?.takeIf { it.exists() }
             ?.runCatching { readBytes() }?.getOrNull()
@@ -103,6 +133,7 @@ class VoiceRecorder @Inject constructor(
     override fun cancel() {
         val media = recorder ?: return
         recorder = null
+        _recording.value = false
         runCatching { media.stop() }
         runCatching { media.release() }
         file?.delete()

@@ -1,4 +1,7 @@
-package app.kaeru.ui.common.together
+package app.kaeru.domain.together
+
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /** What a held button produced: playable audio and how long it runs. */
 class RecordedClip(val bytes: ByteArray, val durationMs: Int)
@@ -6,14 +9,19 @@ class RecordedClip(val bytes: ByteArray, val durationMs: Int)
 /**
  * The microphone, as the button that holds it down sees one.
  *
- * An interface because the button lives in `ui.mobile` and a `MediaRecorder` lives in `data`, and
- * a screen that reached across for one would be the only place in the app where a composable knows
- * what an Android media API is. It is also what lets the overlay be previewed and the gesture be
- * reasoned about without a microphone anywhere near it.
+ * In `domain` so that both sides depend downward: the button lives in `ui.mobile`, the
+ * `MediaRecorder` in `data`, and neither has any business importing the other. Nothing here is
+ * Android — a `ByteArray`, some numbers and a flag — which is also what lets the overlay be
+ * previewed and the gesture reasoned about with no microphone anywhere near it.
  */
 interface VoiceCapture {
-    /** Whether the microphone is open right now. */
-    val recording: Boolean
+    /**
+     * Whether the microphone is open right now.
+     *
+     * A flow rather than a value because it can close without anybody asking it to: the framework
+     * stops at the thirty-second ceiling, and the screen has to notice and send what was said.
+     */
+    val recording: StateFlow<Boolean>
 
     /** The ceiling, in milliseconds. Reaching it sends the clip rather than discarding it. */
     val maxDurationMs: Int
@@ -42,7 +50,7 @@ interface VoicePlayback {
 
 /** A microphone that is not there: for previews, and for a screen with nothing to record with. */
 object NoVoiceCapture : VoiceCapture {
-    override val recording: Boolean get() = false
+    override val recording: StateFlow<Boolean> = MutableStateFlow(false)
     override val maxDurationMs: Int get() = 30_000
     override fun start(): Boolean = false
     override fun level(): Float = 0f
