@@ -307,15 +307,20 @@ class TogetherSession(
     private suspend fun stop() {
         rejoin?.cancel()
         becomingLive?.cancel()
+        // The tickers first, so nothing writes another state report into a channel being shut.
         ticks?.cancel()
+        // Then the channel, and only then the collector reading it. Cancelling the collector runs
+        // the transport's own teardown, which cuts a socket rather than closing it — and a
+        // goodbye that is still in the write queue goes with it. That is the whole of why the
+        // graceful close exists, and doing this the other way round never reaches it.
+        val open = channel
+        channel = null
+        if (open != null) runCatching { open.close() }
         running?.cancel()
         rejoin = null
         becomingLive = null
         ticks = null
         running = null
-        val open = channel ?: return
-        channel = null
-        runCatching { open.close() }
     }
 
     /**
@@ -432,6 +437,10 @@ class TogetherSession(
      */
     private suspend fun correct() {
         if (_state.value !is SessionState.Live) return
+        // A correction the player can no longer honour is one nothing will ever take off again:
+        // casting started mid-nudge, every later `setRate` reaches a receiver that ignores it, and
+        // the three percent stays on the engine this phone will use next.
+        if (correcting && !port.supportsRate) forceNormalSpeed()
         val report = peer ?: return
         val now = clock.millis()
         if (now - report.at > STALE_STATE_MS) return
@@ -656,8 +665,12 @@ class TogetherSession(
             // другом потеряна» after that wait would be an account of what happened that is simply
             // untrue.
             forceNormalSpeed()
-            stop()
+            // Settled before the channel is taken down, not after. `stop()` cancels the job this
+            // is running on, so anything written after it survives only because something further
+            // down swallows the cancellation — which is a `runCatching` that exists for an
+            // entirely different reason and could be tightened at any time.
             _state.value = SessionState.Ended
+            stop()
             return
         }
         rejoining = true

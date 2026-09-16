@@ -839,6 +839,41 @@ class TogetherSessionTest {
     // ---- endings ----
 
     @Test
+    fun `a friend who says goodbye ends it there and then`() = sessionTest {
+        live()
+        val seen = mutableListOf<TogetherEvent>()
+        val watching = launch { session.events.toList(seen) }
+        runCurrent()
+
+        transport.deliver(TogetherMessage.Bye(seq = 9))
+        runCurrent()
+
+        assertTrue(TogetherEvent.Notice(NoticeKind.LEFT, "Аня") in seen)
+        assertEquals(SessionState.Ended, session.state.value)
+        assertEquals(1, transport.closes)
+
+        // And no half-minute afterthought that says the connection was lost.
+        advanceTimeBy(TogetherSession.REJOIN_WINDOW_MS * 2)
+        runCurrent()
+        assertEquals(SessionState.Ended, session.state.value)
+        watching.cancel()
+    }
+
+    @Test
+    fun `the goodbye is written and the channel closed before the collector is taken down`() =
+        sessionTest {
+            live()
+            transport.order.clear()
+
+            session.leave()
+            runCurrent()
+
+            // The order is the whole finding: cancelling the collector runs the transport's own
+            // teardown, which cuts the socket, and a goodbye still queued would go with it.
+            assertEquals(listOf("bye", "close-first", "close"), transport.order.take(3))
+        }
+
+    @Test
     fun `a friend whose socket went away is announced and given half a minute to come back`() = sessionTest {
         live()
         val seen = mutableListOf<TogetherEvent>()
@@ -1163,6 +1198,20 @@ class TogetherSessionTest {
         runCurrent()
 
         assertTrue(session.state.value is SessionState.Live)
+    }
+
+    @Test
+    fun `a correction the player can no longer honour is taken off`() = sessionTest {
+        live()
+        friendIsAt(59_000)
+        assertEquals(SyncPolicy.SLOW, port.rates.single(), 0.0001f)
+
+        // Casting starts: there is no speed control on a television, and every later request for
+        // one reaches a receiver that ignores it.
+        port.supportsRate = false
+        friendIsAt(59_000, seq = 21)
+
+        assertEquals(SyncPolicy.NORMAL, port.rates.last(), 0.0001f)
     }
 
     @Test

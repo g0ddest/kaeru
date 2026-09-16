@@ -223,6 +223,8 @@ class RelayTransport @Inject constructor(
             // Not a handshake this waits out: the queue is flushed by the writer thread, and a
             // relay that has stopped answering must not hold a screen that is going away.
             withTimeoutOrNull(GOODBYE_GRACE_MS) { finished?.await() }
+            // The close frame is out and has been either answered or waited for; the socket may go.
+            runCatching { open.cancel() }
         }
         cut()
         _state.value = ConnectionState.CLOSED
@@ -254,6 +256,7 @@ class RelayTransport @Inject constructor(
     }
 
     private fun cut() {
+        val closedGracefully = synchronized(lock) { closedByUs }
         val (open, pending) = synchronized(lock) {
             val pair = live to dialing
             live = null
@@ -267,7 +270,12 @@ class RelayTransport @Inject constructor(
         }
         // `cancel` rather than `close`: a closing handshake waits for an answer from a relay that
         // may be the reason this is being cut in the first place.
-        runCatching { open?.cancel() }
+        //
+        // Except when this side already asked to close politely. That path has sent its close
+        // frame, waited for it and cancelled the socket itself — and this runs again a moment
+        // later from the collector's own teardown, where cancelling would throw away a goodbye
+        // still in the write queue if the two ever raced.
+        if (!closedGracefully) runCatching { open?.cancel() }
         runCatching { pending?.cancel() }
         // Said here rather than only in `close`, because the ordinary way a session ends is the
         // collector being cancelled with the screen it was on — and this is all that runs then.

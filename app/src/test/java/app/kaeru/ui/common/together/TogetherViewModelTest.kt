@@ -452,15 +452,34 @@ class TogetherViewModelTest {
 
     @Test
     fun `a player opened after somebody else's session ended draws none of it`() = runTest {
-        // The session is one per process and is still parked where the last screen left it.
+        // The session is one per process and is still parked where the last screen left it. This
+        // screen never saw it running, so the receipt is not addressed to anybody here.
         session.sessionState.value = SessionState.Ended
         val vm = viewModel()
         runCurrent()
-        assertEquals("Сессия закончилась", vm.uiState.value.wait?.text)
 
+        assertNull(vm.uiState.value.wait)
         vm.playerAttached()
         runCurrent()
+        assertNull(vm.uiState.value.wait)
+    }
 
+    @Test
+    fun `the screen that watched it end keeps the receipt for its three seconds`() = runTest {
+        val vm = viewModel()
+        live()
+        session.sessionState.value = SessionState.Ended
+        runCurrent()
+        assertEquals("Сессия закончилась", vm.uiState.value.wait?.text)
+
+        // Whichever way round these two land — both are on the main dispatcher and nothing orders
+        // them — the receipt belongs to this screen and stays for its three seconds.
+        vm.playerAttached()
+        runCurrent()
+        assertEquals("Сессия закончилась", vm.uiState.value.wait?.text)
+
+        advanceTimeBy(3_001)
+        runCurrent()
         assertNull(vm.uiState.value.wait)
     }
 

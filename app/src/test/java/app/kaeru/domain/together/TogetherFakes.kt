@@ -1,12 +1,16 @@
 package app.kaeru.domain.together
 
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.yield
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneId
@@ -29,6 +33,13 @@ class FakeTransport : WatchTogetherTransport {
     var closes = 0
         private set
 
+    /**
+     * What happened to this channel, in order: every message written, `close`, and the moment the
+     * flow being collected ended. Which of those comes first is the whole of what «the goodbye is
+     * delivered» means, so it is recorded rather than inferred.
+     */
+    val order = mutableListOf<String>()
+
     /** While set, every write fails the way a dead socket does. */
     var sendFailure: Throwable? = null
 
@@ -37,22 +48,37 @@ class FakeTransport : WatchTogetherTransport {
     /** While set, the flow throws rather than carrying a failure — a transport with a bug in it. */
     var connectFailure: Throwable? = null
 
+    /** The job collecting this channel, so `close` can say whether it was still alive when called. */
+    private var collector: Job? = null
+
     override fun connect(link: RoomLink, asHost: Boolean): Flow<Result<TogetherMessage>> = flow {
+        collector = currentCoroutineContext()[Job]
         connectedTo = link
         connectedAsHost = asHost
         connectFailure?.let { throw it }
         _state.value = ConnectionState.CONNECTED
         for (message in inbound) emit(message)
         _state.value = ConnectionState.CLOSED
-    }
+    }.onCompletion { order += "collector-done" }
 
     override suspend fun send(message: TogetherMessage) {
         sendFailure?.let { throw it }
         sent += message
+        order += message::class.simpleName.orEmpty().lowercase()
     }
 
     override suspend fun close() {
+        // Which of the two came first, recorded the only way that is not a race: a job stops being
+        // active the instant it is cancelled, whereas its completion handler runs whenever the
+        // dispatcher gets round to it. Cancelling the collector is what runs a transport's own
+        // teardown, and a real one cuts the socket and discards whatever is queued on it.
+        order += if (collector?.isActive != false) "close-first" else "cancelled-first"
+        order += "close"
         closes += 1
+        // A graceful close suspends — it puts a close frame on the wire and waits for the answer —
+        // and that suspension is where a coroutine already cancelled gives up. Anything a session
+        // does after this must not depend on the throw being swallowed somewhere.
+        yield()
         _state.value = ConnectionState.CLOSED
         inbound.close()
     }

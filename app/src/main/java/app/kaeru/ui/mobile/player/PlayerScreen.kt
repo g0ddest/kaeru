@@ -227,7 +227,7 @@ fun PlayerScreen(
                         ),
                         onLeaveTogether = together.onLeave,
                     )
-                    if (together.state.active) {
+                    if (together.state.active && !failed) {
                         TogetherOverlay(
                             state = together.state,
                             controlsVisible = true,

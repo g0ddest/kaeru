@@ -112,6 +112,15 @@ class TogetherViewModel @Inject constructor(
     /** Whether «<имя> догоняет…» is up. It has no clock: it ends when the gap does. */
     private var catchingUp = false
 
+    /**
+     * Whether this screen ever saw the session running.
+     *
+     * The session is one per process and stays where it settled, so a player opened afterwards
+     * collects `Ended` the moment it subscribes. A receipt is for the person who pressed the
+     * button; a screen that never saw the session it is about has nothing to be told.
+     */
+    private var sawSession = false
+
     private val expiryJobs = mutableMapOf<Long, Job>()
 
     /** The waits this screen times itself rather than trusting somebody else to end. */
@@ -276,7 +285,7 @@ class TogetherViewModel @Inject constructor(
      * worth keeping.
      */
     fun playerAttached() {
-        if (_uiState.value.phase != TogetherPhase.ENDED) return
+        if (sawSession || _uiState.value.phase != TogetherPhase.ENDED) return
         armWait(null)
         _uiState.update { it.copy(wait = null) }
     }
@@ -344,6 +353,9 @@ class TogetherViewModel @Inject constructor(
     // --- what the session does --------------------------------------------------------------------
 
     private fun applySession(state: SessionState) {
+        // Anything but the two resting states is this screen watching a session happen, which is
+        // what earns it the receipt when that session ends.
+        if (state !is SessionState.Idle && state !is SessionState.Ended) sawSession = true
         when (state) {
             SessionState.Idle -> {
                 armWait(null)
@@ -394,7 +406,9 @@ class TogetherViewModel @Inject constructor(
             is SessionState.Lost -> stop(TogetherPhase.LOST, TogetherCopy.lost(state.reason))
             SessionState.Ended -> {
                 stop(TogetherPhase.ENDED, TogetherCopy.ENDED)
-                armWait(TimedWait.ENDED)
+                // Only for the screen that watched it end. Anything else is being handed somebody
+                // else's receipt over an episode that has nothing to do with it.
+                if (sawSession) armWait(TimedWait.ENDED) else _uiState.update { it.copy(wait = null) }
             }
         }
     }

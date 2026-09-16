@@ -124,6 +124,10 @@ class ExoPlaybackEngine @Inject constructor(
 
     override fun release() {
         stopPolling()
+        // Normal speed goes back with the episode. A shared viewing handed the picture to a
+        // receiver mid-correction leaves this player at 0.97, the player instance outlives the
+        // release, and there is no speed control anywhere in this app to put it right.
+        instance?.setPlaybackSpeed(1f)
         instance?.stop()
         instance?.clearMediaItems()
         _state.value = EngineState()
