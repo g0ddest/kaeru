@@ -271,8 +271,12 @@ private fun TvHomeFeed(
             TvHeroBand(hero)
             LazyColumn(
                 state = listState,
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(bottom = TvLayout.SafeVertical),
+                // The safe area is held outside the scrolling viewport rather than being content
+                // padding inside it. A focused card asks to be brought into the viewport, and a
+                // viewport that ran to the bottom of the panel brought it flush against the five
+                // per cent a television crops — so the name under the card landed in the part of
+                // the picture the panel does not draw.
+                modifier = Modifier.weight(1f).padding(bottom = TvLayout.SafeVertical),
                 verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
             ) {
                 if (rows.isEmpty() && onSearch != null) {
@@ -358,6 +362,7 @@ private fun TvHeroBand(hero: TvHero?) {
                                     style = MaterialTheme.typography.titleMedium,
                                     color = KaeruAccent,
                                     maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
                         }
@@ -396,6 +401,14 @@ private fun TvCardRow(
             // and both are destroyed when a title card replaces the screen. Without it the vertical
             // position came back and every row reopened at its first card.
             state = rowState,
+            // The side margins stay *inside* the viewport, where the safe area above and below does
+            // not — and that is a decision rather than an oversight. A card the D-pad walks right to
+            // is brought flush to the panel edge rather than to the 56dp margin, which is a card
+            // sitting closer to the edge than the design system's gutter. The alternative is worse
+            // on a television: padding outside the list makes the row start and end at the margin,
+            // so cards scroll out of existence at the rail rather than sliding under it, and the
+            // row stops looking like a row that continues. Flush at the edge while scrubbing is
+            // what every television launcher does.
             modifier = Modifier.padding(top = KaeruTokens.Space3),
             contentPadding = PaddingValues(
                 start = TvLayout.Gutter,

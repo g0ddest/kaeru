@@ -15,6 +15,7 @@ import app.kaeru.domain.model.EpisodeStream
 import app.kaeru.domain.model.PlaybackTarget
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
+import app.kaeru.domain.playback.AddStartedTitleToList
 import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.SuppressedMarks
 import app.kaeru.domain.playback.PlaybackPreferences
@@ -141,6 +142,7 @@ class DefaultPlaybackController @Inject constructor(
     private val deleteWatchedDownloads: DeferredDownloadRemoval,
     private val progress: WatchProgress,
     private val markWatched: MarkEpisodeWatched,
+    private val addToList: AddStartedTitleToList,
     private val suppressedMarks: SuppressedMarks,
     private val library: LibraryRepository,
     private val prefs: PlaybackPreferences,
@@ -572,6 +574,15 @@ class DefaultPlaybackController @Inject constructor(
         // nine tenths of an episode, while its file is still under the engine.
         playbackGeneration++
         deleteWatchedDownloads.nowPlaying(target.animeId, target.episode)
+        // An episode is genuinely playing, which is the moment a title reached from search earns
+        // its place in the list — before that there is no entry, and therefore no card anywhere to
+        // find this half-watched episode by again. Here rather than at the first position written,
+        // so a Cast prefetch or a resolve that came to nothing never adds anything.
+        //
+        // On the controller's scope and never awaited: creating a rate is a round trip, and no
+        // frame of video waits on Shikimori. Idempotent, so a retry or a change of voice re-opening
+        // this same episode costs one local read.
+        scope.launch { addToList(target.animeId) }
         // Whatever the last playback was told not to count belongs to that playback. This one is
         // the viewer choosing to watch an episode, including when it is the same one.
         suppressedMarks.clear()

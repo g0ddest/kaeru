@@ -160,6 +160,7 @@ private fun TrackRow(
                 style = MaterialTheme.typography.labelMedium,
                 color = KaeruSecondary,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         if (selected) Icon(Icons.Default.Check, contentDescription = CHOSEN, tint = KaeruAccent)

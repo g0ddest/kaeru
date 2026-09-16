@@ -19,6 +19,7 @@ import app.kaeru.domain.model.Account
 import app.kaeru.domain.model.Quality
 import app.kaeru.ui.common.settings.SettingsUiState
 import app.kaeru.ui.common.theme.KaeruTvTheme
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -116,5 +117,33 @@ class TvSettingsScreenTest {
                 range != null && range.value() > 0f
             },
         )
+    }
+
+    /**
+     * And it is not enough for the last row to be *reachable*: it has to land somewhere a
+     * television actually draws. A panel crops about five per cent of its own picture, so a row the
+     * D-pad brings flush against the bottom edge of the list is a row half of whose viewers never
+     * see it. The safe area therefore sits outside the scrolling viewport, the way it does on the
+     * home rows and both poster grids, rather than as content padding inside it.
+     */
+    @Test
+    fun `the last row of the page lands clear of the edge the panel crops`() {
+        show()
+
+        repeat(40) { compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) } }
+
+        val row = compose.onNodeWithText("Kaeru", substring = true).fetchSemanticsNode()
+        val panel = compose.onRoot().fetchSemanticsNode().size.height.toFloat()
+        val top = row.positionInRoot.y
+        val bottom = top + row.size.height
+        assertTrue(
+            "the last row runs from $top to $bottom on a panel $panel tall",
+            top >= SAFE_MARGIN && bottom <= panel - SAFE_MARGIN,
+        )
+    }
+
+    private companion object {
+        /** Nothing readable sits closer than this to an edge a television may crop. */
+        const val SAFE_MARGIN = 16f
     }
 }

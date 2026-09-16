@@ -154,7 +154,11 @@ private fun TvLibraryGrid(
     LazyVerticalGrid(
         columns = GridCells.Fixed(GRID_COLUMNS),
         state = gridState,
-        contentPadding = PaddingValues(top = KaeruTokens.Space2, bottom = TvLayout.SafeVertical),
+        // The safe area is held outside the scrolling viewport rather than being content padding
+        // inside it: a focused cell is brought into the viewport, and a viewport that ran to the
+        // bottom of the panel would bring it flush against the five per cent a television crops.
+        modifier = Modifier.padding(bottom = TvLayout.SafeVertical),
+        contentPadding = PaddingValues(top = KaeruTokens.Space2),
         horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
         verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
     ) {

@@ -20,6 +20,7 @@ import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.WatchState
+import app.kaeru.domain.playback.AddStartedTitleToList
 import app.kaeru.domain.playback.MarkEpisodeUnwatched
 import app.kaeru.domain.playback.SuppressedMarks
 import app.kaeru.domain.sync.OutboxSyncer
@@ -501,5 +502,68 @@ class ShikimoriLibraryRepositoryOfflineTest {
         assertTrue(repo.refresh().isSuccess)
 
         assertEquals(1, replays)
+    }
+
+    // --- a title started from search, with no rate anywhere ---------------------------------------
+
+    /**
+     * The whole of what starting an unlisted title does on a train.
+     *
+     * The viewer found it in search, pressed play, and Shikimori has never heard of the title.
+     * «Смотрю» with the count at zero goes into Room at once — that is what puts the half-watched
+     * episode on the home screen — and the create it stands for joins the queue.
+     */
+    @Test
+    fun `a title started without a network is added as watching and queued`() = runTest {
+        seedAnime(10)
+        offline()
+
+        AddStartedTitleToList(repo)(animeId = 10)
+
+        val local = rate(10)
+        assertEquals(ListStatus.WATCHING, local?.status)
+        assertEquals(0, local?.episodes)
+        // The id Shikimori never issued: negative, so the drain knows to POST rather than PATCH.
+        assertEquals(-10L, local?.id)
+        assertEquals(listOf(RateOp(1, 10, RateOpKind.STATUS, "watching", now)), queued())
+    }
+
+    /** And a title already in a list is left alone, whatever the network is doing. */
+    @Test
+    fun `a title already in a list is not re-created when it is started`() = runTest {
+        seedAnime(10)
+        seedRate(animeId = 10, rateId = 5, episodes = 0, status = ListStatus.PLANNED)
+        offline()
+
+        AddStartedTitleToList(repo)(animeId = 10)
+
+        assertEquals(ListStatus.PLANNED, rate(10)?.status)
+        assertTrue(queued().isEmpty())
+    }
+
+    /**
+     * And what the queue does with it once there is a network: one POST, and the placeholder rate
+     * gives way to the one Shikimori issued.
+     */
+    @Test
+    fun `the queued create reaches Shikimori as a new watching rate`() = runTest {
+        seedAnime(10)
+        db.userRateDao().upsertAll(
+            listOf(UserRateEntity(-10, 10, ListStatus.WATCHING, 0, Instant.parse("2026-09-01T00:00:00Z"))),
+        )
+        outbox.enqueue(10, RateOpKind.STATUS, ListStatus.WATCHING.apiValue)
+        serveRate(episodes = 0)
+
+        val outcome = realSyncer().replay().getOrThrow()
+
+        assertEquals(1, outcome.sent)
+        assertTrue(outcome.refused.isEmpty())
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/api/v2/user_rates", request.path)
+        assertTrue(request.body.readUtf8().contains("\"status\":\"watching\""))
+        assertEquals(5L, rate(10)?.id)
+        assertEquals(ListStatus.WATCHING, rate(10)?.status)
+        assertTrue(queued().isEmpty())
     }
 }

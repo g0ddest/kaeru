@@ -144,12 +144,14 @@ fun TvSettingsScreen(
     }
 
     LazyColumn(
-        modifier.fillMaxSize(),
+        // The bottom safe area is held outside the scrolling viewport rather than being content
+        // padding inside it. A focused row asks to be brought into the viewport, and a viewport
+        // that ran to the bottom of the panel brought the last row of the page flush against the
+        // five per cent a television crops — reachable, and not drawn. The top inset can stay
+        // inside, because nothing is ever scrolled up to meet it.
+        modifier.fillMaxSize().padding(bottom = TvLayout.SafeVertical),
         state = listState,
-        contentPadding = PaddingValues(
-            top = TvLayout.SafeVertical,
-            bottom = TvLayout.SafeVertical,
-        ),
+        contentPadding = PaddingValues(top = TvLayout.SafeVertical),
         verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space3),
     ) {
         heading(ACCOUNT, first = true)

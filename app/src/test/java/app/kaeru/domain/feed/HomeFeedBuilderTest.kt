@@ -295,4 +295,97 @@ class HomeFeedBuilderTest {
         assertEquals(listOf(1), feed.nextUp.map { it.entry.anime.id })
         assertEquals(1, feed.nextUp[0].episode)
     }
+
+    // --- a position is what puts a title in «Продолжить», whatever the list says -----------------
+
+    @Test
+    fun `a started episode of a planned title leads continue watching`() {
+        // Opened from search, «Запланировано» on Shikimori, and forty minutes into the second
+        // episode on this device. The viewer has nowhere else to look for it.
+        val a = anime(1, AnimeStatus.ONGOING, episodes = 12, aired = 4)
+        val feed = builder.build(
+            listOf(entry(a, ListStatus.PLANNED, watched = 0, progress = listOf(stopped(1, 2, 0.4f)))),
+            now, DEFAULT,
+        )
+
+        assertEquals(listOf(1), feed.continueWatching.map { it.entry.anime.id })
+        assertEquals(2, feed.continueWatching.single().episode)
+        assertEquals(FeedKind.CONTINUE, feed.top?.kind)
+    }
+
+    @Test
+    fun `a title shelved mid-episode is still somewhere to come back to`() {
+        val a = anime(1, AnimeStatus.ONGOING, episodes = 12, aired = 4)
+        val feed = builder.build(
+            listOf(entry(a, ListStatus.ON_HOLD, watched = 1, progress = listOf(stopped(1, 2, 0.4f)))),
+            now, DEFAULT,
+        )
+
+        assertEquals(2, feed.continueWatching.single().episode)
+    }
+
+    @Test
+    fun `the row is ordered by the newest position across every list status`() {
+        val planned = anime(1, AnimeStatus.ONGOING, episodes = 24, aired = 10)
+        val watching = anime(2, AnimeStatus.ONGOING, episodes = 24, aired = 10)
+        val feed = builder.build(
+            listOf(
+                entry(
+                    planned, ListStatus.PLANNED, watched = 0,
+                    progress = listOf(stopped(1, 2, 0.4f, now.minus(Duration.ofMinutes(5)))),
+                ),
+                entry(
+                    watching, watched = 3,
+                    progress = listOf(stopped(2, 4, 0.4f, now.minus(Duration.ofDays(1)))),
+                ),
+            ),
+            now, DEFAULT,
+        )
+
+        assertEquals(listOf(1, 2), feed.continueWatching.map { it.entry.anime.id })
+    }
+
+    @Test
+    fun `a planned title being watched is not also offered as something to plan`() {
+        // One title, one card: a row that offered it again under «В планах» would be the screen
+        // arguing with itself about what the viewer is in the middle of.
+        val a = anime(1, AnimeStatus.ONGOING, episodes = 12, aired = 4)
+        val feed = builder.build(
+            listOf(entry(a, ListStatus.PLANNED, watched = 0, progress = listOf(stopped(1, 2, 0.4f)))),
+            now, DEFAULT,
+        )
+
+        assertTrue(feed.planned.isEmpty())
+    }
+
+    @Test
+    fun `a planned title nobody has opened stays in the planned row alone`() {
+        val a = anime(1, AnimeStatus.ONGOING, episodes = 12, aired = 4)
+        val feed = builder.build(listOf(entry(a, ListStatus.PLANNED, watched = 0)), now, DEFAULT)
+
+        assertTrue(feed.continueWatching.isEmpty())
+        assertEquals(listOf(1), feed.planned.map { it.entry.anime.id })
+    }
+
+    /**
+     * «Завершено» is the viewer saying they are done with it, and the app has no business arguing.
+     *
+     * The count is not the thing that settles it: setting the status from the title screen writes
+     * the status alone, so somebody who stops half-way through the fifth episode and then marks the
+     * show finished keeps a position ahead of a count of four — and the row would have offered them
+     * the episode they had just declared themselves done with, at the top of the screen.
+     */
+    @Test
+    fun `a title marked finished mid-episode is not offered to continue`() {
+        val a = anime(1, AnimeStatus.ONGOING, episodes = 24, aired = 10)
+        val feed = builder.build(
+            listOf(
+                entry(a, ListStatus.COMPLETED, watched = 4, progress = listOf(stopped(1, 5, 0.4f))),
+            ),
+            now, DEFAULT,
+        )
+
+        assertTrue(feed.continueWatching.isEmpty())
+        assertNull(feed.top)
+    }
 }

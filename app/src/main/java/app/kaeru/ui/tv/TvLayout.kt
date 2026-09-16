@@ -40,8 +40,13 @@ object TvLayout {
      * cards off the bottom of the screen on some titles and not others — which is the exact fault
      * the television screen had before: text over artwork over cards, all fighting for the same
      * 540dp.
+     *
+     * The number is the sum of what it holds and is recomputed whenever the type scale moves: two
+     * lines of `displaySmall` at 65dp, [KaeruTokens.Space3] between, and a line of `titleMedium` at
+     * 33dp. It was 150 against a scale whose line boxes were smaller than the font draws in, which
+     * left a two-line title overflowing upward into the five per cent a television crops.
      */
-    val HeroHeight = 150.dp
+    val HeroHeight = 175.dp
 
     /** Between the hero and the first row. */
     val HeroGap = KaeruTokens.Space4
@@ -49,19 +54,21 @@ object TvLayout {
     /**
      * Room around a row for the six per cent a focused card grows by.
      *
-     * A 252dp-tall poster gains 15dp when focused, seven and a half of them above and below. A
-     * lazy list clips to its own bounds, so without this the focused card is shaved along its top
-     * and bottom edges — and the caption underneath it disappears with them.
+     * What grows is the whole card now, not only its artwork — that is what makes a focused tile
+     * scroll into view with its name — so the number is about the card's full height. 234dp of
+     * poster, a name under it and the clearance around that is about 278dp, and six per cent of
+     * that is 17dp: eight and a half above and below. A lazy list clips to its own bounds, so eight
+     * would shave the focus ring along the top and bottom edges.
      */
-    val CardFocusPad = KaeruTokens.Space2
+    val CardFocusPad = KaeruTokens.Space3
 
     /**
      * How many cards of a row can be relied on to be composed, counted low on purpose.
      *
-     * The content column is 960 − 80 − 56 = 824dp and a card's pitch is 168 + 16 = 184dp, so four
-     * and a half fit; a lazy row composes a little beyond its viewport as well. Four is the number
-     * that is true even if a future card grows, and being wrong low costs one needless scroll while
-     * being wrong high costs a screen the D-pad cannot move.
+     * The content column is 960 − 80 − 56 = 824dp and a card's pitch is 156 + 16 = 172dp, so four
+     * and four fifths fit; a lazy row composes a little beyond its viewport as well. Four is the
+     * number that is true even if a future card grows, and being wrong low costs one needless
+     * scroll while being wrong high costs a screen the D-pad cannot move.
      */
     const val RowViewport = 4
 
@@ -72,8 +79,10 @@ object TvLayout {
     const val GridViewport = 10
 
     /**
-     * And for the home screen's column of rows: the band takes 177 of 540dp and a row is 344, so
-     * one row is fully on screen and a second has pixels on it. Two is therefore «already showing».
+     * And for the home screen's column of rows: the band takes 202 of 540dp, the safe area below
+     * takes 27, and a row is about 347 — so the row the screen opens on is the only one with
+     * pixels on it and the next one is not composed at all. One, therefore, and being wrong low
+     * here costs a scroll nobody sees.
      */
-    const val ColumnViewport = 2
+    const val ColumnViewport = 1
 }

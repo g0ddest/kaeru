@@ -37,16 +37,25 @@ internal fun FocusRequester.requestFocusOrLog(what: String): Boolean = try {
 }
 
 /**
- * Asks for the focus, and asks again on the next frame if the first ask found no node attached.
+ * Asks for the focus once the node is on screen, and asks again on the next frame if the first ask
+ * found no node attached.
  *
- * The case it covers is a requester whose node has not entered the tree on the frame the ask was
- * made. It is not the only way a claim can miss — an attached node that is not yet placed accepts
- * the request and does nothing with it, and neither ask would notice — so this is a cheap second
- * chance rather than a guarantee. What actually makes a missed claim recoverable is that the card
- * is composed afresh once its row has been scrolled to it, which builds the effect again; and what
- * makes a false «yes» harmless is that the claim is latched by focus arriving, never by the asking.
+ * The wait before the first ask is what makes the focus *visible* rather than merely held. A
+ * screen's opening claim is made from a `LaunchedEffect` during the first composition, before
+ * anything has been measured or placed — and a node that is attached but not yet placed takes the
+ * focus and scrolls nothing, because `Modifier.focusable` asks the lists above it to bring it into
+ * view through layout coordinates it does not have yet. That is how the television home screen came
+ * up with its first row of cards sitting half off the bottom of the panel: focused, and below the
+ * edge. One frame is all it costs, and by then the node is placed and the lists do their part.
+ *
+ * The second ask covers the other miss: a requester whose node has not entered the tree at all.
+ * Neither ask is a guarantee — nothing tells the asker whether the focus actually moved — so what
+ * makes a missed claim recoverable is that the card is composed afresh once its row has been
+ * scrolled to it, which builds the effect again; and what makes a false «yes» harmless is that the
+ * claim is latched by focus arriving, never by the asking.
  */
 internal suspend fun FocusRequester.claimFocus(what: String): Boolean {
+    withFrameNanos { }
     if (requestFocusOrLog(what)) return true
     withFrameNanos { }
     return requestFocusOrLog(what)

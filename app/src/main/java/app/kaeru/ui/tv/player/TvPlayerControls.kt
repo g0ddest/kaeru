@@ -316,6 +316,7 @@ private fun TvTransportRow(
             style = MaterialTheme.typography.labelMedium,
             color = KaeruSecondary,
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.width(LabelColumn),
         )
         Row(

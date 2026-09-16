@@ -30,15 +30,40 @@ class HomeFeedBuilder(private val upcomingWindow: Duration = Duration.ofDays(7))
         // The target is worked out once per title and carried through every row. It used to be
         // derived four times over — once here and once inside each `nextEpisode` call — and the
         // three rows below all ask the same question of it.
-        val active = entries
-            .filter { it.rate.status == ListStatus.WATCHING || it.rate.status == ListStatus.REWATCHING }
-            .map { it to it.continueTarget(watchedThreshold) }
+        val targeted = entries.map { it to it.continueTarget(watchedThreshold) }
+        val active = targeted
+            .filter { (entry, _) ->
+                entry.rate.status == ListStatus.WATCHING || entry.rate.status == ListStatus.REWATCHING
+            }
 
         // An entry is being continued exactly when its target carries a position: the rule for
         // which episode that is, and for what counts as started rather than mis-tapped, lives once
         // in `ContinueTarget` and is the same one the watch button obeys.
-        val continueWatching = active
-            .filter { (_, target) -> target.positionMs > 0 }
+        //
+        // Every entry but one, where the rest of the screen looks at two statuses. A position is a
+        // fact about this device and about nothing else: a title opened out of search sits in
+        // «Запланировано» until the mark at nine tenths picks it up, and one paused for a month is
+        // «Отложено» on purpose. Both were left in the middle of an episode, and a viewer who has
+        // to search for that episode again is a viewer the row failed.
+        //
+        // «Брошено» is deliberately not a second exception. It is the viewer's word about the show
+        // and not about the episode, and a dropped show whose fifth episode is half watched is a
+        // show somebody stopped in the middle of — which is exactly the question this row answers.
+        // The card is one press away from being dismissed by finishing or restatusing it, and the
+        // alternative is the fault this whole row was fixed for: a position nothing on the home
+        // screen will admit to.
+        //
+        // «Завершено» is the one exception, and it is named here rather than left to the target. Most
+        // finished shows are excluded by the count — `ContinueTarget` will not resume an episode
+        // Shikimori has already counted — but the count is not what says the viewer is done: the
+        // title screen writes the status on its own. Somebody who stops half-way through the fifth
+        // episode and then marks the show finished keeps a position ahead of a count of four, and
+        // the row would hand them back the very episode they had just declared themselves done
+        // with, at the top of the screen.
+        val continueWatching = targeted
+            .filter { (entry, target) ->
+                target.positionMs > 0 && entry.rate.status != ListStatus.COMPLETED
+            }
             // Ordered by when the title itself was last watched, not by the target episode's own
             // row: going back to an earlier episode on purpose leaves the card pointing at the
             // later one, and a row sorted on that stale timestamp would sink the very title the
@@ -82,8 +107,11 @@ class HomeFeedBuilder(private val upcomingWindow: Duration = Duration.ofDays(7))
             .sortedBy { it.anime.nextEpisodeAt }
             .map { FeedItem(it, it.anime.episodesAired + 1, FeedKind.UPCOMING) }
 
+        // A title already being continued is not also something to plan: it is one title, and two
+        // cards for it on one screen would be the screen arguing with itself about where the
+        // viewer is in it. The same exclusion the two rows above make, for the same reason.
         val planned = entries
-            .filter { it.rate.status == ListStatus.PLANNED }
+            .filter { it.rate.status == ListStatus.PLANNED && it.anime.id !in inProgressIds }
             .sortedByDescending { it.rate.updatedAt }
             .map { FeedItem(it, 1, FeedKind.PLANNED) }
 
