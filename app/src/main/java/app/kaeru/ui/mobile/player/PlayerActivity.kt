@@ -334,6 +334,9 @@ class PlayerActivity : FragmentActivity() {
         removeOnPictureInPictureModeChangedListener(windowMode)
         runCatching { unregisterReceiver(windowControls) }
         if (isFinishing) {
+            // The shared viewing goes with the player, and only when the player is going for good:
+            // a rotation, a trip to the background and a floating window all leave it running.
+            together.playerGone(finishing = true, changingConfigurations = isChangingConfigurations)
             viewModel.release()
             runCatching { stopService(Intent(this, KaeruPlaybackService::class.java)) }
         }

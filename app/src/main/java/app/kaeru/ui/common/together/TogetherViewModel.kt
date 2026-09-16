@@ -252,6 +252,22 @@ class TogetherViewModel @Inject constructor(
     }
 
     /**
+     * The player screen is going away. Ends the session if it is going away for good.
+     *
+     * Rotation, the background and a floating window all leave the session running, which is what
+     * the spec asks for and what a viewer expects: the conversation is about the episode, not
+     * about which way up the phone is.
+     */
+    fun playerGone(finishing: Boolean, changingConfigurations: Boolean) {
+        if (!SessionLifecycle.endsSession(finishing, changingConfigurations)) return
+        if (_uiState.value.phase == TogetherPhase.IDLE) return
+        armWait(null)
+        // The engine does this on its own scope, so the goodbye survives this view model being
+        // cleared moments from now.
+        viewModelScope.launch { session.leave() }
+    }
+
+    /**
      * A player screen has just opened on this view model.
      *
      * The session is one per process and stays where it settled, so a screen opened after one

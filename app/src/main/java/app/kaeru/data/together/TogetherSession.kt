@@ -212,12 +212,18 @@ class TogetherSession(
         // would be left holding whatever it drew the first time.
         val settled = _state.value
         if (settled is SessionState.Ended || settled is SessionState.Idle) return
-        val open = channel
-        if (open != null) send(TogetherMessage.Bye(nextSeq()))
-        // Whatever the last correction left behind is not this viewer's speed to keep.
-        forceNormalSpeed()
-        stop()
-        _state.value = SessionState.Ended
+        // On this session's own scope rather than the caller's, and only joined from there. The
+        // last place this is called from is a player screen being destroyed, whose scope is
+        // cancelled moments later; a goodbye dropped on the way out is a friend waiting half a
+        // minute to be told what already happened.
+        scope.launch(failures) {
+            val open = channel
+            if (open != null) send(TogetherMessage.Bye(nextSeq()))
+            // Whatever the last correction left behind is not this viewer's speed to keep.
+            forceNormalSpeed()
+            stop()
+            _state.value = SessionState.Ended
+        }.join()
     }
 
     /**

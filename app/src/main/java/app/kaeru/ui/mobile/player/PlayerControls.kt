@@ -374,7 +374,7 @@ private fun DownloadButton(download: EpisodeDownload?, onDownload: () -> Unit, o
  * running, which is whether to be in it.
  */
 @Composable
-private fun TogetherButton(peer: String?, onShare: () -> Unit, onLeave: (() -> Unit)?, canInvite: Boolean) {
+internal fun TogetherButton(peer: String?, onShare: () -> Unit, onLeave: (() -> Unit)?, canInvite: Boolean) {
     if (peer == null) {
         // Nothing to start while the picture is on a television. A session already running is a
         // different matter: this chip is the only way out of one, and hiding it would strand the

@@ -465,6 +465,41 @@ class TogetherViewModelTest {
     }
 
     @Test
+    fun `a player left for good takes the session with it`() = runTest {
+        val vm = viewModel()
+        live()
+
+        vm.playerGone(finishing = true, changingConfigurations = false)
+        runCurrent()
+
+        assertEquals(1, session.left)
+    }
+
+    @Test
+    fun `a rotation, a home button and a floating window all leave it running`() = runTest {
+        val vm = viewModel()
+        live()
+
+        vm.playerGone(finishing = true, changingConfigurations = true)
+        vm.playerGone(finishing = false, changingConfigurations = false)
+        runCurrent()
+
+        assertEquals(0, session.left)
+        assertEquals(TogetherPhase.LIVE, vm.uiState.value.phase)
+    }
+
+    @Test
+    fun `a player with no session behind it leaves nothing`() = runTest {
+        val vm = viewModel()
+        runCurrent()
+
+        vm.playerGone(finishing = true, changingConfigurations = false)
+        runCurrent()
+
+        assertEquals(0, session.left)
+    }
+
+    @Test
     fun `leaving a shared viewing leaves it`() = runTest {
         val vm = viewModel()
         live()

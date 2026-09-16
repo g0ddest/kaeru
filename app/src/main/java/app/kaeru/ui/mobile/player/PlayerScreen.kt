@@ -203,20 +203,46 @@ fun PlayerScreen(
             if (state.isCasting) {
                 // Nothing is decoded here while a receiver has the picture, so there is no surface
                 // to attach and nothing worth hiding after three seconds: the screen is a remote.
-                RemoteControlScreen(
-                    state = state,
-                    onBack = onBack,
-                    onTogglePlayPause = onTogglePlayPause,
-                    onSeekTo = onSeekTo,
-                    onSeekBy = onSeekBy,
-                    onNext = onNext,
-                    onCancelAutoplay = onCancelAutoplay,
-                    onOpenTranslations = onOpenTranslations,
-                    onOpenQualities = onOpenQualities,
-                    onPickEpisode = onPickEpisode,
-                    onRetry = onRetry,
-                    onStopCasting = onStopCasting,
-                )
+                //
+                // A shared viewing carries on underneath it — the friend's play, pause and episode
+                // changes are still applied, now to the television — so the chip that leaves one
+                // and the corner that carries what is being said both come along.
+                Box(Modifier.fillMaxSize()) {
+                    RemoteControlScreen(
+                        state = state,
+                        onBack = onBack,
+                        onTogglePlayPause = onTogglePlayPause,
+                        onSeekTo = onSeekTo,
+                        onSeekBy = onSeekBy,
+                        onNext = onNext,
+                        onCancelAutoplay = onCancelAutoplay,
+                        onOpenTranslations = onOpenTranslations,
+                        onOpenQualities = onOpenQualities,
+                        onPickEpisode = onPickEpisode,
+                        onRetry = onRetry,
+                        onStopCasting = onStopCasting,
+                        togetherPeer = TogetherCopy.sessionChip(
+                            together.state.phase,
+                            together.state.peerName,
+                        ),
+                        onLeaveTogether = together.onLeave,
+                    )
+                    if (together.state.active) {
+                        TogetherOverlay(
+                            state = together.state,
+                            controlsVisible = true,
+                            onSendChat = together.onSendChat,
+                            onReaction = together.onReaction,
+                            onVoice = together.onVoice,
+                            onMicDenied = together.onMicDenied,
+                            onOpenHistory = together.onOpenHistory,
+                            onCloseHistory = together.onCloseHistory,
+                            onReplay = together.onReplay,
+                            onLeaveWait = together.onLeaveWait,
+                            recorder = together.recorder,
+                        )
+                    }
+                }
             } else {
                 Box(
                     Modifier.fillMaxSize().playerGestures(

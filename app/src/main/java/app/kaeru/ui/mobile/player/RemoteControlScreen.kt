@@ -89,6 +89,15 @@ fun RemoteControlScreen(
     onPickEpisode: (Int) -> Unit,
     onRetry: () -> Unit,
     onStopCasting: () -> Unit,
+    /**
+     * The friend on the other phone, while there is one.
+     *
+     * Casting changes nothing about a shared viewing: the friend's play, pause and seek are still
+     * applied, now to the television. So the chip comes with it — it is the only way out of a
+     * session, and a remote control without it is a session a viewer cannot leave.
+     */
+    togetherPeer: String? = null,
+    onLeaveTogether: (() -> Unit)? = null,
 ) {
     Column(Modifier.fillMaxSize().background(KaeruBackground).safeDrawingPadding()) {
         Row(
@@ -107,6 +116,9 @@ fun RemoteControlScreen(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).padding(start = 4.dp),
             )
+            if (togetherPeer != null) {
+                TogetherButton(togetherPeer, onShare = {}, onLeave = onLeaveTogether, canInvite = false)
+            }
             CastButton()
             TextButton(onClick = onStopCasting) { Text("Отключить", color = KaeruText) }
         }
