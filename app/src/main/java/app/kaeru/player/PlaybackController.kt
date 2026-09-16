@@ -493,10 +493,25 @@ class DefaultPlaybackController @Inject constructor(
         goIdle()
     }
 
+    /**
+     * Which playback the deferred-removal target belongs to.
+     *
+     * Only [goIdle] reports that target from a coroutine rather than inline, because `release()`
+     * cannot suspend; everything else is already ordered by being on the one dispatcher this
+     * controller runs on. The token is what keeps that one report from arriving late.
+     */
+    private var playbackGeneration = 0
+
     /** Forget what was playing. Which engine is live is the one thing that survives. */
     private fun goIdle() {
-        // Nothing is reading anything now, so anything held back for that reason can go.
-        scope.launch { deleteWatchedDownloads.nowPlaying(null, null) }
+        // Nothing is reading anything now, so anything held back for that reason can go. On a
+        // coroutine because `release()` cannot suspend, and therefore behind a token: a re-open
+        // that begins before this is dispatched has already named its own episode, and nulling the
+        // target out from under it is exactly what lets a mark delete a file mid-episode.
+        val generation = ++playbackGeneration
+        scope.launch {
+            if (generation == playbackGeneration) deleteWatchedDownloads.nowPlaying(null, null)
+        }
         opening = null
         _state.value = PlaybackState(isCasting = casting)
         markedEpisode = false
@@ -553,6 +568,7 @@ class DefaultPlaybackController @Inject constructor(
         // What is being read now. «Удалять просмотренные» holds back any episode named here, and
         // lets go of the one this call moves off — the mark that asks for a deletion is raised at
         // nine tenths of an episode, while its file is still under the engine.
+        playbackGeneration++
         deleteWatchedDownloads.nowPlaying(target.animeId, target.episode)
         opening = null
         // Everything the engine said while this transition ran was ignored on purpose. Take its
