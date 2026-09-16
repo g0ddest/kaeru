@@ -17,9 +17,16 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import app.kaeru.ui.common.auth.AuthUiState
 
-/** [authorizeUrl] arms a fresh OAuth `state`, so it is called per sign-in attempt. */
+/**
+ * [authorizeUrl] arms a fresh OAuth `state`, so it is called per sign-in attempt.
+ *
+ * [invitationWaiting] says somebody tapped «смотреть вместе» on a signed-out app — which is the
+ * ordinary path, since the landing page asks a person to install the build and open the link
+ * again. Saying so is the difference between a login screen that appeared out of nowhere and one
+ * that is a step on the way to the thing the person actually pressed.
+ */
 @Composable
-fun LoginScreen(authorizeUrl: () -> String, state: AuthUiState) {
+fun LoginScreen(authorizeUrl: () -> String, state: AuthUiState, invitationWaiting: Boolean = false) {
     val context = LocalContext.current
     Column(
         Modifier.fillMaxSize().padding(32.dp),
@@ -42,6 +49,14 @@ fun LoginScreen(authorizeUrl: () -> String, state: AuthUiState) {
             },
             enabled = !state.exchanging,
         ) { Text(if (state.exchanging) "Проверяем код…" else "Войти через Shikimori") }
+        if (invitationWaiting) {
+            Text(
+                "После входа откроем приглашение",
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 16.dp),
+            )
+        }
         state.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 16.dp)) }
     }
 }

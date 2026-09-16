@@ -53,6 +53,15 @@ interface PlaybackEngine {
 
     fun seekTo(positionMs: Long)
 
+    /**
+     * Plays at [factor] times normal speed, pitch corrected. `1.0` is normal.
+     *
+     * Only a shared session asks for this, and only by three percent, to close a gap of a second
+     * or two without the stall an HLS seek costs. An engine that cannot change speed — a receiver
+     * across the room — ignores it, and the session seeks instead the next time it looks.
+     */
+    fun setRate(factor: Float) = Unit
+
     /** Stops playback and frees the decoder. The engine stays usable: [prepare] starts it again. */
     fun release()
 }

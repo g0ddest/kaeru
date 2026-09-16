@@ -1,5 +1,6 @@
 package app.kaeru.ui.mobile
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -40,6 +41,7 @@ import app.kaeru.ui.common.search.SearchViewModel
 import app.kaeru.ui.common.pairing.PairingStage
 import app.kaeru.ui.common.pairing.PairingUiState
 import app.kaeru.ui.common.settings.SettingsViewModel
+import app.kaeru.ui.common.together.TogetherUiState
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruElevated
 import app.kaeru.ui.common.theme.KaeruSecondary
@@ -52,6 +54,7 @@ import app.kaeru.ui.mobile.pairing.PairingScreen
 import app.kaeru.ui.mobile.player.PlayerActivity
 import app.kaeru.ui.mobile.search.SearchScreen
 import app.kaeru.ui.mobile.settings.SettingsScreen
+import app.kaeru.ui.mobile.together.JoinScreen
 
 private data class Tab(val route: String, val label: String, val icon: ImageVector)
 
@@ -70,6 +73,10 @@ fun MobileShell(
     onDismissPairing: () -> Unit = {},
     route: String? = null,
     onRouteConsumed: () -> Unit = {},
+    together: TogetherUiState = TogetherUiState(),
+    onJoinTogether: () -> Unit = {},
+    onJoinedTogether: () -> Unit = {},
+    onDismissTogether: () -> Unit = {},
     nav: NavHostController = rememberNavController(),
 ) {
     val current = nav.currentBackStackEntryAsState().value?.destination?.route
@@ -87,6 +94,17 @@ fun MobileShell(
         if (route == null) return@LaunchedEffect
         if (current != route) nav.navigate(route) { launchSingleTop = true }
         onRouteConsumed()
+    }
+    // An invitation arrives the same way a television's QR code does — from outside the app — so
+    // the screen it opens is pushed rather than navigated to. It is on screen for exactly as long
+    // as there is an invitation to answer: dismissing it clears the state, and the effect below
+    // takes the screen off the stack with it.
+    LaunchedEffect(together.join != null) {
+        if (together.join != null && current != Routes.WATCH) {
+            nav.navigate(Routes.WATCH) { launchSingleTop = true }
+        } else if (together.join == null && current == Routes.WATCH) {
+            nav.popBackStack()
+        }
     }
     val context = LocalContext.current
     // Playback is its own activity: landscape, immersive, and outliving this back stack.
@@ -191,6 +209,29 @@ fun MobileShell(
                     onDeleteWatched = vm::setDeleteWatched,
                     onLimit = vm::setLimit,
                 )
+            }
+            composable(Routes.WATCH) {
+                val join = together.join
+                if (join != null) {
+                    // Back is «Не сейчас». Without this the entry pops while the session stays
+                    // joining, and nothing re-pushes the screen or ends the room behind it.
+                    BackHandler { onDismissTogether() }
+                    JoinScreen(
+                        state = join,
+                        // Two halves of one press: the room is already known to the session, and
+                        // this opens the viewer's own copy of the same episode. The stream is
+                        // resolved by the player, exactly as it is for an episode started by hand.
+                        onJoin = {
+                            onJoinTogether()
+                            play(join.animeId, join.episode)
+                            // The session carries on without this screen, which would otherwise
+                            // be waiting underneath the episode it just opened.
+                            onJoinedTogether()
+                        },
+                        onRetry = onJoinTogether,
+                        onDismiss = onDismissTogether,
+                    )
+                }
             }
             composable(Routes.PAIR) {
                 PairingScreen(

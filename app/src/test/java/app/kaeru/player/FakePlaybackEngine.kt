@@ -41,6 +41,14 @@ class FakePlaybackEngine : PlaybackEngine {
 
     override fun seekTo(positionMs: Long) = _state.update { it.copy(positionMs = positionMs, ended = false) }
 
+    /** The speed the last correction asked for. Nothing else in the app ever moves it off 1.0. */
+    var rate = 1.0f
+        private set
+
+    override fun setRate(factor: Float) {
+        rate = factor
+    }
+
     override fun release() {
         releases += 1
         _state.value = EngineState()

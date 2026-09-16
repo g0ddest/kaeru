@@ -46,6 +46,10 @@ import app.kaeru.player.KaeruPlaybackService
 import app.kaeru.R
 import app.kaeru.ui.common.player.LocalCastAvailable
 import app.kaeru.ui.common.player.PlayerViewModel
+import app.kaeru.ui.common.together.TogetherViewModel
+import app.kaeru.domain.together.VoiceCapture
+import app.kaeru.domain.together.VoicePlayback
+import app.kaeru.ui.mobile.together.TogetherControls
 import app.kaeru.ui.common.theme.KaeruTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -70,7 +74,21 @@ class PlayerActivity : FragmentActivity() {
     /** The one thing this screen remembers between launches: whether the question was put. */
     @Inject lateinit var notificationPrompt: PlaybackNotificationPrompt
 
+    /** The microphone and the speaker a shared viewing talks through, named by their interfaces. */
+    @Inject lateinit var voiceCapture: VoiceCapture
+
+    @Inject lateinit var voicePlayback: VoicePlayback
+
     private val viewModel: PlayerViewModel by viewModels()
+
+    /**
+     * The session as this screen sees it.
+     *
+     * Its own view model rather than a field on the player's: playback and the conversation over
+     * it fail, wait and end independently, and the session outlives this activity inside a
+     * singleton that the join screen in the other activity is looking at too.
+     */
+    private val together: TogetherViewModel by viewModels()
     private var launch by mutableStateOf(Launch())
 
     /** Numbers the launches, so two of the same episode are still two launches. See [Launch.seq]. */
@@ -155,6 +173,7 @@ class PlayerActivity : FragmentActivity() {
                 val castAvailable by cast.isAvailable.collectAsStateWithLifecycle()
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
                 val player by viewModel.videoPlayer.collectAsStateWithLifecycle()
+                val session by together.uiState.collectAsStateWithLifecycle()
                 val view = LocalView.current
                 val opened = launch
 
@@ -228,6 +247,30 @@ class PlayerActivity : FragmentActivity() {
                         onRemoveBrokenDownload = viewModel::removeDownloadAndRetry,
                         isInPictureInPicture = inPictureInPicture,
                         onEnterPictureInPicture = ::enterWindow.takeIf { supportsPictureInPicture },
+                        together = TogetherControls(
+                            state = session,
+                            recorder = voiceCapture,
+                            player = voicePlayback,
+                            // The title and the episode go into the message to the friend, so the
+                            // invitation is built from what is actually on screen rather than from
+                            // what the intent asked for an hour ago.
+                            onShare = { together.share(state.title, state.episode) },
+                            onLeave = together::leave,
+                            onShareShown = together::shareShown,
+                            onSendChat = together::sendChat,
+                            onReaction = together::sendReaction,
+                            onVoice = together::sendVoice,
+                            onMicDenied = together::microphoneDenied,
+                            onOpenHistory = together::openHistory,
+                            onCloseHistory = together::closeHistory,
+                            onReplay = together::replay,
+                            onClipPlayed = together::clipPlayed,
+                            onLeaveWait = together::leaveWait,
+                            onMessageShown = together::messageShown,
+                            onPlayerAttached = together::playerAttached,
+                            onAutoHide = together::setAutoHide,
+                            enabled = true,
+                        ),
                     )
                 }
             }
@@ -291,6 +334,9 @@ class PlayerActivity : FragmentActivity() {
         removeOnPictureInPictureModeChangedListener(windowMode)
         runCatching { unregisterReceiver(windowControls) }
         if (isFinishing) {
+            // The shared viewing goes with the player, and only when the player is going for good:
+            // a rotation, a trip to the background and a floating window all leave it running.
+            together.playerGone(finishing = true, changingConfigurations = isChangingConfigurations)
             viewModel.release()
             runCatching { stopService(Intent(this, KaeruPlaybackService::class.java)) }
         }

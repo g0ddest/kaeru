@@ -10,8 +10,16 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <!-- Episodes downloading in the background, which is a data sync as the platform classifies it. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Voice clips during a shared viewing. Asked for at the first hold of the button, never at launch. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <uses-feature android:name="android.software.leanback" android:required="false" />
+    <!--
+      Declared optional, like the two below it. A RECORD_AUDIO permission on its own makes Play
+      treat a microphone as required hardware and filter the app off every device without one —
+      which includes television boxes, and this app ships a television build.
+    -->
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
     <application
@@ -46,14 +54,33 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <!--
-                  One scheme, two hosts, written as separate tags: the platform merges every data
-                  element in a filter and matches the cross product, so this is `kaeru://oauth`
-                  (the OAuth callback) and `kaeru://pair` (a television's QR code, read by the
-                  phone and never fired by this app), and nothing else.
+                  One scheme, three hosts, written as separate tags: the platform merges every
+                  data element in a filter and matches the cross product, so this is
+                  `kaeru://oauth` (the OAuth callback), `kaeru://pair` (a television's QR code,
+                  read by the phone and never fired by this app) and `kaeru://watch` (an
+                  invitation naming a phone on this Wi-Fi), and nothing else.
                 -->
                 <data android:scheme="kaeru" />
                 <data android:host="oauth" />
                 <data android:host="pair" />
+                <data android:host="watch" />
+            </intent-filter>
+            <!--
+              The invitation as it travels through a messenger. Verified rather than merely
+              declared: the host serves `/.well-known/assetlinks.json` naming this package and
+              both signing certificates, so the system makes Kaeru the default handler and the
+              link opens the app instead of a browser tab. Verification is asynchronous and takes
+              a moment after install, which is why the page behind the same address has a button
+              that fires the link again.
+            -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="kaeru.vitaliy.velikodniy.name"
+                    android:pathPrefix="/w/" />
             </intent-filter>
         </activity>
 

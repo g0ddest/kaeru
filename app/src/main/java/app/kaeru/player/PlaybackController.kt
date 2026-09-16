@@ -22,16 +22,20 @@ import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.playback.WatchProgress
 import app.kaeru.domain.repository.LibraryRepository
+import app.kaeru.domain.together.LocalAction
 import java.io.IOException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -42,6 +46,15 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.abs
 import kotlin.math.ceil
+
+/**
+ * Who asked for a playback action.
+ *
+ * [REMOTE] is a friend's, arriving over a shared session and applied here. The difference matters
+ * for exactly one reason: a remote action must not be announced back to the friend who made it,
+ * which is how two phones talk each other into a loop.
+ */
+enum class ActionOrigin { LOCAL, REMOTE }
 
 /**
  * Playback as the rest of the app sees it: episodes, tracks and positions rather than
@@ -65,14 +78,39 @@ interface PlaybackController {
     /** The Media3 player a video surface attaches to, while there is one. */
     val videoPlayer: StateFlow<Player?>
 
+    /**
+     * What this viewer did, for a shared session to pass on: a press, a scrub, an episode they
+     * chose or one autoplay ran into for them.
+     *
+     * Only [ActionOrigin.LOCAL] calls appear here. What a session applied on a friend's behalf
+     * does not, so forwarding everything on this flow cannot echo it back to them.
+     */
+    val localActions: Flow<LocalAction>
+
     /** Resolves [target], points the engine at it and starts playing. Suspends until playback is under way. */
-    suspend fun play(target: PlaybackTarget)
+    suspend fun play(target: PlaybackTarget, origin: ActionOrigin = ActionOrigin.LOCAL)
 
     fun togglePlayPause()
 
-    fun seekTo(positionMs: Long)
+    /**
+     * Plays or pauses, whichever [playing] asks for, rather than whichever this is not.
+     *
+     * A friend's «play» has to mean play: sending a toggle down this path would pause a phone
+     * that was already playing, which is the one thing it must never do.
+     */
+    fun setPlaying(playing: Boolean, origin: ActionOrigin = ActionOrigin.LOCAL)
+
+    fun seekTo(positionMs: Long, origin: ActionOrigin = ActionOrigin.LOCAL)
 
     fun seekBy(deltaMs: Long)
+
+    /**
+     * Plays slightly slow or slightly fast. `1.0` is normal speed.
+     *
+     * Only a shared session asks for this, to close a gap of a second or two without the jump a
+     * seek would cost on HLS. Never a viewer action, so it is never announced as one.
+     */
+    fun setRate(factor: Float)
 
     /** Same episode, same position, another voice. */
     suspend fun changeTranslation(translation: Translation)
@@ -188,6 +226,12 @@ class DefaultPlaybackController @Inject constructor(
          * Kodik of a file already on the device.
          */
         val pickedTrack: Boolean = false,
+        /**
+         * A person on this phone asked for this episode, so a friend watching along should be
+         * switched to it as well. False for the moves that are not a choice: a retry of the
+         * episode already on screen, and an engine handing the same episode to a receiver.
+         */
+        val local: Boolean = true,
     )
 
     /**
@@ -214,6 +258,17 @@ class DefaultPlaybackController @Inject constructor(
 
     private val _videoPlayer = MutableStateFlow<Player?>(null)
     override val videoPlayer: StateFlow<Player?> = _videoPlayer.asStateFlow()
+
+    /**
+     * Dropping the oldest rather than suspending on purpose: this is written from the main thread
+     * in the middle of starting a video, and a session that is not collecting — which is every
+     * moment nobody is watching together — must not be able to stall a press of play.
+     */
+    private val _localActions = MutableSharedFlow<LocalAction>(
+        extraBufferCapacity = ACTION_BUFFER,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    override val localActions: Flow<LocalAction> = _localActions.asSharedFlow()
 
     /** Whichever engine is playing right now. The local one until a receiver takes over. */
     private var engine: PlaybackEngine = localEngine
@@ -262,11 +317,11 @@ class DefaultPlaybackController @Inject constructor(
         following = follow(localEngine)
     }
 
-    override suspend fun play(target: PlaybackTarget) {
+    override suspend fun play(target: PlaybackTarget, origin: ActionOrigin) {
         transition {
             // Recorded before the flush, which suspends: an engine switch landing in that window
             // has to resume this episode rather than the one it supersedes.
-            val plan = Opening(target, freshEpisode = true)
+            val plan = Opening(target, freshEpisode = true, local = origin == ActionOrigin.LOCAL)
             opening = plan
             flushProgressNow()
             _state.value = PlaybackState(
@@ -279,21 +334,37 @@ class DefaultPlaybackController @Inject constructor(
         }.join()
     }
 
-    override fun togglePlayPause() {
+    override fun togglePlayPause() = setPlaying(!_state.value.isPlaying)
+
+    override fun setPlaying(playing: Boolean, origin: ActionOrigin) {
         val current = _state.value
-        if (current.isPlaying) {
+        if (!playing) {
             engine.pause()
+            announce(origin) { LocalAction.Pause(_state.value.positionMs) }
             return
         }
         // Pressing play on an episode that ran out should replay it, not sit on the last frame.
-        if (current.durationMs > 0 && current.positionMs >= current.durationMs) engine.seekTo(0)
+        val replaying = current.durationMs > 0 && current.positionMs >= current.durationMs
+        if (replaying) {
+            engine.seekTo(0)
+            _state.update { it.copy(positionMs = 0) }
+        }
         engine.play()
+        announce(origin) { LocalAction.Play(_state.value.positionMs) }
     }
 
-    override fun seekTo(positionMs: Long) {
+    override fun seekTo(positionMs: Long, origin: ActionOrigin) {
         val clamped = EpisodeQueue.clampSeek(positionMs, _state.value.durationMs)
         _state.update { it.copy(positionMs = clamped) }
         engine.seekTo(clamped)
+        announce(origin) { LocalAction.Seek(clamped) }
+    }
+
+    override fun setRate(factor: Float) = engine.setRate(factor)
+
+    /** Says what this viewer did, and says nothing at all about what their friend did. */
+    private inline fun announce(origin: ActionOrigin, action: () -> LocalAction) {
+        if (origin == ActionOrigin.LOCAL) _localActions.tryEmit(action())
     }
 
     override fun seekBy(deltaMs: Long) = seekTo(_state.value.positionMs + deltaMs)
@@ -427,7 +498,7 @@ class DefaultPlaybackController @Inject constructor(
             val unopened = unfinished
                 ?: target?.takeIf {
                     stream == null || quality == null || handingOverADownload || returningToADownload
-                }?.let { Opening(it.copy(startPositionMs = carryPositionMs), freshEpisode = false) }
+                }?.let { Opening(it.copy(startPositionMs = carryPositionMs), freshEpisode = false, local = false) }
             if (unopened != null) {
                 // A next episode that will not resolve is still a next episode: the viewer gets
                 // the passing message and keeps the episode they were watching, not a red line
@@ -465,6 +536,9 @@ class DefaultPlaybackController @Inject constructor(
                 current.copy(startPositionMs = _state.value.positionMs),
                 freshEpisode = false,
                 preferQuality = _state.value.quality,
+                // The same episode, opened again after a failure. Nobody needs to be switched to
+                // what they are already watching.
+                local = false,
             )
             opening = plan
             flushProgressNow()
@@ -569,6 +643,11 @@ class DefaultPlaybackController @Inject constructor(
         )
         engine.prepare(stream.urls.getValue(quality), headers, target.startPositionMs, describe(target, stream, anime))
         engine.play()
+        // After the resolve, not before it: the voice is what a friend has to be told, and until
+        // Kodik has answered nobody knows which one this is.
+        if (plan.local) {
+            _localActions.tryEmit(LocalAction.Episode(target.animeId, target.episode, stream.translation.id))
+        }
         // What is being read now. «Удалять просмотренные» holds back any episode named here, and
         // lets go of the one this call moves off — the mark that asks for a deletion is raised at
         // nine tenths of an episode, while its file is still under the engine.
@@ -767,8 +846,17 @@ class DefaultPlaybackController @Inject constructor(
         val quality = _state.value.quality
         transition {
             _state.update { it.copy(isBuffering = true, error = null) }
-            open(Opening(target.copy(startPositionMs = at), freshEpisode = false, preferQuality = quality))
-                .onFailure(::fail)
+            // Not a local action: this is the same episode opened again behind the viewer's back,
+            // and a friend watching along has no business being switched to what they are already
+            // watching. Same reason `retry()` says so.
+            open(
+                Opening(
+                    target.copy(startPositionMs = at),
+                    freshEpisode = false,
+                    preferQuality = quality,
+                    local = false,
+                ),
+            ).onFailure(::fail)
         }
     }
 
@@ -904,5 +992,10 @@ class DefaultPlaybackController @Inject constructor(
     private fun follow(engine: PlaybackEngine): Job = scope.launch {
         launch { engine.state.collect { onEngineState(it) } }
         launch { engine.videoPlayer.collect { _videoPlayer.value = it } }
+    }
+
+    private companion object {
+        /** Deep enough for the scrubbing of an impatient viewer; a session drains it at once. */
+        const val ACTION_BUFFER = 32
     }
 }

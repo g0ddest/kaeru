@@ -20,6 +20,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -31,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -46,10 +48,18 @@ import app.kaeru.ui.common.player.PlayerRecovery
 import app.kaeru.ui.common.player.PlayerSheet
 import app.kaeru.ui.common.player.PlayerUiState
 import app.kaeru.ui.common.player.playerFailure
+import app.kaeru.ui.common.together.TogetherCopy
+import app.kaeru.ui.mobile.together.TogetherControls
+import app.kaeru.ui.mobile.together.TogetherOverlay
+import app.kaeru.ui.mobile.together.shareInvitation
+import app.kaeru.ui.mobile.together.touchExploration
 import kotlinx.coroutines.delay
 import java.time.Instant
 
 private const val CONTROLS_LINGER_MS = 3_000L
+
+/** How far the episode drops while somebody's voice is coming out of the same speaker. */
+private const val DUCKED_VOLUME = 0.25f
 private const val PULSE_MS = 450L
 
 /** How long the brightness or volume strip stays up after the finger leaves. */
@@ -88,6 +98,7 @@ fun PlayerScreen(
     onRemoveBrokenDownload: () -> Unit,
     isInPictureInPicture: Boolean = false,
     onEnterPictureInPicture: (() -> Unit)? = null,
+    together: TogetherControls = TogetherControls(),
 ) {
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         // One call site for the surface, so it is the same node full screen and in a floating
@@ -147,24 +158,91 @@ fun PlayerScreen(
                 snackbar.showSnackbar(message)
                 onToastShown()
             }
+            // A session is one per process and stays where it ended, so a player opened after one
+            // finished has a receipt to clear that belongs to an episode nobody here was watching.
+            LaunchedEffect(Unit) { together.onPlayerAttached() }
+            // A refused microphone and a link that would not open are said in the same place as
+            // everything else the player says in passing.
+            LaunchedEffect(together.state.message) {
+                val message = together.state.message ?: return@LaunchedEffect
+                snackbar.showSnackbar(message)
+                together.onMessageShown()
+            }
+            // The invitation leaves the app the moment there is one to send.
+            val context = LocalContext.current
+            LaunchedEffect(together.state.share) {
+                val request = together.state.share ?: return@LaunchedEffect
+                shareInvitation(context, request)
+                together.onShareShown()
+            }
+            // Text that disappears on a timer is exactly what WCAG 2.2.1 will not have, so with a
+            // screen reader running the corner keeps what it is given until it is dismissed.
+            val talkback = touchExploration()
+            LaunchedEffect(talkback) { together.onAutoHide(!talkback) }
+            // A clip plays once, straight away, over an episode turned down to a quarter. The
+            // system will not duck this app against itself, so the video is turned down here —
+            // which is deterministic and needs no version check.
+            val clip = together.state.playing
+            LaunchedEffect(clip) {
+                val playing = clip ?: return@LaunchedEffect
+                together.player?.play(playing.id, playing.bytes, together.onClipPlayed)
+                    ?: together.onClipPlayed()
+            }
+            LaunchedEffect(clip, player) {
+                player?.volume = if (clip != null) DUCKED_VOLUME else 1f
+            }
+            // Keyed on both: a media3 instance that changes under this would otherwise have its
+            // volume restored on the one that had gone.
+            DisposableEffect(together.player, player) {
+                onDispose {
+                    together.player?.stop()
+                    player?.volume = 1f
+                }
+            }
 
             if (state.isCasting) {
                 // Nothing is decoded here while a receiver has the picture, so there is no surface
                 // to attach and nothing worth hiding after three seconds: the screen is a remote.
-                RemoteControlScreen(
-                    state = state,
-                    onBack = onBack,
-                    onTogglePlayPause = onTogglePlayPause,
-                    onSeekTo = onSeekTo,
-                    onSeekBy = onSeekBy,
-                    onNext = onNext,
-                    onCancelAutoplay = onCancelAutoplay,
-                    onOpenTranslations = onOpenTranslations,
-                    onOpenQualities = onOpenQualities,
-                    onPickEpisode = onPickEpisode,
-                    onRetry = onRetry,
-                    onStopCasting = onStopCasting,
-                )
+                //
+                // A shared viewing carries on underneath it — the friend's play, pause and episode
+                // changes are still applied, now to the television — so the chip that leaves one
+                // and the corner that carries what is being said both come along.
+                Box(Modifier.fillMaxSize()) {
+                    RemoteControlScreen(
+                        state = state,
+                        onBack = onBack,
+                        onTogglePlayPause = onTogglePlayPause,
+                        onSeekTo = onSeekTo,
+                        onSeekBy = onSeekBy,
+                        onNext = onNext,
+                        onCancelAutoplay = onCancelAutoplay,
+                        onOpenTranslations = onOpenTranslations,
+                        onOpenQualities = onOpenQualities,
+                        onPickEpisode = onPickEpisode,
+                        onRetry = onRetry,
+                        onStopCasting = onStopCasting,
+                        togetherPeer = TogetherCopy.sessionChip(
+                            together.state.phase,
+                            together.state.peerName,
+                        ),
+                        onLeaveTogether = together.onLeave,
+                    )
+                    if (together.state.active && !failed) {
+                        TogetherOverlay(
+                            state = together.state,
+                            controlsVisible = true,
+                            onSendChat = together.onSendChat,
+                            onReaction = together.onReaction,
+                            onVoice = together.onVoice,
+                            onMicDenied = together.onMicDenied,
+                            onOpenHistory = together.onOpenHistory,
+                            onCloseHistory = together.onCloseHistory,
+                            onReplay = together.onReplay,
+                            onLeaveWait = together.onLeaveWait,
+                            recorder = together.recorder,
+                        )
+                    }
+                }
             } else {
                 Box(
                     Modifier.fillMaxSize().playerGestures(
@@ -258,6 +336,13 @@ fun PlayerScreen(
                                 // episode would be kept on a phone that is not playing it.
                                 onDownload = onDownload.takeIf { !state.isCasting },
                                 onRemoveDownload = onRemoveDownload.takeIf { !state.isCasting },
+                                onWatchTogether = together.onShare.takeIf { together.enabled },
+                                togetherPeer = TogetherCopy.sessionChip(together.state.phase, together.state.peerName),
+                                onLeaveTogether = together.onLeave,
+                                // Nothing to start while the picture is on a television: the two
+                                // phones would be watching one room from opposite ends of it. A
+                                // session already running keeps its chip, which is its only exit.
+                                canInvite = !state.isCasting,
                             )
                             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                                 if (!failed) {
@@ -286,6 +371,24 @@ fun PlayerScreen(
                             }
                         }
                     }
+                }
+
+                // Over the controls rather than under them: what somebody just said has to be
+                // readable while the timeline is up, and the column moves itself out of the way.
+                if (together.state.active && !failed) {
+                    TogetherOverlay(
+                        state = together.state,
+                        controlsVisible = controlsVisible,
+                        onSendChat = together.onSendChat,
+                        onReaction = together.onReaction,
+                        onVoice = together.onVoice,
+                        onMicDenied = together.onMicDenied,
+                        onOpenHistory = together.onOpenHistory,
+                        onCloseHistory = together.onCloseHistory,
+                        onReplay = together.onReplay,
+                        onLeaveWait = together.onLeaveWait,
+                        recorder = together.recorder,
+                    )
                 }
 
                 // Buffering has to be visible even after the controls have gone.
