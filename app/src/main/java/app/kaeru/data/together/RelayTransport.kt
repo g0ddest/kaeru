@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -97,14 +98,20 @@ class RelayTransport @Inject constructor(
             }
             keepConnected(link, this)
         }
-        close()
+        channel.close()
         awaitClose { cut() }
-    }.flowOn(dispatcher)
+    }
+        .flowOn(dispatcher)
+        // Downstream of `flowOn`, the way the LAN transport does it, and for a reason the
+        // `awaitClose` above cannot cover: a cancelled collector unwinds the producer out of
+        // whatever it was awaiting, so the body never reaches its own cleanup. This runs either
+        // way, and it is what makes a session end when the screen it was on goes away.
+        .onCompletion { cut() }
 
     private suspend fun keepConnected(link: RoomLink, out: ProducerScope<Result<TogetherMessage>>) {
         val request = Request.Builder().url("${baseUrl.trimEnd('/')}$ROOM_PATH${link.roomId}").build()
         var attempt = 0
-        var giveUpAt = 0L
+        var waited = 0L
         while (out.isActive) {
             _state.value = if (attempt == 0) ConnectionState.CONNECTING else ConnectionState.RECONNECTING
             val opened = AtomicBoolean(false)
@@ -131,12 +138,20 @@ class RelayTransport @Inject constructor(
                 // A socket that worked is a fresh start: the half-minute is per outage, not per
                 // session, or a long evening would run out of it.
                 attempt = 0
-                giveUpAt = 0
+                waited = 0
             }
-            if (giveUpAt == 0L) giveUpAt = System.currentTimeMillis() + timeouts.reconnectBudgetMs
-            val wait = timeouts.backoffMs.getOrElse(attempt) { timeouts.backoffMs.lastOrNull() ?: 0 }
+            val step = timeouts.backoffMs.getOrElse(attempt) { timeouts.backoffMs.lastOrNull() ?: 0 }
             attempt++
-            if (System.currentTimeMillis() + wait > giveUpAt) break
+            // What is left of the half-minute, counted in the waits themselves rather than off the
+            // wall clock — they are the same thing on a phone, and only the former can be tested
+            // without sitting through it. The last wait is clipped to the remainder instead of
+            // being abandoned for overshooting: with 1/2/4/8/16 the fifth would land at 31 s, and
+            // breaking there gave up at 15 — half the window the spec promises, with the last step
+            // of the schedule unreachable.
+            val remaining = timeouts.reconnectBudgetMs - waited
+            if (remaining <= 0) break
+            val wait = minOf(step, remaining)
+            waited += wait
             _state.value = ConnectionState.RECONNECTING
             delay(wait)
         }
@@ -207,6 +222,11 @@ class RelayTransport @Inject constructor(
         // may be the reason this is being cut in the first place.
         runCatching { open?.cancel() }
         runCatching { pending?.cancel() }
+        // Said here rather than only in `close`, because the ordinary way a session ends is the
+        // collector being cancelled with the screen it was on — and this is all that runs then.
+        // Without it the state reports CONNECTED for the life of the transport and `send` buffers
+        // into a backlog that nothing will ever flush, instead of saying there is nowhere to write.
+        _state.value = ConnectionState.CLOSED
     }
 
     private inner class Peer(

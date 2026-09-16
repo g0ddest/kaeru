@@ -308,6 +308,21 @@ class RelayTransportTest {
     }
 
     @Test
+    fun `a session whose screen went away is closed, not left looking connected`() = runBlocking<Unit> {
+        val relay = upgrade()
+        val collecting = scope.launch { transport.connect(link, asHost = false).collect { } }
+
+        soon { relay.sockets.receive() }
+        soon { transport.state.first { it == ConnectionState.CONNECTED } }
+        collecting.cancelAndJoin()
+
+        soon { transport.state.first { it == ConnectionState.CLOSED } }
+        val thrown = runCatching { transport.send(TogetherMessage.Bye(seq = 1)) }.exceptionOrNull()
+        assertEquals(TogetherFailureReason.DISCONNECTED, (thrown as? TogetherFailed)?.reason)
+    }
+
+
+    @Test
     fun `a build with no relay in it says so instead of dialling nowhere`() = runBlocking<Unit> {
         transport = relayAt("")
 
