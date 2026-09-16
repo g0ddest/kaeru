@@ -354,13 +354,40 @@ class MarkEpisodeUnwatchedTest {
     }
 
     @Test
-    fun `a promise for a different episode is left alone`() = runTest {
+    fun `a promise for an earlier episode is left alone`() = runTest {
         seed(episodes = 7)
-        promises.seed(DownloadedEpisode(100, 6))
+        promises.seed(DownloadedEpisode(100, 4))
 
         assertTrue(unmark(animeId = 100, episode = 5).isSuccess)
 
-        assertEquals(setOf(DownloadedEpisode(100, 6)), promises.pending())
+        assertEquals(setOf(DownloadedEpisode(100, 4)), promises.pending())
+    }
+
+    /**
+     * M-1: Shikimori holds a count, so un-marking episode 5 un-watches 5, 6 and 7 together — the
+     * same reading [forgetPositions] already gives the positions this device remembers. A standing
+     * promise for any of those episodes assumed the opposite of what the un-mark now says, so it
+     * goes too; a promise for an episode still genuinely watched (below the one tapped) does not.
+     */
+    @Test
+    fun `un-marking an episode revokes every promise the count also un-watches`() = runTest {
+        seed(episodes = 7)
+        promises.seed(DownloadedEpisode(100, 4), DownloadedEpisode(100, 5), DownloadedEpisode(100, 6), DownloadedEpisode(100, 7))
+
+        assertTrue(unmark(animeId = 100, episode = 5).isSuccess)
+
+        assertEquals(setOf(DownloadedEpisode(100, 4)), promises.pending())
+    }
+
+    /** The no-op branch — a count already below the tapped episode — is covered too. */
+    @Test
+    fun `an already-below un-mark still revokes the standing promises at or above it`() = runTest {
+        seed(episodes = 3)
+        promises.seed(DownloadedEpisode(100, 4), DownloadedEpisode(100, 5), DownloadedEpisode(100, 6))
+
+        assertTrue(unmark(animeId = 100, episode = 5).isSuccess)
+
+        assertEquals(setOf(DownloadedEpisode(100, 4)), promises.pending())
     }
 
     /** The end-to-end shape of the regression: the revoked promise never reaches a deletion. */
