@@ -143,21 +143,24 @@ class TogetherSessionTest {
     }
 
     @Test
-    fun `nobody comes for half a minute and the wait is called off`() = sessionTest {
+    fun `a room nobody has walked into yet stays open, however long it takes`() = sessionTest {
         val link = session.host("Костя")
         runCurrent()
 
-        advanceTimeBy(TogetherSession.WAIT_TIMEOUT_MS + 1)
+        advanceTimeBy(TogetherSession.WAIT_TIMEOUT_MS * 4)
+        runCurrent()
+        assertEquals(SessionState.Hosting(link, waiting = true), session.state.value)
+
+        transport.deliver(peerHello(name = "Аня"))
         runCurrent()
 
-        assertEquals(SessionState.Lost(LostReason.WAIT_TIMEOUT), session.state.value)
-        assertEquals(link, link)
+        assertEquals(SessionState.Live("Аня", 0, 0), session.state.value)
     }
 
     // ---- following a link ----
 
     @Test
-    fun `joining says hello and waits for one back before there is anything to draw`() = sessionTest {
+    fun `joining says hello, waits for one back and returns with something to draw`() = sessionTest {
         port.showing(animeId = null, episode = null, translationId = null, positionMs = 0, playing = false)
         val link = RoomLink("room", ByteArray(16), LanEndpoint("192.168.1.42", 41_234))
         val joining = launch { session.join(link, "Костя") }
@@ -170,6 +173,8 @@ class TogetherSessionTest {
         transport.deliver(peerHello(name = "Аня", episode = 7, translationId = 22, positionMs = 930_000))
         runCurrent()
 
+        joining.join()
+
         assertEquals(
             SessionState.Joining(
                 link,
@@ -177,43 +182,50 @@ class TogetherSessionTest {
             ),
             session.state.value,
         )
-        assertTrue(joining.isActive)
+        // Nothing has started a video behind a question the viewer has not answered.
+        assertTrue(port.seeks.isEmpty())
+    }
+
+    @Test
+    fun `the joiner's first outbound message is its hello`() = sessionTest {
+        port.showing(animeId = null, episode = null, translationId = null, positionMs = 0, playing = false)
+        val joining = launch { session.join(RoomLink("room", ByteArray(16), null), "Костя") }
+        runCurrent()
+
+        assertTrue(transport.sent.first() is TogetherMessage.Hello)
         joining.cancel()
     }
 
     @Test
-    fun `the join finishes when the viewer's own screen opens the episode`() = sessionTest {
+    fun `it goes live when the viewer's own screen opens the episode`() = sessionTest {
         port.showing(animeId = null, episode = null, translationId = null, positionMs = 0, playing = false)
         val link = RoomLink("room", ByteArray(16), null)
         val joining = launch { session.join(link, "Костя") }
         runCurrent()
         transport.deliver(peerHello(name = "Аня", episode = 7, translationId = 22, positionMs = 930_000))
         runCurrent()
-        // Nothing has started a video behind the question the viewer is still reading.
-        assertTrue(port.seeks.isEmpty())
+        joining.join()
+        assertTrue(session.state.value is SessionState.Joining)
 
         port.showing(animeId = 100, episode = 7, translationId = 22, positionMs = 0)
         runCurrent()
-        joining.join()
 
         assertEquals(listOf(930_000L), port.seeks)
         assertEquals(SessionState.Live("Аня", 0, 0), session.state.value)
     }
 
     @Test
-    fun `a viewer who never opens the episode is not left waiting for ever`() = sessionTest {
-        port.showing(animeId = null, episode = null, translationId = null, positionMs = 0, playing = false)
+    fun `an episode already on screen goes live at once`() = sessionTest {
+        port.showing(animeId = 100, episode = 7, translationId = 11, positionMs = 0)
         val link = RoomLink("room", ByteArray(16), null)
         val joining = launch { session.join(link, "Костя") }
         runCurrent()
-        transport.deliver(peerHello(name = "Аня", episode = 7))
-        runCurrent()
-
-        advanceTimeBy(TogetherSession.WAIT_TIMEOUT_MS + 1)
+        transport.deliver(peerHello(name = "Аня", episode = 7, positionMs = 930_000))
         runCurrent()
         joining.join()
 
-        assertEquals(SessionState.Lost(LostReason.WAIT_TIMEOUT), session.state.value)
+        assertEquals(listOf(930_000L), port.seeks)
+        assertEquals(SessionState.Live("Аня", 0, 0), session.state.value)
     }
 
     @Test
@@ -233,7 +245,6 @@ class TogetherSessionTest {
 
             port.showing(animeId = 100, episode = 7, translationId = 11, positionMs = 0)
             runCurrent()
-            joining.join()
 
             assertEquals(listOf(660_000L), port.seeks)
         }
@@ -263,6 +274,7 @@ class TogetherSessionTest {
         joining.join()
 
         assertEquals(listOf(604_000L), port.seeks)
+        assertEquals(SessionState.Live("Аня", 4_000, 0), session.state.value)
     }
 
     @Test
@@ -396,6 +408,26 @@ class TogetherSessionTest {
         runCurrent()
 
         assertEquals(listOf(300_000L), port.seeks)
+    }
+
+    @Test
+    fun `a frame handed over twice is acted on once`() = sessionTest {
+        live()
+        val seen = mutableListOf<TogetherEvent>()
+        val watching = launch { session.events.toList(seen) }
+        runCurrent()
+        val chat = TogetherMessage.Chat("Дальше!", seq = 5)
+
+        transport.deliver(chat)
+        runCurrent()
+        // The same encrypted frame, played back by a relay nobody has to trust.
+        transport.deliver(chat)
+        transport.deliver(TogetherMessage.Seek(positionMs = 300_000, seq = 4))
+        runCurrent()
+
+        assertEquals(1, seen.count { it is TogetherEvent.ChatItem })
+        assertTrue(port.seeks.isEmpty())
+        watching.cancel()
     }
 
     @Test
@@ -751,18 +783,51 @@ class TogetherSessionTest {
     }
 
     @Test
-    fun `watching alone leaves the wait behind and says nothing more about it`() = sessionTest {
-        session.host("Костя")
-        advanceTimeBy(TogetherSession.WAIT_TIMEOUT_MS + 1)
+    fun `a host who stops watching the door leaves it open`() = sessionTest {
+        val link = session.host("Костя")
         runCurrent()
-        assertEquals(SessionState.Lost(LostReason.WAIT_TIMEOUT), session.state.value)
+
+        session.watchAlone()
+        runCurrent()
+
+        assertEquals(SessionState.Hosting(link, waiting = false), session.state.value)
+        assertEquals(0, transport.closes)
+
+        transport.deliver(peerHello(name = "Аня"))
+        runCurrent()
+        assertEquals(SessionState.Live("Аня", 0, 0), session.state.value)
+    }
+
+    @Test
+    fun `a guest who says no is done, and the picture is untouched`() = sessionTest {
+        port.showing(animeId = null, episode = null, translationId = null, positionMs = 0, playing = false)
+        val joining = launch { session.join(RoomLink("room", ByteArray(16), null), "Костя") }
+        runCurrent()
+        transport.deliver(peerHello(name = "Аня", episode = 7))
+        runCurrent()
+        joining.join()
+
+        session.watchAlone()
+        runCurrent()
+
+        assertEquals(SessionState.Idle, session.state.value)
+        assertEquals(1, transport.closes)
+        assertEquals(0, port.pauses)
+        assertTrue(port.seeks.isEmpty())
+    }
+
+    @Test
+    fun `watching alone after a loss leaves nothing behind`() = sessionTest {
+        live()
+        transport.finish()
+        runCurrent()
+        assertEquals(SessionState.Lost(LostReason.CONNECTION), session.state.value)
 
         session.watchAlone()
         runCurrent()
 
         assertEquals(SessionState.Idle, session.state.value)
         assertEquals(0, port.pauses)
-        assertTrue(transport.closes >= 1)
     }
 
     @Test

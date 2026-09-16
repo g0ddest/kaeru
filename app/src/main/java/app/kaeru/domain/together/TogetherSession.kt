@@ -73,13 +73,14 @@ class TogetherSession @Inject constructor(
     /** Everything below belongs to the session that is running, and is reset by the next one. */
     private var channel: WatchTogetherTransport? = null
     private var running: Job? = null
-    private var waiting: Job? = null
     private var rejoin: Job? = null
+    private var becomingLive: Job? = null
     private var asHost = false
     private var myName = ""
     private var peerName = ""
     private var animeId = 0
     private var seq = 0L
+    private var peerSeq = 0L
     private var lastControl = Control(0, byHost = false)
     private var eventIds = 0L
     private var peer: PeerReport? = null
@@ -97,13 +98,10 @@ class TogetherSession @Inject constructor(
         val room = RoomLink.random(random)
         val link = offering.endpoint?.let { room.copy(lan = it) } ?: room
         begin(name, link, offering.transport, asHost = true)
+        // No clock on this one. A room is open until somebody walks into it or the person who
+        // made it says otherwise: a friend who reads the message a minute later is still the
+        // friend it was made for, and the screen's own thirty seconds only take the line down.
         _state.value = SessionState.Hosting(link, waiting = true)
-        // The room stays open when the wait runs out: the state is what gives up, not the socket,
-        // and a friend who opened the link late is still the friend this was made for.
-        waiting = scope.launch {
-            delay(WAIT_TIMEOUT_MS)
-            if (_state.value is SessionState.Hosting) lose(LostReason.WAIT_TIMEOUT, close = false)
-        }
         return link
     }
 
@@ -118,14 +116,17 @@ class TogetherSession @Inject constructor(
         if (_state.value !is SessionState.Joining) return
         // The viewer decides, and the screen they decide on is the one that opens the episode —
         // this waits for it rather than starting a video behind a question nobody has answered.
-        withTimeoutOrNull(WAIT_TIMEOUT_MS) {
+        // And returns, with the one thing the join screen is made of. Going live is somebody
+        // else's moment: the viewer has not said yes yet, and starting a video behind a question
+        // nobody has answered is the thing this order exists to prevent.
+        becomingLive = scope.launch {
             port.state.first { it.animeId == greeting.animeId && it.episode == greeting.episode }
-        } ?: return lose(LostReason.WAIT_TIMEOUT)
-        // Where they are now, not where they were when they said hello: a viewer reading the
-        // invitation for ten seconds is ten seconds behind by the time they say yes.
-        port.seekTo(peerPositionNow() ?: (greeting.positionMs + offsets.offsetMs))
-        goLive(greeting.name)
-        mentionVoice(greeting.translationId)
+            // Where they are now, not where they were when they said hello: a viewer reading the
+            // invitation for ten seconds is ten seconds behind by the time they say yes.
+            port.seekTo(peerPositionNow() ?: (greeting.positionMs + offsets.offsetMs))
+            goLive(greeting.name)
+            mentionVoice(greeting.translationId)
+        }
     }
 
     /** The friend's position on this device's clock, from their last report, or null if silent. */
@@ -144,11 +145,21 @@ class TogetherSession @Inject constructor(
         _state.value = SessionState.Ended
     }
 
+    /**
+     * The way out of a wait, which is not the same as the way out of a session.
+     *
+     * A host who stops watching the door has not closed it: the room stays open and a friend who
+     * arrives later still walks in. A guest who says no is done — there is nothing to keep.
+     */
     override fun watchAlone() {
-        scope.launch {
-            port.setRate(SyncPolicy.NORMAL)
-            stop()
-            _state.value = SessionState.Idle
+        when (val now = _state.value) {
+            is SessionState.Hosting -> _state.value = now.copy(waiting = false)
+            is SessionState.Joining, is SessionState.Lost -> scope.launch {
+                port.setRate(SyncPolicy.NORMAL)
+                stop()
+                _state.value = SessionState.Idle
+            }
+            else -> Unit
         }
     }
 
@@ -159,6 +170,7 @@ class TogetherSession @Inject constructor(
         this.asHost = asHost
         channel = transport
         seq = 0
+        peerSeq = 0
         lastControl = Control(0, byHost = false)
         peer = null
         drift = 0
@@ -184,11 +196,11 @@ class TogetherSession @Inject constructor(
 
     /** Ends whatever was running, quietly. Nothing after this belongs to the session that was. */
     private suspend fun stop() {
-        waiting?.cancel()
         rejoin?.cancel()
+        becomingLive?.cancel()
         running?.cancel()
-        waiting = null
         rejoin = null
+        becomingLive = null
         running = null
         val open = channel ?: return
         channel = null
@@ -206,8 +218,8 @@ class TogetherSession @Inject constructor(
         val now = _state.value
         if (now is SessionState.Ended || now is SessionState.Idle || now is SessionState.Lost) return
         _state.value = SessionState.Lost(reason)
-        waiting?.cancel()
         rejoin?.cancel()
+        becomingLive?.cancel()
         if (!close) return
         val open = channel ?: return
         channel = null
@@ -238,15 +250,21 @@ class TogetherSession @Inject constructor(
         var connected = false
         transport.state.collect { state ->
             val up = state == ConnectionState.CONNECTED
-            if (up && !connected && !asHost) send(greeting())
+            if (up && !connected) {
+                // Before anything else the guest can possibly send: a LAN host holds the slot
+                // open only until a first frame decrypts, and a ping arriving first would be a
+                // frame that says nothing about who sent it.
+                if (!asHost) send(greeting())
+                send(TogetherMessage.Ping(clock.millis(), nextSeq()))
+            }
             connected = up
         }
     }
 
     private suspend fun pings() {
         while (channel != null) {
-            send(TogetherMessage.Ping(clock.millis(), nextSeq()))
             delay(PING_INTERVAL_MS)
+            send(TogetherMessage.Ping(clock.millis(), nextSeq()))
         }
     }
 
@@ -318,10 +336,19 @@ class TogetherSession @Inject constructor(
     // ---- what the friend said ----
 
     private suspend fun receive(message: TogetherMessage) {
-        // A Lamport count: raising ours above anything we hear is what makes «later» mean the
-        // same thing on both phones. The relay's own peer-left is not a peer's word and takes no
-        // part in it.
-        if (message !is TogetherMessage.PeerLeft) seq = maxOf(seq, message.seq)
+        if (message !is TogetherMessage.PeerLeft) {
+            // Replay protection, and it belongs here rather than in a transport: a relay is
+            // outside the trust boundary and can hand the same encrypted frame over twice, which
+            // would be an old seek, an old episode or somebody's voice clip played again. The
+            // peer's count only ever rises, so anything not above the highest already accepted
+            // from them did not come from them now.
+            if (message.seq <= peerSeq) return
+            peerSeq = message.seq
+            // And a Lamport count of our own on top of it: raising ours above anything we hear is
+            // what makes «later» mean the same thing on both phones, so neither side can be
+            // outvoted for ever merely by being the quieter one.
+            seq = maxOf(seq, message.seq)
+        }
         when (message) {
             is TogetherMessage.Hello -> arrived(message)
             is TogetherMessage.Play -> control(message.seq) {
@@ -436,8 +463,6 @@ class TogetherSession @Inject constructor(
     }
 
     private fun goLive(name: String) {
-        waiting?.cancel()
-        waiting = null
         val already = _state.value is SessionState.Live
         _state.value = SessionState.Live(name, offsets.offsetMs, drift)
         if (!already) announce(TogetherEvent.Notice(NoticeKind.JOINED, name))
