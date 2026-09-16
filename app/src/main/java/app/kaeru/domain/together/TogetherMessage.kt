@@ -142,6 +142,22 @@ sealed interface TogetherMessage {
     @SerialName("bye")
     data class Bye(override val seq: Long) : TogetherMessage
 
+    /**
+     * The friend's socket went away, but the channel did not.
+     *
+     * Nothing in this app ever sends one: it is what a transport says when it learns the other side
+     * has gone while the way to reach them is still open — the relay's own doing, since a room keeps
+     * a freed slot and the same friend may come back into it within the session's rejoin window.
+     * That is what separates it from [Bye], which is somebody deciding to leave, and from the
+     * channel closing, which is the session being over.
+     *
+     * [seq] is always zero. It is not a peer's message and takes no part in deciding whose action
+     * came last.
+     */
+    @Serializable
+    @SerialName("peer-left")
+    data class PeerLeft(override val seq: Long = 0) : TogetherMessage
+
     companion object {
         /** A line over a video, not a conversation. The sender clamps; the receiver clamps to show. */
         const val MAX_CHAT_CHARS = 200

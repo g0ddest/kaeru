@@ -27,6 +27,7 @@ import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -45,6 +46,10 @@ class RelayTransportTest {
      */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val states = CopyOnWriteArrayList<ConnectionState>()
+
+    private val ROOM_IDLE = 4408
+    private val ROOM_FULL = 4409
+    private val FRAME_TOO_LARGE = 4413
 
     /** Compressed to milliseconds; the shipped seconds would make this a half-minute test. */
     private val timeouts = TogetherTimeouts(
@@ -107,6 +112,10 @@ class RelayTransportTest {
     private fun decode(bytes: ByteString) = TogetherCodec.decode(bytes.toByteArray(), link.key)
 
     private fun reasonOf(result: Result<*>) = (result.exceptionOrNull() as? TogetherFailed)?.reason
+
+    /** Everything the flow emitted before it ended; the channel closes when the collector does. */
+    private suspend fun drain(heard: Channel<Result<TogetherMessage>>): List<Result<TogetherMessage>> =
+        buildList { for (item in heard) add(item) }
 
     @Test
     fun `the room is the path, so there is no first message announcing it`() = runBlocking<Unit> {
@@ -208,6 +217,94 @@ class RelayTransportTest {
         assertEquals(ConnectionState.CLOSED, transport.state.first())
         val thrown = runCatching { transport.send(TogetherMessage.Bye(seq = 1)) }.exceptionOrNull()
         assertEquals(TogetherFailureReason.DISCONNECTED, (thrown as? TogetherFailed)?.reason)
+    }
+
+    @Test
+    fun `a third phone is told the room is taken, and is not dialled again`() = runBlocking<Unit> {
+        val relay = upgrade()
+        // If the client retried, these would be taken; the point is that it does not.
+        repeat(3) { upgrade() }
+        val heard = inbox()
+
+        soon { relay.sockets.receive() }.close(ROOM_FULL, "room full")
+
+        val emitted = soon { drain(heard) }
+        assertEquals(TogetherFailureReason.ROOM_FULL, reasonOf(emitted.last()))
+        assertEquals(ConnectionState.CLOSED, transport.state.first())
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun `a frame the relay would not carry ends the session instead of being sent again`() = runBlocking<Unit> {
+        val relay = upgrade()
+        repeat(3) { upgrade() }
+        val heard = inbox()
+
+        soon { relay.sockets.receive() }.close(FRAME_TOO_LARGE, "frame too large")
+
+        val emitted = soon { drain(heard) }
+        assertEquals(TogetherFailureReason.FRAME_TOO_LARGE, reasonOf(emitted.last()))
+        assertEquals(ConnectionState.CLOSED, transport.state.first())
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun `a room that sat empty for hours is simply over`() = runBlocking<Unit> {
+        val relay = upgrade()
+        repeat(3) { upgrade() }
+        val heard = inbox()
+
+        soon { relay.sockets.receive() }.close(ROOM_IDLE, "idle")
+
+        val emitted = soon { drain(heard) }
+        // Nothing to report: the room expired, and «связь потеряна» would be a lie.
+        assertTrue(emitted.none { it.isFailure })
+        assertEquals(ConnectionState.CLOSED, transport.state.first())
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun `the relay saying the friend left is not the connection dropping`() = runBlocking<Unit> {
+        val relay = upgrade()
+        val heard = inbox()
+
+        val socket = soon { relay.sockets.receive() }
+        socket.send("""{"type":"peer-left"}""")
+        socket.send(frame(TogetherMessage.Chat("Я вернулся", seq = 3)))
+
+        assertEquals(TogetherMessage.PeerLeft(), soon { heard.receive() }.getOrThrow())
+        // The slot is reusable, so the socket stays up and the same friend can come back into it.
+        assertEquals(TogetherMessage.Chat("Я вернулся", seq = 3), soon { heard.receive() }.getOrThrow())
+        assertEquals(ConnectionState.CONNECTED, transport.state.first())
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun `anything else the relay says in words is ignored`() = runBlocking<Unit> {
+        val relay = upgrade()
+        val heard = inbox()
+
+        val socket = soon { relay.sockets.receive() }
+        socket.send("""{"type":"something-this-build-predates"}""")
+        socket.send("not json at all")
+        socket.send(frame(TogetherMessage.Bye(seq = 4)))
+
+        assertEquals(TogetherMessage.Bye(seq = 4), soon { heard.receive() }.getOrThrow())
+        assertEquals(ConnectionState.CONNECTED, transport.state.first())
+    }
+
+    @Test
+    fun `a relay that answers its health check is told apart from one that does not`() = runBlocking<Unit> {
+        server.enqueue(MockResponse().setBody("ok"))
+        assertTrue(transport.healthy())
+        assertEquals("/health", server.takeRequest().path)
+
+        server.enqueue(MockResponse().setResponseCode(503))
+        assertFalse(transport.healthy())
+
+        // A build with no relay in it has nothing to probe, and says so without a request.
+        assertFalse(relayAt("").healthy())
+        assertEquals(2, server.requestCount)
     }
 
     @Test

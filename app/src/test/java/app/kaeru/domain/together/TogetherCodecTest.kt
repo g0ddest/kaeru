@@ -27,6 +27,7 @@ class TogetherCodecTest {
         TogetherMessage.Ping(sentAt = 1_700_000_000_001, seq = 12),
         TogetherMessage.Pong(pingSentAt = 1, receivedAt = 2, sentAt = 3, seq = 13),
         TogetherMessage.Bye(seq = 14),
+        TogetherMessage.PeerLeft(),
     )
 
     private fun encode(msg: TogetherMessage) =

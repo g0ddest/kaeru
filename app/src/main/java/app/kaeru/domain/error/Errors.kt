@@ -119,6 +119,12 @@ enum class TogetherFailureReason {
 
     /** There is no live channel to write to. Said for a send, never for a read. */
     DISCONNECTED,
+
+    /**
+     * Two people are already in this room. Forwarding a link on does not make a third seat, and a
+     * viewer who followed one deserves to be told that rather than shown a network error.
+     */
+    ROOM_FULL,
 }
 
 /** A shared viewing could not be opened, or could not be kept. */

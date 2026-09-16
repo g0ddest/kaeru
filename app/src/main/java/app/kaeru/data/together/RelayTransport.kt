@@ -23,6 +23,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -31,7 +34,9 @@ import okhttp3.WebSocketListener
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import java.security.SecureRandom
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -103,8 +108,9 @@ class RelayTransport @Inject constructor(
         while (out.isActive) {
             _state.value = if (attempt == 0) ConnectionState.CONNECTING else ConnectionState.RECONNECTING
             val opened = AtomicBoolean(false)
+            val closeCode = AtomicInteger(NO_CLOSE_CODE)
             val died = CompletableDeferred<Unit>()
-            val socket = client.newWebSocket(request, Peer(link.key, out, opened, died))
+            val socket = client.newWebSocket(request, Peer(link.key, out, opened, closeCode, died))
             synchronized(lock) { dialing = socket }
             died.await()
             synchronized(lock) {
@@ -112,6 +118,15 @@ class RelayTransport @Inject constructor(
                 live = null
             }
             if (synchronized(lock) { closedByUs } || !out.isActive) return
+            // Three of the relay's close codes are answers, not accidents, and dialling again would
+            // only get the same one. They are checked before anything else, including before a
+            // socket that opened resets the budget — a room refusing a third peer opens first.
+            val code = closeCode.get()
+            if (code in TERMINAL_CLOSES) {
+                _state.value = ConnectionState.CLOSED
+                refusalOf(code)?.let { out.trySend(Result.failure(TogetherFailed(it))) }
+                return
+            }
             if (opened.get()) {
                 // A socket that worked is a fresh start: the half-minute is per outage, not per
                 // session, or a long evening would run out of it.
@@ -157,6 +172,29 @@ class RelayTransport @Inject constructor(
 
     override fun hostEndpoint(): LanEndpoint? = null
 
+    /**
+     * Whether the relay is answering at all — a plain `GET /health`.
+     *
+     * Worth its own request because the two failures read completely differently to a viewer: a
+     * relay that is down is «попробуйте позже», and a phone with no network is «нет сети». The
+     * socket client's read timeout is deliberately infinite, so this borrows the connection pool
+     * and puts a short deadline of its own on the call.
+     */
+    suspend fun healthy(): Boolean {
+        if (baseUrl.isBlank()) return false
+        val request = Request.Builder().url("${baseUrl.trimEnd('/')}$HEALTH_PATH").build()
+        return withContext(dispatcher) {
+            runCatching { probe.newCall(request).execute().use { it.isSuccessful } }.getOrDefault(false)
+        }
+    }
+
+    private val probe: OkHttpClient by lazy {
+        client.newBuilder()
+            .callTimeout(PROBE_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(PROBE_SECONDS, TimeUnit.SECONDS)
+            .build()
+    }
+
     private fun cut() {
         val (open, pending) = synchronized(lock) {
             val pair = live to dialing
@@ -175,6 +213,7 @@ class RelayTransport @Inject constructor(
         private val roomKey: ByteArray,
         private val out: ProducerScope<Result<TogetherMessage>>,
         private val opened: AtomicBoolean,
+        private val closeCode: AtomicInteger,
         private val died: CompletableDeferred<Unit>,
     ) : WebSocketListener() {
 
@@ -193,12 +232,25 @@ class RelayTransport @Inject constructor(
             out.trySend(TogetherCodec.decode(bytes.toByteArray(), roomKey))
         }
 
+        /**
+         * The rule is the whole of it: binary is the friend, text is the relay.
+         *
+         * The relay has exactly one thing to say, and saying it does not end anything — the room
+         * keeps the freed seat, so this socket stays up and the same friend can walk back into it.
+         * Anything else in words is from a relay newer than this build and is ignored.
+         */
+        override fun onMessage(webSocket: WebSocket, text: String) {
+            if (peerLeft(text)) out.trySend(Result.success(TogetherMessage.PeerLeft()))
+        }
+
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+            closeCode.set(code)
             runCatching { webSocket.close(NORMAL_CLOSURE, null) }
             died.complete(Unit)
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+            closeCode.compareAndSet(NO_CLOSE_CODE, code)
             died.complete(Unit)
         }
 
@@ -216,6 +268,37 @@ class RelayTransport @Inject constructor(
         const val MAX_BUFFERED = 64
 
         private const val ROOM_PATH = "/w/"
+        private const val HEALTH_PATH = "/health"
         private const val NORMAL_CLOSURE = 1000
+        private const val NO_CLOSE_CODE = -1
+        private const val PROBE_SECONDS = 5L
+
+        /** The relay's own codes are its HTTP status plus 4000. */
+        private const val CLOSE_IDLE = 4408
+        private const val CLOSE_ROOM_FULL = 4409
+        private const val CLOSE_FRAME_TOO_LARGE = 4413
+
+        private val TERMINAL_CLOSES = setOf(CLOSE_IDLE, CLOSE_ROOM_FULL, CLOSE_FRAME_TOO_LARGE)
+
+        private const val PEER_LEFT = "peer-left"
+
+        private val control = Json { ignoreUnknownKeys = true }
+
+        /**
+         * What to tell the viewer about a close that ends things. A room that expired after hours
+         * of silence gets nothing: it is over, and «связь потеряна» would be a lie about why.
+         */
+        private fun refusalOf(code: Int): TogetherFailureReason? = when (code) {
+            CLOSE_ROOM_FULL -> TogetherFailureReason.ROOM_FULL
+            CLOSE_FRAME_TOO_LARGE -> TogetherFailureReason.FRAME_TOO_LARGE
+            else -> null
+        }
+
+        private fun peerLeft(text: String): Boolean =
+            runCatching { control.decodeFromString<RelayControl>(text).type }.getOrNull() == PEER_LEFT
     }
 }
+
+/** The only shape the relay ever sends, and only ever as text. */
+@Serializable
+private data class RelayControl(val type: String? = null)
