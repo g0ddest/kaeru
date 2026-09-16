@@ -2,10 +2,10 @@ package app.kaeru.ui.common.together
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import app.kaeru.data.together.PendingWatchLink
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.repository.AccountRepository
 import app.kaeru.domain.together.NoticeKind
+import app.kaeru.domain.together.PendingWatchLink
 import app.kaeru.domain.together.PeerHello
 import app.kaeru.domain.together.ReactionKind
 import app.kaeru.domain.together.RoomLink
@@ -195,17 +195,17 @@ class TogetherViewModel @Inject constructor(
     /**
      * «Не сейчас», and the system back button, which means the same thing.
      *
-     * Both halves are needed. [TogetherSessionApi.watchAlone] is what abandons a join that has not
-     * become a session yet, and [TogetherSessionApi.leave] is what closes the room behind it — a
-     * guest who said no and left the connection open is a host still being told somebody is on
-     * their way.
+     * [TogetherSessionApi.watchAlone] and nothing else. It is what abandons a join that has not
+     * become a session, and it is the only one of the two that leaves a state this screen can come
+     * back from: [TogetherSessionApi.leave] ends in `Ended`, and a second invitation in the same
+     * process would then be knocking on an engine that has been told the session is over. If the
+     * host is owed a goodbye, that belongs to the engine's own handling of an abandoned join.
      */
     fun dismissJoin() {
         room = null
         armWait(null)
         session.watchAlone()
         _uiState.update { it.copy(join = null, wait = null) }
-        viewModelScope.launch { session.leave() }
     }
 
     /**
@@ -351,6 +351,10 @@ class TogetherViewModel @Inject constructor(
 
     private fun stop(phase: TogetherPhase, message: String) {
         armWait(null)
+        // Otherwise the flag outlives the session it belonged to, and the `Live` branch — which
+        // keeps whatever is in `wait` while somebody is catching up — would carry «Связь с другом
+        // потеряна» into a session that has just come back.
+        catchingUp = false
         _uiState.update {
             it.copy(
                 phase = phase,

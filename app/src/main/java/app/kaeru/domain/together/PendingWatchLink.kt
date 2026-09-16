@@ -1,8 +1,9 @@
-package app.kaeru.data.together
+package app.kaeru.domain.together
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.getAndUpdate
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -18,6 +19,9 @@ import javax.inject.Singleton
  * So it is held here, for the life of the process rather than of an activity, and taken only when
  * there is a signed-in shell to put it on screen. [take] is the whole of the consumption: reading
  * it clears it, so a rotation cannot open the same invitation twice.
+ *
+ * In `domain` because that is where a plain holder of a plain string belongs and because the screen
+ * that reads it lives in `ui.common`, which depends on `domain` and nothing below it.
  */
 @Singleton
 class PendingWatchLink @Inject constructor() {
@@ -32,12 +36,5 @@ class PendingWatchLink @Inject constructor() {
     }
 
     /** Hands the invitation over exactly once. */
-    fun take(): String? = _link.getAndSet(null)
-
-    private fun MutableStateFlow<String?>.getAndSet(value: String?): String? {
-        while (true) {
-            val current = this.value
-            if (compareAndSet(current, value)) return current
-        }
-    }
+    fun take(): String? = _link.getAndUpdate { null }
 }

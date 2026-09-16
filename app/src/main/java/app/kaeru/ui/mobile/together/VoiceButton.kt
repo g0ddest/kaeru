@@ -125,6 +125,10 @@ fun VoiceButton(
     }
 
     fun finish(send: Boolean) {
+        // The ceiling ends a recording under the finger, and the finger still has to come up: that
+        // lift would otherwise arrive here with nothing left to stop, get null back, and offer to
+        // explain the button to somebody whose clip is already in the corner.
+        if (!recording) return
         val clip = if (send) recorder.stop() else null.also { recorder.cancel() }
         // A press too short to be speech is a tap, and a tap on this button means the person does
         // not know it is held. Saying so is the only affordance a sighted viewer gets: the label

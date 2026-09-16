@@ -5,6 +5,8 @@ import android.app.Application
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
@@ -89,6 +91,13 @@ class VoiceButtonTest {
         capture.open.value = false
         compose.waitForIdle()
         assertEquals(listOf(30_000), sent)
+
+        // The finger is still down and has to come up. That lift has nothing left to stop, and
+        // must not be read as a tap by somebody whose clip is already in the corner.
+        compose.onNodeWithContentDescription(TogetherCopy.VOICE).performTouchInput { up() }
+        compose.waitForIdle()
+        assertEquals("one ceiling is one clip", listOf(30_000), sent)
+        compose.onAllNodesWithText(TogetherCopy.VOICE_HINT).assertCountEquals(0)
     }
 
     @Test

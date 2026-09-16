@@ -1,6 +1,6 @@
 package app.kaeru.ui.common.together
 
-import app.kaeru.data.together.PendingWatchLink
+import app.kaeru.domain.together.PendingWatchLink
 import app.kaeru.domain.model.Account
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
@@ -550,16 +550,35 @@ class TogetherViewModelTest {
     }
 
     @Test
-    fun `saying no to an invitation abandons the attempt and closes the room behind it`() = runTest {
+    fun `saying no to an invitation abandons the attempt and leaves the engine able to take another`() = runTest {
         val vm = viewModel()
         vm.open(link.toHttps())
         runCurrent()
         vm.dismissJoin()
         runCurrent()
         assertEquals(1, session.alone)
-        assertEquals(1, session.left)
+        // Not `leave()`: that ends in `Ended`, and a second invitation in the same process would
+        // be knocking on an engine that has been told the session is over.
+        assertEquals(0, session.left)
         assertNull(vm.uiState.value.join)
         assertNull(vm.uiState.value.wait)
+    }
+
+    @Test
+    fun `a session that comes back does not come back with the failure still on it`() = runTest {
+        val vm = viewModel()
+        live()
+        session.bus.emit(TogetherEvent.Notice(NoticeKind.CATCHING_UP, "Вася"))
+        runCurrent()
+        session.sessionState.value = SessionState.Lost(LostReason.CONNECTION)
+        runCurrent()
+        assertEquals("Связь с другом потеряна", vm.uiState.value.wait?.text)
+        // Back, and still a few seconds apart. The line about the connection belonged to the
+        // session that failed, not to this one.
+        session.sessionState.value = SessionState.Live("Вася", offsetMs = 0, driftMs = 6_000)
+        runCurrent()
+        assertNull(vm.uiState.value.wait)
+        assertEquals(TogetherPhase.LIVE, vm.uiState.value.phase)
     }
 
     @Test
