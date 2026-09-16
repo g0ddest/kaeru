@@ -31,16 +31,20 @@ private const val TRAVEL_MS = 1400
  *
  * It is the second and last place amber appears on a screen full of artwork, and it is the same
  * amber as the watch button on purpose: the strip and the button are the same fact.
+ *
+ * [color] exists for the one strip in the app that is not about an episode: the storage line on
+ * «Загрузки», which turns red once the device is past the limit its owner set. Everywhere else it
+ * is the accent, and a caller reaching for this parameter should have a reason as good.
  */
 @Composable
-fun ProgressStrip(progress: Float, modifier: Modifier = Modifier) {
+fun ProgressStrip(progress: Float, modifier: Modifier = Modifier, color: Color = KaeruAccent) {
     Box(
         modifier
             .fillMaxWidth()
             .height(KaeruTokens.ProgressHeight)
             .background(Color.White.copy(alpha = 0.18f)),
     ) {
-        Box(Modifier.fillMaxWidth(progress.coerceIn(0f, 1f)).fillMaxHeight().background(KaeruAccent))
+        Box(Modifier.fillMaxWidth(progress.coerceIn(0f, 1f)).fillMaxHeight().background(color))
     }
 }
 

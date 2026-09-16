@@ -223,6 +223,9 @@ class PlayerActivity : FragmentActivity() {
                         onConfirmCompleted = viewModel::confirmCompleted,
                         onDismissCompleted = viewModel::dismissCompleted,
                         onToastShown = viewModel::consumeToast,
+                        onDownload = viewModel::download,
+                        onRemoveDownload = viewModel::removeDownload,
+                        onRemoveBrokenDownload = viewModel::removeDownloadAndRetry,
                         isInPictureInPicture = inPictureInPicture,
                         onEnterPictureInPicture = ::enterWindow.takeIf { supportsPictureInPicture },
                     )

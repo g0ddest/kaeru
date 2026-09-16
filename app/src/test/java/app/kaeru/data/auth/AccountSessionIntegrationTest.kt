@@ -11,7 +11,9 @@ import app.cash.turbine.test
 import app.kaeru.data.library.AppPreferences
 import app.kaeru.data.library.FakeShikimoriApi
 import app.kaeru.data.library.ShikimoriLibraryRepository
+import app.kaeru.domain.sync.OutboxSyncer
 import app.kaeru.data.library.PosterEnricher
+import app.kaeru.data.library.RoomRateOutboxRepository
 import app.kaeru.data.local.KaeruDatabase
 import app.kaeru.data.local.WatchStateEntity
 import app.kaeru.data.local.toEntity
@@ -50,6 +52,8 @@ import java.io.IOException
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+import app.kaeru.domain.sync.ReplayOutcome
+import app.kaeru.domain.sync.ReplayRequest
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -90,7 +94,7 @@ class AccountSessionIntegrationTest {
         tokens = DataStoreTokenStore(authStore, fence)
         session = AccountSession(tokens, prefs, db)
         auth = ShikimoriAuthRepository(oauth, api, session, prefs, "cid", "secret", clock)
-        library = ShikimoriLibraryRepository(api, db.animeDao(), db.userRateDao(), db.watchStateDao(), db.episodeProgressDao(), prefs, session, PosterEnricher(api), dispatcher, clock)
+        library = ShikimoriLibraryRepository(api, db, db.animeDao(), db.userRateDao(), db.watchStateDao(), db.episodeProgressDao(), prefs, session, PosterEnricher(api), RoomRateOutboxRepository(db.rateOutboxDao(), clock), OutboxSyncer { Result.success(ReplayOutcome(0, emptySet())) }, ReplayRequest {}, dispatcher, clock)
     }
 
     @After
@@ -353,7 +357,7 @@ class AccountSessionIntegrationTest {
         })
         val boundary = AccountSession(tokens, gatedPrefs, db)
         val gatedAuth = ShikimoriAuthRepository(oauth, api, boundary, gatedPrefs, "cid", "secret", clock)
-        val gatedLibrary = ShikimoriLibraryRepository(api, db.animeDao(), db.userRateDao(), db.watchStateDao(), db.episodeProgressDao(), gatedPrefs, boundary, PosterEnricher(api), dispatcher, clock)
+        val gatedLibrary = ShikimoriLibraryRepository(api, db, db.animeDao(), db.userRateDao(), db.watchStateDao(), db.episodeProgressDao(), gatedPrefs, boundary, PosterEnricher(api), RoomRateOutboxRepository(db.rateOutboxDao(), clock), OutboxSyncer { Result.success(ReplayOutcome(0, emptySet())) }, ReplayRequest {}, dispatcher, clock)
         val logout = async { gatedAuth.logout() }
         entered.await()
         val writes = listOf(
@@ -502,7 +506,7 @@ class AccountSessionIntegrationTest {
         })
         session = AccountSession(delayedTokens, delayedPrefs, db)
         auth = ShikimoriAuthRepository(oauth, api, session, delayedPrefs, "cid", "secret", clock)
-        library = ShikimoriLibraryRepository(api, db.animeDao(), db.userRateDao(), db.watchStateDao(), db.episodeProgressDao(), delayedPrefs, session, PosterEnricher(api), dispatcher, clock)
+        library = ShikimoriLibraryRepository(api, db, db.animeDao(), db.userRateDao(), db.watchStateDao(), db.episodeProgressDao(), delayedPrefs, session, PosterEnricher(api), RoomRateOutboxRepository(db.rateOutboxDao(), clock), OutboxSyncer { Result.success(ReplayOutcome(0, emptySet())) }, ReplayRequest {}, dispatcher, clock)
         assertSlowCollectorSwitch(logoutFirst = false, releaseIdentity = identityUpdates)
     }
 
@@ -525,7 +529,7 @@ class AccountSessionIntegrationTest {
         }
         session = AccountSession(delayedReadStore, prefs, db)
         auth = ShikimoriAuthRepository(oauth, api, session, prefs, "cid", "secret", clock)
-        library = ShikimoriLibraryRepository(api, db.animeDao(), db.userRateDao(), db.watchStateDao(), db.episodeProgressDao(), prefs, session, PosterEnricher(api), dispatcher, clock)
+        library = ShikimoriLibraryRepository(api, db, db.animeDao(), db.userRateDao(), db.watchStateDao(), db.episodeProgressDao(), prefs, session, PosterEnricher(api), RoomRateOutboxRepository(db.rateOutboxDao(), clock), OutboxSyncer { Result.success(ReplayOutcome(0, emptySet())) }, ReplayRequest {}, dispatcher, clock)
         val delivered = mutableListOf<List<LibraryEntry>>()
         val first = CompletableDeferred<Unit>()
         val collector = backgroundScope.launch {
@@ -598,7 +602,7 @@ class AccountSessionIntegrationTest {
         })
         session = AccountSession(tokens, delayedPrefs, db)
         auth = ShikimoriAuthRepository(oauth, api, session, delayedPrefs, "cid", "secret", clock)
-        library = ShikimoriLibraryRepository(api, db.animeDao(), db.userRateDao(), db.watchStateDao(), db.episodeProgressDao(), delayedPrefs, session, PosterEnricher(api), dispatcher, clock)
+        library = ShikimoriLibraryRepository(api, db, db.animeDao(), db.userRateDao(), db.watchStateDao(), db.episodeProgressDao(), delayedPrefs, session, PosterEnricher(api), RoomRateOutboxRepository(db.rateOutboxDao(), clock), OutboxSyncer { Result.success(ReplayOutcome(0, emptySet())) }, ReplayRequest {}, dispatcher, clock)
         val delivered = mutableListOf<List<LibraryEntry>>()
         val first = CompletableDeferred<Unit>()
         val collector = backgroundScope.launch {

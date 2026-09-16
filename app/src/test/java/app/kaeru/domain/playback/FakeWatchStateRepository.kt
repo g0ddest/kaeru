@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
+import java.time.Instant
 
 /**
  * In-memory stand-in for the Room repository. Single-threaded by contract: every test that uses it
@@ -65,5 +66,14 @@ class FakeWatchStateRepository : WatchStateRepository {
     override suspend fun clear(animeId: Int) {
         cleared += animeId
         rows.update { it - animeId }
+    }
+
+    /**
+     * The pointer half of [FakePlaybackSampleRepository.forgetFrom]: a row standing on [episode] or
+     * later loses its position and keeps everything else, which is what the SQL does.
+     */
+    fun rewindFrom(animeId: Int, episode: Int, at: Instant) = rows.update { all ->
+        val row = all[animeId]?.takeIf { it.episode >= episode } ?: return@update all
+        all + (animeId to row.copy(positionMs = 0, durationMs = 0, updatedAt = at))
     }
 }

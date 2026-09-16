@@ -2,6 +2,7 @@ package app.kaeru.ui.mobile.player
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.BrightnessMedium
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PictureInPictureAlt
@@ -46,6 +49,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.kaeru.domain.download.EpisodeDownload
+import app.kaeru.ui.common.downloads.DownloadMark
+import app.kaeru.ui.common.downloads.downloadMark
 import app.kaeru.ui.common.player.CastButton
 import app.kaeru.ui.common.design.KaeruSeekBar
 import app.kaeru.ui.common.design.KaeruTokens
@@ -71,6 +77,9 @@ fun PlayerTopBar(
     onQualities: () -> Unit,
     modifier: Modifier = Modifier,
     onEnterPictureInPicture: (() -> Unit)? = null,
+    download: EpisodeDownload? = null,
+    onDownload: (() -> Unit)? = null,
+    onRemoveDownload: (() -> Unit)? = null,
 ) {
     Row(modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         DiscButton(Icons.AutoMirrored.Filled.ArrowBack, "Назад", onBack)
@@ -94,6 +103,10 @@ fun PlayerTopBar(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+        if (onDownload != null && onRemoveDownload != null) {
+            DownloadButton(download, onDownload, onRemoveDownload)
+            Spacer(Modifier.width(4.dp))
         }
         onEnterPictureInPicture?.let {
             DiscButton(Icons.Default.PictureInPictureAlt, "В окно", it)
@@ -162,9 +175,9 @@ fun PlayerBottomBar(
             buffered = bufferedPositionMs.coerceIn(0, maxOf(durationMs, 0)).toFloat() / durationSafe.toFloat(),
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
-            DiscButton(Icons.Default.Replay10, "Назад на 10 секунд") { onSeekBy(-EpisodeQueue.SEEK_STEP_MS) }
+            DiscButton(Icons.Default.Replay10, "Назад на 10 секунд", { onSeekBy(-EpisodeQueue.SEEK_STEP_MS) })
             Spacer(Modifier.width(4.dp))
-            DiscButton(Icons.Default.Forward10, "Вперёд на 10 секунд") { onSeekBy(EpisodeQueue.SEEK_STEP_MS) }
+            DiscButton(Icons.Default.Forward10, "Вперёд на 10 секунд", { onSeekBy(EpisodeQueue.SEEK_STEP_MS) })
             Spacer(Modifier.width(4.dp))
             TextButton(onClick = onSkipIntro) { Text("+85 с", color = OnVideo) }
             Spacer(Modifier.weight(1f))
@@ -294,9 +307,86 @@ private fun Chip(text: String, onClick: () -> Unit) {
     }
 }
 
+/**
+ * Keep this episode on the device, or give the space back.
+ *
+ * Three things to say and one control to say them with: an arrow for «this is not here yet», the
+ * share done for one on its way, and a done mark for one that is. The percentage replaces the
+ * glyph rather than joining it — a disc this size has room for one or the other, and while a
+ * download is running the number is the more useful of the two.
+ *
+ * Anything the engine is already holding removes rather than downloads, including a queue that has
+ * not started: pressing «скачать» on something already being downloaded can only mean «отмени».
+ * A press that would delete something asks first; a press that only starts a download does not.
+ */
 @Composable
-private fun DiscButton(icon: ImageVector, description: String, onClick: () -> Unit) {
-    IconButton(onClick = onClick, modifier = Modifier.size(48.dp).clip(CircleShape).background(Disc)) {
-        Icon(icon, contentDescription = description, tint = OnVideo)
+private fun DownloadButton(download: EpisodeDownload?, onDownload: () -> Unit, onRemove: () -> Unit) {
+    var confirming by remember { mutableStateOf(false) }
+    // The same four readings of the engine the season grid draws, so one episode cannot be «в
+    // очереди» on one screen and «скачано» on the other. Only the glyphs differ, which is what
+    // the two surfaces are actually free to disagree about.
+    when (downloadMark(download?.state)) {
+        DownloadMark.NONE, DownloadMark.FAILED ->
+            DiscButton(Icons.Default.Download, "Скачать серию", onDownload)
+        // Nothing to ask for while the engine is taking it away: the id a press would enqueue is
+        // the one being removed. It stays on the screen, quiet, until the row goes.
+        DownloadMark.REMOVING ->
+            DiscButton(Icons.Default.Download, "Удаляем загрузку", {}, pending = true, enabled = false)
+        DownloadMark.PENDING ->
+            DiscButton(Icons.Default.Download, "Отменить загрузку", { confirming = true }, pending = true)
+        DownloadMark.RUNNING -> DiscLabel(
+            "${((download?.progress ?: 0f) * 100).toInt()} %",
+            "Отменить загрузку",
+        ) { confirming = true }
+        DownloadMark.DONE -> DiscButton(Icons.Default.DownloadDone, "Удалить загрузку", { confirming = true })
+    }
+    if (confirming) {
+        RemoveDownloadSheet(
+            bytes = download?.bytes ?: 0,
+            onRemove = {
+                confirming = false
+                onRemove()
+            },
+            onDismiss = { confirming = false },
+        )
+    }
+}
+
+/** The same disc with a number on it, for the one state that is a quantity rather than a thing. */
+@Composable
+private fun DiscLabel(text: String, description: String, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .background(Disc)
+            .clickable(onClick = onClick, onClickLabel = description),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, style = MaterialTheme.typography.labelMedium, color = OnVideo, maxLines = 1)
+    }
+}
+
+/**
+ * The disc, drawn a step quieter for an episode that has been asked for but is not here yet.
+ *
+ * [pending] is muted rather than disabled: pressing it is how a queue is cancelled, so it has to
+ * stay pressable — it just should not look like something already on the device. [enabled] is the
+ * separate case of a removal already under way, where there is nothing left to press.
+ */
+@Composable
+private fun DiscButton(
+    icon: ImageVector,
+    description: String,
+    onClick: () -> Unit,
+    pending: Boolean = false,
+    enabled: Boolean = true,
+) {
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(48.dp).clip(CircleShape).background(Disc),
+    ) {
+        Icon(icon, contentDescription = description, tint = if (pending) OnVideoMuted else OnVideo)
     }
 }

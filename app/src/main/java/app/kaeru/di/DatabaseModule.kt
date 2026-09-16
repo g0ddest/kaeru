@@ -7,6 +7,8 @@ import app.kaeru.data.local.EpisodeProgressDao
 import app.kaeru.data.local.KaeruDatabase
 import app.kaeru.data.local.MIGRATION_1_2
 import app.kaeru.data.local.MIGRATION_2_3
+import app.kaeru.data.local.MIGRATION_3_4
+import app.kaeru.data.local.RateOutboxDao
 import app.kaeru.data.local.UserRateDao
 import app.kaeru.data.local.WatchStateDao
 import dagger.Module
@@ -23,7 +25,7 @@ object DatabaseModule {
     @Singleton
     fun database(@ApplicationContext context: Context): KaeruDatabase =
         Room.databaseBuilder(context, KaeruDatabase::class.java, "kaeru.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
             // Still the backstop for a version this build has no path from — a downgrade, or a
             // database left by a branch that never shipped. Everything the app can produce has a
             // migration, so nothing a viewer owns is dropped.
@@ -41,4 +43,7 @@ object DatabaseModule {
 
     @Provides
     fun episodeProgressDao(database: KaeruDatabase): EpisodeProgressDao = database.episodeProgressDao()
+
+    @Provides
+    fun rateOutboxDao(database: KaeruDatabase): RateOutboxDao = database.rateOutboxDao()
 }

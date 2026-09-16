@@ -47,6 +47,8 @@ import app.kaeru.ui.common.design.Backdrop
 import app.kaeru.ui.common.design.EmptyState
 import app.kaeru.ui.common.design.ErrorState
 import app.kaeru.ui.common.design.KaeruTokens
+import app.kaeru.ui.common.design.OFFLINE
+import app.kaeru.ui.common.design.OfflineStrip
 import app.kaeru.ui.common.design.RowHeader
 import app.kaeru.ui.common.design.SkeletonHero
 import app.kaeru.ui.common.design.SkeletonRow
@@ -151,6 +153,7 @@ fun TvHomeScreen(
         else -> TvHomeFeed(
             rows = if (content is HomeContent.Feed) rows else emptyList(),
             catalogue = catalogue,
+            offline = state.offline,
             syncError = state.errorMessage.takeIf { content is HomeContent.Feed },
             onRefresh = onRefresh,
             onPlay = onPlay,
@@ -170,6 +173,7 @@ fun TvHomeScreen(
 private fun TvHomeFeed(
     rows: List<TvHomeRow>,
     catalogue: DiscoverRows?,
+    offline: Boolean,
     syncError: String?,
     onRefresh: () -> Unit,
     onPlay: (Int, Int) -> Unit,
@@ -251,6 +255,19 @@ private fun TvHomeFeed(
             Backdrop(url, Modifier.fillMaxSize(), scrimBottom = true, scrimStart = true)
         }
         Column(Modifier.fillMaxSize()) {
+            // Above the hero band rather than over the artwork: the television has no downloads to
+            // offer instead, so this is the whole of what the screen has to say about the network,
+            // and it is said once, at the top, in three words.
+            // The panel crops its own edges, and the band below is what usually carries that
+            // inset; above it, the strip has to carry its own or «Нет сети» lands in the part of
+            // the picture a television does not draw.
+            if (offline) {
+                OfflineStrip(
+                    modifier = Modifier.padding(top = TvLayout.SafeVertical),
+                    text = OFFLINE,
+                    gutter = TvLayout.Gutter,
+                )
+            }
             TvHeroBand(hero)
             LazyColumn(
                 state = listState,
@@ -388,7 +405,7 @@ private fun TvCardRow(
             ),
             horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
         ) {
-            items(cards, key = { it.animeId }) { card ->
+            items(cards, key = { it.key }) { card ->
                 TvFeedCard(
                     card = card,
                     isRestoreTarget = restore?.row == title && restore.id == card.animeId,

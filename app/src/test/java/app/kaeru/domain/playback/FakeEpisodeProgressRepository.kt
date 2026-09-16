@@ -30,5 +30,10 @@ class FakeEpisodeProgressRepository : EpisodeProgressRepository {
         rows.update { it + (progress.key() to progress) }
     }
 
+    /** What [FakePlaybackSampleRepository.forgetFrom] takes away: this episode and everything after it. */
+    fun dropFrom(animeId: Int, episode: Int) = rows.update { all ->
+        all.filterNot { (key, _) -> key.first == animeId && key.second >= episode }
+    }
+
     private fun EpisodeProgress.key() = animeId to episode
 }

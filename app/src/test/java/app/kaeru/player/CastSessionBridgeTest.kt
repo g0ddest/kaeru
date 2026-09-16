@@ -1,5 +1,9 @@
 package app.kaeru.player
 
+import app.kaeru.domain.connectivity.FakeConnectivity
+import app.kaeru.domain.download.DeferredDownloadRemoval
+import app.kaeru.domain.download.FakeDeferredRemovals
+import app.kaeru.domain.download.FakeDownloadRepository
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.LibraryEntry
@@ -10,9 +14,11 @@ import app.kaeru.domain.playback.FakePlaybackSampleRepository
 import app.kaeru.domain.playback.FakePlaybackPreferences
 import app.kaeru.domain.playback.FakeWatchStateRepository
 import app.kaeru.domain.playback.MarkEpisodeWatched
+import app.kaeru.domain.playback.SuppressedMarks
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.playback.StreamPrefetchCache
 import app.kaeru.domain.playback.WatchProgress
+import app.kaeru.domain.settings.FakeSettingsStore
 import app.kaeru.test.MutableClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -49,6 +55,10 @@ class CastSessionBridgeTest {
     private val source = FakeEpisodeSource()
     private val library = FakeLibraryRepository()
     private val prefs = FakePlaybackPreferences()
+    private val downloads = FakeDownloadRepository()
+    private val settings = FakeSettingsStore()
+    private lateinit var deleteWatched: DeferredDownloadRemoval
+    private val suppressedMarks = SuppressedMarks()
     private lateinit var controller: DefaultPlaybackController
 
     @Before
@@ -64,14 +74,19 @@ class CastSessionBridgeTest {
                 null,
             ),
         )
+        deleteWatched = DeferredDownloadRemoval(downloads, settings, FakeDeferredRemovals())
         controller = DefaultPlaybackController(
             localEngine = phone,
             resolve = ResolveEpisodeStream(source, watchStates, prefs, clock, StreamPrefetchCache(clock)),
             progress = WatchProgress(watchStates, FakePlaybackSampleRepository(watchStates), clock),
-            markWatched = MarkEpisodeWatched(library, watchStates, clock),
+            markWatched = MarkEpisodeWatched(library, watchStates, clock, deleteWatched),
+            suppressedMarks = suppressedMarks,
+            deleteWatchedDownloads = deleteWatched,
             library = library,
             prefs = prefs,
             headers = headers,
+            downloads = downloads,
+            connectivity = FakeConnectivity(),
             scope = scope,
             io = dispatcher,
         )

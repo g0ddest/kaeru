@@ -9,7 +9,12 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import app.kaeru.data.kodik.KodikTokenKeys
+import app.kaeru.data.download.StrandedDownloads
+import app.kaeru.domain.download.DeferredRemovals
+import app.kaeru.domain.download.DownloadPolicy
+import app.kaeru.domain.download.DownloadedEpisode
 import app.kaeru.domain.model.Account
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.playback.PlaybackNotificationPrompt
@@ -24,9 +29,15 @@ import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
 
+/** «Без лимита», stored rather than left absent so that turning the limit off is remembered. */
+private const val UNLIMITED = -1L
+
+/** «Как при просмотре»: no height of its own, take whatever playback would take. */
+private const val QUALITY_AS_PLAYBACK = 0
+
 @Singleton
 class AppPreferences @Inject constructor(@param:Named("prefs") private val dataStore: DataStore<Preferences>) :
-    PlaybackPreferences, PlaybackNotificationPrompt, SettingsStore {
+    PlaybackPreferences, PlaybackNotificationPrompt, SettingsStore, DeferredRemovals, StrandedDownloads {
     private val userIdKey = longPreferencesKey("user_id")
     private val lastFullSyncKey = longPreferencesKey("last_full_sync")
     private val watchedThresholdKey = floatPreferencesKey("watched_threshold")
@@ -36,9 +47,23 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
     private val notificationsAskedKey = booleanPreferencesKey("notifications_asked")
     private val accountNicknameKey = stringPreferencesKey("account_nickname")
     private val accountAvatarKey = stringPreferencesKey("account_avatar")
+    private val downloadLimitKey = longPreferencesKey("download_limit_bytes")
+    private val downloadWifiOnlyKey = booleanPreferencesKey("download_wifi_only")
+    private val downloadDeleteWatchedKey = booleanPreferencesKey("download_delete_watched")
+    private val downloadQualityKey = intPreferencesKey("download_quality")
+    private val pendingRemovalsKey = stringSetPreferencesKey("download_pending_removals")
+    private val strandedDownloadsKey = stringSetPreferencesKey("download_stranded")
 
-    /** What a wipe leaves behind: configuration of the device, not of whoever is signed in. */
-    private val deviceKeys: List<Preferences.Key<*>> = KodikTokenKeys.all + notificationsAskedKey
+    /**
+     * What a wipe leaves behind: configuration of the device, not of whoever is signed in.
+     *
+     * The two download sets are here for a plainer reason than the settings above them: downloads
+     * are the device's and survive a logout, so a note about what to delete and about what the
+     * network stranded has to survive with them, or the files they speak for are orphaned.
+     */
+    private val deviceKeys: List<Preferences.Key<*>> = KodikTokenKeys.all + notificationsAskedKey +
+        downloadLimitKey + downloadWifiOnlyKey + downloadDeleteWatchedKey + downloadQualityKey +
+        pendingRemovalsKey + strandedDownloadsKey
 
     suspend fun userId(): Long? = dataStore.data.first()[userIdKey]
 
@@ -142,10 +167,87 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
         }
     }
 
+    /**
+     * The download rules, with two values that have to be spelled out rather than left absent.
+     *
+     * An absent key means «never set» and reads back as the shipped default — 5 GB at 720p — so
+     * «без лимита» is stored as `-1` and «как при просмотре» as height `0`. Without the sentinels
+     * a viewer who turned the limit off would find it back at 5 GB on the next launch.
+     *
+     * A height this build no longer offers degrades to «как при просмотре», the same way
+     * [defaultQuality] degrades to «лучшее доступное», rather than crashing on a rung that has
+     * been dropped.
+     */
+    override val downloadPolicy: Flow<DownloadPolicy> = dataStore.data.map { prefs ->
+        DownloadPolicy(
+            limitBytes = when (val stored = prefs[downloadLimitKey]) {
+                null -> DownloadPolicy.DEFAULT.limitBytes
+                in Long.MIN_VALUE..0L -> null
+                else -> stored
+            },
+            wifiOnly = prefs[downloadWifiOnlyKey] ?: DownloadPolicy.DEFAULT.wifiOnly,
+            deleteWatched = prefs[downloadDeleteWatchedKey] ?: DownloadPolicy.DEFAULT.deleteWatched,
+            quality = when (val height = prefs[downloadQualityKey]) {
+                null -> DownloadPolicy.DEFAULT.quality
+                else -> Quality.ofHeight(height)
+            },
+        )
+    }
+
+    override suspend fun setDownloadPolicy(policy: DownloadPolicy) {
+        dataStore.edit { prefs ->
+            prefs[downloadLimitKey] = policy.limitBytes ?: UNLIMITED
+            prefs[downloadWifiOnlyKey] = policy.wifiOnly
+            prefs[downloadDeleteWatchedKey] = policy.deleteWatched
+            prefs[downloadQualityKey] = policy.quality?.height ?: QUALITY_AS_PLAYBACK
+        }
+    }
+
     override suspend fun notificationsAsked(): Boolean = dataStore.data.first()[notificationsAskedKey] ?: false
 
     override suspend fun markNotificationsAsked() {
         dataStore.edit { it[notificationsAskedKey] = true }
+    }
+
+    // --- «Удалять просмотренные»: what is promised and not yet done -----------------------------
+
+    override suspend fun pending(): Set<DownloadedEpisode> =
+        dataStore.data.first()[pendingRemovalsKey].orEmpty().mapNotNull(::toEpisode).toSet()
+
+    override suspend fun record(episode: DownloadedEpisode) {
+        dataStore.edit { it[pendingRemovalsKey] = it[pendingRemovalsKey].orEmpty() + episode.stored() }
+    }
+
+    override suspend fun forget(episode: DownloadedEpisode) {
+        dataStore.edit { it[pendingRemovalsKey] = it[pendingRemovalsKey].orEmpty() - episode.stored() }
+    }
+
+    override suspend fun forgetAll() {
+        dataStore.edit { it.remove(pendingRemovalsKey) }
+    }
+
+    /** «100:4» — two numbers and a separator neither of them can contain. */
+    private fun DownloadedEpisode.stored() = "$animeId:$episode"
+
+    /** A row that does not read as two numbers is dropped rather than guessed at. */
+    private fun toEpisode(stored: String): DownloadedEpisode? {
+        val parts = stored.split(':')
+        if (parts.size != 2) return null
+        val animeId = parts[0].toIntOrNull() ?: return null
+        val episode = parts[1].toIntOrNull() ?: return null
+        return DownloadedEpisode(animeId, episode)
+    }
+
+    // --- which downloads the network stranded ----------------------------------------------------
+
+    override suspend fun stranded(): Set<String> = dataStore.data.first()[strandedDownloadsKey].orEmpty()
+
+    override suspend fun recordStranded(id: String) {
+        dataStore.edit { it[strandedDownloadsKey] = it[strandedDownloadsKey].orEmpty() + id }
+    }
+
+    override suspend fun forgetStranded(id: String) {
+        dataStore.edit { it[strandedDownloadsKey] = it[strandedDownloadsKey].orEmpty() - id }
     }
 
     /**

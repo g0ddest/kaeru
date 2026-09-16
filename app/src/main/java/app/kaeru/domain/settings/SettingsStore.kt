@@ -1,5 +1,6 @@
 package app.kaeru.domain.settings
 
+import app.kaeru.domain.download.DownloadPolicy
 import app.kaeru.domain.model.Quality
 import kotlinx.coroutines.flow.Flow
 
@@ -60,4 +61,19 @@ interface SettingsStore {
     val kodikToken: Flow<String?>
 
     suspend fun setKodikToken(token: String?)
+
+    /**
+     * The rules every download obeys: the storage limit, whether Wi-Fi is required, whether a
+     * watched episode is deleted, and which height to download at.
+     *
+     * One value rather than four flows, because the four are read together — the limit check
+     * needs the quality it is about to estimate for — and a screen that wrote them one at a time
+     * would be observed halfway through its own change.
+     *
+     * Like the playback settings, these belong to the device: an episode already on the phone is
+     * not a fact about who is signed in, and neither is the rule that put it there.
+     */
+    val downloadPolicy: Flow<DownloadPolicy>
+
+    suspend fun setDownloadPolicy(policy: DownloadPolicy)
 }

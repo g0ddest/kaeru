@@ -14,9 +14,10 @@ import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.kaeru.player.CastFramework
 import app.kaeru.player.CastSessionBridge
+import app.kaeru.ui.common.player.LocalCastAvailable
 import app.kaeru.ui.mobile.MobileApp
 import app.kaeru.ui.mobile.OAuthCallback
-import app.kaeru.ui.common.player.LocalCastAvailable
+import app.kaeru.ui.mobile.Routes
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -32,11 +33,15 @@ class MainActivity : FragmentActivity() {
 
     private var pendingPairing by mutableStateOf<String?>(null)
 
+    /** A screen the app was asked to open from outside it: today, «Загрузки» from the notification. */
+    private var pendingRoute by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         readDeepLink(intent)
+        readRoute(intent)
         // Listening from here too, so a session that ends while the player is closed still
         // brings playback back to the phone.
         castSessions.start()
@@ -50,6 +55,8 @@ class MainActivity : FragmentActivity() {
                     onCallbackConsumed = { pendingCallback = null },
                     pairingLink = pendingPairing,
                     onPairingLinkConsumed = { pendingPairing = null },
+                    route = pendingRoute,
+                    onRouteConsumed = { pendingRoute = null },
                 )
             }
         }
@@ -59,6 +66,20 @@ class MainActivity : FragmentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         readDeepLink(intent)
+        readRoute(intent)
+    }
+
+    /**
+     * Reads the screen a notification asked for, and strips it from the intent.
+     *
+     * Stripped for the same reason a deep link is: the intent outlives the tap, and an app
+     * recreated by a rotation would otherwise find «открой загрузки» in it again and navigate away
+     * from wherever the viewer had got to since.
+     */
+    private fun readRoute(intent: Intent?) {
+        val route = intent?.getStringExtra(Routes.EXTRA_ROUTE) ?: return
+        if (route == Routes.DOWNLOADS) pendingRoute = route
+        intent.removeExtra(Routes.EXTRA_ROUTE)
     }
 
     /**

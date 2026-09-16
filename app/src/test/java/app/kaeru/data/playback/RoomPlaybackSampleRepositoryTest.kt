@@ -201,6 +201,87 @@ class RoomPlaybackSampleRepositoryTest {
         assertNull(storedWatch())
     }
 
+    // --- the same two rows, taken away ----------------------------------------------------------
+
+    @Test
+    fun `forgetting from an episode drops its row and every later one`() = scope.runTest {
+        repo.save(watch(episode = 3), progress(episode = 3))
+        repo.save(watch(episode = 4), progress(episode = 4))
+        repo.save(watch(episode = 5), progress(episode = 5))
+
+        repo.forgetFrom(100, episode = 4, at = now.plusSeconds(60))
+
+        assertEquals(listOf(3), storedProgress().map { it.episode })
+    }
+
+    @Test
+    fun `a pointer standing on a forgotten episode is rewound and keeps its track`() = scope.runTest {
+        repo.save(watch(episode = 5), progress(episode = 5))
+
+        repo.forgetFrom(100, episode = 5, at = now.plusSeconds(60))
+
+        val pointer = storedWatch()
+        assertEquals(5, pointer?.episode)
+        assertEquals(0L, pointer?.positionMs)
+        assertEquals(0L, pointer?.durationMs)
+        assertEquals(12, pointer?.translationId)
+        assertEquals(1, pointer?.kodikSeason)
+        assertEquals(now.plusSeconds(60), pointer?.updatedAt)
+    }
+
+    @Test
+    fun `a pointer on an earlier episode is left exactly as it was`() = scope.runTest {
+        repo.save(watch(episode = 3), progress(episode = 3))
+
+        repo.forgetFrom(100, episode = 5, at = now.plusSeconds(60))
+
+        assertEquals(watch(episode = 3), storedWatch())
+    }
+
+    @Test
+    fun `another anime's positions are none of this one's business`() = scope.runTest {
+        repo.save(watch(episode = 5), progress(episode = 5))
+        val other = EpisodeProgress(200, 5, 2_400_000, 2_880_000, now)
+        repo.save(WatchState(200, 5, 2_400_000, 2_880_000, 12, 1, now), other)
+
+        repo.forgetFrom(100, episode = 5, at = now.plusSeconds(60))
+
+        assertEquals(listOf(other), db.episodeProgressDao().observeByAnime(200).first().map { it.toDomain() })
+    }
+
+    @Test
+    fun `restoring puts the rows back with the timestamps they had`() = scope.runTest {
+        repo.save(watch(episode = 5), progress(episode = 5))
+        val taken = storedProgress()
+        repo.forgetFrom(100, episode = 5, at = now.plusSeconds(60))
+        assertEquals(emptyList<EpisodeProgress>(), storedProgress())
+
+        repo.restore(taken)
+
+        // Their own timestamps, not «now»: when a title was last watched is read off these rows,
+        // and an undo that restamped them would put something nobody watched at the top of the feed.
+        assertEquals(taken, storedProgress())
+    }
+
+    @Test
+    fun `restoring nothing leaves the table as it was`() = scope.runTest {
+        repo.save(watch(episode = 5), progress(episode = 5))
+        val untouched = storedProgress()
+
+        repo.restore(emptyList())
+
+        assertEquals(untouched, storedProgress())
+    }
+
+    @Test
+    fun `forgetting takes the account lock once, like the sample it undoes`() = scope.runTest {
+        val before = lock.turns
+
+        repo.forgetFrom(100, episode = 5, at = now)
+
+        assertEquals(before + 1, lock.turns)
+    }
+
     @Test
     fun `a sample with no signed in account is refused`() = scope.runTest {
         val signedOut = RoomPlaybackSampleRepository(db, AccountSession(InMemoryTokenStore(), prefs, db), dispatcher)

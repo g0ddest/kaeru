@@ -43,6 +43,15 @@ import java.io.IOException
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+import app.kaeru.domain.sync.OutboxSyncer
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Protocol
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
+import retrofit2.HttpException
+import app.kaeru.domain.sync.ReplayOutcome
+import app.kaeru.domain.sync.ReplayRequest
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -71,8 +80,9 @@ class ShikimoriLibraryRepositoryTest {
     }
 
     private fun repositoryAt(at: Instant) = ShikimoriLibraryRepository(
-        api, db.animeDao(), db.userRateDao(), db.watchStateDao(), db.episodeProgressDao(), prefs, session,
-        PosterEnricher(api), dispatcher, Clock.fixed(at, ZoneOffset.UTC),
+        api, db, db.animeDao(), db.userRateDao(), db.watchStateDao(), db.episodeProgressDao(), prefs, session,
+        PosterEnricher(api), RoomRateOutboxRepository(db.rateOutboxDao(), Clock.fixed(at, ZoneOffset.UTC)),
+        OutboxSyncer { Result.success(ReplayOutcome(0, emptySet())) }, ReplayRequest {}, dispatcher, Clock.fixed(at, ZoneOffset.UTC),
     )
 
     @After
@@ -368,12 +378,16 @@ class ShikimoriLibraryRepositoryTest {
         assertTrue(api.creates.isEmpty())
     }
 
+    /**
+     * A write Shikimori looked at and refused, as opposed to one that never reached it: the second
+     * kind is applied locally and queued, and lives in `ShikimoriLibraryRepositoryOfflineTest`.
+     */
     @Test
-    fun `mutation failures keep cache and missing episode rate does not call API`() = scope.runTest {
+    fun `refused mutations keep cache and missing episode rate does not call API`() = scope.runTest {
         seedWatching()
         repo.refresh().getOrThrow()
         val cached = db.userRateDao().getByAnimeId(200)
-        api.beforeCall = { if (it.startsWith("update:")) throw IOException("offline") }
+        api.beforeCall = { if (it.startsWith("update:")) throw httpException(422) }
         assertTrue(repo.setEpisodes(200, 6).isFailure)
         assertTrue(repo.setStatus(200, ListStatus.COMPLETED).isFailure)
         assertEquals(cached, db.userRateDao().getByAnimeId(200))
@@ -381,9 +395,16 @@ class ShikimoriLibraryRepositoryTest {
         assertTrue(repo.setEpisodes(999, 1).isFailure)
         assertTrue(api.calls.isEmpty())
         api.animes[400] = api.short(400)
-        api.beforeCall = { if (it == "create") throw IOException("offline") }
+        api.beforeCall = { if (it == "create") throw httpException(422) }
         assertTrue(repo.setStatus(400, ListStatus.PLANNED).isFailure)
         assertNull(db.userRateDao().getByAnimeId(400))
+    }
+
+    private fun httpException(code: Int): HttpException {
+        val raw = Response.Builder()
+            .request(Request.Builder().url("https://shikimori.io/api/v2/user_rates").build())
+            .protocol(Protocol.HTTP_1_1).code(code).message("error").build()
+        return HttpException(retrofit2.Response.error<Unit>("".toResponseBody("application/json".toMediaType()), raw))
     }
 
     @Test

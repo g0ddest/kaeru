@@ -11,7 +11,9 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import javax.inject.Qualifier
 import javax.inject.Singleton
 
@@ -19,12 +21,27 @@ import javax.inject.Singleton
 @Retention(AnnotationRetention.BINARY)
 annotation class IoDispatcher
 
+/** Work that outlives every screen: the queue of Shikimori writes waiting for a network. */
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class ApplicationScope
+
 @Module
 @InstallIn(SingletonComponent::class)
 object DispatchersModule {
     @Provides
     @IoDispatcher
     fun io(): CoroutineDispatcher = Dispatchers.IO
+
+    /**
+     * Never cancelled, because nothing outlives it: what it carries is the queue of marks a viewer
+     * made without a network, which has to outlive every screen they made them on. A supervisor
+     * job so one failed drain does not take the watcher with it.
+     */
+    @Provides
+    @Singleton
+    @ApplicationScope
+    fun applicationScope(): CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /**
      * Stateless on purpose. The viewer's watched threshold is an argument to `build`, not a field

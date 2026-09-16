@@ -3,6 +3,7 @@ package app.kaeru.ui.common
 import app.kaeru.domain.error.AccountSessionChanged
 import app.kaeru.domain.error.AuthCallbackRejected
 import app.kaeru.domain.error.CastLoadFailed
+import app.kaeru.domain.error.DownloadLimitReached
 import app.kaeru.domain.error.EpisodeNotAvailable
 import app.kaeru.domain.error.HttpError
 import app.kaeru.domain.error.NetworkUnavailable
@@ -55,6 +56,24 @@ class ErrorMessagesTest {
         assertEquals(
             "Kodik недоступен: не удалось получить ключ",
             SourceUnavailable(SourceUnavailableReason.NO_KEY).toUserMessage(),
+        )
+    }
+
+    @Test
+    fun `an episode that is neither downloaded nor reachable points at downloading it`() {
+        // Not the generic connectivity line: a viewer in a tunnel cannot fix their connection,
+        // but they can download the next episode before the next tunnel.
+        assertEquals(
+            "Нет сети. Скачайте серию заранее",
+            SourceUnavailable(SourceUnavailableReason.OFFLINE).toUserMessage(),
+        )
+    }
+
+    @Test
+    fun `a refused download names the limit rather than the failure`() {
+        assertEquals(
+            "Лимит места исчерпан. Удалите загрузки или увеличьте лимит в настройках",
+            DownloadLimitReached(limitBytes = 5L * 1024 * 1024 * 1024, usedBytes = 5L * 1024 * 1024 * 1024).toUserMessage(),
         )
     }
 

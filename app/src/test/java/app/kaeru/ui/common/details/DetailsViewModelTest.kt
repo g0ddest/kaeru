@@ -1,19 +1,32 @@
 package app.kaeru.ui.common.details
 
 import androidx.lifecycle.SavedStateHandle
+import app.kaeru.domain.connectivity.FakeConnectivity
+import app.kaeru.domain.download.DeferredDownloadRemoval
+import app.kaeru.domain.download.FakeDeferredRemovals
+import app.kaeru.domain.download.DownloadPolicy
+import app.kaeru.domain.download.DownloadQualityChoice
+import app.kaeru.domain.download.FakeDownloadRepository
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
+import app.kaeru.domain.model.Quality
+import app.kaeru.domain.model.Translation
+import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.model.WatchState
 import app.kaeru.domain.playback.FakePlaybackPreferences
+import app.kaeru.domain.playback.FakePlaybackSampleRepository
 import app.kaeru.domain.playback.FakeWatchStateRepository
+import app.kaeru.domain.playback.MarkEpisodeUnwatched
 import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.ResolveEpisodeStream
+import app.kaeru.domain.playback.SuppressedMarks
 import app.kaeru.domain.playback.StreamPrefetchCache
 import app.kaeru.domain.repository.LibraryRepository
+import app.kaeru.domain.settings.FakeSettingsStore
 import app.kaeru.player.FakeEpisodeSource
 import app.kaeru.test.MainDispatcherRule
 import java.io.IOException
@@ -33,6 +46,8 @@ import org.junit.Test
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+
+private const val GB = 1024L * 1024 * 1024
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DetailsViewModelTest {
@@ -73,13 +88,22 @@ class DetailsViewModelTest {
             }
             return Result.success(Unit)
         }
+        /** While set, Shikimori refuses every count this repository is given. */
+        var failEpisodesWith: Throwable? = null
+
         override suspend fun setEpisodes(animeId: Int, episodes: Int): Result<Unit> {
             episodeWrites += animeId to episodes
+            failEpisodesWith?.let { return Result.failure(it) }
             val known = entry.value ?: return Result.success(Unit)
             entry.value = known.copy(rate = known.rate.copy(episodes = episodes))
             return Result.success(Unit)
         }
     }
+
+    private val downloads = FakeDownloadRepository()
+    private val settings = FakeSettingsStore()
+    private val connectivity = FakeConnectivity()
+    private val samples = FakePlaybackSampleRepository(watchStates)
 
     private fun viewModel(repo: FakeRepository) = DetailsViewModel(
         savedStateHandle = SavedStateHandle(mapOf("animeId" to 7)),
@@ -87,8 +111,12 @@ class DetailsViewModelTest {
         prefs = prefs,
         streams = streams,
         watchStates = watchStates,
-        markEpisodeWatched = MarkEpisodeWatched(repo, watchStates, clock),
+        markEpisodeWatched = MarkEpisodeWatched(repo, watchStates, clock, DeferredDownloadRemoval(downloads, settings, FakeDeferredRemovals())),
+        markEpisodeUnwatched = MarkEpisodeUnwatched(repo, samples.episodes, samples, SuppressedMarks(), clock),
         clock = clock,
+        downloads = downloads,
+        settings = settings,
+        connectivity = connectivity,
     )
 
     @Test
@@ -374,5 +402,263 @@ class DetailsViewModelTest {
         vm.markWatched(12)
         advanceUntilIdle()
         assertEquals(emptyList<Pair<Int, Int>>(), repo.episodeWrites)
+    }
+
+    // --- taking a mark back off an episode -------------------------------------------------------
+
+    @Test
+    fun `un-marking an episode drops the count to the one before it`() = runTest(main.dispatcher) {
+        val repo = FakeRepository(item)
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+
+        vm.markUnwatched(20)
+        advanceUntilIdle()
+
+        assertEquals(listOf(7 to 19), repo.episodeWrites)
+        assertEquals(listOf(7 to 20), samples.forgotten.toList())
+        assertFalse(vm.uiState.value.updatingStatus)
+        assertNull(vm.uiState.value.errorMessage)
+    }
+
+    /** What the snackbar is built from: the episode, so it can name it and offer to put it back. */
+    @Test
+    fun `a successful un-mark leaves the episode for the snackbar to name`() = runTest(main.dispatcher) {
+        val vm = viewModel(FakeRepository(item))
+        advanceUntilIdle()
+
+        vm.markUnwatched(20)
+        advanceUntilIdle()
+
+        assertEquals(20, vm.uiState.value.unwatched?.episode)
+    }
+
+    @Test
+    fun `«Отменить» counts the episode again`() = runTest(main.dispatcher) {
+        val repo = FakeRepository(item)
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+
+        vm.markUnwatched(20)
+        advanceUntilIdle()
+        vm.undoUnwatched()
+        advanceUntilIdle()
+
+        assertEquals(listOf(7 to 19, 7 to 20), repo.episodeWrites)
+        assertEquals(20, vm.uiState.value.entry?.rate?.episodes)
+    }
+
+    /**
+     * The count, not the episode. Un-marking the fifteenth of twenty watched episodes takes five
+     * more with it — that is what a counter means — and an undo that re-marked the fifteenth would
+     * hand back fifteen, abandoning the other five with nothing on screen to say so.
+     */
+    @Test
+    fun `«Отменить» restores the episodes the un-mark took with it`() = runTest(main.dispatcher) {
+        val repo = FakeRepository(item)
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+
+        vm.markUnwatched(15)
+        advanceUntilIdle()
+        assertEquals(14, vm.uiState.value.entry?.rate?.episodes)
+
+        vm.undoUnwatched()
+        advanceUntilIdle()
+
+        assertEquals(listOf(7 to 14, 7 to 20), repo.episodeWrites)
+        assertEquals(20, vm.uiState.value.entry?.rate?.episodes)
+    }
+
+    /** The television has no snackbar: its panel offers the same episode back, and means the same. */
+    @Test
+    fun `marking the episode that was just un-marked restores it the same way`() = runTest(main.dispatcher) {
+        val repo = FakeRepository(item)
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+
+        vm.markUnwatched(15)
+        advanceUntilIdle()
+        vm.markWatched(15)
+        advanceUntilIdle()
+
+        assertEquals(listOf(7 to 14, 7 to 20), repo.episodeWrites)
+    }
+
+    @Test
+    fun `marking some other episode is an ordinary mark, not an undo`() = runTest(main.dispatcher) {
+        val repo = FakeRepository(item)
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+
+        vm.markUnwatched(15)
+        advanceUntilIdle()
+        vm.markWatched(16)
+        advanceUntilIdle()
+
+        assertEquals(listOf(7 to 14, 7 to 16), repo.episodeWrites)
+    }
+
+    /** Once the snackbar is gone so is the offer: a later mark is a mark like any other. */
+    @Test
+    fun `the same episode marked after the snackbar has gone is an ordinary mark`() = runTest(main.dispatcher) {
+        val repo = FakeRepository(item)
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+
+        vm.markUnwatched(15)
+        advanceUntilIdle()
+        vm.unwatchedMessageShown()
+        advanceUntilIdle()
+        vm.markWatched(15)
+        advanceUntilIdle()
+
+        assertEquals(listOf(7 to 14, 7 to 15), repo.episodeWrites)
+    }
+
+    @Test
+    fun `a snackbar that has been shown is not shown again`() = runTest(main.dispatcher) {
+        val vm = viewModel(FakeRepository(item))
+        advanceUntilIdle()
+
+        vm.markUnwatched(20)
+        advanceUntilIdle()
+        vm.unwatchedMessageShown()
+        advanceUntilIdle()
+
+        assertNull(vm.uiState.value.unwatched?.episode)
+    }
+
+    @Test
+    fun `a refused un-mark is a message, and there is nothing to undo`() = runTest(main.dispatcher) {
+        val repo = FakeRepository(item)
+        repo.failEpisodesWith = IOException("no network")
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+
+        vm.markUnwatched(20)
+        advanceUntilIdle()
+
+        assertNotNull(vm.uiState.value.errorMessage)
+        assertNull(vm.uiState.value.unwatched?.episode)
+        assertEquals(20, vm.uiState.value.entry?.rate?.episodes)
+    }
+
+    /** An episode the viewer says they have not watched is one they still want on the device. */
+    @Test
+    fun `un-marking an episode keeps the download of it`() = runTest(main.dispatcher) {
+        val repo = FakeRepository(item)
+        downloads.downloaded(7, 20, Translation(3, "AniLibria", TranslationKind.VOICE, 28), "file:///20.m3u8")
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+
+        vm.markUnwatched(20)
+        advanceUntilIdle()
+
+        assertEquals(emptyList<Pair<Int, Int>>(), downloads.removed.toList())
+        assertEquals(listOf(20), vm.uiState.value.downloads.map { it.episode })
+    }
+
+    // --- downloads ------------------------------------------------------------------------------
+
+    @Test
+    fun `the sheet's choice of height reaches the engine as the viewer made it`() = runTest(main.dispatcher) {
+        val vm = viewModel(FakeRepository(item))
+        advanceUntilIdle()
+
+        vm.download(listOf(7), DownloadQualityChoice.FollowPlayback)
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(Triple(7, 7, DownloadQualityChoice.FollowPlayback)),
+            downloads.enqueued.toList(),
+        )
+    }
+
+    @Test
+    fun `a long press asks for nothing in particular, so the settings decide`() = runTest(main.dispatcher) {
+        val vm = viewModel(FakeRepository(item))
+        advanceUntilIdle()
+
+        vm.download(listOf(7))
+        advanceUntilIdle()
+
+        assertNull(downloads.enqueued.single().third)
+    }
+
+    @Test
+    fun `with no network nothing is enqueued, whatever asked`() = runTest(main.dispatcher) {
+        connectivity.goOffline()
+        val vm = viewModel(FakeRepository(item))
+        advanceUntilIdle()
+
+        vm.download(listOf(7, 8), DownloadQualityChoice.Fixed(Quality.P480))
+        vm.download(listOf(9))
+        advanceUntilIdle()
+
+        assertTrue(downloads.enqueued.isEmpty())
+        assertNull(vm.uiState.value.storageMessage)
+    }
+
+    @Test
+    fun `a batch the limit cannot hold is refused whole, and says how many would fit`() =
+        runTest(main.dispatcher) {
+            downloads.setUsedBytes(4 * GB)
+            settings.downloadPolicy.value = DownloadPolicy.DEFAULT.copy(limitBytes = 5 * GB)
+            val vm = viewModel(FakeRepository(item))
+            advanceUntilIdle()
+
+            vm.download((1..10).toList(), DownloadQualityChoice.FollowPlayback)
+            advanceUntilIdle()
+
+            assertTrue(downloads.enqueued.isEmpty())
+            assertEquals(
+                "Не хватит места: занято 4,0 ГБ из 5 ГБ. Поместится только 2 серии",
+                vm.uiState.value.storageMessage,
+            )
+        }
+
+    @Test
+    fun `one more episode that does fit is left to the engine to judge`() = runTest(main.dispatcher) {
+        downloads.setUsedBytes(4 * GB)
+        settings.downloadPolicy.value = DownloadPolicy.DEFAULT.copy(limitBytes = 5 * GB)
+        val vm = viewModel(FakeRepository(item))
+        advanceUntilIdle()
+
+        vm.download(listOf(7))
+        advanceUntilIdle()
+
+        assertEquals(1, downloads.enqueued.size)
+        assertNull(vm.uiState.value.storageMessage)
+    }
+
+    @Test
+    fun `with no room at all the message says where to go and not how many fit`() = runTest(main.dispatcher) {
+        downloads.setUsedBytes(5 * GB)
+        settings.downloadPolicy.value = DownloadPolicy.DEFAULT.copy(limitBytes = 5 * GB)
+        val vm = viewModel(FakeRepository(item))
+        advanceUntilIdle()
+
+        vm.download(listOf(7, 8, 9))
+        advanceUntilIdle()
+
+        assertTrue(downloads.enqueued.isEmpty())
+        assertEquals(
+            "Лимит места исчерпан: 5,0 ГБ из 5 ГБ. Освободите место в настройках",
+            vm.uiState.value.storageMessage,
+        )
+    }
+
+    @Test
+    fun `without a limit a batch of any size goes through`() = runTest(main.dispatcher) {
+        downloads.setUsedBytes(40 * GB)
+        settings.downloadPolicy.value = DownloadPolicy.DEFAULT.copy(limitBytes = null)
+        val vm = viewModel(FakeRepository(item))
+        advanceUntilIdle()
+
+        vm.download((1..10).toList())
+        advanceUntilIdle()
+
+        assertEquals(10, downloads.enqueued.size)
     }
 }

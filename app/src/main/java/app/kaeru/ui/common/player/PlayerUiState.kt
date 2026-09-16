@@ -1,5 +1,6 @@
 package app.kaeru.ui.common.player
 
+import app.kaeru.domain.download.EpisodeDownload
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.playback.RankedTranslation
 import app.kaeru.ui.common.details.EpisodeCell
@@ -55,6 +56,25 @@ data class PlayerUiState(
     val receiverName: String? = null,
     /** The finale was counted as watched and the show is waiting to be closed. */
     val completedPrompt: Boolean = false,
+    /**
+     * There is no network. What is on the device still plays; everything that needs Kodik —
+     * another voice, another episode, a rung that was not downloaded — does not.
+     */
+    val offline: Boolean = false,
+    /**
+     * This episode's download, in whatever state it is in, or null when there is none. The
+     * screen draws one control from it: «скачать», the progress of a download under way, or
+     * «удалить» for an episode already on the device.
+     */
+    val download: EpisodeDownload? = null,
+    /**
+     * What failed was the copy on this device, not the source.
+     *
+     * Carried from the controller because no arrangement of the fields here can stand in for it: an
+     * episode can be downloaded and still be streaming — another voice, a Chromecast — and a
+     * failure there belongs to Kodik with the download sitting beside it, perfectly playable.
+     */
+    val failedReadingDownload: Boolean = false,
     /** Something worth one line and no decision, shown and then forgotten. */
     val toast: String? = null,
 ) {

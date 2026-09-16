@@ -13,6 +13,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import app.kaeru.domain.download.DownloadKey
+import app.kaeru.domain.download.DownloadState
+import app.kaeru.domain.download.EpisodeDownload
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
@@ -21,6 +24,7 @@ import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.details.EpisodeCell
 import app.kaeru.ui.common.player.PlayerUiState
 import app.kaeru.ui.common.theme.KaeruTheme
+import java.time.Instant
 
 private const val DARK = 0xFF0B0C10
 
@@ -76,6 +80,9 @@ private fun PlayerBarsPreview() = KaeruTheme {
             onTranslations = {},
             onQualities = {},
             onEnterPictureInPicture = {},
+            download = null,
+            onDownload = {},
+            onRemoveDownload = {},
         )
         PlayerBottomBar(
             positionMs = 940_000,
@@ -132,5 +139,45 @@ private fun RemoteControlPreview() = KaeruTheme {
             onRetry = {},
             onStopCasting = {},
         )
+    }
+}
+
+private fun download(state: DownloadState, progress: Float = 0f) = EpisodeDownload(
+    key = DownloadKey(1, 7, translationId = 11, quality = Quality.P720),
+    state = state,
+    bytes = 320L * 1024 * 1024,
+    progress = progress,
+    failure = null,
+    updatedAt = Instant.parse("2026-09-13T20:00:00Z"),
+)
+
+/**
+ * The one control in the bar, saying each of the four things it can: nothing asked for, waiting its
+ * turn, waiting for Wi-Fi (the same «скоро»), coming down, and here.
+ */
+@Preview(name = "Загрузка в плеере", showBackground = true, backgroundColor = DARK, widthDp = PHONE_WIDTH, heightDp = 320)
+@Composable
+private fun PlayerDownloadStatesPreview() = KaeruTheme {
+    Column(Modifier.fillMaxWidth().background(Color.Black), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf(
+            null,
+            download(DownloadState.QUEUED),
+            download(DownloadState.WAITING_FOR_WIFI),
+            download(DownloadState.DOWNLOADING, 0.42f),
+            download(DownloadState.COMPLETED, 1f),
+        ).forEach { row ->
+            PlayerTopBar(
+                title = FRIEREN,
+                episode = 7,
+                translationTitle = null,
+                qualityLabel = null,
+                onBack = {},
+                onTranslations = {},
+                onQualities = {},
+                download = row,
+                onDownload = {},
+                onRemoveDownload = {},
+            )
+        }
     }
 }

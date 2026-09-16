@@ -34,6 +34,40 @@ fun RetrySnackbar(message: String?, host: SnackbarHostState, onRetry: () -> Unit
 }
 
 /**
+ * A message whose way forward is somewhere else: a full device, and the screen where the space is.
+ *
+ * Apart from [RetrySnackbar] because the action is not a repeat. A download the storage limit
+ * refused would be refused again by the same limit, so offering «Повторить» would be offering the
+ * viewer the same wall twice; what they need is the screen with the delete controls on it.
+ *
+ * [onShown] fires when the snackbar closes, however it closed, so the state that produced it can be
+ * cleared and the next refusal is news rather than a repeat of one already read.
+ */
+@Composable
+fun ActionSnackbar(
+    message: String?,
+    actionLabel: String,
+    host: SnackbarHostState,
+    onAction: () -> Unit,
+    onShown: () -> Unit,
+) {
+    val act by rememberUpdatedState(onAction)
+    val shown by rememberUpdatedState(onShown)
+    LaunchedEffect(message) {
+        if (message == null) return@LaunchedEffect
+        try {
+            val result = host.showSnackbar(message, actionLabel = actionLabel, duration = SnackbarDuration.Long)
+            if (result == SnackbarResult.ActionPerformed) act()
+        } finally {
+            // Also when this effect is cancelled — the viewer left the screen while the snackbar
+            // was still up. Without it the message stays in the state and the same refusal is
+            // shown again the next time they open the title, as news.
+            shown()
+        }
+    }
+}
+
+/**
  * Where those messages appear.
  *
  * The default snackbar is a pale slab in a dark app. This one is the app's own elevated surface,

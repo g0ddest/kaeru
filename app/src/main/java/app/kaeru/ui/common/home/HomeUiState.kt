@@ -25,4 +25,13 @@ data class HomeUiState(
      * catalogue, simply leaves it out.
      */
     val discover: DiscoverUiState? = null,
+    /**
+     * There is no network, so the screen says so in one line and stops offering what it cannot
+     * give: [discover] is null for as long as this is true.
+     *
+     * A fact about the device rather than about a request that failed — it is true before anything
+     * has been asked for, which is what lets the strip appear the moment the network goes rather
+     * than at the end of the next failed refresh.
+     */
+    val offline: Boolean = false,
 )

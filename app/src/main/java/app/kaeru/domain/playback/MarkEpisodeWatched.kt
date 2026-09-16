@@ -1,5 +1,6 @@
 package app.kaeru.domain.playback
 
+import app.kaeru.domain.download.DeferredDownloadRemoval
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.repository.WatchStateRepository
@@ -33,6 +34,7 @@ class MarkEpisodeWatched(
     private val library: LibraryRepository,
     private val watchStates: WatchStateRepository,
     private val clock: Clock,
+    private val deleteWatchedDownloads: DeferredDownloadRemoval,
 ) {
     suspend operator fun invoke(animeId: Int, episode: Int): Result<WatchedOutcome> {
         val known = library.observeAnime(animeId).first()
@@ -47,6 +49,7 @@ class MarkEpisodeWatched(
         if (!alreadyCounted) {
             library.setEpisodes(animeId, episode).getOrElse { return Result.failure(it) }
             rewindOvertakenPosition(animeId, episode)
+            deleteWatchedDownload(animeId, episode)
         }
 
         val announced = entry?.anime?.episodes ?: 0
@@ -58,6 +61,27 @@ class MarkEpisodeWatched(
                 suggestCompleted = !alreadyCounted && announced > 0 && episode >= announced,
             ),
         )
+    }
+
+    /**
+     * «Удалять просмотренные»: an episode that has just been counted gives its space back.
+     *
+     * Only on the branch where something was newly counted, so re-entering an episode the server
+     * already knew about never deletes it from under a viewer watching it again. Everything else
+     * about the decision — whether the setting is on, whether the download finished, and above all
+     * *when* it is safe to delete — belongs to [DeferredDownloadRemoval]: this mark is usually
+     * raised by the player at nine tenths of the episode, with the file still being read.
+     *
+     * A removal that fails costs nothing but space, so it is not allowed to fail the mark.
+     */
+    private suspend fun deleteWatchedDownload(animeId: Int, episode: Int) {
+        try {
+            deleteWatchedDownloads.onWatched(animeId, episode)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // The episode is marked either way; the space is given back the next time it is asked for.
+        }
     }
 
     /**

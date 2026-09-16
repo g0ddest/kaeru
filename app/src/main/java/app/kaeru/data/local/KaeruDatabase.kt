@@ -7,10 +7,14 @@ import androidx.room.migration.Migration
 import androidx.room.withTransaction
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.execSQL
+import java.time.Instant
 
 @Database(
-    entities = [AnimeEntity::class, UserRateEntity::class, WatchStateEntity::class, EpisodeProgressEntity::class],
-    version = 3,
+    entities = [
+        AnimeEntity::class, UserRateEntity::class, WatchStateEntity::class, EpisodeProgressEntity::class,
+        RateOutboxEntity::class,
+    ],
+    version = 4,
     // Written to `app/schemas` from version 2 on, so the next migration can be checked against
     // the schema it produces rather than only against the rows it preserves.
     exportSchema = true,
@@ -21,6 +25,7 @@ abstract class KaeruDatabase : RoomDatabase() {
     abstract fun userRateDao(): UserRateDao
     abstract fun watchStateDao(): WatchStateDao
     abstract fun episodeProgressDao(): EpisodeProgressDao
+    abstract fun rateOutboxDao(): RateOutboxDao
 
     /**
      * The two rows one progress sample leaves behind, committed together.
@@ -33,12 +38,39 @@ abstract class KaeruDatabase : RoomDatabase() {
         watchStateDao().upsert(watch)
     }
 
+    /**
+     * The same two rows, taken away together: an episode the viewer has un-marked, and everything
+     * after it.
+     *
+     * One transaction for the same reason a sample is one. Between the two writes the database
+     * would say the episode has no position of its own while the pointer still stands on it with
+     * one — and that is exactly the state `LibraryEntry` reads as «this episode is where you
+     * stopped», which is what the un-mark is undoing.
+     */
+    suspend fun forgetProgressFrom(animeId: Int, episode: Int, at: Instant) = withTransaction {
+        episodeProgressDao().deleteFrom(animeId, episode)
+        watchStateDao().rewindFrom(animeId, episode, at)
+    }
+
+    /**
+     * The rows [forgetProgressFrom] took away, put back together.
+     *
+     * The anime's pointer is deliberately not touched: it was rewound to the start of an episode
+     * that now has a row of its own again, and that row is what every surface reads.
+     */
+    suspend fun restoreProgress(progress: List<EpisodeProgressEntity>) = withTransaction {
+        episodeProgressDao().upsertAll(progress)
+    }
+
     suspend fun clearAccountData() = withTransaction {
         userRateDao().deleteAll()
         watchStateDao().deleteAll()
         // Positions belong to the account the same way watch states do, and leaving them behind
         // would hand the next viewer the last one's half-watched episodes.
         episodeProgressDao().deleteAll()
+        // Queued writes name one account's list and carry that account's rate ids. Replaying them
+        // after a switch would write one viewer's marks onto another's list.
+        rateOutboxDao().deleteAll()
     }
 }
 
@@ -81,5 +113,23 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
                 "SELECT `animeId`, `episode`, `positionMs`, `durationMs`, `updatedAt` " +
                 "FROM `watch_state` WHERE `positionMs` > 0",
         )
+    }
+}
+
+/**
+ * Version 4 gives a mark made without a network somewhere to wait.
+ *
+ * Nothing existing changes: `rate_outbox` starts empty, and an install that has never been
+ * offline simply never puts a row in it. The table is account-owned like the rates it speaks for,
+ * so `clearAccountData` empties it alongside them.
+ */
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL(
+            "CREATE TABLE IF NOT EXISTS `rate_outbox` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `animeId` INTEGER NOT NULL, " +
+                "`kind` TEXT NOT NULL, `value` TEXT NOT NULL, `createdAt` INTEGER NOT NULL)",
+        )
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_rate_outbox_animeId` ON `rate_outbox` (`animeId`)")
     }
 }

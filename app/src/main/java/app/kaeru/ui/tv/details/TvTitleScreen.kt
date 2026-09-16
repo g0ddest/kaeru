@@ -1,6 +1,7 @@
 package app.kaeru.ui.tv.details
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -81,13 +83,16 @@ import app.kaeru.ui.common.details.translationLabel
 import app.kaeru.ui.common.details.watchedLine
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruElevated
+import app.kaeru.ui.common.theme.KaeruError
 import app.kaeru.ui.common.theme.KaeruSecondary
 import app.kaeru.ui.common.theme.KaeruText
 import app.kaeru.ui.common.theme.KaeruTvTheme
 import app.kaeru.ui.tv.TvDialog
+import app.kaeru.ui.tv.TvEpisodeAction
 import app.kaeru.ui.tv.TvEpisodeCell
 import app.kaeru.ui.tv.TvLayout
 import app.kaeru.ui.tv.requestFocusOrLog
+import app.kaeru.ui.tv.tvEpisodeActions
 import app.kaeru.ui.tv.tvEpisodeGrid
 import app.kaeru.ui.tv.tvPreviewAnime
 import app.kaeru.ui.tv.tvPreviewEntry
@@ -99,6 +104,11 @@ private const val EXPAND = "Развернуть"
 private const val COLLAPSE = "Свернуть"
 private const val NOT_AIRED = "не вышла"
 private const val WATCHED = "Просмотрено"
+private const val WATCH = "Смотреть"
+private const val MARK_WATCHED = "Отметить просмотренной"
+private const val MARK_UNWATCHED = "Отметить непросмотренной"
+private const val MORE_ACTIONS = "Что сделать с серией"
+private const val MORE = "Ещё"
 private const val DUB = "Озвучка"
 private const val SUBTITLES = "Субтитры"
 private const val OFTEN_CHOSEN = "часто выбираете"
@@ -142,6 +152,8 @@ fun TvTitleScreen(
     onPlay: (animeId: Int, episode: Int) -> Unit,
     onLoadTranslations: () -> Unit,
     onPickTranslation: (Translation) -> Unit,
+    onMarkWatched: (episode: Int) -> Unit,
+    onMarkUnwatched: (episode: Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     when (val content = detailsContentState(state)) {
@@ -155,6 +167,8 @@ fun TvTitleScreen(
             onRetry = onRetry,
             onLoadTranslations = onLoadTranslations,
             onPickTranslation = onPickTranslation,
+            onMarkWatched = onMarkWatched,
+            onMarkUnwatched = onMarkUnwatched,
             modifier = modifier,
         )
     }
@@ -169,6 +183,8 @@ private fun TvTitleReady(
     onRetry: () -> Unit,
     onLoadTranslations: () -> Unit,
     onPickTranslation: (Translation) -> Unit,
+    onMarkWatched: (Int) -> Unit,
+    onMarkUnwatched: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val now = remember(anime) { Instant.now() }
@@ -215,6 +231,8 @@ private fun TvTitleReady(
                 animeId = anime.id,
                 watched = watchedLine(state.entry?.rate?.episodes ?: 0, cells.size),
                 onPlay = { episode -> onPlay(anime.id, episode) },
+                onMarkWatched = onMarkWatched,
+                onMarkUnwatched = onMarkUnwatched,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             )
         }
@@ -242,6 +260,16 @@ private fun TvTitleReady(
 
 /** Which of the two panels is open over the screen. */
 private enum class TvTitleSheet { STATUS, TRANSLATIONS }
+
+/**
+ * Which cell «Ещё» is about: the one the D-pad is on, or was on last, and the next unwatched
+ * episode before the viewer has touched the grid at all — which is the one the screen scrolled to
+ * and the one the watch button offers.
+ */
+private fun focusedIndex(cells: List<TvEpisodeCell>, focused: Int?, next: Int): Int {
+    val known = focused?.let { episode -> cells.indexOfFirst { it.episode == episode } } ?: -1
+    return if (known >= 0) known else next
+}
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
@@ -329,8 +357,17 @@ private fun TvEpisodeColumn(
     animeId: Int,
     watched: String,
     onPlay: (Int) -> Unit,
+    onMarkWatched: (Int) -> Unit,
+    onMarkUnwatched: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Which episode a long press of OK opened, remembered for the column rather than for each
+    // tile: one panel is over the screen at a time.
+    var openFor by remember(animeId) { mutableStateOf<TvEpisodeCell?>(null) }
+    // The tile the D-pad is on, or was on last. What «Ещё» acts on, so the button in the header
+    // means the episode the viewer is looking at rather than a fixed one.
+    var focused by remember(animeId) { mutableStateOf<Int?>(null) }
+    val next = cells.indexOfFirst { !it.watched && it.aired }.coerceAtLeast(0)
     Column(modifier, verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space3)) {
         Row(
             Modifier.fillMaxWidth(),
@@ -339,14 +376,20 @@ private fun TvEpisodeColumn(
         ) {
             Text(EPISODES, style = MaterialTheme.typography.titleMedium, color = KaeruText)
             if (cells.isNotEmpty()) {
-                Text(watched, style = MaterialTheme.typography.labelMedium, color = KaeruSecondary)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(watched, style = MaterialTheme.typography.labelMedium, color = KaeruSecondary)
+                    // The same panel a long press of OK opens, behind a control that is plainly
+                    // there. Holding OK is the quicker way in and the one the home screen already
+                    // uses, but it is invisible and it is the remote's to honour — an action the
+                    // viewer cannot see is an action some remotes do not have.
+                    TextAction(MORE, { openFor = cells.getOrNull(focusedIndex(cells, focused, next)) })
+                }
             }
         }
         if (cells.isEmpty()) {
             Text(NO_EPISODES, style = MaterialTheme.typography.bodyMedium, color = KaeruSecondary)
             return@Column
         }
-        val next = cells.indexOfFirst { !it.watched && it.aired }.coerceAtLeast(0)
         val grid = rememberLazyGridState()
         // Once per title, not once per change to the cells. A status write or a progress update
         // landing from Room rebuilds `cells`, and keying on those would snap a viewer who had
@@ -361,8 +404,64 @@ private fun TvEpisodeColumn(
             contentPadding = PaddingValues(KaeruTokens.Space1),
         ) {
             items(cells, key = { it.episode }) { cell ->
-                TvEpisodeTile(cell, onPlay = { onPlay(cell.episode) })
+                TvEpisodeTile(
+                    cell,
+                    onPlay = { onPlay(cell.episode) },
+                    onLongPress = { openFor = cell },
+                    onFocused = { focused = cell.episode },
+                )
             }
+        }
+    }
+    openFor?.let { cell ->
+        TvEpisodeDialog(
+            cell = cell,
+            onPlay = { openFor = null; onPlay(cell.episode) },
+            onMarkWatched = { openFor = null; onMarkWatched(cell.episode) },
+            onMarkUnwatched = { openFor = null; onMarkUnwatched(cell.episode) },
+            onDismiss = { openFor = null },
+        )
+    }
+}
+
+/**
+ * What a long press of OK offers for one episode, as a panel.
+ *
+ * A panel rather than the phone's dropdown for the reason every other secondary choice on this
+ * screen is one: a remote has to be able to walk into the choice and back out of it, and
+ * [TvDialog] is what keeps focus inside. It carries both marks — the television has no snackbar,
+ * so this panel is also where a mis-pressed un-mark is put back.
+ */
+@Composable
+private fun TvEpisodeDialog(
+    cell: TvEpisodeCell,
+    onPlay: () -> Unit,
+    onMarkWatched: () -> Unit,
+    onMarkUnwatched: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val first = remember { FocusRequester() }
+    LaunchedEffect(cell.episode) { first.requestFocusOrLog("the episode panel") }
+    TvDialog(title = "${cell.episode} серия", onDismiss = onDismiss) {
+        tvEpisodeActions(cell).forEachIndexed { index, action ->
+            TvDialogRow(
+                title = when (action) {
+                    TvEpisodeAction.WATCH -> WATCH
+                    TvEpisodeAction.MARK_WATCHED -> MARK_WATCHED
+                    TvEpisodeAction.MARK_UNWATCHED -> MARK_UNWATCHED
+                },
+                selected = false,
+                enabled = true,
+                onClick = when (action) {
+                    TvEpisodeAction.WATCH -> onPlay
+                    TvEpisodeAction.MARK_WATCHED -> onMarkWatched
+                    TvEpisodeAction.MARK_UNWATCHED -> onMarkUnwatched
+                },
+                modifier = if (index == 0) Modifier.focusRequester(first) else Modifier,
+                role = Role.Button,
+                // The one row that takes something away, in the colour that says so.
+                destructive = action == TvEpisodeAction.MARK_UNWATCHED,
+            )
         }
     }
 }
@@ -370,21 +469,34 @@ private fun TvEpisodeColumn(
 /**
  * One episode. An episode that has not aired cannot be pressed, which on a remote also means the
  * D-pad steps over it rather than landing somewhere nothing happens.
+ *
+ * OK plays it; holding OK opens what else can be done with it, the same gesture the home screen
+ * already uses on a poster.
  */
 @Composable
-private fun TvEpisodeTile(cell: TvEpisodeCell, onPlay: () -> Unit) {
+private fun TvEpisodeTile(
+    cell: TvEpisodeCell,
+    onPlay: () -> Unit,
+    onLongPress: () -> Unit,
+    onFocused: () -> Unit,
+) {
     Box(
         Modifier
             .height(EpisodeTile)
+            // Gaining focus only: the tile the D-pad left is still the one «Ещё» in the header is
+            // about, because that is where the viewer was when they went looking for it.
+            .onFocusChanged { if (it.isFocused) onFocused() }
             .kaeruFocus(KaeruTokens.CardShape)
             .clip(KaeruTokens.CardShape)
             .background(if (cell.aired) KaeruElevated else KaeruElevated.copy(alpha = 0.45f))
             .then(
                 if (cell.aired) {
-                    Modifier.selectable(
-                        selected = false,
-                        role = Role.Button,
+                    Modifier.combinedClickable(
                         onClick = onPlay,
+                        onClickLabel = WATCH,
+                        onLongClick = onLongPress,
+                        onLongClickLabel = MORE_ACTIONS,
+                        role = Role.Button,
                     )
                 } else {
                     // One spoken sentence instead of a number and a fragment read separately.
@@ -526,13 +638,17 @@ private fun TvDialogRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     caption: String? = null,
+    /** A row that does something rather than choosing something; the two read differently aloud. */
+    role: Role = Role.RadioButton,
+    /** A row that takes something away, in red. */
+    destructive: Boolean = false,
 ) {
     Row(
         modifier
             .fillMaxWidth()
             .kaeruFocus(KaeruTokens.CardShape, focusedScale = 1f)
             .clip(KaeruTokens.CardShape)
-            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
+            .selectable(selected = selected, enabled = enabled, role = role, onClick = onClick)
             .padding(horizontal = KaeruTokens.Space4, vertical = KaeruTokens.Space3),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
@@ -541,7 +657,11 @@ private fun TvDialogRow(
             Text(
                 title,
                 style = MaterialTheme.typography.titleSmall,
-                color = if (enabled) KaeruText else KaeruSecondary,
+                color = when {
+                    !enabled -> KaeruSecondary
+                    destructive -> KaeruError
+                    else -> KaeruText
+                },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -629,6 +749,8 @@ private fun TvTitleScreenPreview() = KaeruTvTheme {
         onPlay = { _, _ -> },
         onLoadTranslations = {},
         onPickTranslation = {},
+        onMarkWatched = {},
+        onMarkUnwatched = {},
     )
 }
 

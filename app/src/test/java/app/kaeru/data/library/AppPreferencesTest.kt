@@ -4,9 +4,13 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
+import app.kaeru.domain.download.DownloadPolicy
+import app.kaeru.domain.download.DownloadedEpisode
 import app.kaeru.domain.model.Account
 import app.kaeru.domain.model.Quality
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -226,5 +230,123 @@ class AppPreferencesTest {
         assertNull(prefs.account.first())
         assertNull(store.data.first()[stringPreferencesKey("account_nickname")])
         assertNull(store.data.first()[stringPreferencesKey("account_avatar")])
+    }
+
+    @Test
+    fun `the download policy starts at the defaults the spec names`() = runTest(dispatcher) {
+        assertEquals(DownloadPolicy.DEFAULT, prefs.downloadPolicy.first())
+    }
+
+    @Test
+    fun `a download policy survives the round trip`() = runTest(dispatcher) {
+        val chosen = DownloadPolicy(
+            limitBytes = 20L * 1024 * 1024 * 1024,
+            wifiOnly = false,
+            deleteWatched = true,
+            quality = Quality.P480,
+        )
+
+        prefs.setDownloadPolicy(chosen)
+
+        assertEquals(chosen, prefs.downloadPolicy.first())
+    }
+
+    @Test
+    fun `no limit and no chosen height are stored as sentinels, not as absent keys`() = runTest(dispatcher) {
+        // An absent key means «never set» and reads back as the default 5 GB at 720p, so
+        // «без лимита» and «как при просмотре» need values of their own to be remembered at all.
+        prefs.setDownloadPolicy(DownloadPolicy.DEFAULT.copy(limitBytes = null, quality = null))
+
+        assertEquals(-1L, store.data.first()[longPreferencesKey("download_limit_bytes")])
+        assertEquals(0, store.data.first()[intPreferencesKey("download_quality")])
+
+        val read = prefs.downloadPolicy.first()
+        assertNull(read.limitBytes)
+        assertNull(read.quality)
+    }
+
+    @Test
+    fun `the policy is written under the documented keys`() = runTest(dispatcher) {
+        prefs.setDownloadPolicy(
+            DownloadPolicy(2L * 1024 * 1024 * 1024, wifiOnly = false, deleteWatched = true, quality = Quality.P360),
+        )
+        val stored = store.data.first()
+
+        assertEquals(2L * 1024 * 1024 * 1024, stored[longPreferencesKey("download_limit_bytes")])
+        assertEquals(false, stored[booleanPreferencesKey("download_wifi_only")])
+        assertEquals(true, stored[booleanPreferencesKey("download_delete_watched")])
+        assertEquals(360, stored[intPreferencesKey("download_quality")])
+    }
+
+    @Test
+    fun `a height this build no longer offers reads as no chosen height`() = runTest(dispatcher) {
+        store.edit { it[intPreferencesKey("download_quality")] = 1440 }
+
+        assertNull(prefs.downloadPolicy.first().quality)
+    }
+
+    // --- the two notes the download engine keeps between launches -------------------------------
+
+    @Test
+    fun `a promised deletion is remembered until it is kept`() = runTest(dispatcher) {
+        prefs.record(DownloadedEpisode(100, 4))
+        prefs.record(DownloadedEpisode(100, 5))
+
+        assertEquals(setOf(DownloadedEpisode(100, 4), DownloadedEpisode(100, 5)), prefs.pending())
+
+        prefs.forget(DownloadedEpisode(100, 4))
+
+        assertEquals(setOf(DownloadedEpisode(100, 5)), prefs.pending())
+
+        prefs.forgetAll()
+
+        assertEquals(emptySet<DownloadedEpisode>(), prefs.pending())
+    }
+
+    /** A stored row nothing can read is dropped: it names an episode nobody can act on anyway. */
+    @Test
+    fun `a promise written in a spelling this build does not know is ignored`() = runTest(dispatcher) {
+        store.edit { it[stringSetPreferencesKey("download_pending_removals")] = setOf("100:4", "rubbish", "7") }
+
+        assertEquals(setOf(DownloadedEpisode(100, 4)), prefs.pending())
+    }
+
+    @Test
+    fun `a download the network stranded is remembered until something picks it up`() = runTest(dispatcher) {
+        prefs.recordStranded("100:4:609:720")
+        prefs.recordStranded("100:5:609:720")
+
+        assertEquals(setOf("100:4:609:720", "100:5:609:720"), prefs.stranded())
+
+        prefs.forgetStranded("100:4:609:720")
+
+        assertEquals(setOf("100:5:609:720"), prefs.stranded())
+    }
+
+    /** Both notes are about files on this device, so they outlive whoever was signed in. */
+    @Test
+    fun `both download notes survive a sign-out`() = runTest(dispatcher) {
+        prefs.record(DownloadedEpisode(100, 4))
+        prefs.recordStranded("100:5:609:720")
+        prefs.setUserId(42)
+
+        prefs.clear()
+
+        assertEquals(setOf(DownloadedEpisode(100, 4)), prefs.pending())
+        assertEquals(setOf("100:5:609:720"), prefs.stranded())
+    }
+
+    @Test
+    fun `download settings belong to the device and survive a sign-out`() = runTest(dispatcher) {
+        // An episode already on the phone is not a fact about who is signed in, and neither is
+        // the rule that put it there.
+        prefs.setDownloadPolicy(DownloadPolicy.DEFAULT.copy(wifiOnly = false, limitBytes = null))
+        prefs.setUserId(42)
+
+        prefs.clearAccount()
+
+        val read = prefs.downloadPolicy.first()
+        assertFalse(read.wifiOnly)
+        assertNull(read.limitBytes)
     }
 }
