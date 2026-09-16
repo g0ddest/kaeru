@@ -52,6 +52,20 @@ class WatchLinkTest {
     }
 
     @Test
+    fun `nor a host that merely starts the same way`() {
+        // The check is a prefix on the whole address, so a name that begins with ours and carries
+        // on into somebody else's domain must not read as ours.
+        assertNull(watchLinkOf(Uri.parse("https://kaeru.vitaliy.velikodniy.name.evil.com/w/${room.roomId}#AAAAAAAAAAAAAAAAAAAAAA")))
+        assertNull(watchLinkOf(Uri.parse("https://evil.com/kaeru.vitaliy.velikodniy.name/w/${room.roomId}#AAAAAAAAAAAAAAAAAAAAAA")))
+    }
+
+    @Test
+    fun `and a scheme in the wrong case is not a way round the host check`() {
+        val shouted = room.toHttps().replaceFirst("https://", "HTTPS://")
+        assertNull(watchLinkOf(Uri.parse(shouted)))
+    }
+
+    @Test
     fun `nor a kaeru link that means something else entirely`() {
         assertNull(watchLinkOf(Uri.parse("kaeru://oauth?code=1&state=2")))
         assertNull(watchLinkOf(Uri.parse("kaeru://pair?h=192.168.1.7&p=41234&n=abc&t=TV")))

@@ -34,6 +34,15 @@ class VoicePlayer @Inject constructor(@ApplicationContext context: Context) : Vo
     private var file: File? = null
     private var focus: AudioFocusRequest? = null
 
+    /**
+     * What the screen is waiting to be told, held rather than captured in a listener.
+     *
+     * A clip replaced by another one is still a clip that finished as far as the screen is
+     * concerned: dropping its callback leaves whatever was watching it waiting for something that
+     * is never coming.
+     */
+    private var pendingFinish: (() -> Unit)? = null
+
     private val attributes: AudioAttributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_MEDIA)
         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
@@ -51,16 +60,13 @@ class VoicePlayer @Inject constructor(@ApplicationContext context: Context) : Vo
             File(cache, "clip-$id.audio").apply { writeBytes(bytes) }
         }.getOrNull() ?: return onFinished()
         val media = MediaPlayer()
-        val done = {
-            release()
-            onFinished()
-        }
+        pendingFinish = onFinished
         runCatching {
             media.setAudioAttributes(attributes)
             media.setDataSource(target.absolutePath)
-            media.setOnCompletionListener { done() }
+            media.setOnCompletionListener { release() }
             media.setOnErrorListener { _, _, _ ->
-                done()
+                release()
                 true
             }
             media.prepare()
@@ -71,7 +77,7 @@ class VoicePlayer @Inject constructor(@ApplicationContext context: Context) : Vo
         }.onFailure {
             runCatching { media.release() }
             target.delete()
-            onFinished()
+            release()
         }
     }
 
@@ -81,12 +87,16 @@ class VoicePlayer @Inject constructor(@ApplicationContext context: Context) : Vo
         release()
     }
 
+    /** Everything this clip held, given back — including the promise that it would end. */
     private fun release() {
+        val finished = pendingFinish
+        pendingFinish = null
         player?.let { runCatching { it.release() } }
         player = null
         file?.delete()
         file = null
         abandonFocus()
+        finished?.invoke()
     }
 
     private fun requestFocus() {

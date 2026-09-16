@@ -186,7 +186,9 @@ fun PlayerScreen(
             LaunchedEffect(clip, player) {
                 player?.volume = if (clip != null) DUCKED_VOLUME else 1f
             }
-            DisposableEffect(together.player) {
+            // Keyed on both: a media3 instance that changes under this would otherwise have its
+            // volume restored on the one that had gone.
+            DisposableEffect(together.player, player) {
                 onDispose {
                     together.player?.stop()
                     player?.volume = 1f

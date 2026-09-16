@@ -45,6 +45,8 @@ data class ConversationItem(
     val text: String? = null,
     val clip: VoiceClipItem? = null,
     val at: Long = 0,
+    /** Its seven seconds are up and it is on its way out. The corner draws that; it is not gone. */
+    val leaving: Boolean = false,
 )
 
 /** An emoji on its way up the right-hand side of the picture. */

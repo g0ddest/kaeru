@@ -27,7 +27,6 @@ object TogetherCopy {
 
     const val WATCH_TOGETHER = "Смотреть вместе"
     const val LEAVE = "Выйти из совместного просмотра"
-    const val SHARE_HINT = "Отправьте ссылку другу — он откроет её и попадёт на эту же минуту."
 
     /** The one name for somebody Shikimori never named. */
     const val SOMEBODY = "Друг"
@@ -94,9 +93,6 @@ object TogetherCopy {
     /** «Вася смотрит «Проводы в последний путь», 7 серия, 12:04» */
     fun joinLine(peerName: String, title: String, episode: Int, positionMs: Long): String =
         "${name(peerName)} смотрит «$title», ${episodeNominative(episode)}, ${formatTime(positionMs)}"
-
-    /** «Ждём Васю…» has a case in it the nickname cannot take, so the friend stays a friend. */
-    fun waitingFor(peerName: String?): String = WAITING_FRIEND
 
     /**
      * What the other phone just did.

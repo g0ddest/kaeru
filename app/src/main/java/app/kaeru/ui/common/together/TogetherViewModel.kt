@@ -28,6 +28,9 @@ import javax.inject.Inject
 /** How long a line stays in the corner before it fades. Long enough to look away from the video. */
 private const val ITEM_LIFE_MS = 7_000L
 
+/** The fade at the end of those seven seconds, which is part of them rather than added to them. */
+private const val ITEM_FADE_MS = 300L
+
 /** At most three, because the corner of a phone in landscape is about 147dp tall. */
 private const val STACK_MAX = 3
 
@@ -224,8 +227,10 @@ class TogetherViewModel @Inject constructor(
         _uiState.update { it.copy(wait = null, join = it.join?.copy(error = null, loading = false)) }
     }
 
+    /** The chip's «Выйти из совместного просмотра». Said out loud, because it was deliberate. */
     fun leave() {
         armWait(null)
+        _uiState.update { it.copy(message = TogetherCopy.LEFT_SESSION) }
         viewModelScope.launch { session.leave() }
     }
 
@@ -405,7 +410,13 @@ class TogetherViewModel @Inject constructor(
         }
         if (!autoHide) return
         expiryJobs[item.id] = viewModelScope.launch {
-            delay(ITEM_LIFE_MS)
+            // Marked first and removed after, so the corner has something to fade rather than a
+            // line that vanishes between two frames.
+            delay(ITEM_LIFE_MS - ITEM_FADE_MS)
+            _uiState.update { state ->
+                state.copy(stack = state.stack.map { if (it.id == item.id) it.copy(leaving = true) else it })
+            }
+            delay(ITEM_FADE_MS)
             expiryJobs -= item.id
             _uiState.update { state -> state.copy(stack = state.stack.filterNot { it.id == item.id }) }
         }

@@ -126,7 +126,7 @@ class TogetherCopyTest {
             add(TogetherCopy.MIC_DENIED)
             add(TogetherCopy.ENDED)
             add(TogetherCopy.EMPTY_HISTORY)
-            add(TogetherCopy.SHARE_HINT)
+            add(TogetherCopy.LEFT_SESSION)
             addAll(TogetherCopy.PRESETS)
             addAll(LostReason.entries.map(TogetherCopy::lost))
         }

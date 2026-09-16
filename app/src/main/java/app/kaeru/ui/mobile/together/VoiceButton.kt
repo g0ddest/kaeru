@@ -313,11 +313,15 @@ private fun RecordingBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space2),
     ) {
-        Text(
-            if (locked) TogetherCopy.VOICE_CANCEL else if (cancelling) TogetherCopy.VOICE_CANCEL else TogetherCopy.VOICE_LOCK,
-            style = MaterialTheme.typography.labelMedium,
-            color = if (cancelling) KaeruError else OnVideoMuted,
-        )
+        // Only gestures the finger can still make. Locked, the finger is off the button and both
+        // swipes are over, so the row says nothing and the two real buttons below say it instead.
+        if (!locked) {
+            Text(
+                if (cancelling) TogetherCopy.VOICE_CANCEL else TogetherCopy.VOICE_LOCK,
+                style = MaterialTheme.typography.labelMedium,
+                color = if (cancelling) KaeruError else OnVideoMuted,
+            )
+        }
         Waveform(levels)
         Text(
             "${TogetherCopy.clipLength(elapsedMs)} / ${TogetherCopy.clipLength(maxMs)}",
@@ -326,7 +330,7 @@ private fun RecordingBar(
         )
         if (locked) {
             TextButton(onClick = onSend) { Text(TogetherCopy.SEND, color = OnVideo) }
-            TextButton(onClick = onCancel) { Text("Отмена", color = OnVideoMuted) }
+            TextButton(onClick = onCancel) { Text(TogetherCopy.CANCEL, color = OnVideoMuted) }
         }
     }
 }

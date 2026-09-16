@@ -42,15 +42,15 @@ import kotlin.math.sin
 /** How far an emoji gets before it is gone. */
 private val Rise = 120.dp
 
-/** Twenty points of horizontal wander, so three at once do not travel as one column. */
+/** Fourteen points of horizontal wander, so three at once do not travel as one column. */
 private val Drift = 14.dp
 
 private const val FLIGHT_MS = 1_200
 
 private val Glyph = 22.dp
 
-/** The row that slides out of the 😀 button: six, each a finger wide. */
-private val PickSize = 44.dp
+/** The row that slides out of the 😀 button: six, at the size everything here is reachable at. */
+private val PickSize = KaeruTokens.MinTouchTarget
 
 /** What each of the six is drawn as. The protocol carries the name, the screen picks the picture. */
 internal fun reactionGlyph(kind: ReactionKind): String = when (kind) {
