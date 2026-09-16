@@ -14,6 +14,11 @@ import app.kaeru.domain.together.TogetherCodec
 import app.kaeru.domain.together.TogetherMessage
 import app.kaeru.domain.together.WatchTogetherTransport
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
@@ -36,6 +41,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketTimeoutException
 import java.security.SecureRandom
+import java.util.concurrent.CopyOnWriteArrayList
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -112,11 +118,24 @@ class LanSocketTransport @Inject constructor(
     private val _state = MutableStateFlow(ConnectionState.CLOSED)
     override val state = _state.asStateFlow()
 
-    private class Live(val socket: Socket, val out: DataOutputStream, val link: RoomLink, val mine: Side)
+    /** What this device is in this room, known from the moment [connect] is collected. */
+    private class Session(val link: RoomLink, val mine: Side)
+
+    private class Live(val socket: Socket, val out: DataOutputStream)
 
     private val lock = Any()
     private var server: ServerSocket? = null
+    private var session: Session? = null
     private var live: Live? = null
+
+    /**
+     * What the session said before there was a socket to say it down.
+     *
+     * A guest's greeting is written while the connection is still being made, because the host will
+     * not call anybody a friend until it arrives. Bounded because it is a queue somebody else fills:
+     * a greeting is one frame, and anything past the cap is a session doing something odd.
+     */
+    private val queued = ArrayDeque<ByteArray>()
 
     /**
      * What went into the link, remembered until [close].
@@ -142,15 +161,35 @@ class LanSocketTransport @Inject constructor(
         return LanEndpoint(host, socket.localPort).also { synchronized(lock) { advertised = it } }
     }
 
-    override fun connect(link: RoomLink, asHost: Boolean): Flow<Result<TogetherMessage>> = flow {
+    /**
+     * @param asHost whether this device is the one that made the link.
+     *
+     * A guest sends its first message straight away — it may do so the moment this returns, before
+     * the flow is collected and before any socket exists, and the greeting is written as soon as
+     * one does. That is not a
+     * nicety: a host on the local network gives its one seat to nobody until a frame decrypts
+     * under the room key, so a guest that waits to be told it is connected waits for ever. The
+     * host answers in kind, which is what tells the guest it dialled a Kaeru and not something
+     * else on the same address.
+     */
+    override fun connect(link: RoomLink, asHost: Boolean): Flow<Result<TogetherMessage>> {
+        // A copy of the key, so [shutdown] has something of its own to wipe.
+        val owned = link.copy(key = link.key.copyOf())
+        // Set here rather than inside the flow, so that a greeting can be handed over the moment
+        // this returns. The flow is cold and a caller collects it from wherever it likes; making
+        // the first `send` wait for that to happen would be a race with no way to win it.
+        synchronized(lock) {
+            session = Session(owned, if (asHost) Side.HOST else Side.GUEST)
+            queued.clear()
+        }
         _state.value = ConnectionState.CONNECTING
-        if (asHost) hostSession(link) else guestSession(link)
-    }
+        return flow { if (asHost) hostSession(owned) else guestSession(owned) }
         .flowOn(dispatcher)
         // Downstream of `flowOn` on purpose: this runs the moment the collector goes away, and
         // closing the socket is the only thing that gets the reading thread out of a blocking
         // read. Without it a cancelled session leaves a thread parked until the idle deadline.
-        .onCompletion { shutdown() }
+            .onCompletion { shutdown() }
+    }
 
     /**
      * Waiting for the friend, and giving the seat to nobody else.
@@ -161,79 +200,185 @@ class LanSocketTransport @Inject constructor(
      * meant one stray connection could deny the whole evening to the actual friend, with the host's
      * screen cheerfully reading «подключено».
      *
-     * So a connection is provisional. It has [TogetherTimeouts.authMs] to deliver one frame that
-     * decrypts under the room key — which only somebody holding the link can produce — and until
-     * one does, the door stays open and nothing is reported as connected. Whoever fails is dropped
-     * and the wait carries on with whatever is left of it.
+     * So a connection is provisional: it has to deliver one frame that decrypts under the room key,
+     * which only somebody holding the link can produce. And every connection is provisional *at the
+     * same time*. Vetting them one after another was the same denial in slower clothes — a socket
+     * that connects and says nothing costs the window [TogetherTimeouts.authMs], and five of them
+     * spend the whole of it, so a friend knocking behind them is accepted by the kernel and never
+     * heard. Now each connector is vetted in its own coroutine, the door keeps opening, and the
+     * first frame that decrypts wins the seat and closes everything else.
      */
     private suspend fun FlowCollector<Result<TogetherMessage>>.hostSession(link: RoomLink) {
         val listening = bound() ?: run {
             emit(failure(TogetherFailureReason.UNREACHABLE))
             return
         }
-        val until = System.currentTimeMillis() + timeouts.acceptMs
-        while (currentCoroutineContext().isActive) {
-            val left = until - System.currentTimeMillis()
-            if (left <= 0) break
-            val peer = try {
-                listening.soTimeout = left.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-                listening.accept()
-            } catch (nobody: IOException) {
-                // A timeout means nobody came; anything else means the socket is gone. Same answer.
-                break
+        val friend = awaitFriend(listening, link, System.currentTimeMillis() + timeouts.acceptMs)
+        if (friend == null) {
+            emit(failure(TogetherFailureReason.UNREACHABLE))
+            return
+        }
+        install(friend.socket)
+        seated()
+        emit(Result.success(friend.greeting))
+        read(friend.input, link, from = Side.GUEST)
+    }
+
+    /** A connector that proved it holds the key, and the stream its first frame came off. */
+    private class Vouched(
+        val socket: Socket,
+        val input: BufferedInputStream,
+        val greeting: TogetherMessage,
+    )
+
+    private suspend fun awaitFriend(listening: ServerSocket, link: RoomLink, until: Long): Vouched? {
+        // Every socket accepted, so that whatever does not win is closed on the way out — including
+        // one accepted a moment before somebody else vouched.
+        val provisional = CopyOnWriteArrayList<Socket>()
+        val won = CompletableDeferred<Vouched?>()
+        var friend: Vouched? = null
+        try {
+            coroutineScope {
+                val accepting = launch {
+                    val vetting = mutableListOf<Job>()
+                    while (isActive && !won.isCompleted) {
+                        val left = until - System.currentTimeMillis()
+                        if (left <= 0) break
+                        val peer = try {
+                            listening.soTimeout = left.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                            listening.accept()
+                        } catch (nobody: IOException) {
+                            // A timeout means nobody came; anything else means the socket is gone.
+                            break
+                        }
+                        provisional += peer
+                        vetting += launch { vet(peer, link, until, won) }
+                    }
+                    vetting.joinAll()
+                    // The window is over and everything it let in has been heard out.
+                    won.complete(null)
+                }
+                friend = won.await()
+                // Closing the listener is what gets the accept loop out of its blocking wait; the
+                // cancel alone would leave it parked there for the rest of the window.
+                synchronized(lock) { closeServerLocked() }
+                accepting.cancel()
             }
+        } finally {
+            provisional.forEach { if (it !== friend?.socket) runCatching { it.close() } }
+        }
+        return friend
+    }
+
+    private suspend fun vet(peer: Socket, link: RoomLink, until: Long, won: CompletableDeferred<Vouched?>) {
+        var seated = false
+        try {
             peer.tcpNoDelay = true
             peer.soTimeout = minOf(POLL_MS, timeouts.authMs)
             val input = BufferedInputStream(peer.getInputStream())
-            val greeting = vouched(input, link)
-            if (greeting == null) {
-                runCatching { peer.close() }
-                continue
-            }
-            install(peer, link, Side.HOST)
-            emit(Result.success(greeting))
-            read(input, link, from = Side.GUEST)
-            return
+            // Its own deadline, and never one that outlives the window it sits inside — a connector
+            // arriving with a second left has a second, not two.
+            val deadline = minOf(System.currentTimeMillis() + timeouts.authMs, until)
+            val vetted = vouched(input, link, from = Side.GUEST, deadline = deadline)
+            seated = vetted is Vetted.Friend && won.complete(Vouched(peer, input, vetted.greeting))
+        } finally {
+            if (!seated) runCatching { peer.close() }
         }
-        emit(failure(TogetherFailureReason.UNREACHABLE))
     }
 
+    /**
+     * Dialling the address in the link, and making the far end prove it is the friend.
+     *
+     * Smaller stakes than the host's door — a guest dialled one specific address out of a link
+     * rather than advertising a port to a whole network — but the same question, and it has a real
+     * answer: something else listening at that address can accept a connection and will never
+     * produce a frame that opens. Rather than show a session that only ever yields `TAMPERED`, the
+     * guest waits for one good frame and says so plainly if it does not come.
+     */
     private suspend fun FlowCollector<Result<TogetherMessage>>.guestSession(link: RoomLink) {
         val socket = dial(link.lan).getOrElse { failure ->
             emit(Result.failure(failure))
             return
         }
-        install(socket, link, Side.GUEST)
-        read(BufferedInputStream(socket.getInputStream()), link, from = Side.HOST)
+        // Installed before the far end has proved anything, because installing is what sends the
+        // greeting that gives it something to answer. The state stays CONNECTING until it does.
+        install(socket)
+        val input = BufferedInputStream(socket.getInputStream())
+        val vetted = vouched(
+            input,
+            link,
+            from = Side.HOST,
+            deadline = System.currentTimeMillis() + timeouts.authMs,
+        )
+        if (vetted !is Vetted.Friend) {
+            emit(
+                failure(
+                    if (vetted is Vetted.Silent) TogetherFailureReason.UNREACHABLE
+                    else TogetherFailureReason.TAMPERED,
+                ),
+            )
+            return
+        }
+        seated()
+        emit(Result.success(vetted.greeting))
+        read(input, link, from = Side.HOST)
     }
 
     /**
-     * The first frame, and whether it proves anything. `null` is «not the friend»: too slow, too
-     * quiet, a length that is a lie, or bytes that will not open under this room's key.
+     * What a first frame turned out to be. The two failures read differently to a viewer: nothing
+     * answered, or something answered and it was not the friend.
      */
-    private suspend fun vouched(input: BufferedInputStream, link: RoomLink): TogetherMessage? {
-        val deadline = System.currentTimeMillis() + timeouts.authMs
-        val header = ByteArray(LENGTH_BYTES)
-        if (fill(input, header, timeouts.authMs, deadline) != Filled.DONE) return null
-        val length = lengthOf(header)
-        if (length <= 0 || length > TogetherCodec.MAX_FRAME_BYTES) return null
-        val frame = ByteArray(length)
-        if (fill(input, frame, timeouts.authMs, deadline) != Filled.DONE) return null
-        // Only a guest can have sealed it: a frame bearing the host's own side is a reflection.
-        return TogetherCodec.decode(frame, link, from = Side.GUEST).getOrNull()
+    private sealed interface Vetted {
+        data class Friend(val greeting: TogetherMessage) : Vetted
+
+        /** Too slow, or too quiet. Nothing arrived inside the deadline. */
+        data object Silent : Vetted
+
+        /** Something arrived: a length that is a lie, or bytes that will not open in this room. */
+        data object Wrong : Vetted
     }
 
-    /** The seat is taken, and only now does the host stop listening or call itself connected. */
-    private fun install(socket: Socket, link: RoomLink, mine: Side) {
+    /**
+     * The first frame, and whether it proves anything.
+     *
+     * A frame bearing the reader's own side is a reflection rather than a greeting, and fails here
+     * like any other frame that will not open.
+     */
+    private suspend fun vouched(
+        input: BufferedInputStream,
+        link: RoomLink,
+        from: Side,
+        deadline: Long,
+    ): Vetted {
+        val header = ByteArray(LENGTH_BYTES)
+        if (fill(input, header, timeouts.authMs, deadline) != Filled.DONE) return Vetted.Silent
+        val length = lengthOf(header)
+        if (length <= 0 || length > TogetherCodec.MAX_FRAME_BYTES) return Vetted.Wrong
+        val frame = ByteArray(length)
+        if (fill(input, frame, timeouts.authMs, deadline) != Filled.DONE) return Vetted.Silent
+        val greeting = TogetherCodec.decode(frame, link, from).getOrNull() ?: return Vetted.Wrong
+        return Vetted.Friend(greeting)
+    }
+
+    /**
+     * There is a socket to write to now, so whatever the session said while there was not goes out
+     * first, in the order it was said. Says nothing about whether the far end is the friend.
+     */
+    private fun install(socket: Socket) {
         socket.tcpNoDelay = true
         socket.soTimeout = minOf(POLL_MS, timeouts.idleMs)
         val out = DataOutputStream(BufferedOutputStream(socket.getOutputStream()))
         synchronized(lock) {
-            // A copy, so [shutdown] has something of its own to wipe. Zeroing the caller's array
-            // would pull the key out from under whoever is still holding the link.
-            live = Live(socket, out, link.copy(key = link.key.copyOf()), mine)
+            live = Live(socket, out)
             closeServerLocked()
+            // Inside the lock, so a `send` arriving now queues behind the greeting rather than
+            // overtaking it.
+            while (queued.isNotEmpty()) write(out, queued.removeFirst())
         }
+    }
+
+    /** Only now is there somebody on the other end worth calling a friend. */
+    private fun seated() {
         _state.value = ConnectionState.CONNECTED
     }
 
@@ -331,20 +476,29 @@ class LanSocketTransport @Inject constructor(
             (header[3].toInt() and 0xFF)
 
     override suspend fun send(message: TogetherMessage) {
-        val open = synchronized(lock) { live } ?: throw TogetherFailed(TogetherFailureReason.DISCONNECTED)
+        val mine = synchronized(lock) { session } ?: throw TogetherFailed(TogetherFailureReason.DISCONNECTED)
         withContext(dispatcher) {
             // Sealing a 32 KB voice slice is not main-thread work, so it happens here rather than
             // on the caller's thread.
-            val frame = TogetherCodec.encode(message, open.link, open.mine, TogetherCodec.newNonce(random))
-            writes.withLock {
-                try {
-                    open.out.writeInt(frame.size)
-                    open.out.write(frame)
-                    open.out.flush()
-                } catch (broken: IOException) {
-                    throw TogetherFailed(TogetherFailureReason.UNREACHABLE, broken)
+            val frame = TogetherCodec.encode(message, mine.link, mine.mine, TogetherCodec.newNonce(random))
+            val out = synchronized(lock) {
+                live?.out ?: run {
+                    queued.addLast(frame)
+                    while (queued.size > MAX_QUEUED) queued.removeFirst()
+                    null
                 }
-            }
+            } ?: return@withContext
+            writes.withLock { write(out, frame) }
+        }
+    }
+
+    private fun write(out: DataOutputStream, frame: ByteArray) {
+        try {
+            out.writeInt(frame.size)
+            out.write(frame)
+            out.flush()
+        } catch (broken: IOException) {
+            throw TogetherFailed(TogetherFailureReason.UNREACHABLE, broken)
         }
     }
 
@@ -352,15 +506,15 @@ class LanSocketTransport @Inject constructor(
 
     private fun shutdown() {
         synchronized(lock) {
-            live?.let {
-                runCatching { it.socket.close() }
-                // Best effort, and no more than that: a JVM copies arrays wherever it likes, so
-                // this wipes the one copy this object is known to hold and claims nothing else.
-                // A `send` that read the key a microsecond ago can still be encoding with it, and
-                // the worst that costs is one frame the friend refuses while the session is ending.
-                it.link.key.fill(0)
-            }
+            live?.let { runCatching { it.socket.close() } }
             live = null
+            queued.clear()
+            // Best effort, and no more than that: a JVM copies arrays wherever it likes, so this
+            // wipes the one copy this object is known to hold and claims nothing else. A `send`
+            // that read the key a microsecond ago can still be encoding with it, and the worst that
+            // costs is one frame the friend refuses while the session is ending.
+            session?.link?.key?.fill(0)
+            session = null
             advertised = null
             closeServerLocked()
         }
@@ -419,5 +573,8 @@ class LanSocketTransport @Inject constructor(
 
         /** How often a quiet read comes up for air, so a cancelled session is given back at once. */
         const val POLL_MS = 250
+
+        /** A greeting is one frame; a session queueing more than this before a socket is odd. */
+        const val MAX_QUEUED = 8
     }
 }

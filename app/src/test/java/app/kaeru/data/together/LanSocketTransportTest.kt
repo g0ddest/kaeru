@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -28,6 +29,7 @@ import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.IOException
 import java.net.InetSocketAddress
+import java.net.ServerSocket
 import java.net.Socket
 import java.security.SecureRandom
 
@@ -73,8 +75,11 @@ class LanSocketTransportTest {
         asHost: Boolean,
     ): Channel<Result<TogetherMessage>> {
         val channel = Channel<Result<TogetherMessage>>(Channel.UNLIMITED)
+        // Built here, collected there: a session may hand over its greeting as soon as `connect`
+        // has returned, without waiting to find out when some coroutine got around to collecting.
+        val frames = transport.connect(link, asHost)
         scope.launch {
-            transport.connect(link, asHost).collect(channel::send)
+            frames.collect(channel::send)
             channel.close()
         }
         return channel
@@ -109,15 +114,15 @@ class LanSocketTransportTest {
 
         val heardByHost = inbox(host, link, asHost = true)
         val heardByGuest = inbox(guest, link, asHost = false)
-        soon { guest.state.first { it == ConnectionState.CONNECTED } }
 
         val hello = TogetherMessage.Hello("Виталий", animeId = 51_009, episode = 3, translationId = 610, positionMs = 0, playing = false, seq = 1)
         val state = TogetherMessage.State(positionMs = 12_000, playing = true, buffering = false, sentAt = 7, seq = 2)
-        // The greeting is what vouches for the guest; until one arrives the host has given nobody
-        // the seat, which is the whole point of the provisional slot.
+        // Each side vouches for the other with its first frame, and neither calls itself connected
+        // until the other one has. The greeting may be handed over before the socket even exists.
         guest.send(hello)
         soon { host.state.first { it == ConnectionState.CONNECTED } }
         host.send(state)
+        soon { guest.state.first { it == ConnectionState.CONNECTED } }
 
         assertEquals(advertised, endpoint.host)
         assertTrue(endpoint.port in 1..65535)
@@ -150,11 +155,102 @@ class LanSocketTransportTest {
         val guest = transport(siteLocal = null)
         inbox(guest, link, asHost = false)
         val hello = TogetherMessage.Hello("Виталий", animeId = 51_009, episode = 3, translationId = 610, positionMs = 0, playing = false, seq = 1)
-        soon { guest.state.first { it == ConnectionState.CONNECTED } }
         guest.send(hello)
 
         assertEquals(hello, soon { heard.receive() }.getOrThrow())
         soon { host.state.first { it == ConnectionState.CONNECTED } }
+    }
+
+    @Test
+    fun `a connector that says nothing does not hold the door against the friend behind it`() = runBlocking<Unit> {
+        val clocks = TogetherTimeouts(acceptMs = 1_500, connectMs = 500, idleMs = 1_500, authMs = 1_200)
+        val host = transport(clocks = clocks)
+        val endpoint = requireNotNull(host.hostEndpoint())
+        val link = RoomLink.random(random).copy(lan = endpoint)
+        val heard = inbox(host, link, asHost = true)
+
+        Socket().use { silent ->
+            silent.connect(InetSocketAddress("127.0.0.1", endpoint.port), 1_000)
+
+            Socket().use { friend ->
+                val began = System.currentTimeMillis()
+                friend.connect(InetSocketAddress("127.0.0.1", endpoint.port), 1_000)
+                friend.greet(host, link)
+                val took = System.currentTimeMillis() - began
+
+                // Vetted one after another, the friend would have waited out the silent one's whole
+                // 1.2 s before being accepted at all. Vetted alongside it, the wait is the round
+                // trip on a loopback socket.
+                assertTrue("seated after ${took}ms", took < clocks.authMs / 2)
+                assertEquals(ConnectionState.CONNECTED, host.state.first())
+                soon { heard.receive() }.getOrThrow()
+            }
+        }
+    }
+
+    @Test
+    fun `sockets that open and say nothing cannot spend the whole window`() = runBlocking<Unit> {
+        val clocks = TogetherTimeouts(acceptMs = 1_000, connectMs = 500, idleMs = 1_000, authMs = 800)
+        val host = transport(clocks = clocks)
+        val endpoint = requireNotNull(host.hostEndpoint())
+        val link = RoomLink.random(random).copy(lan = endpoint)
+        val heard = inbox(host, link, asHost = true)
+        val quiet = (1..5).map { Socket().apply { connect(InetSocketAddress("127.0.0.1", endpoint.port), 1_000) } }
+
+        try {
+            Socket().use { friend ->
+                friend.connect(InetSocketAddress("127.0.0.1", endpoint.port), 1_000)
+                val hello = TogetherMessage.Hello("Виталий", animeId = 1, episode = 1, positionMs = 0, playing = false, seq = 1)
+                DataOutputStream(friend.getOutputStream()).frame(hello, link)
+
+                // Five silent sockets are four seconds of vetting; the window is one. Only because
+                // they are vetted at the same time does the friend get in at all.
+                assertEquals(hello, soon { heard.receive() }.getOrThrow())
+                assertEquals(ConnectionState.CONNECTED, host.state.first())
+            }
+        } finally {
+            quiet.forEach { runCatching { it.close() } }
+        }
+    }
+
+    @Test
+    fun `a guest that dialled something other than its friend is told which`() = runBlocking<Unit> {
+        ServerSocket(0).use { impostor ->
+            val guest = transport(
+                siteLocal = null,
+                resolve = TogetherEndpoints { InetSocketAddress("127.0.0.1", impostor.localPort) },
+                clocks = TogetherTimeouts(acceptMs = 1_000, connectMs = 500, idleMs = 1_000, authMs = 400),
+            )
+            val link = RoomLink.random(random).copy(lan = LanEndpoint(advertised, impostor.localPort))
+            val heard = inbox(guest, link, asHost = false)
+
+            // Something is listening at that address and accepts the connection. It simply does not
+            // hold the key, so the frame it sends will not open.
+            val accepted = withContext(Dispatchers.IO) { impostor.accept() }
+            DataOutputStream(accepted.getOutputStream()).frame(TogetherMessage.Bye(seq = 1), RoomLink.random(random))
+
+            assertEquals(TogetherFailureReason.TAMPERED, reasonOf(soon { heard.receive() }))
+            soon { guest.state.first { it == ConnectionState.CLOSED } }
+            runCatching { accepted.close() }
+        }
+    }
+
+    @Test
+    fun `a guest whose friend never answers is told that, not that somebody lied`() = runBlocking<Unit> {
+        ServerSocket(0).use { silent ->
+            val guest = transport(
+                siteLocal = null,
+                resolve = TogetherEndpoints { InetSocketAddress("127.0.0.1", silent.localPort) },
+                clocks = TogetherTimeouts(acceptMs = 1_000, connectMs = 500, idleMs = 1_000, authMs = 400),
+            )
+            val link = RoomLink.random(random).copy(lan = LanEndpoint(advertised, silent.localPort))
+            val heard = inbox(guest, link, asHost = false)
+
+            val accepted = withContext(Dispatchers.IO) { silent.accept() }
+
+            assertEquals(TogetherFailureReason.UNREACHABLE, reasonOf(soon { heard.receive() }))
+            runCatching { accepted.close() }
+        }
     }
 
     @Test
@@ -263,7 +359,6 @@ class LanSocketTransportTest {
             ended.send(Unit)
         }
         inbox(guest, link, asHost = false)
-        soon { guest.state.first { it == ConnectionState.CONNECTED } }
         guest.send(TogetherMessage.Hello("Гость", animeId = 1, episode = 1, positionMs = 0, playing = false, seq = 1))
         soon { host.state.first { it == ConnectionState.CONNECTED } }
 
