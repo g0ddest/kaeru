@@ -13,6 +13,7 @@ import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.playback.FakePlaybackPreferences
 import app.kaeru.domain.playback.FakePlaybackSampleRepository
 import app.kaeru.domain.playback.FakeWatchStateRepository
+import app.kaeru.domain.playback.AddStartedTitleToList
 import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.playback.StreamPrefetchCache
@@ -88,6 +89,7 @@ class TogetherPlaybackPortTest {
             headers = StreamHeaders("Chrome/128.0", "https://kodikplayer.com/"),
             downloads = downloads,
             connectivity = FakeConnectivity(),
+            addToList = AddStartedTitleToList(library),
             scope = scope,
             io = dispatcher,
         )
