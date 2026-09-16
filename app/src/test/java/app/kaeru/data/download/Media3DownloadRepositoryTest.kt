@@ -606,6 +606,51 @@ class Media3DownloadRepositoryTest {
     }
 
     @Test
+    fun `a removal the platform takes says so`() = runTest(dispatcher) {
+        engine.put(download(key(episode = 7)))
+
+        assertTrue(repository.remove(ANIME, 7))
+    }
+
+    /**
+     * `sendRemoveDownload` is a plain `startService`, which Android refuses to a process the
+     * viewer cannot see — the same wall [DownloadCommands.add] already reports through its own
+     * `Boolean`. A caller retrying a promised deletion needs to know this one was refused too.
+     */
+    @Test
+    fun `a removal the platform refuses says so`() = runTest(dispatcher) {
+        engine.put(download(key(episode = 7)))
+        commands.refuseRemoves = true
+
+        assertFalse(repository.remove(ANIME, 7))
+    }
+
+    /** Nothing on the device for this episode is nothing the service needs to be told. */
+    @Test
+    fun `removing an episode already gone is not a refusal`() = runTest(dispatcher) {
+        assertTrue(repository.remove(ANIME, 7))
+    }
+
+    /**
+     * M-4: `.map { … }.all { it }` is deliberately not `.all { commands.remove(…) }` — the `map`
+     * forces every command before `all` folds the results, so a refusal on the first row does not
+     * skip asking about the second. Two rows can match one episode while a height or a voice
+     * change is in flight ([Media3DownloadRepository.enqueue] drops the sibling before the new
+     * request goes in), and `.all { }` alone would pass this same suite by short-circuiting.
+     */
+    @Test
+    fun `a refusal on one row does not skip asking about the other`() = runTest(dispatcher) {
+        val otherHeight = DownloadKey(ANIME, 7, anilibria.id, Quality.P480)
+        engine.put(download(key(episode = 7)))
+        engine.put(download(otherHeight))
+        commands.refuseRemoves = true
+
+        repository.remove(ANIME, 7)
+
+        assertEquals(setOf(key(episode = 7).id, otherHeight.id), commands.removed.toSet())
+    }
+
+    @Test
     fun `removing a title removes every episode of it and nothing else`() = runTest(dispatcher) {
         engine.put(download(key(episode = 7)))
         engine.put(download(key(episode = 8)))

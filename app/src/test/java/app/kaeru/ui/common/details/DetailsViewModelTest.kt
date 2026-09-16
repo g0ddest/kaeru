@@ -112,7 +112,8 @@ class DetailsViewModelTest {
         streams = streams,
         watchStates = watchStates,
         markEpisodeWatched = MarkEpisodeWatched(repo, watchStates, clock, DeferredDownloadRemoval(downloads, settings, FakeDeferredRemovals())),
-        markEpisodeUnwatched = MarkEpisodeUnwatched(repo, samples.episodes, samples, SuppressedMarks(), clock),
+        markEpisodeUnwatched =
+            MarkEpisodeUnwatched(repo, samples.episodes, samples, SuppressedMarks(), clock, FakeDeferredRemovals()),
         clock = clock,
         downloads = downloads,
         settings = settings,
@@ -508,7 +509,7 @@ class DetailsViewModelTest {
 
         vm.markUnwatched(15)
         advanceUntilIdle()
-        vm.unwatchedMessageShown()
+        vm.unwatchedMessageShown(15)
         advanceUntilIdle()
         vm.markWatched(15)
         advanceUntilIdle()
@@ -523,11 +524,40 @@ class DetailsViewModelTest {
 
         vm.markUnwatched(20)
         advanceUntilIdle()
-        vm.unwatchedMessageShown()
+        vm.unwatchedMessageShown(20)
         advanceUntilIdle()
 
         assertNull(vm.uiState.value.unwatched?.episode)
     }
+
+    /**
+     * N-11: `ActionSnackbar`'s effect for the first un-mark's snackbar can be cancelled — a
+     * second un-mark landing before the viewer dismissed it replaces the snapshot outright — and
+     * its cancellation still fires `onShown`, bound to the episode *that* effect was showing. This
+     * is what that stale report looks like from here: it must not swallow the newer undo.
+     */
+    @Test
+    fun `a stale onShown for a superseded un-mark does not drop the newer undo snapshot`() =
+        runTest(main.dispatcher) {
+            val repo = FakeRepository(item)
+            val vm = viewModel(repo)
+            advanceUntilIdle()
+
+            vm.markUnwatched(20)
+            advanceUntilIdle()
+            vm.markUnwatched(15)
+            advanceUntilIdle()
+            // The snackbar that was showing episode 20's undo is torn down by the second un-mark
+            // before the viewer dismissed it; its cancelled effect still reports itself shown,
+            // bound to episode 20 — never to whichever episode is current by the time it runs.
+            vm.unwatchedMessageShown(20)
+
+            vm.undoUnwatched()
+            advanceUntilIdle()
+
+            assertEquals(listOf(7 to 19, 7 to 14, 7 to 19), repo.episodeWrites)
+            assertEquals(19, vm.uiState.value.entry?.rate?.episodes)
+        }
 
     @Test
     fun `a refused un-mark is a message, and there is nothing to undo`() = runTest(main.dispatcher) {
@@ -661,4 +691,36 @@ class DetailsViewModelTest {
 
         assertEquals(10, downloads.enqueued.size)
     }
+
+    /**
+     * M-7: the storage snackbar got the same key shape N-11 gave the un-mark one, for the same
+     * reason — a second refusal landing before the first snackbar closes replaces the message,
+     * and a stale report from the torn-down effect must be bound to the one it actually showed.
+     */
+    @Test
+    fun `a stale onShown for a superseded refusal does not drop the newer message`() =
+        runTest(main.dispatcher) {
+            downloads.setUsedBytes(4 * GB)
+            settings.downloadPolicy.value = DownloadPolicy.DEFAULT.copy(limitBytes = 5 * GB)
+            val vm = viewModel(FakeRepository(item))
+            advanceUntilIdle()
+
+            vm.download((1..10).toList(), DownloadQualityChoice.FollowPlayback)
+            advanceUntilIdle()
+            val first = vm.uiState.value.storageMessage!!
+
+            downloads.setUsedBytes(5 * GB)
+            vm.download(listOf(7, 8, 9))
+            advanceUntilIdle()
+            val second = vm.uiState.value.storageMessage!!
+            assertTrue(first != second)
+
+            // The snackbar that was showing the first refusal is torn down by the second landing
+            // before the viewer dismissed it; its cancelled effect still reports itself shown,
+            // bound to the first message — never to whichever one is current by the time it runs.
+            vm.storageMessageShown(first)
+            advanceUntilIdle()
+
+            assertEquals(second, vm.uiState.value.storageMessage)
+        }
 }

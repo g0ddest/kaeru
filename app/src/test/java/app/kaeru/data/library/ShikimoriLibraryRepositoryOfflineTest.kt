@@ -13,6 +13,7 @@ import app.kaeru.data.playback.RoomEpisodeProgressRepository
 import app.kaeru.data.playback.RoomPlaybackSampleRepository
 import app.kaeru.data.shikimori.ShikimoriApi
 import app.kaeru.data.shikimori.shikimoriJson
+import app.kaeru.domain.download.FakeDeferredRemovals
 import app.kaeru.domain.error.HttpError
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.model.AnimeStatus
@@ -170,7 +171,11 @@ class ShikimoriLibraryRepositoryOfflineTest {
         )
         offline()
 
-        assertTrue(MarkEpisodeUnwatched(repo, RoomEpisodeProgressRepository(db.episodeProgressDao()), samples, SuppressedMarks(), clock)(animeId = 10, episode = 5).isSuccess)
+        val unmark = MarkEpisodeUnwatched(
+            repo, RoomEpisodeProgressRepository(db.episodeProgressDao()), samples, SuppressedMarks(), clock,
+            FakeDeferredRemovals(),
+        )
+        assertTrue(unmark(animeId = 10, episode = 5).isSuccess)
 
         assertEquals(4, rate(10)?.episodes)
         assertEquals(listOf(RateOp(1, 10, RateOpKind.EPISODES, "4", now)), queued())

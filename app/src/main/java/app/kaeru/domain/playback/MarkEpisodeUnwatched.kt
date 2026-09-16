@@ -1,5 +1,6 @@
 package app.kaeru.domain.playback
 
+import app.kaeru.domain.download.DeferredRemovals
 import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.repository.EpisodeProgressRepository
 import app.kaeru.domain.repository.LibraryRepository
@@ -50,6 +51,19 @@ data class UnwatchedOutcome(
  * this would say, so nothing is sent and nothing local is thrown away.
  *
  * Everything it took is returned in an [UnwatchedOutcome], and [restore] is how that is put back.
+ *
+ * [promises] is the one exception to "downloads are untouched" above, and it is not one: nothing
+ * here deletes or adds a download, only a note that would have. «Удалять просмотренные» may have
+ * promised to delete a download the moment playback moves off it, and every such promise for this
+ * anime at this episode or later is revoked — the same reading [forgetPositions] gives the
+ * positions below, since un-marking episode 5 un-watches 5, 6 and 7 together. A promise left
+ * standing would be the file going anyway, the next time playback moves on.
+ *
+ * Revoked ahead of the Shikimori write, not after it like the positions and the suppression below,
+ * and unconditional on whether that write succeeds: an un-mark is the same instruction about a
+ * download whether or not the count needed to move, or whether Shikimori took the write — and the
+ * safer failure direction is a download that outlives a policy it no longer applies to, not one
+ * deleted out from under a viewer who has just said the opposite.
  */
 class MarkEpisodeUnwatched(
     private val library: LibraryRepository,
@@ -57,12 +71,21 @@ class MarkEpisodeUnwatched(
     private val samples: PlaybackSampleRepository,
     private val suppressed: SuppressedMarks,
     private val clock: Clock,
+    private val promises: DeferredRemovals,
 ) {
     suspend operator fun invoke(animeId: Int, episode: Int): Result<UnwatchedOutcome> {
         val counted = library.observeAnime(animeId).first()?.rate?.episodes ?: 0
         // There is no episode before the first, and a count of less than nothing is not a thing to
         // send. Nothing local is forgotten either: the viewer named an episode that does not exist.
         if (episode < FIRST_EPISODE) return Result.success(UnwatchedOutcome(episode, counted, emptyList()))
+
+        // Shikimori holds a count, so un-marking this episode un-watches everything from it on —
+        // the same reading forgetPositions gives the positions below. A standing deletion promise
+        // for any of those episodes assumed the opposite of what this call now says, so it goes
+        // too; never a download touched, only the note that would have deleted it. Ahead of the
+        // no-op branch below on purpose, so a count already below this episode still revokes what
+        // it implies — an un-mark is the same instruction whether or not Shikimori needed a write.
+        promises.pending().filter { it.animeId == animeId && it.episode >= episode }.forEach { promises.forget(it) }
 
         // A count already below this episode says what the write would say, so there is nothing to
         // send — and, just as much, nothing to forget: the positions belong to an episode whose

@@ -93,6 +93,13 @@ class FakeDownloadRepository : DownloadRepository {
      */
     var holdRemovals = false
 
+    /**
+     * While set, a removal is recorded and refused: the command never reached the service at all,
+     * the way Android refuses a `startService` from a process the viewer cannot see. Apart from
+     * [holdRemovals] — held is accepted-but-not-yet-done, refused is never sent anywhere.
+     */
+    var refuseRemovals = false
+
     private val held = mutableListOf<Pair<Int, Int>>()
 
     fun releaseRemovals() {
@@ -101,13 +108,15 @@ class FakeDownloadRepository : DownloadRepository {
         pending.forEach { (animeId, episode) -> forget(animeId, episode) }
     }
 
-    override suspend fun remove(animeId: Int, episode: Int) {
+    override suspend fun remove(animeId: Int, episode: Int): Boolean {
         removed += animeId to episode
+        if (refuseRemovals) return false
         if (holdRemovals) {
             held += animeId to episode
-            return
+            return true
         }
         forget(animeId, episode)
+        return true
     }
 
     private fun forget(animeId: Int, episode: Int) {

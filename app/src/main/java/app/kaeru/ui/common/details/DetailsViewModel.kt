@@ -342,9 +342,16 @@ class DetailsViewModel @Inject constructor(
      * It also ends the undo: the count the un-mark lowered is only worth restoring while the
      * viewer can still see what happened to it. The television never calls this, and that is the
      * point — it has no snackbar, so its panel is the undo and has to stay one.
+     *
+     * [episode] is the one the snackbar was actually showing, not whatever this state currently
+     * holds. A second un-mark landing before the first snackbar's effect is torn down replaces
+     * [DetailsUiState.unwatched] with a new snapshot, and that first snackbar's own close — or the
+     * cancellation of the effect behind it, superseded by the new one — must not take the
+     * replacement down with it. Compared rather than trusted blind, so only a shown-and-gone
+     * report for the episode still on screen actually clears it.
      */
-    fun unwatchedMessageShown() {
-        work.value = work.value.copy(unwatched = null)
+    fun unwatchedMessageShown(episode: Int) {
+        work.value = work.value.copy(unwatched = work.value.unwatched?.takeUnless { it.episode == episode })
     }
 
     /**
@@ -411,9 +418,17 @@ class DetailsViewModel @Inject constructor(
         viewModelScope.launch { downloads.remove(animeId, episode) }
     }
 
-    /** The snackbar has been shown, so the next refusal is news again rather than a repeat. */
-    fun storageMessageShown() {
-        work.value = work.value.copy(storageMessage = null)
+    /**
+     * The snackbar has been shown, so the next refusal is news again rather than a repeat.
+     *
+     * [message] is the one the snackbar was actually showing, compared against the current
+     * snapshot before clearing — the M-7 sibling of [unwatchedMessageShown]: a second refusal
+     * landing before the first snackbar's effect is torn down replaces [DetailsUiState.storageMessage]
+     * with a new one, and a stale report bound to the first must not take the replacement down
+     * with it.
+     */
+    fun storageMessageShown(message: String) {
+        work.value = work.value.copy(storageMessage = work.value.storageMessage?.takeUnless { it == message })
     }
 
     /**
