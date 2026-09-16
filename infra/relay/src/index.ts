@@ -120,8 +120,12 @@ export default {
 export class RoomDO implements DurableObject {
   readonly #state: DurableObjectState;
 
-  /** When the idle alarm was last written, to keep from writing one per frame. */
-  #alarmWrittenAt = 0;
+  /**
+   * The deadline of the alarm currently in storage, or 0 when this instance has not
+   * looked yet. A fresh instance starts at 0 after every hibernation wake, which is
+   * why `#armIdleAlarm` reads the real deadline back rather than assuming none.
+   */
+  #alarmDeadline = 0;
 
   constructor(state: DurableObjectState, _env: Env) {
     this.#state = state;
@@ -158,7 +162,7 @@ export class RoomDO implements DurableObject {
     if (message.byteLength > MAX_FRAME_BYTES) {
       log(this.#roomOf(ws), "oversize", `${message.byteLength}b`);
       // The runtime calls webSocketClose for this too, so the peer is told there.
-      ws.close(CLOSE_FRAME_TOO_LARGE, "frame too large");
+      tryClose(ws, CLOSE_FRAME_TOO_LARGE, "frame too large");
       return;
     }
 
@@ -183,14 +187,13 @@ export class RoomDO implements DurableObject {
     const peers = this.#state.getWebSockets();
     log(peers.length === 0 ? "" : this.#roomOf(peers[0]), "idle-close", `peers=${peers.length}`);
     for (const peer of peers) {
-      try {
-        peer.close(CLOSE_IDLE, "idle");
-      } catch {
-        // Already gone; nothing to close.
-      }
+      tryClose(peer, CLOSE_IDLE, "idle");
     }
-    // Clears the alarm too, so an empty room leaves nothing behind.
-    await this.#state.storage.deleteAll();
+    // Nothing is deleted here. The runtime drops the alarm that fired before calling
+    // this handler, and the alarm is the only key a room ever writes, so by now this
+    // room owns nothing. Anything in storage belongs to a join that landed in the same
+    // turn, and wiping that would leave the newcomer with no idle expiry at all.
+    this.#alarmDeadline = 0;
   }
 
   /** Sends the one server-originated control message to whoever is left. */
@@ -201,10 +204,21 @@ export class RoomDO implements DurableObject {
     }
   }
 
+  /**
+   * Pushes the idle deadline out, writing the alarm only when it has drifted more
+   * than `ALARM_REFRESH_MS` behind. The throttle has to survive hibernation, so on
+   * the first call of an instance's life the scheduled deadline is read back from
+   * storage instead of assumed absent: a wake per frame would otherwise write an
+   * alarm per frame, which is exactly the cost the hibernation API exists to avoid.
+   */
   async #armIdleAlarm(now: number): Promise<void> {
-    if (now - this.#alarmWrittenAt < ALARM_REFRESH_MS) return;
-    this.#alarmWrittenAt = now;
-    await this.#state.storage.setAlarm(now + IDLE_MS);
+    if (this.#alarmDeadline === 0) {
+      this.#alarmDeadline = (await this.#state.storage.getAlarm()) ?? 0;
+    }
+    const deadline = now + IDLE_MS;
+    if (deadline - this.#alarmDeadline < ALARM_REFRESH_MS) return;
+    this.#alarmDeadline = deadline;
+    await this.#state.storage.setAlarm(deadline);
   }
 
   #roomOf(ws: WebSocket): string {
@@ -223,5 +237,14 @@ function trySend(ws: WebSocket, payload: string | ArrayBuffer): void {
     ws.send(payload);
   } catch {
     // The peer is on its way out; its own close event will do the rest.
+  }
+}
+
+/** Likewise a socket can already be gone by the time there is a reason to close it. */
+function tryClose(ws: WebSocket, code: number, reason: string): void {
+  try {
+    ws.close(code, reason);
+  } catch {
+    // Already closed; nothing to do.
   }
 }

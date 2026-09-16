@@ -74,6 +74,13 @@ function roomStub(roomId: string): DurableObjectStub {
   return env.ROOM.get(env.ROOM.idFromName(roomId));
 }
 
+/** The idle alarm currently in the room's storage, or null when none is scheduled. */
+function scheduledAlarm(roomId: string): Promise<number | null> {
+  return runInDurableObject(roomStub(roomId), (_instance: RoomDO, state) =>
+    state.storage.getAlarm(),
+  );
+}
+
 describe("routes", () => {
   it("answers /health with ok", async () => {
     const response = await SELF.fetch(`${ORIGIN}/health`);
@@ -112,6 +119,14 @@ describe("routes", () => {
     const response = await SELF.fetch(`${ORIGIN}/w/${freshRoom()}`);
 
     expect(response.status).toBe(426);
+  });
+
+  it("refuses any method but GET on both routes", async () => {
+    const health = await SELF.fetch(`${ORIGIN}/health`, { method: "POST" });
+    const room = await SELF.fetch(`${ORIGIN}/w/${freshRoom()}`, { method: "POST" });
+
+    expect(health.status).toBe(405);
+    expect(room.status).toBe(405);
   });
 });
 
@@ -257,6 +272,22 @@ describe("peer departure", () => {
     expect(b.text).toEqual(['{"type":"peer-left"}']);
   });
 
+  it("tells the survivor when a peer's socket errors", async () => {
+    const roomId = freshRoom();
+    const a = await joinOrThrow(roomId);
+    const b = await joinOrThrow(roomId);
+
+    await runInDurableObject(roomStub(roomId), async (instance: RoomDO, state) => {
+      await instance.webSocketError(state.getWebSockets()[0], new Error("connection reset"));
+    });
+    await settle();
+
+    // Whichever socket the runtime listed first is the one that errored; exactly the
+    // other one hears about it.
+    expect([a.text.length, b.text.length].sort()).toEqual([0, 1]);
+    expect([...a.text, ...b.text]).toEqual(['{"type":"peer-left"}']);
+  });
+
   it("says nothing to a peer that is already gone", async () => {
     const roomId = freshRoom();
     const a = await joinOrThrow(roomId);
@@ -328,10 +359,45 @@ describe("idle expiry", () => {
     const roomId = freshRoom();
     await joinOrThrow(roomId);
 
-    const alarm = await runInDurableObject(roomStub(roomId), (_instance: RoomDO, state) =>
-      state.storage.getAlarm(),
-    );
+    const alarm = await scheduledAlarm(roomId);
 
     expect(alarm).not.toBeNull();
+  });
+
+  it("leaves the alarm alone on frames that follow a wake", async () => {
+    // The throttle lives in instance memory, which a hibernation wake resets. If it is
+    // not read back from storage, every frame after a wake writes a new alarm - one
+    // storage write per frame, in exactly the case hibernation is meant to make free.
+    const roomId = freshRoom();
+    const a = await joinOrThrow(roomId);
+    await joinOrThrow(roomId);
+    const armed = await scheduledAlarm(roomId);
+
+    await evictDurableObject(roomStub(roomId));
+    a.socket.send(bytes(8));
+    await settle(150);
+    a.socket.send(bytes(8));
+    await settle(150);
+
+    expect(await scheduledAlarm(roomId)).toBe(armed);
+  });
+
+  it("clears no storage when the idle alarm fires", async () => {
+    const roomId = freshRoom();
+    const a = await joinOrThrow(roomId);
+    // Stands in for the alarm a rejoin arms while the handler runs. The handler used
+    // to wipe storage wholesale, which would have left that newcomer with no expiry.
+    await runInDurableObject(roomStub(roomId), (_instance: RoomDO, state) =>
+      state.storage.put("probe", 1),
+    );
+
+    await runDurableObjectAlarm(roomStub(roomId));
+    await settle();
+
+    expect(a.closes).toEqual([{ code: 4408, reason: "idle" }]);
+    const probe = await runInDurableObject(roomStub(roomId), (_instance: RoomDO, state) =>
+      state.storage.get<number>("probe"),
+    );
+    expect(probe).toBe(1);
   });
 });
