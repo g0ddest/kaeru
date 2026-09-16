@@ -16,6 +16,7 @@ import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.WatchState
+import app.kaeru.domain.playback.MarkEpisodeUnwatched
 import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.playback.RankedTranslation
@@ -86,6 +87,15 @@ data class DetailsUiState(
      * «Повторить», and a limit reached is «Загрузки», where the space actually is.
      */
     val storageMessage: String? = null,
+    /**
+     * The episode whose watched mark has just come off, or null when there is nothing to say.
+     *
+     * The number rather than a sentence, because the snackbar does two things with it: it names
+     * the episode and it offers to put the mark back. Set only on a write that actually went
+     * through — a refusal is [errorMessage], and offering to undo something that did not happen
+     * would be the app arguing with itself.
+     */
+    val unwatchedEpisode: Int? = null,
 )
 
 /** What the download engine and the network say about this title, read as one value. */
@@ -104,6 +114,7 @@ class DetailsViewModel @Inject constructor(
     private val streams: ResolveEpisodeStream,
     private val watchStates: WatchStateRepository,
     private val markEpisodeWatched: MarkEpisodeWatched,
+    private val markEpisodeUnwatched: MarkEpisodeUnwatched,
     private val clock: Clock,
     private val downloads: DownloadRepository,
     private val settings: SettingsStore,
@@ -271,6 +282,46 @@ class DetailsViewModel @Inject constructor(
             val result = markEpisodeWatched(animeId, episode)
             work.value = work.value.copy(updatingStatus = false, errorMessage = result.errorMessageOrNull())
         }
+    }
+
+    /**
+     * Takes the watched mark back off an episode.
+     *
+     * Shikimori's count comes down to the episode before this one, and the positions this device
+     * remembers from here on go with it, so «Продолжить» offers the episode again rather than the
+     * one after it. Nothing is asked first: the snackbar's «Отменить» is the confirmation, and it
+     * is a better one — it comes after the viewer has seen what happened.
+     */
+    fun markUnwatched(episode: Int) {
+        viewModelScope.launch {
+            work.value = work.value.copy(
+                updatingStatus = true, errorMessage = null, failedPick = null, unwatchedEpisode = null,
+            )
+            val result = markEpisodeUnwatched(animeId, episode)
+            work.value = work.value.copy(
+                updatingStatus = false,
+                errorMessage = result.errorMessageOrNull(),
+                unwatchedEpisode = episode.takeIf { result.isSuccess },
+            )
+        }
+    }
+
+    /**
+     * «Отменить» on that snackbar: the episode is counted again.
+     *
+     * Through the same [MarkEpisodeWatched] every other mark goes through, rather than by writing
+     * the old count back — picking a shelved anime up again, and «Удалять просмотренные», are part
+     * of what marking an episode means, and an undo that skipped them would leave the title in a
+     * state no ordinary mark can produce.
+     */
+    fun undoUnwatched() {
+        val episode = work.value.unwatchedEpisode ?: return
+        markWatched(episode)
+    }
+
+    /** The snackbar has said its piece, so the same episode is not announced twice. */
+    fun unwatchedMessageShown() {
+        work.value = work.value.copy(unwatchedEpisode = null)
     }
 
     /**

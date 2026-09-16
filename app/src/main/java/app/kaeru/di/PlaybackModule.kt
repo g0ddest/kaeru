@@ -11,6 +11,7 @@ import app.kaeru.data.playback.RoomPlaybackSampleRepository
 import app.kaeru.data.playback.RoomWatchStateRepository
 import app.kaeru.domain.download.DeferredDownloadRemoval
 import app.kaeru.domain.download.DownloadRepository
+import app.kaeru.domain.playback.MarkEpisodeUnwatched
 import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.PlaybackNotificationPrompt
 import app.kaeru.domain.playback.PlaybackPreferences
@@ -161,6 +162,19 @@ object PlaybackModule {
         clock: Clock,
         deleteWatchedDownloads: DeferredDownloadRemoval,
     ): MarkEpisodeWatched = MarkEpisodeWatched(library, watchStates, clock, deleteWatchedDownloads)
+
+    /**
+     * The other direction, and deliberately not the mark's mirror image: nothing about downloads
+     * is here, because an episode put back in front of the viewer is one they still want on the
+     * device.
+     */
+    @Provides
+    @Singleton
+    fun markEpisodeUnwatched(
+        library: LibraryRepository,
+        samples: PlaybackSampleRepository,
+        clock: Clock,
+    ): MarkEpisodeUnwatched = MarkEpisodeUnwatched(library, samples, clock)
 
     /**
      * One instance, because it holds what is playing: a second would defer against a target nothing

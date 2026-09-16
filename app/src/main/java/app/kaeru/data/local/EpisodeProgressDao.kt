@@ -17,6 +17,10 @@ interface EpisodeProgressDao {
     @Query("SELECT * FROM episode_progress ORDER BY animeId, episode")
     fun observeAll(): Flow<List<EpisodeProgressEntity>>
 
+    /** One anime's positions from [episode] on, for an episode the viewer has un-marked. */
+    @Query("DELETE FROM episode_progress WHERE animeId = :animeId AND episode >= :episode")
+    suspend fun deleteFrom(animeId: Int, episode: Int)
+
     @Query("DELETE FROM episode_progress")
     suspend fun deleteAll()
 }

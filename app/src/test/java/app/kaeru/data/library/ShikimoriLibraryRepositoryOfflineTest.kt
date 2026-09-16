@@ -9,12 +9,16 @@ import app.kaeru.data.auth.InMemoryTokenStore
 import app.kaeru.data.local.AnimeEntity
 import app.kaeru.data.local.KaeruDatabase
 import app.kaeru.data.local.UserRateEntity
+import app.kaeru.data.playback.RoomPlaybackSampleRepository
 import app.kaeru.data.shikimori.ShikimoriApi
 import app.kaeru.data.shikimori.shikimoriJson
 import app.kaeru.domain.error.HttpError
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.model.AnimeStatus
+import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.ListStatus
+import app.kaeru.domain.model.WatchState
+import app.kaeru.domain.playback.MarkEpisodeUnwatched
 import app.kaeru.domain.sync.OutboxSyncer
 import app.kaeru.domain.sync.RateOp
 import app.kaeru.domain.sync.RateOpKind
@@ -143,6 +147,33 @@ class ShikimoriLibraryRepositoryOfflineTest {
         assertEquals(7, rate(10)?.episodes)
         assertEquals(now, rate(10)?.updatedAt)
         assertEquals(listOf(RateOp(1, 10, RateOpKind.EPISODES, "7", now)), queued())
+    }
+
+    /**
+     * The whole un-mark, through the real repository: the lowered count queues like any other
+     * write, and the positions this device kept go at the same time.
+     */
+    @Test
+    fun `an episode un-marked without a network queues the lower count and forgets its position`() = runTest {
+        seedAnime(10)
+        seedRate(animeId = 10, rateId = 5, episodes = 7)
+        val samples = RoomPlaybackSampleRepository(db, session, Dispatchers.IO)
+        samples.save(
+            WatchState(10, episode = 5, positionMs = 1_180_000, durationMs = 1_200_000, 12, 1, now),
+            EpisodeProgress(10, 5, 1_180_000, 1_200_000, now),
+        )
+        samples.save(
+            WatchState(10, episode = 5, positionMs = 1_180_000, durationMs = 1_200_000, 12, 1, now),
+            EpisodeProgress(10, 4, 600_000, 1_200_000, now),
+        )
+        offline()
+
+        assertTrue(MarkEpisodeUnwatched(repo, samples, clock)(animeId = 10, episode = 5).isSuccess)
+
+        assertEquals(4, rate(10)?.episodes)
+        assertEquals(listOf(RateOp(1, 10, RateOpKind.EPISODES, "4", now)), queued())
+        assertEquals(listOf(4), db.episodeProgressDao().observeByAnime(10).first().map { it.episode })
+        assertEquals(0L, db.watchStateDao().getByAnimeId(10)?.positionMs)
     }
 
     @Test

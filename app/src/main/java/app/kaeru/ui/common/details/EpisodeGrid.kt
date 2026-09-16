@@ -38,6 +38,40 @@ data class EpisodeCell(
     val downloadProgress: Float? = null,
 )
 
+/** One line of the menu a long press on an episode opens, in the order the menu lists them. */
+enum class EpisodeAction {
+    DOWNLOAD,
+    REMOVE_DOWNLOAD,
+    WATCH,
+    MARK_WATCHED,
+    MARK_UNWATCHED,
+}
+
+/**
+ * What a long press on one episode can offer.
+ *
+ * What can be *done* with the episode comes before what can be *said* about it: keeping it or
+ * giving its space back, then playing it, and only then the mark. An episode that has not aired
+ * offers nothing at all — there is no file to fetch, nothing to play, and a count that has not
+ * reached it.
+ *
+ * The two marks are exclusive by construction, because they are one fact read two ways: Shikimori
+ * holds a count, and an episode is either behind it or in front of it. Offering both would be the
+ * menu asking a question the count has already answered.
+ */
+fun episodeActions(cell: EpisodeCell): List<EpisodeAction> {
+    if (!cell.aired) return emptyList()
+    val download = when (cell.download) {
+        // A failed download is the one state where the engine holds a row and asking again is
+        // still the right thing to do. A removal already under way is nobody's to hurry.
+        null, DownloadState.FAILED -> EpisodeAction.DOWNLOAD
+        DownloadState.REMOVING -> null
+        else -> EpisodeAction.REMOVE_DOWNLOAD
+    }
+    val mark = if (cell.watched) EpisodeAction.MARK_UNWATCHED else EpisodeAction.MARK_WATCHED
+    return listOfNotNull(download, EpisodeAction.WATCH, mark)
+}
+
 /**
  * One line of the «Скачать…» sheet: an episode it can still offer, and whether the viewer has
  * already seen it.
