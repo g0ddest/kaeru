@@ -30,14 +30,24 @@ class HomeFeedBuilder(private val upcomingWindow: Duration = Duration.ofDays(7))
         // The target is worked out once per title and carried through every row. It used to be
         // derived four times over — once here and once inside each `nextEpisode` call — and the
         // three rows below all ask the same question of it.
-        val active = entries
-            .filter { it.rate.status == ListStatus.WATCHING || it.rate.status == ListStatus.REWATCHING }
-            .map { it to it.continueTarget(watchedThreshold) }
+        val targeted = entries.map { it to it.continueTarget(watchedThreshold) }
+        val active = targeted
+            .filter { (entry, _) ->
+                entry.rate.status == ListStatus.WATCHING || entry.rate.status == ListStatus.REWATCHING
+            }
 
         // An entry is being continued exactly when its target carries a position: the rule for
         // which episode that is, and for what counts as started rather than mis-tapped, lives once
         // in `ContinueTarget` and is the same one the watch button obeys.
-        val continueWatching = active
+        //
+        // Every entry, not only the two statuses the rest of the screen is about. A position is a
+        // fact about this device and about nothing else: a title opened out of search sits in
+        // «Запланировано» until the mark at nine tenths picks it up, and one paused for a month is
+        // «Отложено» on purpose. Both were left in the middle of an episode, and a viewer who has
+        // to search for that episode again is a viewer the row failed. What is genuinely behind
+        // somebody is already excluded by the target — `ContinueTarget` will not resume an episode
+        // Shikimori has counted — so «Завершено» stays out without a status test.
+        val continueWatching = targeted
             .filter { (_, target) -> target.positionMs > 0 }
             // Ordered by when the title itself was last watched, not by the target episode's own
             // row: going back to an earlier episode on purpose leaves the card pointing at the
@@ -82,8 +92,11 @@ class HomeFeedBuilder(private val upcomingWindow: Duration = Duration.ofDays(7))
             .sortedBy { it.anime.nextEpisodeAt }
             .map { FeedItem(it, it.anime.episodesAired + 1, FeedKind.UPCOMING) }
 
+        // A title already being continued is not also something to plan: it is one title, and two
+        // cards for it on one screen would be the screen arguing with itself about where the
+        // viewer is in it. The same exclusion the two rows above make, for the same reason.
         val planned = entries
-            .filter { it.rate.status == ListStatus.PLANNED }
+            .filter { it.rate.status == ListStatus.PLANNED && it.anime.id !in inProgressIds }
             .sortedByDescending { it.rate.updatedAt }
             .map { FeedItem(it, 1, FeedKind.PLANNED) }
 
