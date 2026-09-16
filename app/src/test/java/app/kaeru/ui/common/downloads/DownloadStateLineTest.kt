@@ -30,23 +30,29 @@ class DownloadStateLineTest {
 
     @Test
     fun `an episode on the device says nothing beyond its size`() {
-        assertNull(downloadStateLine(row(DownloadState.COMPLETED, progress = 1f)))
+        assertNull(downloadStateLine(row(DownloadState.COMPLETED, progress = 1f), wifiOnly = true))
     }
 
     @Test
     fun `a running download carries the same number the ring draws`() {
-        assertEquals("Загружается, 42 %", downloadStateLine(row(DownloadState.DOWNLOADING, 0.42f)))
+        assertEquals(
+            "Загружается, 42 %",
+            downloadStateLine(row(DownloadState.DOWNLOADING, 0.42f), wifiOnly = true),
+        )
     }
 
     @Test
     fun `the share is floored, so a line never claims a percent that has not finished`() {
-        assertEquals("Загружается, 99 %", downloadStateLine(row(DownloadState.DOWNLOADING, 0.999f)))
+        assertEquals(
+            "Загружается, 99 %",
+            downloadStateLine(row(DownloadState.DOWNLOADING, 0.999f), wifiOnly = true),
+        )
     }
 
     @Test
     fun `a resolve reads as the queue it is part of, not as a step of its own`() {
-        assertEquals("В очереди", downloadStateLine(row(DownloadState.QUEUED)))
-        assertEquals("В очереди", downloadStateLine(row(DownloadState.RESOLVING)))
+        assertEquals("В очереди", downloadStateLine(row(DownloadState.QUEUED), wifiOnly = true))
+        assertEquals("В очереди", downloadStateLine(row(DownloadState.RESOLVING), wifiOnly = true))
     }
 
     @Test
@@ -66,16 +72,19 @@ class DownloadStateLineTest {
 
     @Test
     fun `a failure names its cause, because the viewer has to choose what to do about it`() {
-        assertEquals("Ошибка: нет места", downloadStateLine(row(DownloadState.FAILED, failure = "нет места")))
+        assertEquals(
+            "Ошибка: нет места",
+            downloadStateLine(row(DownloadState.FAILED, failure = "нет места"), wifiOnly = true),
+        )
     }
 
     @Test
     fun `a failure with nothing to say still says it failed`() {
-        assertEquals("Ошибка", downloadStateLine(row(DownloadState.FAILED)))
+        assertEquals("Ошибка", downloadStateLine(row(DownloadState.FAILED), wifiOnly = true))
     }
 
     @Test
     fun `a row on its way out says so, rather than looking like one that stayed`() {
-        assertEquals("Удаляем", downloadStateLine(row(DownloadState.REMOVING)))
+        assertEquals("Удаляем", downloadStateLine(row(DownloadState.REMOVING), wifiOnly = true))
     }
 }

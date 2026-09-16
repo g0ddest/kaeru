@@ -28,13 +28,24 @@ enum class DownloadMark {
     /** The engine gave up. Worth offering again rather than worth deleting. */
     FAILED,
 
-    /** Nothing to say: never asked for, or already on its way out. */
+    /**
+     * On its way out, and nothing to ask of it until it has gone.
+     *
+     * Its own reading rather than [NONE], because the two differ in what a control may do. Nothing
+     * is drawn for either — a tile that flashed «удаляем» for the half-second media3 takes would
+     * be noise — but a control that offers «Скачать серию» over [NONE] must not offer it here: the
+     * id it would enqueue is the one the engine is busy removing.
+     */
+    REMOVING,
+
+    /** Nothing to say: never asked for. */
     NONE,
 }
 
 /** The one mapping, so no two surfaces can describe one episode differently. */
 fun downloadMark(state: DownloadState?): DownloadMark = when (state) {
-    null, DownloadState.REMOVING -> DownloadMark.NONE
+    null -> DownloadMark.NONE
+    DownloadState.REMOVING -> DownloadMark.REMOVING
     DownloadState.QUEUED, DownloadState.RESOLVING, DownloadState.WAITING_FOR_WIFI -> DownloadMark.PENDING
     DownloadState.DOWNLOADING -> DownloadMark.RUNNING
     DownloadState.COMPLETED -> DownloadMark.DONE

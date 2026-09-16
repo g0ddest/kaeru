@@ -370,7 +370,9 @@ private fun MenuItem(
 @Composable
 private fun DownloadCorner(cell: EpisodeCell, modifier: Modifier) {
     when (downloadMark(cell.download)) {
-        DownloadMark.NONE -> Unit
+        // An episode on its way out keeps the corner it had until the row goes: half a second of
+        // «удаляем» on a 14dp glyph is a flicker, not information.
+        DownloadMark.NONE, DownloadMark.REMOVING -> Unit
         DownloadMark.PENDING -> Icon(
             Icons.Default.Download,
             contentDescription = QUEUED,
