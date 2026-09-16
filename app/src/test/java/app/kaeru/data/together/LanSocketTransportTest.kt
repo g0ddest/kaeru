@@ -40,7 +40,7 @@ import java.security.SecureRandom
  */
 class LanSocketTransportTest {
     private val random = SecureRandom()
-    private val timeouts = TogetherTimeouts(acceptMs = 3_000, connectMs = 1_000, idleMs = 3_000, authMs = 400)
+    private val timeouts = TogetherTimeouts(acceptMs = 3_000, connectMs = 1_000, idleMs = 3_000, authMs = 400, greetMs = 1_000)
     private val advertised = "192.168.1.42"
     private val opened = mutableListOf<LanSocketTransport>()
 
@@ -89,9 +89,9 @@ class LanSocketTransportTest {
 
     private fun reasonOf(result: Result<*>) = (result.exceptionOrNull() as? TogetherFailed)?.reason
 
-    /** One length-prefixed, sealed frame, exactly as a guest's transport writes them. */
-    private fun DataOutputStream.frame(message: TogetherMessage, link: RoomLink) {
-        val sealed = TogetherCodec.encode(message, link, Side.GUEST, TogetherCodec.newNonce(random))
+    /** One length-prefixed, sealed frame, exactly as a transport on [from]'s side writes them. */
+    private fun DataOutputStream.frame(message: TogetherMessage, link: RoomLink, from: Side = Side.GUEST) {
+        val sealed = TogetherCodec.encode(message, link, from, TogetherCodec.newNonce(random))
         writeInt(sealed.size)
         write(sealed)
         flush()
@@ -163,7 +163,7 @@ class LanSocketTransportTest {
 
     @Test
     fun `a connector that says nothing does not hold the door against the friend behind it`() = runBlocking<Unit> {
-        val clocks = TogetherTimeouts(acceptMs = 1_500, connectMs = 500, idleMs = 1_500, authMs = 1_200)
+        val clocks = TogetherTimeouts(acceptMs = 1_500, connectMs = 500, idleMs = 1_500, authMs = 1_200, greetMs = 1_500)
         val host = transport(clocks = clocks)
         val endpoint = requireNotNull(host.hostEndpoint())
         val link = RoomLink.random(random).copy(lan = endpoint)
@@ -190,7 +190,7 @@ class LanSocketTransportTest {
 
     @Test
     fun `sockets that open and say nothing cannot spend the whole window`() = runBlocking<Unit> {
-        val clocks = TogetherTimeouts(acceptMs = 1_000, connectMs = 500, idleMs = 1_000, authMs = 800)
+        val clocks = TogetherTimeouts(acceptMs = 1_000, connectMs = 500, idleMs = 1_000, authMs = 800, greetMs = 1_000)
         val host = transport(clocks = clocks)
         val endpoint = requireNotNull(host.hostEndpoint())
         val link = RoomLink.random(random).copy(lan = endpoint)
@@ -214,12 +214,40 @@ class LanSocketTransportTest {
     }
 
     @Test
+    fun `a guest waits longer for its friend's answer than it would for a stranger to prove itself`() = runBlocking<Unit> {
+        // A host that takes well over the vetting deadline to reply — a cold start, a phone that
+        // had to resolve something first — is a slow friend, not an absent one.
+        val clocks = TogetherTimeouts(acceptMs = 1_000, connectMs = 500, idleMs = 2_000, authMs = 200, greetMs = 2_000)
+        ServerSocket(0).use { friend ->
+            val guest = transport(
+                siteLocal = null,
+                resolve = TogetherEndpoints { InetSocketAddress("127.0.0.1", friend.localPort) },
+                clocks = clocks,
+            )
+            val link = RoomLink.random(random).copy(lan = LanEndpoint(advertised, friend.localPort))
+            val heard = inbox(guest, link, asHost = false)
+            guest.send(TogetherMessage.Hello("Гость", animeId = 1, episode = 1, positionMs = 0, playing = false, seq = 1))
+
+            val accepted = withContext(Dispatchers.IO) { friend.accept() }
+            val reply = TogetherMessage.Hello("Виталий", animeId = 51_009, episode = 3, translationId = 610, positionMs = 90_000, playing = true, seq = 1)
+            withContext(Dispatchers.IO) {
+                Thread.sleep(clocks.authMs * 3L)
+                DataOutputStream(accepted.getOutputStream()).frame(reply, link, from = Side.HOST)
+            }
+
+            assertEquals(reply, soon { heard.receive() }.getOrThrow())
+            soon { guest.state.first { it == ConnectionState.CONNECTED } }
+            runCatching { accepted.close() }
+        }
+    }
+
+    @Test
     fun `a guest that dialled something other than its friend is told which`() = runBlocking<Unit> {
         ServerSocket(0).use { impostor ->
             val guest = transport(
                 siteLocal = null,
                 resolve = TogetherEndpoints { InetSocketAddress("127.0.0.1", impostor.localPort) },
-                clocks = TogetherTimeouts(acceptMs = 1_000, connectMs = 500, idleMs = 1_000, authMs = 400),
+                clocks = TogetherTimeouts(acceptMs = 1_000, connectMs = 500, idleMs = 1_000, authMs = 400, greetMs = 400),
             )
             val link = RoomLink.random(random).copy(lan = LanEndpoint(advertised, impostor.localPort))
             val heard = inbox(guest, link, asHost = false)
@@ -241,7 +269,7 @@ class LanSocketTransportTest {
             val guest = transport(
                 siteLocal = null,
                 resolve = TogetherEndpoints { InetSocketAddress("127.0.0.1", silent.localPort) },
-                clocks = TogetherTimeouts(acceptMs = 1_000, connectMs = 500, idleMs = 1_000, authMs = 400),
+                clocks = TogetherTimeouts(acceptMs = 1_000, connectMs = 500, idleMs = 1_000, authMs = 400, greetMs = 400),
             )
             val link = RoomLink.random(random).copy(lan = LanEndpoint(advertised, silent.localPort))
             val heard = inbox(guest, link, asHost = false)
@@ -293,7 +321,7 @@ class LanSocketTransportTest {
 
     @Test
     fun `a host nobody knocks on gives up rather than holding the port for good`() = runBlocking<Unit> {
-        val host = transport(clocks = TogetherTimeouts(acceptMs = 300, connectMs = 300, idleMs = 300, authMs = 300))
+        val host = transport(clocks = TogetherTimeouts(acceptMs = 300, connectMs = 300, idleMs = 300, authMs = 300, greetMs = 300))
         val link = RoomLink.random(random).copy(lan = requireNotNull(host.hostEndpoint()))
 
         val refused = soon { host.connect(link, asHost = true).first() }
@@ -303,7 +331,7 @@ class LanSocketTransportTest {
 
     @Test
     fun `a friend who goes quiet for the whole deadline is reported, not waited on for ever`() = runBlocking<Unit> {
-        val host = transport(clocks = TogetherTimeouts(acceptMs = 2_000, connectMs = 500, idleMs = 400, authMs = 400))
+        val host = transport(clocks = TogetherTimeouts(acceptMs = 2_000, connectMs = 500, idleMs = 400, authMs = 400, greetMs = 400))
         val endpoint = requireNotNull(host.hostEndpoint())
         val link = RoomLink.random(random).copy(lan = endpoint)
         val heard = inbox(host, link, asHost = true)

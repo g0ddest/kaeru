@@ -66,6 +66,17 @@ data class TogetherTimeouts(
     val authMs: Int = 2_000,
 
     /**
+     * Guest: how long the host has to answer the greeting.
+     *
+     * Far longer than [authMs], and not the same number by design. Vetting a connector is a network
+     * question — the frame is already on its way or it is not. Answering a greeting is not: it
+     * crosses into the session above, which has to hear the greeting, decide what it is watching
+     * and compose a reply, and on a cold start it may resolve something first. Holding that to a
+     * vet's two seconds would report a phone that was merely busy as one that was not there.
+     */
+    val greetMs: Int = 10_000,
+
+    /**
      * Either side: silence on a channel that is supposed to carry a ping every [pingMs]. Long
      * enough to ride out a tunnel, short enough that a phone that walked out of the house is
      * noticed while the other viewer still cares.
@@ -279,7 +290,7 @@ class LanSocketTransport @Inject constructor(
             // Its own deadline, and never one that outlives the window it sits inside — a connector
             // arriving with a second left has a second, not two.
             val deadline = minOf(System.currentTimeMillis() + timeouts.authMs, until)
-            val vetted = vouched(input, link, from = Side.GUEST, deadline = deadline)
+            val vetted = vouched(input, link, from = Side.GUEST, budgetMs = timeouts.authMs, deadline = deadline)
             seated = vetted is Vetted.Friend && won.complete(Vouched(peer, input, vetted.greeting))
         } finally {
             if (!seated) runCatching { peer.close() }
@@ -302,13 +313,21 @@ class LanSocketTransport @Inject constructor(
         }
         // Installed before the far end has proved anything, because installing is what sends the
         // greeting that gives it something to answer. The state stays CONNECTING until it does.
+        //
+        // So the greeting does reach whatever answered at that address, before anything is proved.
+        // What that costs is bounded and deliberate: the frame is sealed under the room key with
+        // `roomId ‖ GUEST` as its associated data, so an impostor gets ciphertext it cannot open.
+        // What leaks is that a Kaeru guest dialled the address, and a length that tracks the length
+        // of the viewer's display name. The alternative is an extra round trip before anybody can
+        // say anything, and that is a worse trade for a feature whose whole point is being quick.
         install(socket)
         val input = BufferedInputStream(socket.getInputStream())
         val vetted = vouched(
             input,
             link,
             from = Side.HOST,
-            deadline = System.currentTimeMillis() + timeouts.authMs,
+            budgetMs = timeouts.greetMs,
+            deadline = System.currentTimeMillis() + timeouts.greetMs,
         )
         if (vetted !is Vetted.Friend) {
             emit(
@@ -348,14 +367,15 @@ class LanSocketTransport @Inject constructor(
         input: BufferedInputStream,
         link: RoomLink,
         from: Side,
+        budgetMs: Int,
         deadline: Long,
     ): Vetted {
         val header = ByteArray(LENGTH_BYTES)
-        if (fill(input, header, timeouts.authMs, deadline) != Filled.DONE) return Vetted.Silent
+        if (fill(input, header, budgetMs, deadline) != Filled.DONE) return Vetted.Silent
         val length = lengthOf(header)
         if (length <= 0 || length > TogetherCodec.MAX_FRAME_BYTES) return Vetted.Wrong
         val frame = ByteArray(length)
-        if (fill(input, frame, timeouts.authMs, deadline) != Filled.DONE) return Vetted.Silent
+        if (fill(input, frame, budgetMs, deadline) != Filled.DONE) return Vetted.Silent
         val greeting = TogetherCodec.decode(frame, link, from).getOrNull() ?: return Vetted.Wrong
         return Vetted.Friend(greeting)
     }

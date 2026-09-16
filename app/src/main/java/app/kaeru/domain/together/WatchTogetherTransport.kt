@@ -43,6 +43,18 @@ interface WatchTogetherTransport {
      * is the host's door: an advertised port is reachable by anything on the same Wi-Fi, and a
      * connection that cannot produce a frame sealed with the room key never gets the seat.
      *
+     * **And a host must answer one straight away.** The guest is on a clock — ten seconds by
+     * default, the `greetMs` of the transport's timeouts — and a host that has not replied by then
+     * ends the session with `UNREACHABLE`. Ten seconds is meant to be generous enough for a cold
+     * start, but it is a budget, so the reply belongs in whatever handles the greeting rather than
+     * behind any further round trip.
+     *
+     * **Building the flow already starts the session.** This is not a cold flow: it settles what
+     * side this device is on and opens the door, which is what lets a greeting be sent before
+     * anything is collected. A caller that builds one and then abandons it without collecting must
+     * [close] it, or the transport is left mid-session holding a bound port. Collecting and then
+     * cancelling needs nothing — that path cleans up after itself.
+     *
      * @param asHost whether this device made the link. It decides which side seals a frame, so
      *   passing the wrong one means nothing either side says will open.
      */
