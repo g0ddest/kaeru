@@ -10,7 +10,8 @@ import java.security.SecureRandom
 
 class TogetherCodecTest {
     private val random = SecureRandom()
-    private val key = RoomLink.random(random).key
+    private val room = RoomLink.random(random)
+    private val key = room.key
 
     private val everyMessage = listOf(
         TogetherMessage.Hello("Виталий", animeId = 51_009, episode = 3, translationId = 610, positionMs = 12_345, playing = true, seq = 1),
@@ -30,8 +31,11 @@ class TogetherCodecTest {
         TogetherMessage.PeerLeft(),
     )
 
-    private fun encode(msg: TogetherMessage) =
-        TogetherCodec.encode(msg, key, TogetherCodec.newNonce(random))
+    private fun encode(msg: TogetherMessage, from: Side = Side.HOST) =
+        TogetherCodec.encode(msg, room, from, TogetherCodec.newNonce(random))
+
+    private fun decode(frame: ByteArray, link: RoomLink = room, from: Side = Side.HOST) =
+        TogetherCodec.decode(frame, link, from)
 
     private fun reasonOf(result: Result<*>): TogetherFailureReason? =
         (result.exceptionOrNull() as? TogetherFailed)?.reason
@@ -39,7 +43,7 @@ class TogetherCodecTest {
     @Test
     fun `every message comes back off the wire as itself`() {
         everyMessage.forEach { message ->
-            val decoded = TogetherCodec.decode(encode(message), key)
+            val decoded = decode(encode(message))
 
             assertEquals(message, decoded.getOrThrow())
         }
@@ -50,7 +54,7 @@ class TogetherCodecTest {
         val message = TogetherMessage.Chat("Дальше!", seq = 1)
         val nonce = TogetherCodec.newNonce(random)
 
-        val frame = TogetherCodec.encode(message, key, nonce)
+        val frame = TogetherCodec.encode(message, room, Side.HOST, nonce)
 
         assertTrue(nonce.contentEquals(frame.copyOfRange(0, TogetherCodec.NONCE_BYTES)))
         assertTrue(frame.size > TogetherCodec.NONCE_BYTES + TogetherCodec.TAG_BYTES)
@@ -65,18 +69,46 @@ class TogetherCodecTest {
         val inTheBody = frame.copyOf().also { it[TogetherCodec.NONCE_BYTES + 1] = (it[TogetherCodec.NONCE_BYTES + 1].toInt() xor 1).toByte() }
         val movedNonce = frame.copyOf().also { it[0] = (it[0].toInt() xor 1).toByte() }
 
-        assertEquals(TogetherFailureReason.TAMPERED, reasonOf(TogetherCodec.decode(flipped, key)))
-        assertEquals(TogetherFailureReason.TAMPERED, reasonOf(TogetherCodec.decode(inTheBody, key)))
-        assertEquals(TogetherFailureReason.TAMPERED, reasonOf(TogetherCodec.decode(movedNonce, key)))
-        assertEquals(TogetherFailureReason.TAMPERED, reasonOf(TogetherCodec.decode(frame, RoomLink.random(random).key)))
+        assertEquals(TogetherFailureReason.TAMPERED, reasonOf(decode(flipped)))
+        assertEquals(TogetherFailureReason.TAMPERED, reasonOf(decode(inTheBody)))
+        assertEquals(TogetherFailureReason.TAMPERED, reasonOf(decode(movedNonce)))
+        assertEquals(TogetherFailureReason.TAMPERED, reasonOf(decode(frame, link = RoomLink.random(random))))
+    }
+
+    @Test
+    fun `a frame sealed for one room does not open in another`() {
+        val message = TogetherMessage.Seek(positionMs = 90_000, seq = 2)
+        // The same key, deliberately, so nothing but the room's name can be doing the work.
+        val elsewhere = RoomLink.random(random).copy(key = key)
+
+        val frame = encode(message)
+
+        assertEquals(message, decode(frame).getOrThrow())
+        assertEquals(TogetherFailureReason.TAMPERED, reasonOf(decode(frame, link = elsewhere)))
+    }
+
+    @Test
+    fun `a frame handed back to the side that sent it does not open`() {
+        val message = TogetherMessage.Seek(positionMs = 0, seq = 3)
+
+        val fromHost = encode(message, from = Side.HOST)
+        val fromGuest = encode(message, from = Side.GUEST)
+
+        // What each side does with the other's frame: reads it as theirs, and it opens.
+        assertEquals(message, decode(fromHost, from = Side.HOST).getOrThrow())
+        assertEquals(message, decode(fromGuest, from = Side.GUEST).getOrThrow())
+        // And what a side does when a relay bounces its own frame back at it: reads it as the
+        // other side's, finds it was not, and refuses. That is reflection, dead on arrival.
+        assertEquals(TogetherFailureReason.TAMPERED, reasonOf(decode(fromHost, from = Side.GUEST)))
+        assertEquals(TogetherFailureReason.TAMPERED, reasonOf(decode(fromGuest, from = Side.HOST)))
     }
 
     @Test
     fun `a frame too short to hold anything is refused rather than read`() {
-        assertEquals(TogetherFailureReason.TAMPERED, reasonOf(TogetherCodec.decode(ByteArray(0), key)))
+        assertEquals(TogetherFailureReason.TAMPERED, reasonOf(decode(ByteArray(0))))
         assertEquals(
             TogetherFailureReason.TAMPERED,
-            reasonOf(TogetherCodec.decode(ByteArray(TogetherCodec.NONCE_BYTES + TogetherCodec.TAG_BYTES), key)),
+            reasonOf(decode(ByteArray(TogetherCodec.NONCE_BYTES + TogetherCodec.TAG_BYTES))),
         )
     }
 
@@ -84,7 +116,7 @@ class TogetherCodecTest {
     fun `nothing larger than a frame is written or read`() {
         val tooBig = ByteArray(TogetherCodec.MAX_FRAME_BYTES + 1)
 
-        assertEquals(TogetherFailureReason.FRAME_TOO_LARGE, reasonOf(TogetherCodec.decode(tooBig, key)))
+        assertEquals(TogetherFailureReason.FRAME_TOO_LARGE, reasonOf(decode(tooBig)))
 
         val clip = TogetherMessage.Voice(chunk = 0, total = 1, bytes = ByteArray(TogetherCodec.MAX_FRAME_BYTES), durationMs = 30_000, seq = 1)
         val thrown = runCatching { encode(clip) }.exceptionOrNull()
@@ -105,7 +137,7 @@ class TogetherCodecTest {
         val frame = encode(slice)
 
         assertTrue(frame.size <= TogetherCodec.MAX_FRAME_BYTES)
-        assertEquals(slice, TogetherCodec.decode(frame, key).getOrThrow())
+        assertEquals(slice, decode(frame).getOrThrow())
     }
 
     @Test

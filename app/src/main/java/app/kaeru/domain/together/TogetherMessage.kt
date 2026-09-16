@@ -13,11 +13,16 @@ import java.util.Base64
 /**
  * Everything two phones say to each other while watching one episode.
  *
- * Every message carries [seq], the sender's own count, and that count is the whole of the conflict
- * resolution: the two sides are equals, both may pause and seek, and when their commands cross on
- * the wire the later one wins. A receiver that has already applied a higher [seq] from a peer
- * ignores what arrives after it, so a burst of scrubbing settles on the last position rather than
- * on whichever packet happened to be delivered last.
+ * Every message carries [seq], the sender's own count, and that count is meant to be the whole of
+ * the conflict resolution: the two sides are equals, both may pause and seek, and when their
+ * commands cross on the wire the later one should win.
+ *
+ * Acting on that is the session's job and nothing else's. The codec sees one frame at a time and
+ * has nothing to compare it against; a transport delivers whatever authenticates. So it is the
+ * session above that has to keep the highest [seq] it has applied from each peer and drop anything
+ * that does not exceed it — which is also what stops a relay replaying an old `Seek` back down the
+ * room it carried it through. Until it does, this counter is a number in a frame and not a
+ * guarantee.
  *
  * The serial names are short because every one of them is encrypted, framed and sent once a
  * second for the length of an episode.

@@ -8,6 +8,7 @@ import app.kaeru.domain.pairing.PairingRequest
 import app.kaeru.domain.together.ConnectionState
 import app.kaeru.domain.together.LanEndpoint
 import app.kaeru.domain.together.RoomLink
+import app.kaeru.domain.together.Side
 import app.kaeru.domain.together.TogetherCodec
 import app.kaeru.domain.together.TogetherMessage
 import app.kaeru.domain.together.WatchTogetherTransport
@@ -109,7 +110,7 @@ class LanSocketTransport @Inject constructor(
     private val _state = MutableStateFlow(ConnectionState.CLOSED)
     override val state = _state.asStateFlow()
 
-    private class Live(val socket: Socket, val out: DataOutputStream, val key: ByteArray)
+    private class Live(val socket: Socket, val out: DataOutputStream, val link: RoomLink, val mine: Side)
 
     private val lock = Any()
     private var server: ServerSocket? = null
@@ -187,9 +188,9 @@ class LanSocketTransport @Inject constructor(
                 runCatching { peer.close() }
                 continue
             }
-            install(peer, link)
+            install(peer, link, Side.HOST)
             emit(Result.success(greeting))
-            read(input, link.key)
+            read(input, link, from = Side.GUEST)
             return
         }
         emit(failure(TogetherFailureReason.UNREACHABLE))
@@ -200,8 +201,8 @@ class LanSocketTransport @Inject constructor(
             emit(Result.failure(failure))
             return
         }
-        install(socket, link)
-        read(BufferedInputStream(socket.getInputStream()), link.key)
+        install(socket, link, Side.GUEST)
+        read(BufferedInputStream(socket.getInputStream()), link, from = Side.HOST)
     }
 
     /**
@@ -216,16 +217,17 @@ class LanSocketTransport @Inject constructor(
         if (length <= 0 || length > TogetherCodec.MAX_FRAME_BYTES) return null
         val frame = ByteArray(length)
         if (fill(input, frame, timeouts.authMs, deadline) != Filled.DONE) return null
-        return TogetherCodec.decode(frame, link.key).getOrNull()
+        // Only a guest can have sealed it: a frame bearing the host's own side is a reflection.
+        return TogetherCodec.decode(frame, link, from = Side.GUEST).getOrNull()
     }
 
     /** The seat is taken, and only now does the host stop listening or call itself connected. */
-    private fun install(socket: Socket, link: RoomLink) {
+    private fun install(socket: Socket, link: RoomLink, mine: Side) {
         socket.tcpNoDelay = true
         socket.soTimeout = minOf(POLL_MS, timeouts.idleMs)
         val out = DataOutputStream(BufferedOutputStream(socket.getOutputStream()))
         synchronized(lock) {
-            live = Live(socket, out, link.key)
+            live = Live(socket, out, link, mine)
             closeServerLocked()
         }
         _state.value = ConnectionState.CONNECTED
@@ -243,7 +245,11 @@ class LanSocketTransport @Inject constructor(
      * those, which costs four syscalls a second on a channel that is quiet and gives back a
      * cancelled session in the time it takes to notice.
      */
-    private suspend fun FlowCollector<Result<TogetherMessage>>.read(input: BufferedInputStream, key: ByteArray) {
+    private suspend fun FlowCollector<Result<TogetherMessage>>.read(
+        input: BufferedInputStream,
+        link: RoomLink,
+        from: Side,
+    ) {
         val header = ByteArray(LENGTH_BYTES)
         while (currentCoroutineContext().isActive) {
             when (fill(input, header, timeouts.idleMs)) {
@@ -266,7 +272,7 @@ class LanSocketTransport @Inject constructor(
             }
             val frame = ByteArray(length)
             if (fill(input, frame, timeouts.idleMs) != Filled.DONE) return
-            emit(TogetherCodec.decode(frame, key))
+            emit(TogetherCodec.decode(frame, link, from))
         }
     }
 
@@ -316,7 +322,7 @@ class LanSocketTransport @Inject constructor(
 
     override suspend fun send(message: TogetherMessage) {
         val open = synchronized(lock) { live } ?: throw TogetherFailed(TogetherFailureReason.DISCONNECTED)
-        val frame = TogetherCodec.encode(message, open.key, TogetherCodec.newNonce(random))
+        val frame = TogetherCodec.encode(message, open.link, open.mine, TogetherCodec.newNonce(random))
         withContext(dispatcher) {
             writes.withLock {
                 try {

@@ -20,10 +20,23 @@ import javax.crypto.spec.SecretKeySpec
  * name to route, and it is trusted with exactly that much: it never sees what episode two people
  * are on, what they said to each other, or the sound of either of them.
  *
+ * Every frame is also bound to its room and to the side that sent it — see [aad].
+ *
  * A nonce is never reused under one key. GCM does not merely leak with a repeated nonce, it hands
  * over the authentication key, so [newNonce] draws fresh bytes for every frame and [encode] takes
  * the nonce as an argument rather than keeping a counter that a reconnect could reset.
  */
+/** Which of the two seals a frame. One byte of it rides in every frame's associated data. */
+enum class Side {
+    HOST,
+    GUEST,
+    ;
+
+    val tag: Byte get() = if (this == HOST) 0 else 1
+
+    val other: Side get() = if (this == HOST) GUEST else HOST
+}
+
 object TogetherCodec {
 
     /**
@@ -60,11 +73,11 @@ object TogetherCodec {
      * frame nobody will accept. Only a voice clip can get near the cap, and the sender cuts those
      * into slices before they reach here — so a throw means a bug on this side, not bad input.
      */
-    fun encode(msg: TogetherMessage, key: ByteArray, nonce: ByteArray): ByteArray {
-        require(key.size == RoomLink.KEY_BYTES) { "A room key is ${RoomLink.KEY_BYTES} bytes" }
+    fun encode(msg: TogetherMessage, link: RoomLink, from: Side, nonce: ByteArray): ByteArray {
+        require(link.key.size == RoomLink.KEY_BYTES) { "A room key is ${RoomLink.KEY_BYTES} bytes" }
         require(nonce.size == NONCE_BYTES) { "A GCM nonce is $NONCE_BYTES bytes" }
         val plaintext = json.encodeToString<TogetherMessage>(msg).toByteArray(Charsets.UTF_8)
-        val sealed = cipher(Cipher.ENCRYPT_MODE, key, nonce).doFinal(plaintext)
+        val sealed = cipher(Cipher.ENCRYPT_MODE, link, from, nonce).doFinal(plaintext)
         val frame = ByteArray(nonce.size + sealed.size)
         nonce.copyInto(frame)
         sealed.copyInto(frame, nonce.size)
@@ -79,22 +92,46 @@ object TogetherCodec {
      * bit, JSON this build cannot read — comes back as a failure the transport can hand to its
      * collector and carry on, because one bad frame is not a reason to end a viewing.
      */
-    fun decode(frame: ByteArray, key: ByteArray): Result<TogetherMessage> {
+    fun decode(frame: ByteArray, link: RoomLink, from: Side): Result<TogetherMessage> {
         if (frame.size > MAX_FRAME_BYTES) return failure(TogetherFailureReason.FRAME_TOO_LARGE)
         if (frame.size <= NONCE_BYTES + TAG_BYTES) return failure(TogetherFailureReason.TAMPERED)
-        if (key.size != RoomLink.KEY_BYTES) return failure(TogetherFailureReason.TAMPERED)
+        if (link.key.size != RoomLink.KEY_BYTES) return failure(TogetherFailureReason.TAMPERED)
         val nonce = frame.copyOfRange(0, NONCE_BYTES)
         val sealed = frame.copyOfRange(NONCE_BYTES, frame.size)
-        val plaintext = runCatching { cipher(Cipher.DECRYPT_MODE, key, nonce).doFinal(sealed) }
+        val plaintext = runCatching { cipher(Cipher.DECRYPT_MODE, link, from, nonce).doFinal(sealed) }
             .getOrElse { return failure(TogetherFailureReason.TAMPERED, it) }
         return runCatching { json.decodeFromString<TogetherMessage>(plaintext.toString(Charsets.UTF_8)) }
             .fold({ Result.success(it) }, { failure(TogetherFailureReason.TAMPERED, it) })
     }
 
-    private fun cipher(mode: Int, key: ByteArray, nonce: ByteArray): Cipher =
+    private fun cipher(mode: Int, link: RoomLink, from: Side, nonce: ByteArray): Cipher =
         Cipher.getInstance(TRANSFORMATION).apply {
-            init(mode, SecretKeySpec(key, ALGORITHM), GCMParameterSpec(TAG_BITS, nonce))
+            init(mode, SecretKeySpec(link.key, ALGORITHM), GCMParameterSpec(TAG_BITS, nonce))
+            updateAAD(aad(link.roomId, from))
         }
+
+    /**
+     * What a frame is sealed *against*: the room it belongs to and the side that sealed it.
+     *
+     * Neither travels in the frame — both ends already know them — but the tag covers them, so a
+     * frame only opens where it was meant to. That buys two things from a relay nobody trusts.
+     * A frame lifted out of one room and pushed into another will not authenticate. And a frame
+     * bounced straight back at whoever sent it will not either, because each side decodes with the
+     * *other* side's byte: a host reading its own reflected `Pause` finds a tag that does not
+     * check, and a reflection attack is over before it starts.
+     *
+     * What this does not stop is the same relay replaying a frame back down the room it came from,
+     * a minute later. That is what the monotonic [TogetherMessage.seq] is for, and dropping a
+     * non-increasing one is the session's job, not the codec's — the codec sees one frame at a
+     * time and has nothing to compare against.
+     */
+    private fun aad(roomId: String, from: Side): ByteArray {
+        val name = roomId.toByteArray(Charsets.UTF_8)
+        return ByteArray(name.size + 1).also {
+            name.copyInto(it)
+            it[name.size] = from.tag
+        }
+    }
 
     private fun failure(reason: TogetherFailureReason, cause: Throwable? = null): Result<Nothing> =
         Result.failure(TogetherFailed(reason, cause))

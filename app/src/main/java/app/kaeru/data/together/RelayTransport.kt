@@ -9,6 +9,7 @@ import app.kaeru.domain.error.TogetherFailureReason
 import app.kaeru.domain.together.ConnectionState
 import app.kaeru.domain.together.LanEndpoint
 import app.kaeru.domain.together.RoomLink
+import app.kaeru.domain.together.Side
 import app.kaeru.domain.together.TogetherCodec
 import app.kaeru.domain.together.TogetherMessage
 import app.kaeru.domain.together.WatchTogetherTransport
@@ -79,7 +80,8 @@ class RelayTransport @Inject constructor(
 
     /** The one being dialled, kept only so [close] can cut a handshake short. */
     private var dialing: WebSocket? = null
-    private var key: ByteArray? = null
+    private var room: RoomLink? = null
+    private var mine: Side = Side.GUEST
     private var closedByUs = false
     private val backlog = ArrayDeque<ByteArray>()
     private val random = SecureRandom()
@@ -92,7 +94,8 @@ class RelayTransport @Inject constructor(
             trySend(Result.failure(RelayNotConfigured()))
         } else {
             synchronized(lock) {
-                key = link.key
+                room = link
+                mine = if (asHost) Side.HOST else Side.GUEST
                 closedByUs = false
                 backlog.clear()
             }
@@ -117,7 +120,7 @@ class RelayTransport @Inject constructor(
             val opened = AtomicBoolean(false)
             val closeCode = AtomicInteger(NO_CLOSE_CODE)
             val died = CompletableDeferred<Unit>()
-            val socket = client.newWebSocket(request, Peer(link.key, out, opened, closeCode, died))
+            val socket = client.newWebSocket(request, Peer(link, mine.other, out, opened, closeCode, died))
             synchronized(lock) { dialing = socket }
             died.await()
             synchronized(lock) {
@@ -164,11 +167,11 @@ class RelayTransport @Inject constructor(
      * two-second reconnect is a pause the viewer meant. Throws once there is no session at all.
      */
     override suspend fun send(message: TogetherMessage) {
-        val room = synchronized(lock) { key }
-        if (room == null || _state.value == ConnectionState.CLOSED) {
+        val (link, side) = synchronized(lock) { room to mine }
+        if (link == null || _state.value == ConnectionState.CLOSED) {
             throw TogetherFailed(TogetherFailureReason.DISCONNECTED)
         }
-        val frame = TogetherCodec.encode(message, room, TogetherCodec.newNonce(random))
+        val frame = TogetherCodec.encode(message, link, side, TogetherCodec.newNonce(random))
         val open = synchronized(lock) {
             live ?: run {
                 backlog.addLast(frame)
@@ -230,7 +233,9 @@ class RelayTransport @Inject constructor(
     }
 
     private inner class Peer(
-        private val roomKey: ByteArray,
+        private val link: RoomLink,
+        /** The side the friend seals with. A frame bearing this one's own side is a reflection. */
+        private val from: Side,
         private val out: ProducerScope<Result<TogetherMessage>>,
         private val opened: AtomicBoolean,
         private val closeCode: AtomicInteger,
@@ -249,7 +254,7 @@ class RelayTransport @Inject constructor(
         }
 
         override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-            out.trySend(TogetherCodec.decode(bytes.toByteArray(), roomKey))
+            out.trySend(TogetherCodec.decode(bytes.toByteArray(), link, from))
         }
 
         /**

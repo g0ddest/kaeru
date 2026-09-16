@@ -6,6 +6,7 @@ import app.kaeru.domain.error.TogetherFailureReason
 import app.kaeru.domain.together.ConnectionState
 import app.kaeru.domain.together.LanEndpoint
 import app.kaeru.domain.together.RoomLink
+import app.kaeru.domain.together.Side
 import app.kaeru.domain.together.TogetherCodec
 import app.kaeru.domain.together.TogetherMessage
 import kotlinx.coroutines.CoroutineScope
@@ -81,9 +82,9 @@ class LanSocketTransportTest {
 
     private fun reasonOf(result: Result<*>) = (result.exceptionOrNull() as? TogetherFailed)?.reason
 
-    /** One length-prefixed, sealed frame, exactly as the transport writes them. */
-    private fun DataOutputStream.frame(message: TogetherMessage, key: ByteArray) {
-        val sealed = TogetherCodec.encode(message, key, TogetherCodec.newNonce(random))
+    /** One length-prefixed, sealed frame, exactly as a guest's transport writes them. */
+    private fun DataOutputStream.frame(message: TogetherMessage, link: RoomLink) {
+        val sealed = TogetherCodec.encode(message, link, Side.GUEST, TogetherCodec.newNonce(random))
         writeInt(sealed.size)
         write(sealed)
         flush()
@@ -92,7 +93,7 @@ class LanSocketTransportTest {
     /** A raw peer that has proved it holds the key, so the host has given it the seat. */
     private suspend fun Socket.greet(host: LanSocketTransport, link: RoomLink): DataOutputStream {
         val out = DataOutputStream(getOutputStream())
-        out.frame(TogetherMessage.Hello("Гость", animeId = 1, episode = 1, positionMs = 0, playing = false, seq = 1), link.key)
+        out.frame(TogetherMessage.Hello("Гость", animeId = 1, episode = 1, positionMs = 0, playing = false, seq = 1), link)
         soon { host.state.first { it == ConnectionState.CONNECTED } }
         return out
     }
@@ -136,7 +137,7 @@ class LanSocketTransportTest {
             Socket().use { wrongKey ->
                 wrongKey.connect(InetSocketAddress("127.0.0.1", endpoint.port), 1_000)
                 DataOutputStream(wrongKey.getOutputStream())
-                    .frame(TogetherMessage.Bye(seq = 1), RoomLink.random(random).key)
+                    .frame(TogetherMessage.Bye(seq = 1), RoomLink.random(random))
 
                 // Neither of them is the friend, so neither of them gets the seat.
                 assertEquals(ConnectionState.CONNECTING, host.state.first())
@@ -249,7 +250,7 @@ class LanSocketTransportTest {
             out.writeInt(junk.size)
             out.write(junk)
             out.flush()
-            out.frame(TogetherMessage.Bye(seq = 9), link.key)
+            out.frame(TogetherMessage.Bye(seq = 9), link)
 
             assertEquals(TogetherFailureReason.TAMPERED, reasonOf(soon { heard.receive() }))
             assertEquals(TogetherMessage.Bye(seq = 9), soon { heard.receive() }.getOrThrow())
@@ -294,7 +295,8 @@ class LanSocketTransportTest {
             val frame = ByteArray(length).also(input::readFully)
 
             assertTrue(length <= TogetherCodec.MAX_FRAME_BYTES)
-            assertEquals(chat, TogetherCodec.decode(frame, link.key).getOrThrow())
+            // The host sealed it, so that is the side the guest on the other end reads it as.
+            assertEquals(chat, TogetherCodec.decode(frame, link, Side.HOST).getOrThrow())
         }
     }
 }

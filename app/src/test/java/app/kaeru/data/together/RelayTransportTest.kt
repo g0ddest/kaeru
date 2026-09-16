@@ -5,6 +5,7 @@ import app.kaeru.domain.error.TogetherFailed
 import app.kaeru.domain.error.TogetherFailureReason
 import app.kaeru.domain.together.ConnectionState
 import app.kaeru.domain.together.RoomLink
+import app.kaeru.domain.together.Side
 import app.kaeru.domain.together.TogetherCodec
 import app.kaeru.domain.together.TogetherMessage
 import kotlinx.coroutines.CoroutineScope
@@ -106,10 +107,11 @@ class RelayTransportTest {
 
     private suspend fun <T> soon(block: suspend () -> T): T = withTimeout(15_000) { block() }
 
+    /** The transport under test joins as a guest, so its friend on the far end is the host. */
     private fun frame(message: TogetherMessage) =
-        TogetherCodec.encode(message, link.key, TogetherCodec.newNonce(random)).toByteString()
+        TogetherCodec.encode(message, link, Side.HOST, TogetherCodec.newNonce(random)).toByteString()
 
-    private fun decode(bytes: ByteString) = TogetherCodec.decode(bytes.toByteArray(), link.key)
+    private fun decode(bytes: ByteString) = TogetherCodec.decode(bytes.toByteArray(), link, Side.GUEST)
 
     private fun reasonOf(result: Result<*>) = (result.exceptionOrNull() as? TogetherFailed)?.reason
 
