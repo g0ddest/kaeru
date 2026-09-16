@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -30,7 +31,8 @@ class MarkEpisodeUnwatchedTest {
     private val clock = Clock.fixed(now, ZoneOffset.UTC)
     private val library = FakeLibraryRepository()
     private val samples = FakePlaybackSampleRepository()
-    private val unmark = MarkEpisodeUnwatched(library, samples, clock)
+    private val suppressed = SuppressedMarks()
+    private val unmark = MarkEpisodeUnwatched(library, samples.episodes, samples, suppressed, clock)
 
     private fun anime(id: Int = 100, episodes: Int = 12) = Anime(
         id = id, nameRu = "Имя", nameRomaji = "Name", posterUrl = null, screenshotUrls = emptyList(),
@@ -125,6 +127,21 @@ class MarkEpisodeUnwatchedTest {
         assertEquals(listOf(1), progress().map { it.episode })
     }
 
+    /**
+     * Nothing about the episode's watched state changed, so nothing about where the viewer got to
+     * in it should either: this branch is «Shikimori already says what you are asking me to say».
+     */
+    @Test
+    fun `an episode the count is already below keeps its position`() = runTest {
+        seed(episodes = 3)
+        samples.episodes.seed(stopped(5, 600_000))
+
+        assertTrue(unmark(animeId = 100, episode = 5).isSuccess)
+
+        assertEquals(listOf(5), progress().map { it.episode })
+        assertTrue(samples.forgotten.isEmpty())
+    }
+
     @Test
     fun `a refused write is reported and nothing is forgotten`() = runTest {
         seed(episodes = 7)
@@ -193,6 +210,107 @@ class MarkEpisodeUnwatchedTest {
 
         val entry = LibraryEntry(anime(), library.entry(100)!!.rate, watch(), progress())
         assertEquals(ContinueTarget(5, 0), entry.continueTarget(WATCHED_THRESHOLD))
+    }
+
+    // --- what an undo needs to know ----------------------------------------------------------
+
+    @Test
+    fun `the outcome carries the count that stood before, and every position it took`() = runTest {
+        seed(episodes = 7)
+        listOf(stopped(4, 600_000), stopped(5, 1_180_000), stopped(6, 300_000))
+            .forEach { samples.episodes.seed(it) }
+
+        val outcome = unmark(animeId = 100, episode = 5).getOrThrow()
+
+        assertEquals(5, outcome.episode)
+        assertEquals(7, outcome.previousCount)
+        assertEquals(listOf(5, 6), outcome.forgotten.map { it.episode })
+    }
+
+    /**
+     * The whole point of carrying the count. Un-marking the fifth of seven watched episodes takes
+     * the sixth and seventh with it — that is what a counter means — and an undo that re-marked the
+     * episode the viewer tapped would hand back five, quietly abandoning the other two.
+     */
+    @Test
+    fun `undo restores the count that stood before, not the episode that was tapped`() = runTest {
+        seed(episodes = 7)
+
+        val outcome = unmark(animeId = 100, episode = 5).getOrThrow()
+        assertEquals(4, library.entry(100)!!.rate.episodes)
+
+        assertTrue(unmark.restore(animeId = 100, outcome = outcome).isSuccess)
+
+        assertEquals(listOf("episodes:100:4", "episodes:100:7"), library.calls)
+        assertEquals(7, library.entry(100)!!.rate.episodes)
+    }
+
+    @Test
+    fun `undo puts the forgotten positions back as they were`() = runTest {
+        seed(episodes = 7)
+        val row = stopped(5, 1_180_000)
+        samples.episodes.seed(row)
+        samples.episodes.seed(stopped(6, 300_000))
+
+        val outcome = unmark(animeId = 100, episode = 5).getOrThrow()
+        assertTrue(progress().isEmpty())
+
+        assertTrue(unmark.restore(animeId = 100, outcome = outcome).isSuccess)
+
+        assertEquals(listOf(5, 6), progress().map { it.episode })
+        assertEquals(row, progress().first())
+    }
+
+    @Test
+    fun `an undo Shikimori refuses is reported and nothing is put back`() = runTest {
+        seed(episodes = 7)
+        samples.episodes.seed(stopped(5, 1_180_000))
+        val outcome = unmark(animeId = 100, episode = 5).getOrThrow()
+        library.episodesResult = Result.failure(HttpError(500))
+
+        assertTrue(unmark.restore(animeId = 100, outcome = outcome).isFailure)
+
+        assertTrue(progress().isEmpty())
+    }
+
+    @Test
+    fun `an undo that has already happened writes nothing again`() = runTest {
+        seed(episodes = 7)
+        val outcome = unmark(animeId = 100, episode = 5).getOrThrow()
+        assertTrue(unmark.restore(animeId = 100, outcome = outcome).isSuccess)
+        library.calls.clear()
+
+        assertTrue(unmark.restore(animeId = 100, outcome = outcome).isSuccess)
+
+        assertEquals(emptyList<String>(), library.calls)
+    }
+
+    // --- and what the player must not do about it ------------------------------------------------
+
+    /**
+     * A cast session and picture-in-picture both outlive the player screen, so the episode can
+     * still be playing behind the title screen this was pressed on.
+     */
+    @Test
+    fun `an un-marked episode is taken off the automatic mark's list`() = runTest {
+        seed(episodes = 7)
+
+        val outcome = unmark(animeId = 100, episode = 5).getOrThrow()
+
+        assertTrue(suppressed.isSuppressed(100, 5))
+
+        assertTrue(unmark.restore(animeId = 100, outcome = outcome).isSuccess)
+
+        assertFalse(suppressed.isSuppressed(100, 5))
+    }
+
+    @Test
+    fun `an episode nothing was written about is not suppressed either`() = runTest {
+        seed(episodes = 3)
+
+        assertTrue(unmark(animeId = 100, episode = 5).isSuccess)
+
+        assertFalse(suppressed.isSuppressed(100, 5))
     }
 
     /** A logout mid-screen cannot undo the mark that has already reached Shikimori. */

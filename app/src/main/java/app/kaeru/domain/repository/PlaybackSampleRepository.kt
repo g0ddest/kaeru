@@ -40,4 +40,14 @@ interface PlaybackSampleRepository {
      * @param at the moment to stamp the rewound pointer with.
      */
     suspend fun forgetFrom(animeId: Int, episode: Int, at: Instant)
+
+    /**
+     * Puts rows [forgetFrom] took away back, exactly as they were.
+     *
+     * The other half of an un-mark that the viewer changed their mind about. Their timestamps come
+     * back with them: when a title was last actually watched is read off these rows, and an undo
+     * that restored the positions but stamped them «now» would move the title to the top of
+     * «Продолжить» for something nobody watched.
+     */
+    suspend fun restore(progress: List<EpisodeProgress>)
 }

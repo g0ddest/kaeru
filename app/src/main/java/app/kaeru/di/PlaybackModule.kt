@@ -19,6 +19,7 @@ import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.playback.PrefetchTopCardStream
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.playback.StreamPrefetchCache
+import app.kaeru.domain.playback.SuppressedMarks
 import app.kaeru.domain.playback.WatchProgress
 import app.kaeru.domain.repository.EpisodeProgressRepository
 import app.kaeru.domain.repository.LibraryRepository
@@ -173,9 +174,20 @@ object PlaybackModule {
     @Singleton
     fun markEpisodeUnwatched(
         library: LibraryRepository,
+        progress: EpisodeProgressRepository,
         samples: PlaybackSampleRepository,
+        suppressed: SuppressedMarks,
         clock: Clock,
-    ): MarkEpisodeUnwatched = MarkEpisodeUnwatched(library, samples, clock)
+    ): MarkEpisodeUnwatched = MarkEpisodeUnwatched(library, progress, samples, suppressed, clock)
+
+    /**
+     * One instance, because it is a conversation between two things that never meet: a title screen
+     * un-marking an episode and a controller deciding whether to count it. Two sets would mean the
+     * controller never heard.
+     */
+    @Provides
+    @Singleton
+    fun suppressedMarks(): SuppressedMarks = SuppressedMarks()
 
     /**
      * One instance, because it holds what is playing: a second would defer against a target nothing

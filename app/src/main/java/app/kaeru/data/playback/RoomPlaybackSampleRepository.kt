@@ -33,4 +33,7 @@ class RoomPlaybackSampleRepository @Inject constructor(
 
     override suspend fun forgetFrom(animeId: Int, episode: Int, at: Instant) =
         accountWrite(session, io) { database.forgetProgressFrom(animeId, episode, at) }
+
+    override suspend fun restore(progress: List<EpisodeProgress>) =
+        accountWrite(session, io) { database.restoreProgress(progress.map { it.toEntity() }) }
 }

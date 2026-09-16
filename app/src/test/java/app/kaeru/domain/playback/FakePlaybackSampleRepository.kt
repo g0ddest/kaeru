@@ -22,6 +22,9 @@ class FakePlaybackSampleRepository(
     /** The same, for the transaction that takes rows away. */
     var failForgetWith: Throwable? = null
 
+    /** And for the one that puts them back. */
+    var failRestoreWith: Throwable? = null
+
     /** Which anime and episode each [forgetFrom] named, in order. */
     val forgotten = mutableListOf<Pair<Int, Int>>()
 
@@ -29,6 +32,15 @@ class FakePlaybackSampleRepository(
         failSaveWith?.let { throw it }
         episodes.write(progress)
         watchStates.save(watch)
+    }
+
+    /** Rows put back through [restore], in the order they arrived. */
+    val restored = mutableListOf<EpisodeProgress>()
+
+    override suspend fun restore(progress: List<EpisodeProgress>) {
+        failRestoreWith?.let { throw it }
+        restored += progress
+        progress.forEach { episodes.seed(it) }
     }
 
     override suspend fun forgetFrom(animeId: Int, episode: Int, at: Instant) {

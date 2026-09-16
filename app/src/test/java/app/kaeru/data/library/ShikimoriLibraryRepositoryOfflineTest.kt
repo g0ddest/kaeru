@@ -9,6 +9,7 @@ import app.kaeru.data.auth.InMemoryTokenStore
 import app.kaeru.data.local.AnimeEntity
 import app.kaeru.data.local.KaeruDatabase
 import app.kaeru.data.local.UserRateEntity
+import app.kaeru.data.playback.RoomEpisodeProgressRepository
 import app.kaeru.data.playback.RoomPlaybackSampleRepository
 import app.kaeru.data.shikimori.ShikimoriApi
 import app.kaeru.data.shikimori.shikimoriJson
@@ -19,6 +20,7 @@ import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.WatchState
 import app.kaeru.domain.playback.MarkEpisodeUnwatched
+import app.kaeru.domain.playback.SuppressedMarks
 import app.kaeru.domain.sync.OutboxSyncer
 import app.kaeru.domain.sync.RateOp
 import app.kaeru.domain.sync.RateOpKind
@@ -168,7 +170,7 @@ class ShikimoriLibraryRepositoryOfflineTest {
         )
         offline()
 
-        assertTrue(MarkEpisodeUnwatched(repo, samples, clock)(animeId = 10, episode = 5).isSuccess)
+        assertTrue(MarkEpisodeUnwatched(repo, RoomEpisodeProgressRepository(db.episodeProgressDao()), samples, SuppressedMarks(), clock)(animeId = 10, episode = 5).isSuccess)
 
         assertEquals(4, rate(10)?.episodes)
         assertEquals(listOf(RateOp(1, 10, RateOpKind.EPISODES, "4", now)), queued())

@@ -161,7 +161,7 @@ fun DetailsScreen(
     // The confirmation the menu deliberately does not ask for, after the fact instead of before it:
     // the viewer sees the check come off the tile, and «Отменить» is right there if it was a slip.
     ActionSnackbar(
-        state.unwatchedEpisode?.let(::unwatchedMessage),
+        state.unwatched?.let { unwatchedMessage(it.episode) },
         UNDO,
         snackbar,
         onUndoUnwatched,

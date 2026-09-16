@@ -23,6 +23,7 @@ import app.kaeru.domain.playback.FakeWatchStateRepository
 import app.kaeru.domain.playback.MarkEpisodeUnwatched
 import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.ResolveEpisodeStream
+import app.kaeru.domain.playback.SuppressedMarks
 import app.kaeru.domain.playback.StreamPrefetchCache
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.settings.FakeSettingsStore
@@ -111,7 +112,7 @@ class DetailsViewModelTest {
         streams = streams,
         watchStates = watchStates,
         markEpisodeWatched = MarkEpisodeWatched(repo, watchStates, clock, DeferredDownloadRemoval(downloads, settings, FakeDeferredRemovals())),
-        markEpisodeUnwatched = MarkEpisodeUnwatched(repo, samples, clock),
+        markEpisodeUnwatched = MarkEpisodeUnwatched(repo, samples.episodes, samples, SuppressedMarks(), clock),
         clock = clock,
         downloads = downloads,
         settings = settings,
@@ -429,7 +430,7 @@ class DetailsViewModelTest {
         vm.markUnwatched(20)
         advanceUntilIdle()
 
-        assertEquals(20, vm.uiState.value.unwatchedEpisode)
+        assertEquals(20, vm.uiState.value.unwatched?.episode)
     }
 
     @Test
@@ -447,6 +448,74 @@ class DetailsViewModelTest {
         assertEquals(20, vm.uiState.value.entry?.rate?.episodes)
     }
 
+    /**
+     * The count, not the episode. Un-marking the fifteenth of twenty watched episodes takes five
+     * more with it — that is what a counter means — and an undo that re-marked the fifteenth would
+     * hand back fifteen, abandoning the other five with nothing on screen to say so.
+     */
+    @Test
+    fun `«Отменить» restores the episodes the un-mark took with it`() = runTest(main.dispatcher) {
+        val repo = FakeRepository(item)
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+
+        vm.markUnwatched(15)
+        advanceUntilIdle()
+        assertEquals(14, vm.uiState.value.entry?.rate?.episodes)
+
+        vm.undoUnwatched()
+        advanceUntilIdle()
+
+        assertEquals(listOf(7 to 14, 7 to 20), repo.episodeWrites)
+        assertEquals(20, vm.uiState.value.entry?.rate?.episodes)
+    }
+
+    /** The television has no snackbar: its panel offers the same episode back, and means the same. */
+    @Test
+    fun `marking the episode that was just un-marked restores it the same way`() = runTest(main.dispatcher) {
+        val repo = FakeRepository(item)
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+
+        vm.markUnwatched(15)
+        advanceUntilIdle()
+        vm.markWatched(15)
+        advanceUntilIdle()
+
+        assertEquals(listOf(7 to 14, 7 to 20), repo.episodeWrites)
+    }
+
+    @Test
+    fun `marking some other episode is an ordinary mark, not an undo`() = runTest(main.dispatcher) {
+        val repo = FakeRepository(item)
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+
+        vm.markUnwatched(15)
+        advanceUntilIdle()
+        vm.markWatched(16)
+        advanceUntilIdle()
+
+        assertEquals(listOf(7 to 14, 7 to 16), repo.episodeWrites)
+    }
+
+    /** Once the snackbar is gone so is the offer: a later mark is a mark like any other. */
+    @Test
+    fun `the same episode marked after the snackbar has gone is an ordinary mark`() = runTest(main.dispatcher) {
+        val repo = FakeRepository(item)
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+
+        vm.markUnwatched(15)
+        advanceUntilIdle()
+        vm.unwatchedMessageShown()
+        advanceUntilIdle()
+        vm.markWatched(15)
+        advanceUntilIdle()
+
+        assertEquals(listOf(7 to 14, 7 to 15), repo.episodeWrites)
+    }
+
     @Test
     fun `a snackbar that has been shown is not shown again`() = runTest(main.dispatcher) {
         val vm = viewModel(FakeRepository(item))
@@ -457,7 +526,7 @@ class DetailsViewModelTest {
         vm.unwatchedMessageShown()
         advanceUntilIdle()
 
-        assertNull(vm.uiState.value.unwatchedEpisode)
+        assertNull(vm.uiState.value.unwatched?.episode)
     }
 
     @Test
@@ -471,7 +540,7 @@ class DetailsViewModelTest {
         advanceUntilIdle()
 
         assertNotNull(vm.uiState.value.errorMessage)
-        assertNull(vm.uiState.value.unwatchedEpisode)
+        assertNull(vm.uiState.value.unwatched?.episode)
         assertEquals(20, vm.uiState.value.entry?.rate?.episodes)
     }
 

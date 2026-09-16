@@ -250,6 +250,30 @@ class RoomPlaybackSampleRepositoryTest {
     }
 
     @Test
+    fun `restoring puts the rows back with the timestamps they had`() = scope.runTest {
+        repo.save(watch(episode = 5), progress(episode = 5))
+        val taken = storedProgress()
+        repo.forgetFrom(100, episode = 5, at = now.plusSeconds(60))
+        assertEquals(emptyList<EpisodeProgress>(), storedProgress())
+
+        repo.restore(taken)
+
+        // Their own timestamps, not «now»: when a title was last watched is read off these rows,
+        // and an undo that restamped them would put something nobody watched at the top of the feed.
+        assertEquals(taken, storedProgress())
+    }
+
+    @Test
+    fun `restoring nothing leaves the table as it was`() = scope.runTest {
+        repo.save(watch(episode = 5), progress(episode = 5))
+        val untouched = storedProgress()
+
+        repo.restore(emptyList())
+
+        assertEquals(untouched, storedProgress())
+    }
+
+    @Test
     fun `forgetting takes the account lock once, like the sample it undoes`() = scope.runTest {
         val before = lock.turns
 

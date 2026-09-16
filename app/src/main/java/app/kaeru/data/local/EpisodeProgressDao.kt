@@ -10,6 +10,10 @@ interface EpisodeProgressDao {
     @Upsert
     suspend fun upsert(item: EpisodeProgressEntity)
 
+    /** Several at once, for an un-mark the viewer took back. */
+    @Upsert
+    suspend fun upsertAll(items: List<EpisodeProgressEntity>)
+
     /** One anime's episodes, in the order a season grid draws them. */
     @Query("SELECT * FROM episode_progress WHERE animeId = :animeId ORDER BY episode")
     fun observeByAnime(animeId: Int): Flow<List<EpisodeProgressEntity>>

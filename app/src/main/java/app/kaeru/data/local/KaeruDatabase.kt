@@ -52,6 +52,16 @@ abstract class KaeruDatabase : RoomDatabase() {
         watchStateDao().rewindFrom(animeId, episode, at)
     }
 
+    /**
+     * The rows [forgetProgressFrom] took away, put back together.
+     *
+     * The anime's pointer is deliberately not touched: it was rewound to the start of an episode
+     * that now has a row of its own again, and that row is what every surface reads.
+     */
+    suspend fun restoreProgress(progress: List<EpisodeProgressEntity>) = withTransaction {
+        episodeProgressDao().upsertAll(progress)
+    }
+
     suspend fun clearAccountData() = withTransaction {
         userRateDao().deleteAll()
         watchStateDao().deleteAll()
