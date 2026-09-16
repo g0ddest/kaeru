@@ -121,6 +121,17 @@ class TogetherSession(
     private var drift = 0L
     private var correcting = false
     private var voice: VoiceBuffer? = null
+
+    /**
+     * The friend's latest episode change while this side is still on its join screen.
+     *
+     * Kept rather than applied: the port is nobody's to drive until the viewer has said yes. Kept
+     * rather than dropped: a host is live from the moment it answers a hello, a guest may read the
+     * invitation for a minute, and autoplay running into the next episode in that window is sent
+     * once and never repeated. Dropping it puts the two phones on different episodes with a
+     * corrector comparing positions across them.
+     */
+    private var pendingEpisode: TogetherMessage.Episode? = null
     private var hello = CompletableDeferred<TogetherMessage.Hello>()
 
     /**
@@ -163,12 +174,28 @@ class TogetherSession(
         // else's moment: the viewer has not said yes yet, and starting a video behind a question
         // nobody has answered is the thing this order exists to prevent.
         becomingLive = scope.launch(failures) {
-            port.state.first { it.animeId == greeting.animeId && it.episode == greeting.episode }
+            // Any episode this side has been told about, because the screen opens the one named in
+            // the hello and the friend may have moved on since. Waiting only for where they are
+            // now would be waiting for something nobody is going to open.
+            port.state.first {
+                it.animeId == greeting.animeId &&
+                    (it.episode == greeting.episode || it.episode == pendingEpisode?.episode)
+            }
+            // And then, if they did move on, following them there before going live rather than
+            // after — two phones on different episodes is the thing this is all for.
+            val moved = pendingEpisode
+            if (moved != null) {
+                pendingEpisode = null
+                lastControl = Control(moved.seq, byHost = !asHost)
+                changed(moved)
+            }
             // Where they are now, not where they were when they said hello: a viewer reading the
             // invitation for ten seconds is ten seconds behind by the time they say yes.
             port.seekTo(peerPositionNow() ?: (greeting.positionMs + offsets.offsetMs))
+            // A friend who is paused is not an invitation to start playing at them.
+            if (!greeting.playing) port.pause()
             goLive(greeting.name)
-            mentionVoice(greeting.translationId)
+            if (moved == null) mentionVoice(greeting.translationId)
         }
     }
 
@@ -219,6 +246,7 @@ class TogetherSession(
         drift = 0
         correcting = false
         voice = null
+        pendingEpisode = null
         closingBecause = null
         hello = CompletableDeferred()
         animeId = port.state.value.animeId ?: 0
@@ -269,7 +297,7 @@ class TogetherSession(
      * a lost connection — which is the consequence, not the reason, and «связь потеряна» over a
      * friend who simply never came is the wrong thing to have on screen.
      */
-    private suspend fun lose(reason: LostReason, close: Boolean = true) {
+    private suspend fun lose(reason: LostReason) {
         val now = _state.value
         if (now is SessionState.Ended || now is SessionState.Idle || now is SessionState.Lost) return
         // Before anything else. A correction in force when the channel died would otherwise play
@@ -282,7 +310,6 @@ class TogetherSession(
         // Two of these collect flows that never end on their own — the channel's state and this
         // viewer's actions — and a lost session has no use for either.
         ticks?.cancel()
-        if (!close) return
         val open = channel ?: return
         channel = null
         // Closed here and not in a coroutine of its own: the transports are one per process, so a
@@ -421,7 +448,16 @@ class TogetherSession(
             // would be an old seek, an old episode or somebody's voice clip played again. The
             // peer's count only ever rises, so anything not above the highest already accepted
             // from them did not come from them now.
-            if (message.seq <= peerSeq) return
+            //
+            // The one exception is a hello inside the rejoin window, and only a hello: a friend
+            // walking back in has restarted their count, so theirs is below the mark by
+            // definition. Everything else stays gated by the old mark until that hello arrives,
+            // or the window would be thirty seconds in which any captured frame plays again.
+            val returning = rejoin != null && message is TogetherMessage.Hello
+            if (!returning && message.seq <= peerSeq) return
+            // Their count is theirs again from here, and so is the last action anybody applied —
+            // a returned peer must not have to count its way back up before it may pause anything.
+            if (returning) lastControl = Control(0, byHost = false)
             peerSeq = message.seq
             // And a Lamport count of our own on top of it: raising ours above anything we hear is
             // what makes «later» mean the same thing on both phones, so neither side can be
@@ -444,7 +480,11 @@ class TogetherSession(
                 port.seekTo(message.positionMs)
                 announce(TogetherEvent.Notice(NoticeKind.SEEKED, peerName, positionMs = message.positionMs))
             }
-            is TogetherMessage.Episode -> control(message.seq) { changed(message) }
+            // Stashed rather than refused while joining; the latest one wins, as it would have
+            // if it had been applied.
+            is TogetherMessage.Episode ->
+                if (_state.value is SessionState.Joining) pendingEpisode = message
+                else control(message.seq) { changed(message) }
             is TogetherMessage.State -> reported(message)
             is TogetherMessage.Chat -> announce(
                 TogetherEvent.ChatItem(nextEventId(), fromPeer = true, text = message.text, at = clock.millis()),
@@ -551,13 +591,6 @@ class TogetherSession(
      */
     private suspend fun departed() {
         if (peerName.isNotEmpty()) announce(TogetherEvent.Notice(NoticeKind.LEFT, peerName))
-        // Their counter starts again when they do, so the replay guard has to let go of the
-        // high-water mark it built up — otherwise the hello of a friend walking back in, carrying
-        // a 1 against a mark in the tens, is dropped as a replay and the window can never be
-        // used. The same for the last action applied: a returned peer must not have to count its
-        // way back up before it is allowed to pause anything.
-        peerSeq = 0
-        lastControl = Control(0, byHost = false)
         rejoin?.cancel()
         rejoin = scope.launch(failures) {
             delay(REJOIN_WINDOW_MS)

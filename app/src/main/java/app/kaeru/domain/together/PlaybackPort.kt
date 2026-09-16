@@ -39,7 +39,10 @@ sealed interface LocalAction {
 }
 
 /**
- * What a [TogetherSession] is allowed to do to the picture.
+ * What a shared viewing is allowed to do to the picture.
+ *
+ * The session that drives it is `data.together.TogetherSession` — it owns a scope, the transports
+ * and a log, none of which belong on this side of the seam.
  *
  * Every call here is the friend's doing rather than this viewer's, so none of them may come back
  * out of [localActions]. That is the whole of the no-echo rule, and it lives on this side of the
