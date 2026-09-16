@@ -33,8 +33,8 @@ app/src/main/java/app/kaeru/
   domain/together/SyncPolicy.kt               decide(local, remote, offsetMs): SyncAction
   domain/together/ClockOffset.kt              ping/pong median estimator
   domain/together/WatchTogetherTransport.kt   interface + ConnectionState + LanEndpoint
-  domain/together/TogetherSession.kt          host()/join()/leave(); applies remote actions to PlaybackController via a small PlaybackPort interface
-  domain/together/TogetherEvents.kt           Notice(kind, peerName), ChatItem, ReactionEvent, VoiceClip
+  data/together/TogetherSession.kt            host()/join()/leave(); applies remote actions to PlaybackController via a small PlaybackPort interface (lives in data: owns a scope, transports and logging)
+  domain/together/TogetherSessionApi.kt       TogetherSessionApi, SessionState, TogetherEvent (Notice, ChatItem, ReactionEvent, VoiceClip), NoticeKind
   data/together/LanSocketTransport.kt         ServerSocket/Socket, length-prefixed frames, private-range check
   data/together/RelayTransport.kt             OkHttp WebSocket, join by roomId, backoff reconnect
   data/together/VoiceRecorder.kt, VoicePlayer.kt
@@ -84,7 +84,7 @@ interface WatchTogetherTransport {
 
 ### Task 2: Session engine on the player
 
-**Files:** create `domain/together/{TogetherSession,TogetherEvents}.kt`, `player/TogetherPlaybackPort.kt`; modify `player/PlaybackController.kt` (remote-tagged actions: `play/pause/seekTo/playEpisode` with an `origin` parameter or a parallel `applyRemote…` API that suppresses local echo), `di/TogetherModule.kt`; tests `domain/together/TogetherSessionTest.kt` (fake transport + fake port), `player/TogetherPlaybackPortTest.kt`.
+**Files:** create `data/together/TogetherSession.kt` (contract types in `domain/together/TogetherSessionApi.kt`), `player/TogetherPlaybackPort.kt`; modify `player/PlaybackController.kt` (remote-tagged actions: `play/pause/seekTo/playEpisode` with an `origin` parameter or a parallel `applyRemote…` API that suppresses local echo), `di/TogetherModule.kt`; tests `data/together/TogetherSessionTest.kt` (fake transport + fake port), `player/TogetherPlaybackPortTest.kt`.
 
 **Produces:**
 ```kotlin

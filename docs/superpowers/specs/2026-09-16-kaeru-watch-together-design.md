@@ -48,8 +48,8 @@ domain/together
   TogetherCodec: JSON (kotlinx.serialization) + AES‑GCM(key) → frames
   SyncPolicy.decide(local, remote, clockOffset) → Nothing | Rate(x) | SeekTo(ms) | SeekAndNotify(ms)
   WatchTogetherTransport { connect(link): Flow<TogetherMessage>; send(msg); close() } + ConnectionState
-  TogetherSession (use case): coordinates transport ↔ PlaybackController; last-action-wins; notices; timeouts
 data/together
+  TogetherSession: coordinates transport ↔ PlaybackController through a PlaybackPort; last-action-wins; notices; timeouts (in data: owns a scope, transports and logging; the contract TogetherSessionApi stays in domain)
   LanSocketTransport (TCP, length-prefixed frames; host side = ServerSocket like the pairing server)
   RelayTransport (OkHttp WebSocket, reconnect with backoff, room join by roomId)
   VoiceRecorder (MediaRecorder), VoicePlayer (ExoPlayer/MediaPlayer with ducking)
