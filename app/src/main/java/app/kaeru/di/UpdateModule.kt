@@ -6,10 +6,14 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
 import app.kaeru.BuildConfig
+import app.kaeru.data.update.ApkDownloader
 import app.kaeru.data.update.GITHUB_API_BASE_URL
 import app.kaeru.data.update.GitHubReleasesApi
 import app.kaeru.data.update.GitHubUpdateRepository
+import app.kaeru.data.update.SystemApkInstaller
 import app.kaeru.data.update.githubJson
+import app.kaeru.domain.update.ApkDownloads
+import app.kaeru.domain.update.UpdateInstaller
 import app.kaeru.domain.update.UpdatePolicy
 import app.kaeru.domain.update.UpdateRepository
 import dagger.Binds
@@ -22,8 +26,15 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
+import java.io.File
 import javax.inject.Named
+import javax.inject.Qualifier
 import javax.inject.Singleton
+
+/** Where a release APK is downloaded to: `cache/updates`, which the FileProvider also names. */
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class UpdateCacheDir
 
 /**
  * The «Обновления» screen and the check behind it.
@@ -52,6 +63,11 @@ object UpdateModule {
     @Singleton
     fun updatePolicy(): UpdatePolicy = UpdatePolicy()
 
+    @Provides
+    @Singleton
+    @UpdateCacheDir
+    fun updateCacheDir(@ApplicationContext ctx: Context): File = File(ctx.cacheDir, "updates")
+
     /**
      * On the plain client, which is the anonymous one: GitHub is asked without a token, so nothing
      * about Shikimori's rate limiter, its authenticator or its `Authorization` header belongs on
@@ -72,4 +88,10 @@ object UpdateModule {
 abstract class UpdateBindings {
     @Binds
     abstract fun updateRepository(impl: GitHubUpdateRepository): UpdateRepository
+
+    @Binds
+    abstract fun apkDownloads(impl: ApkDownloader): ApkDownloads
+
+    @Binds
+    abstract fun updateInstaller(impl: SystemApkInstaller): UpdateInstaller
 }
