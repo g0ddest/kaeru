@@ -39,6 +39,10 @@ android {
         buildConfigField("String", "SHIKIMORI_CLIENT_ID", secret("SHIKIMORI_CLIENT_ID"))
         buildConfigField("String", "SHIKIMORI_CLIENT_SECRET", secret("SHIKIMORI_CLIENT_SECRET"))
         buildConfigField("String", "KODIK_TOKEN", secret("KODIK_TOKEN"))
+        // Where watch-together sessions meet when the two phones are not on one Wi-Fi. Empty in a
+        // build assembled without it, and an empty one is not a broken relay but no relay at all:
+        // the app says so and offers the local-network session instead of retrying forever.
+        buildConfigField("String", "TOGETHER_RELAY_URL", secret("TOGETHER_RELAY_URL"))
     }
 
     signingConfigs {

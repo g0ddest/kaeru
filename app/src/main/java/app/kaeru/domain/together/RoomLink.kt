@@ -7,9 +7,6 @@ import java.net.URI
 import java.security.SecureRandom
 import java.util.Base64
 
-/** A phone listening for its friend on the local network: the address a router gave it, and a port. */
-data class LanEndpoint(val host: String, val port: Int)
-
 /**
  * The whole of a shared viewing, small enough to paste into any chat.
  *
