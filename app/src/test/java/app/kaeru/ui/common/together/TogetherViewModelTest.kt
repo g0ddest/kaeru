@@ -546,6 +546,16 @@ class TogetherViewModelTest {
     }
 
     @Test
+    fun `an invitation in the app's own scheme knocks on the same relay room as the https one`() = runTest {
+        val vm = viewModel()
+        vm.open("kaeru://watch?r=${link.roomId}&k=${link.toHttps().substringAfter('#')}")
+        runCurrent()
+        // The same room and no address in it, which is what sends the join through the relay.
+        assertEquals(link, session.joins.single().first)
+        assertNull(session.joins.single().first.lan)
+    }
+
+    @Test
     fun `a link that is not one of ours is refused on the spot, with nothing to retry`() = runTest {
         val vm = viewModel()
         vm.open("https://example.com/w/nope")

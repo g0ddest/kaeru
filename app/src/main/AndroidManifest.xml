@@ -58,7 +58,9 @@
                   data element in a filter and matches the cross product, so this is
                   `kaeru://oauth` (the OAuth callback), `kaeru://pair` (a television's QR code,
                   read by the phone and never fired by this app) and `kaeru://watch` (an
-                  invitation naming a phone on this Wi-Fi), and nothing else.
+                  invitation: a phone on this Wi-Fi, or the relay room the landing page's
+                  button opens when a browser will not hand its own address to an app), and
+                  nothing else.
                 -->
                 <data android:scheme="kaeru" />
                 <data android:host="oauth" />

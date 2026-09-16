@@ -16,10 +16,20 @@ import java.util.Base64
  * between never see — so the relay carries ciphertext it cannot read, and a link forwarded on is
  * the only way anyone else gets in.
  *
- * Two forms of the same room. The https one is what goes in the share sheet: it is clickable
+ * Two schemes for the same room. The https one is what goes in the share sheet: it is clickable
  * everywhere and lands on a page offering the app to whoever has not got it. The `kaeru://watch`
- * one carries an address as well, and is only meaningful while both phones are on one Wi-Fi —
- * which is why [parse] refuses any address that could be routed off it.
+ * one is for the phone itself, and comes in two forms. With an address (`h`, `p`) it names a
+ * phone on this Wi-Fi and is only meaningful while both phones are on it — which is why [parse]
+ * refuses any address that could be routed off it. Without one it is the relay room the https
+ * form names, and is what that page's button fires: a browser hands a same-site address to no
+ * app, so the page has to say `kaeru://watch` itself.
+ *
+ * In the app's own scheme the key may sit in the query, as `k`, as well as in the fragment. A
+ * custom-scheme intent is resolved on the device and never becomes a request, so nothing on the
+ * way reads it; but a phone before Android 13 writes the query of a launched intent, and never its
+ * fragment, into its own log. The fragment is therefore still the better carrier, the one this
+ * app writes, and the one [parse] reads first. The query is for the page, whose intent syntax
+ * has a use of its own for the `#`.
  */
 data class RoomLink(val roomId: String, val key: ByteArray, val lan: LanEndpoint? = null) {
 
@@ -28,7 +38,7 @@ data class RoomLink(val roomId: String, val key: ByteArray, val lan: LanEndpoint
 
     /** The form for one Wi-Fi: the same room, plus where to knock. */
     fun toLan(): String {
-        val endpoint = requireNotNull(lan) { "A link without a LAN endpoint has no kaeru://watch form" }
+        val endpoint = requireNotNull(lan) { "A link without a LAN endpoint has no LAN form" }
         return "$SCHEME://$AUTHORITY?h=${endpoint.host}&p=${endpoint.port}&r=$roomId#${encode(key)}"
     }
 
@@ -52,6 +62,12 @@ data class RoomLink(val roomId: String, val key: ByteArray, val lan: LanEndpoint
         const val SCHEME = "kaeru"
         const val AUTHORITY = "watch"
 
+        /** The room, in the query of the app's own scheme. */
+        const val ROOM_PARAM = "r"
+
+        /** The key, in the query of the app's own scheme, when the fragment is not to be had. */
+        const val KEY_PARAM = "k"
+
         /** Published with the Cast skin on GitHub Pages, and the host `assetlinks.json` verifies. */
         const val HTTPS_BASE = "https://kaeru.vitaliy.velikodniy.name/w/"
 
@@ -73,22 +89,26 @@ data class RoomLink(val roomId: String, val key: ByteArray, val lan: LanEndpoint
         )
 
         /**
-         * Reads either form, and believes neither of them.
+         * Reads any of the forms, and believes none of them.
          *
          * Any application on the phone can fire `kaeru://watch`, and an https link can be handed
          * over by anybody at all. So the room name has to be exactly 64 bits of base64url, the key
-         * exactly 128, and a LAN address has to be one of the ranges a home router hands out —
-         * the same four [PairingRequest.isLanAddress] allows, and for the same reason: a link
-         * naming a public address would have the phone open a session with a stranger's server,
-         * and one naming loopback would have it open a session with whatever else is running on
-         * the phone.
+         * exactly 128 — each spelled the one way this app spells it, see [isRoomId] — and a LAN
+         * address has to be one of the ranges a home router hands out: the same four
+         * [PairingRequest.isLanAddress] allows, and for the same reason. A link naming a public
+         * address would have the phone open a session with a stranger's server, and one naming
+         * loopback would have it open a session with whatever else is running on the phone.
+         *
+         * The key is the fragment. Only in the app's own scheme, and only when there is no
+         * fragment at all, is it `k` in the query instead: a fragment that is there is the key,
+         * however bad, and never falls through to the query. An address is all or nothing — `h`
+         * without `p`, or `p` without `h`, is a local link with a piece missing, not a relay room.
          */
         fun parse(uri: String): Result<RoomLink> {
             val parsed = runCatching { URI(uri) }.getOrNull() ?: return rejected()
-            val key = decode(parsed.rawFragment)?.takeIf { it.size == KEY_BYTES } ?: return rejected()
             return when {
-                SCHEME.equals(parsed.scheme, ignoreCase = true) -> lan(parsed, key)
-                "https".equals(parsed.scheme, ignoreCase = true) -> https(parsed, key)
+                SCHEME.equals(parsed.scheme, ignoreCase = true) -> kaeru(parsed)
+                "https".equals(parsed.scheme, ignoreCase = true) -> https(parsed)
                 else -> rejected()
             }
         }
@@ -100,9 +120,11 @@ data class RoomLink(val roomId: String, val key: ByteArray, val lan: LanEndpoint
          * domain, but [parse] is public and takes a string from wherever the caller found it.
          *
          * Extra query parameters are ignored — chat applications append tracking junk, and a room
-         * should survive it.
+         * should survive it — and that includes a `k`. A key in an https query is one every
+         * server, proxy and referrer on the way would see, so it is not read from there.
          */
-        private fun https(uri: URI, key: ByteArray): Result<RoomLink> {
+        private fun https(uri: URI): Result<RoomLink> {
+            val key = keyOf(uri.rawFragment) ?: return rejected()
             if (!HTTPS_HOST.equals(uri.host, ignoreCase = true)) return rejected()
             val path = uri.path ?: return rejected()
             if (!path.startsWith(HTTPS_PATH)) return rejected()
@@ -111,16 +133,35 @@ data class RoomLink(val roomId: String, val key: ByteArray, val lan: LanEndpoint
             return Result.success(RoomLink(roomId, key))
         }
 
-        private fun lan(uri: URI, key: ByteArray): Result<RoomLink> {
+        /**
+         * The app's own scheme: the relay room when there is no address in it, a phone on this
+         * Wi-Fi when there is one. The key may come as `k` in the query, which is where the
+         * landing page's intent URI carries it — in Chrome's intent syntax the `#` already
+         * introduces `#Intent;…;end`.
+         */
+        private fun kaeru(uri: URI): Result<RoomLink> {
             if (!AUTHORITY.equals(uri.authority, ignoreCase = true)) return rejected()
             val query = queryOf(uri.rawQuery ?: return rejected())
-            val roomId = query["r"] ?: return rejected()
+            val key = keyOf(uri.rawFragment ?: query[KEY_PARAM]) ?: return rejected()
+            val roomId = query[ROOM_PARAM] ?: return rejected()
             if (!isRoomId(roomId)) return rejected()
-            val host = query["h"] ?: return rejected()
-            if (!PairingRequest.isLanAddress(host)) return rejected()
-            val port = query["p"]?.toIntOrNull() ?: return rejected()
-            if (port !in 1..65535) return rejected()
-            return Result.success(RoomLink(roomId, key, LanEndpoint(host, port)))
+            val host = query["h"]
+            val port = query["p"]
+            if (host == null && port == null) return Result.success(RoomLink(roomId, key))
+            if (host == null || !PairingRequest.isLanAddress(host)) return rejected()
+            val portNumber = port?.toIntOrNull() ?: return rejected()
+            if (portNumber !in 1..65535) return rejected()
+            return Result.success(RoomLink(roomId, key, LanEndpoint(host, portNumber)))
+        }
+
+        /**
+         * Exactly how this app writes a key, and nothing else that happens to decode to sixteen
+         * bytes — for the reasons [isRoomId] gives, and one more: the key is read from two places,
+         * and a spelling one of them takes must not be one the other refuses.
+         */
+        private fun keyOf(encoded: String?): ByteArray? {
+            val bytes = decode(encoded) ?: return null
+            return bytes.takeIf { it.size == KEY_BYTES && encode(it) == encoded }
         }
 
         /**

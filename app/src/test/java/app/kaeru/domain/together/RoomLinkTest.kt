@@ -130,6 +130,105 @@ class RoomLinkTest {
         assertEquals(TogetherFailureReason.BAD_LINK, reason(""))
     }
 
+    // --- the app's own scheme without an address -------------------------------------------------
+
+    @Test
+    fun `a relay room travels in the app's own scheme with the key in the query`() {
+        val link = RoomLink.random(random)
+        val key = link.toHttps().substringAfter('#')
+
+        val back = parsed("kaeru://watch?r=${link.roomId}&k=$key")
+
+        assertEquals(parsed(link.toHttps()), back)
+        assertEquals(link, back)
+        assertNull(back.lan)
+        // The order of the parameters is not part of the form.
+        assertEquals(link, parsed("kaeru://watch?k=$key&r=${link.roomId}"))
+        // And with the key where the https form keeps it, it is still the same room.
+        assertEquals(link, parsed("kaeru://watch?r=${link.roomId}#$key"))
+    }
+
+    @Test
+    fun `the local form takes its key from the query as well`() {
+        val link = RoomLink.random(random)
+        val key = link.toHttps().substringAfter('#')
+
+        assertEquals(
+            link.copy(lan = LanEndpoint("192.168.1.42", 41_234)),
+            parsed("kaeru://watch?h=192.168.1.42&p=41234&r=${link.roomId}&k=$key"),
+        )
+    }
+
+    @Test
+    fun `a key in the query that is not sixteen bytes is refused`() {
+        val link = RoomLink.random(random)
+
+        fun relay(key: String) = reason("kaeru://watch?r=${link.roomId}&k=$key")
+
+        // Fifteen bytes, then seventeen.
+        assertEquals(TogetherFailureReason.BAD_LINK, relay("A".repeat(20)))
+        assertEquals(TogetherFailureReason.BAD_LINK, relay("A".repeat(23)))
+        // `+` is a legal query character and not in the base64url alphabet, so it is the decoder
+        // that refuses this one, not the URI parser.
+        assertEquals(TogetherFailureReason.BAD_LINK, relay("AAAAAAAAAAAAAAAAAAAA+A"))
+        assertEquals(TogetherFailureReason.BAD_LINK, relay(""))
+        assertEquals(TogetherFailureReason.BAD_LINK, reason("kaeru://watch?r=${link.roomId}"))
+    }
+
+    @Test
+    fun `a key is spelled exactly one way, in the query and in the fragment alike`() {
+        val link = RoomLink.random(random)
+        // Sixteen zero bytes: `AAAAAAAAAAAAAAAAAAAAAA` is how this app writes them. Padded, and
+        // with the unused trailing bits set, are two more spellings of the same bytes, and a key
+        // read from one place must not be a key the other place refuses.
+        assertTrue(RoomLink.parse("kaeru://watch?r=${link.roomId}&k=AAAAAAAAAAAAAAAAAAAAAA").isSuccess)
+        assertTrue(RoomLink.parse("${RoomLink.HTTPS_BASE}${link.roomId}#AAAAAAAAAAAAAAAAAAAAAA").isSuccess)
+        assertEquals(TogetherFailureReason.BAD_LINK, reason("kaeru://watch?r=${link.roomId}&k=AAAAAAAAAAAAAAAAAAAAAA=="))
+        assertEquals(TogetherFailureReason.BAD_LINK, reason("kaeru://watch?r=${link.roomId}&k=AAAAAAAAAAAAAAAAAAAAAB"))
+        assertEquals(TogetherFailureReason.BAD_LINK, reason("${RoomLink.HTTPS_BASE}${link.roomId}#AAAAAAAAAAAAAAAAAAAAAA=="))
+        assertEquals(TogetherFailureReason.BAD_LINK, reason("${RoomLink.HTTPS_BASE}${link.roomId}#AAAAAAAAAAAAAAAAAAAAAB"))
+    }
+
+    @Test
+    fun `when both are present, the fragment is the key`() {
+        val link = RoomLink.random(random)
+        val other = RoomLink.random(random)
+        val inQuery = other.toHttps().substringAfter('#')
+        val inFragment = link.toHttps().substringAfter('#')
+
+        val back = parsed("kaeru://watch?r=${link.roomId}&k=$inQuery#$inFragment")
+
+        assertTrue(back.key.contentEquals(link.key))
+        assertFalse(back.key.contentEquals(other.key))
+        // A fragment that is there is the key, however bad. It never falls through to the query —
+        // not when it is three bytes, and not when it is nothing at all.
+        assertEquals(TogetherFailureReason.BAD_LINK, reason("kaeru://watch?r=${link.roomId}&k=$inQuery#AAAA"))
+        assertEquals(TogetherFailureReason.BAD_LINK, reason("kaeru://watch?r=${link.roomId}&k=$inQuery#"))
+    }
+
+    @Test
+    fun `the https form keeps its key in the fragment`() {
+        val link = RoomLink.random(random)
+        val key = link.toHttps().substringAfter('#')
+
+        // A key in an https query is one every server, proxy and referrer on the way would see.
+        assertEquals(TogetherFailureReason.BAD_LINK, reason("${RoomLink.HTTPS_BASE}${link.roomId}?k=$key"))
+    }
+
+    @Test
+    fun `a key in the query does not loosen the address rules`() {
+        val link = RoomLink.random(random)
+        val key = link.toHttps().substringAfter('#')
+
+        assertEquals(TogetherFailureReason.BAD_LINK, reason("kaeru://watch?h=8.8.8.8&p=41234&r=${link.roomId}&k=$key"))
+        // Half an address is not a relay room: it is a local link with a piece missing.
+        assertEquals(TogetherFailureReason.BAD_LINK, reason("kaeru://watch?h=192.168.1.42&r=${link.roomId}&k=$key"))
+        assertEquals(TogetherFailureReason.BAD_LINK, reason("kaeru://watch?p=41234&r=${link.roomId}&k=$key"))
+        assertEquals(TogetherFailureReason.BAD_LINK, reason("kaeru://watch?h=192.168.1.42&r=${link.roomId}#$key"))
+        // Without the `//` there is no authority, so nothing in it is `watch`.
+        assertEquals(TogetherFailureReason.BAD_LINK, reason("kaeru:watch?r=${link.roomId}&k=$key"))
+    }
+
     @Test
     fun `two rooms drawn in a row are not the same room`() {
         val first = RoomLink.random(random)

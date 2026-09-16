@@ -111,6 +111,9 @@ class MainActivity : FragmentActivity() {
         when (data.host) {
             "oauth" -> pendingCallback = OAuthCallback(data.getQueryParameter("code"), data.getQueryParameter("state"))
             "pair" -> pendingPairing = data.toString()
+            // An invitation `watchLinkOf` refused. Nothing to carry — and nothing to read again
+            // and refuse again on the next rotation.
+            "watch" -> Unit
             else -> return
         }
         intent.data = null

@@ -12,7 +12,7 @@ import java.security.SecureRandom
 /**
  * What the app is willing to read out of an invitation somebody tapped.
  *
- * Both forms land on the same activity as the two deep links already there, and like them neither
+ * Every form lands on the same activity as the two deep links already there, and like them none
  * is trusted: the room is parsed before the screen opens, so a link that is not a room never
  * becomes a screen asking whether to join one.
  */
@@ -31,6 +31,26 @@ class WatchLinkTest {
     fun `so is the one that names a phone on this Wi-Fi`() {
         val lan = room.copy(lan = app.kaeru.domain.together.LanEndpoint("192.168.1.7", 41234)).toLan()
         assertEquals(lan, watchLinkOf(Uri.parse(lan)))
+    }
+
+    @Test
+    fun `the relay form of the app's own scheme is read`() {
+        // What the landing page's button fires: a browser hands a same-site address to nobody, so
+        // the page has to say `kaeru://watch` itself — and in Chrome's intent syntax the `#` is
+        // already taken, which is why the key rides in the query here.
+        val relay = "kaeru://watch?r=${room.roomId}&k=${room.toHttps().substringAfter('#')}"
+        assertEquals(relay, watchLinkOf(Uri.parse(relay)))
+        assertEquals(room, RoomLink.parse(relay).getOrNull())
+    }
+
+    @Test
+    fun `a relay link with no key anywhere is not an invitation`() {
+        assertNull(watchLinkOf(Uri.parse("kaeru://watch?r=${room.roomId}")))
+    }
+
+    @Test
+    fun `a relay link with a short key is not an invitation`() {
+        assertNull(watchLinkOf(Uri.parse("kaeru://watch?r=${room.roomId}&k=AAAAAAAAAAAAAAAAAAAA")))
     }
 
     @Test
