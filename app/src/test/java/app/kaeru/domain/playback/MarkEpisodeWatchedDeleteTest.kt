@@ -4,7 +4,9 @@ import app.kaeru.domain.download.DeferredDownloadRemoval
 import app.kaeru.domain.download.DownloadKey
 import app.kaeru.domain.download.DownloadPolicy
 import app.kaeru.domain.download.DownloadState
+import app.kaeru.domain.download.DownloadedEpisode
 import app.kaeru.domain.download.EpisodeDownload
+import app.kaeru.domain.download.FakeDeferredRemovals
 import app.kaeru.domain.download.FakeDownloadRepository
 import app.kaeru.domain.error.HttpError
 import app.kaeru.domain.model.Anime
@@ -44,7 +46,8 @@ class MarkEpisodeWatchedDeleteTest {
     private val settings = FakeSettingsStore()
     private val track = Translation(7, "AniLibria.TV", TranslationKind.VOICE, 24)
 
-    private val deleteWatchedDownloads = DeferredDownloadRemoval(downloads, library, settings)
+    private val owed = FakeDeferredRemovals()
+    private val deleteWatchedDownloads = DeferredDownloadRemoval(downloads, settings, owed)
     private val mark = MarkEpisodeWatched(library, watchStates, clock, deleteWatchedDownloads)
 
     private class FakeLibrary : LibraryRepository {
@@ -223,15 +226,38 @@ class MarkEpisodeWatchedDeleteTest {
 
     /** A process that died before playback moved on: the next start clears what it owed. */
     @Test
-    fun `the sweep clears what a previous run left behind`() = runTest {
-        seed(watched = 4)
+    fun `the sweep clears what a previous run promised`() = runTest {
+        seed()
         deleteWatched(true)
         downloads.downloaded(100, 4, track, "https://cdn/100/4")
-        downloads.downloaded(100, 5, track, "https://cdn/100/5")
+        deleteWatchedDownloads.nowPlaying(100, 4)
+        assertTrue(mark(100, 4).isSuccess)
+        assertTrue("deferred, so nothing has gone yet", downloads.removed.isEmpty())
 
-        deleteWatchedDownloads.sweep()
+        // The process died on the credits. Nothing in memory survives; the promise does.
+        nextLaunch().sweep()
 
         assertEquals(listOf(100 to 4), downloads.removed)
+        assertTrue(owed.pending().isEmpty())
+    }
+
+    /**
+     * The regression this set exists to prevent. Downloading an episode you have already watched
+     * is something the app offers on purpose — the «Скачать…» sheet gives them their own block —
+     * and a sweep that reasoned from Shikimori's count instead deleted every one of them on every
+     * cold start, with no mark and no playback anywhere in the story.
+     */
+    @Test
+    fun `a watched episode downloaded on purpose survives the sweep`() = runTest {
+        seed(watched = 4)
+        deleteWatched(true)
+        downloads.downloaded(100, 3, track, "https://cdn/100/3")
+        downloads.downloaded(100, 4, track, "https://cdn/100/4")
+
+        nextLaunch().sweep()
+
+        assertTrue(downloads.removed.isEmpty())
+        assertNotNull(downloads.completed(100, 4))
     }
 
     @Test
@@ -239,9 +265,43 @@ class MarkEpisodeWatchedDeleteTest {
         seed(watched = 4)
         deleteWatched(false)
         downloads.downloaded(100, 4, track, "https://cdn/100/4")
+        owed.seed(DownloadedEpisode(100, 4))
 
         deleteWatchedDownloads.sweep()
 
         assertTrue(downloads.removed.isEmpty())
     }
+
+    /** Turned off between the mark and the restart: the viewer has decided they want the episode. */
+    @Test
+    fun `a promise the setting outlived is dropped rather than kept`() = runTest {
+        seed()
+        deleteWatched(true)
+        downloads.downloaded(100, 4, track, "https://cdn/100/4")
+        deleteWatchedDownloads.nowPlaying(100, 4)
+        assertTrue(mark(100, 4).isSuccess)
+        deleteWatched(false)
+
+        nextLaunch().sweep()
+        deleteWatched(true)
+        nextLaunch().sweep()
+
+        assertTrue(downloads.removed.isEmpty())
+        assertTrue(owed.pending().isEmpty())
+    }
+
+    @Test
+    fun `an episode deleted the ordinary way leaves no promise behind`() = runTest {
+        seed()
+        deleteWatched(true)
+        downloads.downloaded(100, 4, track, "https://cdn/100/4")
+
+        assertTrue(mark(100, 4).isSuccess)
+
+        assertEquals(listOf(100 to 4), downloads.removed)
+        assertTrue(owed.pending().isEmpty())
+    }
+
+    /** The same collaborator a new process would build, over the promises the last one left. */
+    private fun nextLaunch() = DeferredDownloadRemoval(downloads, settings, owed)
 }

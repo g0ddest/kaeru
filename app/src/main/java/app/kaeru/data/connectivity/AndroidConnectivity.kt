@@ -24,10 +24,11 @@ private const val STOP_TIMEOUT_MS = 5_000L
 /**
  * The device's own answer to «is there a network».
  *
- * Validated, not merely connected: a hotel portal and a router with no uplink both hand out an
- * interface that carries no traffic, and treating either as online would send the write queue out
- * to be refused rather than leaving it to wait. The default network is the one asked about, since
- * it is the one every request in this app goes over.
+ * Connected, not validated: the question is whether an interface claims to carry the internet, not
+ * whether Android's own probe of it came back. The argument for that is on `reachesInternet` at the
+ * bottom of this file, and it is short — a network that works can report unvalidated indefinitely,
+ * and this flag is read by everything that can hide or refuse work. The default network is the one
+ * asked about, since it is the one every request in this app goes over.
  *
  * Shared, so the home screen, the player and the television banner are one registration rather
  * than three. The replay cache is dropped the moment the last collector leaves, so a collector

@@ -45,6 +45,7 @@ class DownloadEngine @Inject constructor(
     private val refresher: DownloadRefresher,
     private val outcomes: DownloadOutcomes,
     private val failures: DownloadFailures,
+    private val stranded: StrandedDownloads,
     private val source: DownloadsSource,
     @param:IoDispatcher private val io: CoroutineDispatcher,
 ) {
@@ -53,6 +54,9 @@ class DownloadEngine @Inject constructor(
 
     /** Set when the platform refused a foreground start, so [onForeground] knows there is work. */
     private val startRefused = AtomicBoolean(false)
+
+    /** The same, for a re-add the platform turned away: the download is still owed an attempt. */
+    private val reAddRefused = AtomicBoolean(false)
 
     /** Kept from [start] so [onForeground] has somewhere to run; written once, read from anywhere. */
     @Volatile private var scope: CoroutineScope? = null
@@ -108,18 +112,38 @@ class DownloadEngine @Inject constructor(
      * expired signature belongs to the refresher and a full disk is not going to fix itself — and
      * only on a transition to «есть сеть», so a flapping connection costs one attempt per return
      * rather than a loop.
+     *
+     * Which ones those are is read from [StrandedDownloads] rather than from the in-memory kinds,
+     * because the tunnel is usually the last thing that happens before the phone goes in a pocket
+     * and the process is killed: eligibility that did not survive a restart made this a feature
+     * only for viewers who stayed in the app.
+     *
+     * The note is torn up after the add and not before. `add` starts a service in the foreground,
+     * and the moment a network returns is very often a moment the app is in the background, where
+     * Android refuses exactly that — so an add that did not go through leaves the download
+     * eligible, and [onForeground] tries again where the platform allows it.
      */
-    private fun resumeNetworkFailures() {
-        val stranded = source.current().filter {
-            it.state == Download.STATE_FAILED && failures.kindOf(it.request.id) == DownloadFailureKind.NETWORK
+    private suspend fun resumeNetworkFailures() {
+        val eligible = stranded.stranded()
+        if (eligible.isEmpty()) return
+        val rows = source.current().associateBy { it.request.id }
+        // An id the index no longer holds cannot be resumed by anybody; the note about it is rubbish.
+        eligible.filterNot { it in rows }.forEach { stranded.forgetStranded(it) }
+        val waiting = eligible.mapNotNull { rows[it] }.filter { it.state == Download.STATE_FAILED }
+        if (waiting.isEmpty()) return
+        var resumed = false
+        waiting.forEach { download ->
+            val id = download.request.id
+            if (commands.add(download.request)) {
+                // Not a failed download any more.
+                failures.forget(id)
+                stranded.forgetStranded(id)
+                resumed = true
+            } else {
+                reAddRefused.set(true)
+            }
         }
-        if (stranded.isEmpty()) return
-        stranded.forEach { download ->
-            // Not a failed download any more, whatever happens next.
-            failures.forget(download.request.id)
-            commands.add(download.request)
-        }
-        ensureServiceRunning()
+        if (resumed) ensureServiceRunning()
     }
 
     /**
@@ -131,6 +155,10 @@ class DownloadEngine @Inject constructor(
      * per process and the policy flow has already emitted. An app the viewer can see is allowed
      * to promote a service, so this is the first moment it can work.
      *
+     * And the same for a re-add the platform turned away: a download the network stranded is put
+     * back the moment the network returns, which is very often a moment the app is in the
+     * background — so the attempt is refused there and made here instead.
+     *
      * A no-op in the ordinary case, which is every launch the viewer began themselves — and, on a
      * cold start, possibly a no-op when it should not be: [start] sets `startRefused` from inside
      * an IO coroutine, and an activity resuming before that coroutine has run finds the flag still
@@ -139,10 +167,13 @@ class DownloadEngine @Inject constructor(
      * the app — cannot hit it.
      */
     fun onForeground() {
-        if (!startRefused.compareAndSet(true, false)) return
+        if (!reAddRefused.get() && !startRefused.get()) return
         val scope = scope ?: return
         scope.launch(io) {
-            if (source.current().any { !it.isTerminalState }) ensureServiceRunning()
+            if (reAddRefused.compareAndSet(true, false)) resumeNetworkFailures()
+            if (startRefused.compareAndSet(true, false) && source.current().any { !it.isTerminalState }) {
+                ensureServiceRunning()
+            }
         }
     }
 
@@ -157,7 +188,7 @@ class DownloadEngine @Inject constructor(
         override fun onChanged(download: Download, finalException: Exception?) {
             when (download.state) {
                 Download.STATE_COMPLETED -> {
-                    failures.forget(download.request.id)
+                    forget(download.request.id)
                     outcomes.completed(download)
                 }
                 Download.STATE_FAILED -> scope.launch {
@@ -167,7 +198,13 @@ class DownloadEngine @Inject constructor(
             }
         }
 
-        override fun onRemoved(download: Download) = failures.forget(download.request.id)
+        override fun onRemoved(download: Download) = forget(download.request.id)
+
+        /** Nothing about this download is a failure any more, in memory or on disk. */
+        private fun forget(id: String) {
+            failures.forget(id)
+            scope.launch { stranded.forgetStranded(id) }
+        }
 
         override fun onIdle() = Unit
 
@@ -184,16 +221,32 @@ class DownloadEngine @Inject constructor(
     private suspend fun report(download: Download, cause: Exception?) {
         val id = download.request.id
         when (refresher.refresh(download, cause)) {
-            RefreshOutcome.REQUESTED -> failures.forget(id)
+            RefreshOutcome.REQUESTED -> {
+                failures.forget(id)
+                stranded.forgetStranded(id)
+            }
             RefreshOutcome.EXHAUSTED -> {
-                failures.record(id, exhaustedKind(cause))
+                record(id, exhaustedKind(cause))
                 outcomes.failed(download)
             }
             RefreshOutcome.DECLINED -> {
-                failures.record(id, DownloadFailureCopy.classify(cause))
+                record(id, DownloadFailureCopy.classify(cause))
                 outcomes.failed(download)
             }
         }
+    }
+
+    /**
+     * Writes down what this failure was, twice over.
+     *
+     * The kind in memory is what a screen reads to say something true about the row a minute
+     * later. The note on disk is narrower and outlives the process: only a network failure is
+     * worth putting back in the queue when the network returns, and that is the one thing about a
+     * failure the next launch still has to know.
+     */
+    private suspend fun record(id: String, kind: DownloadFailureKind) {
+        failures.record(id, kind)
+        if (kind == DownloadFailureKind.NETWORK) stranded.recordStranded(id) else stranded.forgetStranded(id)
     }
 
     /**

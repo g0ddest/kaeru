@@ -2,6 +2,7 @@ package app.kaeru.player
 
 import app.kaeru.domain.connectivity.FakeConnectivity
 import app.kaeru.domain.download.DeferredDownloadRemoval
+import app.kaeru.domain.download.FakeDeferredRemovals
 import app.kaeru.domain.download.FakeDownloadRepository
 import app.kaeru.domain.error.CastLoadFailed
 import app.kaeru.domain.model.Anime
@@ -84,7 +85,7 @@ class CastPlaybackTest {
                 null,
             ),
         )
-        deleteWatched = DeferredDownloadRemoval(downloads, library, settings)
+        deleteWatched = DeferredDownloadRemoval(downloads, settings, FakeDeferredRemovals())
         controller = DefaultPlaybackController(
             localEngine = phone,
             resolve = ResolveEpisodeStream(source, watchStates, prefs, clock, StreamPrefetchCache(clock)),

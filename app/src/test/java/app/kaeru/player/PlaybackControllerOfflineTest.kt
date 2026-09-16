@@ -6,6 +6,7 @@ import app.kaeru.domain.download.DownloadPolicy
 import app.kaeru.domain.download.DownloadState
 import app.kaeru.domain.download.EpisodeDownload
 import app.kaeru.domain.download.DeferredDownloadRemoval
+import app.kaeru.domain.download.FakeDeferredRemovals
 import app.kaeru.domain.download.FakeDownloadRepository
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.error.SourceUnavailable
@@ -87,7 +88,7 @@ class PlaybackControllerOfflineTest {
                 null,
             ),
         )
-        deleteWatched = DeferredDownloadRemoval(downloads, library, settings)
+        deleteWatched = DeferredDownloadRemoval(downloads, settings, FakeDeferredRemovals())
         controller = DefaultPlaybackController(
             localEngine = engine,
             resolve = ResolveEpisodeStream(source, watchStates, prefs, clock, StreamPrefetchCache(clock)),

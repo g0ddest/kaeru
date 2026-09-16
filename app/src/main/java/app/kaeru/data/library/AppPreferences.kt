@@ -9,8 +9,12 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import app.kaeru.data.kodik.KodikTokenKeys
+import app.kaeru.data.download.StrandedDownloads
+import app.kaeru.domain.download.DeferredRemovals
 import app.kaeru.domain.download.DownloadPolicy
+import app.kaeru.domain.download.DownloadedEpisode
 import app.kaeru.domain.model.Account
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.playback.PlaybackNotificationPrompt
@@ -33,7 +37,7 @@ private const val QUALITY_AS_PLAYBACK = 0
 
 @Singleton
 class AppPreferences @Inject constructor(@param:Named("prefs") private val dataStore: DataStore<Preferences>) :
-    PlaybackPreferences, PlaybackNotificationPrompt, SettingsStore {
+    PlaybackPreferences, PlaybackNotificationPrompt, SettingsStore, DeferredRemovals, StrandedDownloads {
     private val userIdKey = longPreferencesKey("user_id")
     private val lastFullSyncKey = longPreferencesKey("last_full_sync")
     private val watchedThresholdKey = floatPreferencesKey("watched_threshold")
@@ -47,10 +51,19 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
     private val downloadWifiOnlyKey = booleanPreferencesKey("download_wifi_only")
     private val downloadDeleteWatchedKey = booleanPreferencesKey("download_delete_watched")
     private val downloadQualityKey = intPreferencesKey("download_quality")
+    private val pendingRemovalsKey = stringSetPreferencesKey("download_pending_removals")
+    private val strandedDownloadsKey = stringSetPreferencesKey("download_stranded")
 
-    /** What a wipe leaves behind: configuration of the device, not of whoever is signed in. */
+    /**
+     * What a wipe leaves behind: configuration of the device, not of whoever is signed in.
+     *
+     * The two download sets are here for a plainer reason than the settings above them: downloads
+     * are the device's and survive a logout, so a note about what to delete and about what the
+     * network stranded has to survive with them, or the files they speak for are orphaned.
+     */
     private val deviceKeys: List<Preferences.Key<*>> = KodikTokenKeys.all + notificationsAskedKey +
-        downloadLimitKey + downloadWifiOnlyKey + downloadDeleteWatchedKey + downloadQualityKey
+        downloadLimitKey + downloadWifiOnlyKey + downloadDeleteWatchedKey + downloadQualityKey +
+        pendingRemovalsKey + strandedDownloadsKey
 
     suspend fun userId(): Long? = dataStore.data.first()[userIdKey]
 
@@ -194,6 +207,47 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
 
     override suspend fun markNotificationsAsked() {
         dataStore.edit { it[notificationsAskedKey] = true }
+    }
+
+    // --- «Удалять просмотренные»: what is promised and not yet done -----------------------------
+
+    override suspend fun pending(): Set<DownloadedEpisode> =
+        dataStore.data.first()[pendingRemovalsKey].orEmpty().mapNotNull(::toEpisode).toSet()
+
+    override suspend fun record(episode: DownloadedEpisode) {
+        dataStore.edit { it[pendingRemovalsKey] = it[pendingRemovalsKey].orEmpty() + episode.stored() }
+    }
+
+    override suspend fun forget(episode: DownloadedEpisode) {
+        dataStore.edit { it[pendingRemovalsKey] = it[pendingRemovalsKey].orEmpty() - episode.stored() }
+    }
+
+    override suspend fun forgetAll() {
+        dataStore.edit { it.remove(pendingRemovalsKey) }
+    }
+
+    /** «100:4» — two numbers and a separator neither of them can contain. */
+    private fun DownloadedEpisode.stored() = "$animeId:$episode"
+
+    /** A row that does not read as two numbers is dropped rather than guessed at. */
+    private fun toEpisode(stored: String): DownloadedEpisode? {
+        val parts = stored.split(':')
+        if (parts.size != 2) return null
+        val animeId = parts[0].toIntOrNull() ?: return null
+        val episode = parts[1].toIntOrNull() ?: return null
+        return DownloadedEpisode(animeId, episode)
+    }
+
+    // --- which downloads the network stranded ----------------------------------------------------
+
+    override suspend fun stranded(): Set<String> = dataStore.data.first()[strandedDownloadsKey].orEmpty()
+
+    override suspend fun recordStranded(id: String) {
+        dataStore.edit { it[strandedDownloadsKey] = it[strandedDownloadsKey].orEmpty() + id }
+    }
+
+    override suspend fun forgetStranded(id: String) {
+        dataStore.edit { it[strandedDownloadsKey] = it[strandedDownloadsKey].orEmpty() - id }
     }
 
     /**

@@ -110,11 +110,16 @@ class FakeDownloadCommands(private val engine: FakeDownloadsSource? = null) : Do
     var clearedAll = 0
         private set
 
-    override fun add(request: DownloadRequest) {
+    /** While set, every add is turned away, as Android turns away a background foreground start. */
+    var refuseAdds = false
+
+    override fun add(request: DownloadRequest): Boolean {
+        if (refuseAdds) return false
         added += request
         // The real engine merges by id and starts the download queued, which is what the screens
         // then see; a fake that only recorded would make every flow test assert on nothing.
         engine?.put(downloadOf(request, Download.STATE_QUEUED))
+        return true
     }
 
     override fun remove(id: String) {
@@ -141,5 +146,29 @@ class FakeDownloadCommands(private val engine: FakeDownloadsSource? = null) : Do
         requirements.clear()
         resumed.clear()
         clearedAll = 0
+    }
+}
+
+/**
+ * The note about which downloads the network stopped, as a test can hold it.
+ *
+ * Outlives the [DownloadEngine] that writes to it on purpose: a test builds a second engine over
+ * the same set to stand for the next launch of the app, which is the case the real store exists
+ * for.
+ */
+class FakeStrandedDownloads : StrandedDownloads {
+    private val ids = linkedSetOf<String>()
+
+    /** What a previous run is supposed to have left behind. */
+    fun seed(vararg id: String) = ids.addAll(id)
+
+    override suspend fun stranded(): Set<String> = ids.toSet()
+
+    override suspend fun recordStranded(id: String) {
+        ids += id
+    }
+
+    override suspend fun forgetStranded(id: String) {
+        ids -= id
     }
 }

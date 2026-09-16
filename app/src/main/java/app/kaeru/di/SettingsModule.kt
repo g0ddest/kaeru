@@ -1,7 +1,9 @@
 package app.kaeru.di
 
 import app.kaeru.data.auth.PreferencesAccountRepository
+import app.kaeru.data.download.StrandedDownloads
 import app.kaeru.data.library.AppPreferences
+import app.kaeru.domain.download.DeferredRemovals
 import app.kaeru.domain.repository.AccountRepository
 import app.kaeru.domain.settings.SettingsStore
 import dagger.Binds
@@ -23,6 +25,16 @@ abstract class SettingsModule {
     // one instance each.
     @Binds
     abstract fun settingsStore(impl: AppPreferences): SettingsStore
+
+    /**
+     * The same store again, as the two notes the download engine has to keep between launches:
+     * which watched episodes it promised to delete, and which downloads the network stopped.
+     */
+    @Binds
+    abstract fun deferredRemovals(impl: AppPreferences): DeferredRemovals
+
+    @Binds
+    abstract fun strandedDownloads(impl: AppPreferences): StrandedDownloads
 
     @Binds
     abstract fun accountRepository(impl: PreferencesAccountRepository): AccountRepository

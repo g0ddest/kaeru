@@ -10,6 +10,7 @@ import app.kaeru.data.playback.RoomEpisodeProgressRepository
 import app.kaeru.data.playback.RoomPlaybackSampleRepository
 import app.kaeru.data.playback.RoomWatchStateRepository
 import app.kaeru.domain.download.DeferredDownloadRemoval
+import app.kaeru.domain.download.DeferredRemovals
 import app.kaeru.domain.download.DownloadRepository
 import app.kaeru.domain.playback.MarkEpisodeUnwatched
 import app.kaeru.domain.playback.MarkEpisodeWatched
@@ -184,9 +185,9 @@ object PlaybackModule {
     @Singleton
     fun deferredDownloadRemoval(
         downloads: DownloadRepository,
-        library: LibraryRepository,
         settings: SettingsStore,
-    ): DeferredDownloadRemoval = DeferredDownloadRemoval(downloads, library, settings)
+        promises: DeferredRemovals,
+    ): DeferredDownloadRemoval = DeferredDownloadRemoval(downloads, settings, promises)
 }
 
 @UnstableApi
