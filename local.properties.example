@@ -2,3 +2,9 @@ sdk.dir=/Users/vitaliy/Library/Android/sdk
 SHIKIMORI_CLIENT_ID=
 SHIKIMORI_CLIENT_SECRET=
 KODIK_TOKEN=
+
+# The watch-together relay, as a wss:// origin with no path — for example
+# wss://kaeru-relay.<account>.workers.dev. Deployed from infra/relay; see its README.
+# Left empty the app builds without one: LAN sessions still work, and everything else
+# says «Сервер совместного просмотра не настроен» rather than dialling nowhere.
+TOGETHER_RELAY_URL=

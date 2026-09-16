@@ -945,6 +945,28 @@ class TogetherSessionTest {
     }
 
     @Test
+    fun `the exception that window makes is spent on the first hello through it`() = sessionTest {
+        live()
+        repeat(30) { transport.deliver(TogetherMessage.Ping(sentAt = clock.millis(), seq = 2L + it)) }
+        runCurrent()
+        transport.deliver(TogetherMessage.PeerLeft())
+        runCurrent()
+
+        // The friend walks back in and their count starts over.
+        transport.deliver(peerHello(name = "Аня", seq = 1))
+        transport.deliver(TogetherMessage.Seek(positionMs = 420_000, seq = 2))
+        runCurrent()
+        assertEquals(listOf(420_000L), port.seeks)
+
+        // A relay handing the same hello back cannot re-open the door behind them.
+        transport.deliver(peerHello(name = "Аня", seq = 1))
+        transport.deliver(TogetherMessage.Seek(positionMs = 300_000, seq = 2))
+        runCurrent()
+
+        assertEquals(listOf(420_000L), port.seeks)
+    }
+
+    @Test
     fun `a channel that will not come back is the end of it`() = sessionTest {
         live()
 
@@ -1113,6 +1135,60 @@ class TogetherSessionTest {
         assertEquals(SessionState.Lost(LostReason.CONNECTION), session.state.value)
         assertEquals(1, transport.closes)
     }
+
+    @Test
+    fun `a peer shouting through the wrong door is not waited on for ever`() = sessionTest {
+        session.host("Костя")
+        runCurrent()
+
+        repeat(TogetherSession.GARBLED_LIMIT) {
+            transport.deliver(TogetherFailed(TogetherFailureReason.TAMPERED))
+        }
+        runCurrent()
+
+        assertEquals(SessionState.Lost(LostReason.CONNECTION), session.state.value)
+    }
+
+    @Test
+    fun `a run of bad frames broken by a good one starts counting again`() = sessionTest {
+        live()
+
+        repeat(TogetherSession.GARBLED_LIMIT - 1) {
+            transport.deliver(TogetherFailed(TogetherFailureReason.TAMPERED))
+        }
+        transport.deliver(TogetherMessage.Chat("слышно", seq = 5))
+        repeat(TogetherSession.GARBLED_LIMIT - 1) {
+            transport.deliver(TogetherFailed(TogetherFailureReason.TAMPERED))
+        }
+        runCurrent()
+
+        assertTrue(session.state.value is SessionState.Live)
+    }
+
+    @Test
+    fun `a player with no speed control is jumped rather than nudged`() = sessionTest {
+        port.supportsRate = false
+        live()
+
+        friendIsAt(58_500)
+        runCurrent()
+
+        assertTrue(port.rates.isEmpty())
+        assertEquals(1, port.seeks.size)
+    }
+
+    @Test
+    fun `a gap too small to be worth a jump is left alone on a player with no speed control`() =
+        sessionTest {
+            port.supportsRate = false
+            live()
+
+            friendIsAt(59_400)
+            runCurrent()
+
+            assertTrue(port.rates.isEmpty())
+            assertTrue(port.seeks.isEmpty())
+        }
 
     @Test
     fun `a frame that would not decode is one frame's problem`() = sessionTest {

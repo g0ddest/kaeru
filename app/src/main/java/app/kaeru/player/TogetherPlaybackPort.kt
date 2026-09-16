@@ -53,6 +53,12 @@ class TogetherPlaybackPort @Inject constructor(
 
     override suspend fun seekTo(positionMs: Long) = controller.seekTo(positionMs, ActionOrigin.REMOTE)
 
+    /**
+     * Anything but a receiver across the room. media3's Cast player carries no speed command, so
+     * the rung of the ladder below a seek is not available while the picture is over there.
+     */
+    override val supportsRate: Boolean get() = !controller.state.value.isCasting
+
     override suspend fun setRate(factor: Float) = controller.setRate(factor)
 
     override suspend fun openEpisode(animeId: Int, episode: Int, translationId: Int?, positionMs: Long) {

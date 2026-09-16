@@ -34,6 +34,21 @@ class VoiceRecorder @Inject constructor(
     /** Thirty seconds, and the last one sends rather than throws the speech away. */
     override val maxDurationMs: Int get() = MAX_DURATION_MS
 
+    /**
+     * Clears clips nothing is going to come back for.
+     *
+     * A clip is read and deleted the moment recording stops, so the only ones left on disk are
+     * from a process that died with the microphone open. Nothing else will ever remove them, and
+     * a minute of Opus per crash adds up on a phone that is short of space in the first place.
+     * Done on the way in rather than on the way out, because the way out is what failed.
+     */
+    private fun sweep() {
+        runCatching {
+            context.cacheDir.listFiles { file -> file.name.startsWith(PREFIX) }
+                ?.forEach { it.delete() }
+        }
+    }
+
     private var recorder: MediaRecorder? = null
     private var file: File? = null
     private var startedAt = 0L
@@ -57,7 +72,8 @@ class VoiceRecorder @Inject constructor(
      */
     override fun start(): Boolean {
         if (recorder != null) return true
-        val target = File(context.cacheDir, "voice-${System.currentTimeMillis()}.clip")
+        sweep()
+        val target = File(context.cacheDir, "$PREFIX${System.currentTimeMillis()}.clip")
         val media = newRecorder()
         return runCatching {
             media.setAudioSource(MediaRecorder.AudioSource.MIC)
@@ -149,6 +165,9 @@ class VoiceRecorder @Inject constructor(
         }
 
     private companion object {
+        /** What a clip file is called, and what the sweep on the way in looks for. */
+        private const val PREFIX = "voice-"
+
         const val SAMPLE_RATE = 16_000
         const val BIT_RATE = 24_000
         const val MAX_DURATION_MS = 30_000

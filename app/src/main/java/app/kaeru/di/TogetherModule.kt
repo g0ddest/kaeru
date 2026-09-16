@@ -23,7 +23,9 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import java.time.Clock
 import java.util.concurrent.TimeUnit
@@ -95,9 +97,14 @@ object TogetherModule {
         lan: LanSocketTransport,
         relay: RelayTransport,
         @TogetherRelayUrl relayUrl: String,
+        @IoDispatcher io: CoroutineDispatcher,
     ): HostTransports = HostTransports {
-        val endpoint = if (relayUrl.isBlank()) lan.hostEndpoint() else null
-        if (endpoint != null) HostChannel(lan, endpoint) else HostChannel(relay, null)
+        // On the io dispatcher, because asking for an endpoint enumerates network interfaces and
+        // binds a socket — and the only thing that asks is a button press on the main thread.
+        withContext(io) {
+            val endpoint = if (relayUrl.isBlank()) lan.hostEndpoint() else null
+            if (endpoint != null) HostChannel(lan, endpoint) else HostChannel(relay, null)
+        }
     }
 
     /**

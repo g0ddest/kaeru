@@ -100,6 +100,9 @@ class FakePlaybackPort : PlaybackPort {
     /** While set, seeking throws — a player that broke where nothing is waiting to hear about it. */
     var seekFailure: Throwable? = null
 
+    /** False stands in for a Chromecast, which has no speed control. */
+    override var supportsRate: Boolean = true
+
     override suspend fun play() {
         plays += 1
         _state.update { it.copy(playing = true) }

@@ -58,6 +58,9 @@ data class RoomLink(val roomId: String, val key: ByteArray, val lan: LanEndpoint
         /** The path every https form of a room shares, and the only one [parse] will follow. */
         const val HTTPS_PATH = "/w/"
 
+        /** The one domain an https invitation may name. */
+        const val HTTPS_HOST = "kaeru.vitaliy.velikodniy.name"
+
         /** 64 bits: enough that a room cannot be found by guessing, short enough to stay readable. */
         const val ROOM_ID_BYTES = 8
 
@@ -91,12 +94,16 @@ data class RoomLink(val roomId: String, val key: ByteArray, val lan: LanEndpoint
         }
 
         /**
-         * The host is deliberately not checked. Nothing is ever dialled at it: a relay session
-         * goes to the address built into the app, and App Links only hand this app a link from the
-         * one verified domain anyway. Extra query parameters are ignored for the same reason —
-         * chat applications append tracking junk, and a room should survive it.
+         * One domain, because this form names no address to dial: the room is joined through the
+         * relay built into the app, so a link from anywhere else would quietly put a stranger's
+         * room id into this viewer's session. App Links already hand this app only the verified
+         * domain, but [parse] is public and takes a string from wherever the caller found it.
+         *
+         * Extra query parameters are ignored — chat applications append tracking junk, and a room
+         * should survive it.
          */
         private fun https(uri: URI, key: ByteArray): Result<RoomLink> {
+            if (!HTTPS_HOST.equals(uri.host, ignoreCase = true)) return rejected()
             val path = uri.path ?: return rejected()
             if (!path.startsWith(HTTPS_PATH)) return rejected()
             val roomId = path.removePrefix(HTTPS_PATH)

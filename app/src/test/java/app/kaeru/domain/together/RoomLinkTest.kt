@@ -19,6 +19,19 @@ class RoomLinkTest {
         (RoomLink.parse(uri).exceptionOrNull() as? TogetherFailed)?.reason
 
     @Test
+    fun `an invitation from somebody else's domain is not an invitation`() {
+        val key = "AAAAAAAAAAAAAAAAAAAAAA"
+        val room = "cm9vbTEyMzQ"
+        assertTrue(RoomLink.parse("https://${RoomLink.HTTPS_HOST}/w/$room#$key").isSuccess)
+        // The same shape, a different host. Nothing is dialled at it — the room would be opened on
+        // this app's own relay, which is exactly why the name has to be checked here.
+        assertTrue(RoomLink.parse("https://example.com/w/$room#$key").isFailure)
+        assertTrue(RoomLink.parse("https://kaeru.vitaliy.velikodniy.name.evil.example/w/$room#$key").isFailure)
+        // Domain names are not case-sensitive and neither is this.
+        assertTrue(RoomLink.parse("https://KAERU.Vitaliy.Velikodniy.NAME/w/$room#$key").isSuccess)
+    }
+
+    @Test
     fun `a shared link comes back as the room it was made from`() {
         val link = RoomLink.random(random)
 

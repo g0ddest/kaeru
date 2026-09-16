@@ -183,9 +183,15 @@
       document.getElementById('room').hidden = false;
     }
 
+    // «Открыть в Kaeru» only where there is a Kaeru to open it in. On anything else the same
+    // press reloads this page and looks like a button that does nothing, so the primary action
+    // stays the one that helps: install it. The App Link opens the app before this page is ever
+    // drawn, so a phone that has it rarely sees this at all.
     var open = document.getElementById('open');
-    open.href = window.location.pathname + window.location.hash;
-    open.textContent = 'Открыть в Kaeru';
+    if (/android/i.test(navigator.userAgent)) {
+      open.href = window.location.pathname + window.location.hash;
+      open.textContent = 'Открыть в Kaeru';
+    }
 
     // «latest» on GitHub means «latest full release», and every Kaeru build so far is a
     // pre-release, so the newest release has to be asked for by hand. The list page is what the

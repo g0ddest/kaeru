@@ -46,7 +46,11 @@ data class HostChannel(val transport: WatchTogetherTransport, val endpoint: LanE
 
 /** How this device opens a room of its own, which is the one case a link cannot be routed by. */
 fun interface HostTransports {
-    fun open(): HostChannel
+    /**
+     * Suspending because opening a room enumerates this device's network interfaces and binds a
+     * socket, and the only caller is a button press on the main thread.
+     */
+    suspend fun open(): HostChannel
 }
 
 /**
@@ -107,6 +111,9 @@ class TogetherSession(
     private var rejoin: Job? = null
     private var becomingLive: Job? = null
 
+    /** Whether a friend who has just gone is still owed the one hello that may count below the mark. */
+    private var rejoining = false
+
     /** The five loops and collectors of one session, so losing it stops all of them at once. */
     private var ticks: Job? = null
     private var asHost = false
@@ -143,6 +150,9 @@ class TogetherSession(
      * потеряна».
      */
     private var closingBecause: Throwable? = null
+
+    /** Undecodable frames in a row. A key that does not match never starts matching. */
+    private var refused = 0
 
     // ---- opening and closing ----
 
@@ -257,8 +267,10 @@ class TogetherSession(
         drift = 0
         correcting = false
         voice = null
+        rejoining = false
         pendingEpisode = null
         closingBecause = null
+        refused = 0
         hello = CompletableDeferred()
         animeId = port.state.value.animeId ?: 0
         running = scope.launch(failures) {
@@ -271,8 +283,13 @@ class TogetherSession(
                     launch { port.localActions.collect { forward(it) } }
                 }
                 transport.connect(link, asHost).collect { frame ->
-                    frame.onSuccess { receive(it) }
-                        .onFailure { closingBecause = closingBecause ?: it }
+                    frame.onSuccess {
+                        refused = 0
+                        receive(it)
+                    }.onFailure { failure ->
+                        closingBecause = closingBecause ?: failure
+                        garbled(failure)
+                    }
                 }
                 // Only a channel that is finished for good gets here: a frame that would not
                 // decode is a value inside the flow, not the end of it.
@@ -326,6 +343,21 @@ class TogetherSession(
         // Closed here and not in a coroutine of its own: the transports are one per process, so a
         // close left in flight would land on whatever session opened next.
         runCatching { open.close() }
+    }
+
+    /**
+     * A frame that would not decode, and what a run of them means.
+     *
+     * One is nothing: a corrupted packet is not a reason to end somebody's film. Three in a row
+     * from a peer that is sitting there is a key that does not match — a link truncated by a chat
+     * application, most often — and the alternative to saying so is a host waiting for a friend
+     * who is already connected and shouting through the wrong door, in silence, for ever.
+     */
+    private suspend fun garbled(failure: Throwable) {
+        refused += 1
+        if (refused < GARBLED_LIMIT) return
+        Log.w(TAG, "$refused frames in a row would not decode; giving up on this room", failure)
+        lose(LostReason.CONNECTION)
     }
 
     /**
@@ -407,6 +439,7 @@ class TogetherSession(
         // Their clock is in `sentAt` and ours is in `now`; the difference between the two clocks
         // is exactly what the policy's offset undoes, so the two mix here on purpose.
         val there = if (report.playing) report.positionMs + (now - report.sentAt) else report.positionMs
+        val target = there + offsets.offsetMs
         val action = SyncPolicy.decide(
             localMs = here.positionMs,
             remoteMs = there,
@@ -417,9 +450,15 @@ class TogetherSession(
         )
         when (action) {
             SyncAction.None -> Unit
-            is SyncAction.Rate -> {
+            is SyncAction.Rate -> if (port.supportsRate) {
                 port.setRate(action.factor)
                 correcting = action.factor != SyncPolicy.NORMAL
+            } else if (kotlin.math.abs(here.positionMs - target) > RATELESS_SEEK_MS) {
+                // Nothing here can play slightly slow — the picture is on a television — so the
+                // band that would have been nudged shut has to be jumped instead. Not at the
+                // bottom of it: below a second a jump is worse than the gap it closes.
+                correcting = false
+                port.seekTo(target)
             }
             is SyncAction.SeekTo -> {
                 normalSpeed()
@@ -464,11 +503,17 @@ class TogetherSession(
             // walking back in has restarted their count, so theirs is below the mark by
             // definition. Everything else stays gated by the old mark until that hello arrives,
             // or the window would be thirty seconds in which any captured frame plays again.
-            val returning = rejoin != null && message is TogetherMessage.Hello
+            // Once, and only while the window is open. A relay cannot forge or read a frame, but
+            // it can hand one back — and an exception that stayed open for the whole window would
+            // let a replayed hello re-seed the guard and the captured session follow it in order.
+            val returning = rejoining && message is TogetherMessage.Hello
             if (!returning && message.seq <= peerSeq) return
             // Their count is theirs again from here, and so is the last action anybody applied —
             // a returned peer must not have to count its way back up before it may pause anything.
-            if (returning) lastControl = Control(0, byHost = false)
+            if (returning) {
+                rejoining = false
+                lastControl = Control(0, byHost = false)
+            }
             peerSeq = message.seq
             // And a Lamport count of our own on top of it: raising ours above anything we hear is
             // what makes «later» mean the same thing on both phones, so neither side can be
@@ -605,6 +650,7 @@ class TogetherSession(
         if (peerName.isNotEmpty()) announce(TogetherEvent.Notice(NoticeKind.LEFT, peerName))
         rejoin?.cancel()
         rejoin = null
+        rejoining = false
         if (deliberate) {
             // Somebody pressed «выйти». There is nobody to wait half a minute for, and «связь с
             // другом потеряна» after that wait would be an account of what happened that is simply
@@ -614,11 +660,13 @@ class TogetherSession(
             _state.value = SessionState.Ended
             return
         }
+        rejoining = true
         rejoin = scope.launch(failures) {
             delay(REJOIN_WINDOW_MS)
-            // Nulled before the window's own verdict, so the exception the guard makes for a
+            // Closed before the window's own verdict, so the exception the guard makes for a
             // returning hello lasts the window rather than the rest of the session.
             rejoin = null
+            rejoining = false
             lose(LostReason.CONNECTION)
         }
     }
@@ -807,8 +855,19 @@ class TogetherSession(
         /** A clip nobody finished sending is not worth holding on to. */
         const val VOICE_TIMEOUT_MS = 30_000L
 
+        /**
+         * Where a gap gets seeked on a player with no speed control.
+         *
+         * Half of [SyncPolicy.SEEK_MS]: a receiver cannot be nudged, so the choice is a jump or
+         * nothing, and a jump under a second costs more than it buys.
+         */
+        const val RATELESS_SEEK_MS = 1_000L
+
         /** Eight frames — comfortably past thirty seconds of Opus, and nowhere near a frame cap. */
         const val MAX_VOICE_BYTES = 8 * TogetherMessage.MAX_VOICE_CHUNK_BYTES
+
+        /** Three, because one is a packet and two is bad luck. */
+        const val GARBLED_LIMIT = 3
 
         private const val EVENT_BUFFER = 64
 

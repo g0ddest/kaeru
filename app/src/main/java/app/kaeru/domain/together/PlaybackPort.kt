@@ -60,6 +60,14 @@ interface PlaybackPort {
 
     suspend fun seekTo(positionMs: Long)
 
+    /**
+     * Whether [setRate] does anything on the thing currently playing.
+     *
+     * False on a Chromecast, which has no speed control — and a session that did not know would
+     * keep asking for 0.97 for ever, never reaching the band where it would seek instead.
+     */
+    val supportsRate: Boolean
+
     /** Slightly slow or slightly fast, to close a gap of a second or two without a visible jump. */
     suspend fun setRate(factor: Float)
 
