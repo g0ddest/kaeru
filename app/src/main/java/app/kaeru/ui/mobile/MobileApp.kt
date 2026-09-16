@@ -11,6 +11,7 @@ import app.kaeru.ui.common.theme.KaeruTheme
 import app.kaeru.ui.common.auth.AuthViewModel
 import app.kaeru.ui.common.pairing.PairingStage
 import app.kaeru.ui.common.pairing.PairingViewModel
+import app.kaeru.ui.common.together.TogetherViewModel
 import app.kaeru.ui.mobile.auth.LoginScreen
 import app.kaeru.ui.mobile.pairing.PairingScreen
 
@@ -25,11 +26,23 @@ fun MobileApp(
     onPairingLinkConsumed: () -> Unit = {},
     route: String? = null,
     onRouteConsumed: () -> Unit = {},
+    watchLink: String? = null,
+    onWatchLinkConsumed: () -> Unit = {},
     authViewModel: AuthViewModel = hiltViewModel(),
     pairingViewModel: PairingViewModel = hiltViewModel(),
+    togetherViewModel: TogetherViewModel = hiltViewModel(),
 ) {
     val auth = authViewModel.uiState.collectAsStateWithLifecycle().value
     val pairing = pairingViewModel.uiState.collectAsStateWithLifecycle().value
+    val together = togetherViewModel.uiState.collectAsStateWithLifecycle().value
+    // Opening the room is what makes the other phone say what it is watching, which is the whole
+    // of the screen the viewer then decides on. Consumed once: a rotation must not knock twice.
+    LaunchedEffect(watchLink) {
+        if (watchLink != null) {
+            togetherViewModel.open(watchLink)
+            onWatchLinkConsumed()
+        }
+    }
     LaunchedEffect(pairingLink) {
         if (pairingLink != null) {
             pairingViewModel.open(pairingLink)
@@ -58,6 +71,9 @@ fun MobileApp(
                 // dropped while signed out, where there is no shell to push anything onto.
                 route = route,
                 onRouteConsumed = onRouteConsumed,
+                together = together,
+                onJoinTogether = togetherViewModel::join,
+                onDismissTogether = togetherViewModel::dismissJoin,
             )
             // Signing a television in does not need this phone to be signed in: what crosses the
             // network is a code from the browser's own Shikimori session, so the hand-off works

@@ -18,6 +18,7 @@ import app.kaeru.ui.common.player.LocalCastAvailable
 import app.kaeru.ui.mobile.MobileApp
 import app.kaeru.ui.mobile.OAuthCallback
 import app.kaeru.ui.mobile.Routes
+import app.kaeru.ui.mobile.watchLinkOf
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -32,6 +33,9 @@ class MainActivity : FragmentActivity() {
     private var pendingCallback by mutableStateOf<OAuthCallback?>(null)
 
     private var pendingPairing by mutableStateOf<String?>(null)
+
+    /** An invitation to watch with somebody, as it arrived. Validated before it gets here. */
+    private var pendingWatch by mutableStateOf<String?>(null)
 
     /** A screen the app was asked to open from outside it: today, «Загрузки» from the notification. */
     private var pendingRoute by mutableStateOf<String?>(null)
@@ -57,6 +61,8 @@ class MainActivity : FragmentActivity() {
                     onPairingLinkConsumed = { pendingPairing = null },
                     route = pendingRoute,
                     onRouteConsumed = { pendingRoute = null },
+                    watchLink = pendingWatch,
+                    onWatchLinkConsumed = { pendingWatch = null },
                 )
             }
         }
@@ -83,14 +89,24 @@ class MainActivity : FragmentActivity() {
     }
 
     /**
-     * Reads one of the app's two deep links and strips it from the intent, so a recreation
-     * (rotation, process restart) cannot replay it. Neither is trusted here: a `kaeru://oauth`
-     * callback is validated by the auth layer and a `kaeru://pair` link by `PairingRequest`, which
-     * refuses everything that does not point at a television on this network. This only carries
-     * them across.
+     * Reads one of the app's deep links and strips it from the intent, so a recreation (rotation,
+     * process restart) cannot replay it. None of them is trusted here: a `kaeru://oauth` callback
+     * is validated by the auth layer, a `kaeru://pair` link by `PairingRequest`, which refuses
+     * everything that does not point at a television on this network, and an invitation by
+     * `RoomLink.parse`. This only carries them across.
+     *
+     * The invitation is looked at first because it is the only one that arrives over https as well
+     * as over the app's own scheme: a verified App Link opens this activity with an ordinary web
+     * address, which has no `kaeru` scheme to recognise it by.
      */
     private fun readDeepLink(intent: Intent?) {
         val data: Uri = intent?.data ?: return
+        val invitation = watchLinkOf(data)
+        if (invitation != null) {
+            pendingWatch = invitation
+            intent.data = null
+            return
+        }
         if (data.scheme != "kaeru") return
         when (data.host) {
             "oauth" -> pendingCallback = OAuthCallback(data.getQueryParameter("code"), data.getQueryParameter("state"))

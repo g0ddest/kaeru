@@ -46,14 +46,16 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <!--
-                  One scheme, two hosts, written as separate tags: the platform merges every data
-                  element in a filter and matches the cross product, so this is `kaeru://oauth`
-                  (the OAuth callback) and `kaeru://pair` (a television's QR code, read by the
-                  phone and never fired by this app), and nothing else.
+                  One scheme, three hosts, written as separate tags: the platform merges every
+                  data element in a filter and matches the cross product, so this is
+                  `kaeru://oauth` (the OAuth callback), `kaeru://pair` (a television's QR code,
+                  read by the phone and never fired by this app) and `kaeru://watch` (an
+                  invitation naming a phone on this Wi-Fi), and nothing else.
                 -->
                 <data android:scheme="kaeru" />
                 <data android:host="oauth" />
                 <data android:host="pair" />
+                <data android:host="watch" />
             </intent-filter>
         </activity>
 
