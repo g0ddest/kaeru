@@ -88,7 +88,16 @@ class TogetherSession @Inject constructor(
     private var correcting = false
     private var voice: VoiceBuffer? = null
     private var hello = CompletableDeferred<TogetherMessage.Hello>()
-    private var lastFailure: Throwable? = null
+
+    /**
+     * Why the channel is ending, as the channel itself said it — set once and never overwritten.
+     *
+     * A write failing is not an answer to that question. A relay closing a room arrives as
+     * exactly this: a reason on the way in, and a socket that has stopped accepting writes a
+     * moment later, and letting the second one speak turns «в комнате уже двое» into «связь
+     * потеряна».
+     */
+    private var closingBecause: Throwable? = null
 
     // ---- opening and closing ----
 
@@ -140,7 +149,7 @@ class TogetherSession @Inject constructor(
         val open = channel
         if (open != null) send(TogetherMessage.Bye(nextSeq()))
         // Whatever the last correction left behind is not this viewer's speed to keep.
-        port.setRate(SyncPolicy.NORMAL)
+        forceNormalSpeed()
         stop()
         _state.value = SessionState.Ended
     }
@@ -155,7 +164,7 @@ class TogetherSession @Inject constructor(
         when (val now = _state.value) {
             is SessionState.Hosting -> _state.value = now.copy(waiting = false)
             is SessionState.Joining, is SessionState.Lost -> scope.launch {
-                port.setRate(SyncPolicy.NORMAL)
+                forceNormalSpeed()
                 stop()
                 _state.value = SessionState.Idle
             }
@@ -176,7 +185,7 @@ class TogetherSession @Inject constructor(
         drift = 0
         correcting = false
         voice = null
-        lastFailure = null
+        closingBecause = null
         hello = CompletableDeferred()
         animeId = port.state.value.animeId ?: 0
         running = scope.launch {
@@ -186,11 +195,11 @@ class TogetherSession @Inject constructor(
             launch { corrections() }
             launch { port.localActions.collect { forward(it) } }
             transport.connect(link, asHost).collect { frame ->
-                frame.onSuccess { receive(it) }.onFailure { lastFailure = it }
+                frame.onSuccess { receive(it) }.onFailure { closingBecause = closingBecause ?: it }
             }
             // Only a channel that is finished for good gets here: a frame that would not decode
             // is a value inside the flow, not the end of it.
-            lose(reasonOf(lastFailure))
+            lose(reasonOf(closingBecause))
         }
     }
 
@@ -217,6 +226,10 @@ class TogetherSession @Inject constructor(
     private suspend fun lose(reason: LostReason, close: Boolean = true) {
         val now = _state.value
         if (now is SessionState.Ended || now is SessionState.Idle || now is SessionState.Lost) return
+        // Before anything else. A correction in force when the channel died would otherwise play
+        // the rest of somebody's episode three percent slow for ever: there is no speed control
+        // anywhere in this app, and nothing else ever writes the rate back.
+        normalSpeed()
         _state.value = SessionState.Lost(reason)
         rejoin?.cancel()
         becomingLive?.cancel()
@@ -331,8 +344,19 @@ class TogetherSession @Inject constructor(
         }
     }
 
+    /** Ends a correction that is running. Nothing to do when none is. */
     private suspend fun normalSpeed() {
         if (!correcting) return
+        forceNormalSpeed()
+    }
+
+    /**
+     * Normal speed whether or not this session believes it set it.
+     *
+     * For the two endings a viewer asked for. `correcting` is one session's memory of one
+     * correction, and a session that is being put down is the wrong place to trust it.
+     */
+    private suspend fun forceNormalSpeed() {
         port.setRate(SyncPolicy.NORMAL)
         correcting = false
     }
@@ -452,6 +476,9 @@ class TogetherSession @Inject constructor(
     private suspend fun changed(message: TogetherMessage.Episode) {
         val here = port.state.value
         if (here.episode == message.episode && here.translationId == message.translationId) return
+        // media3 keeps a playback speed across media items, so a correction running when the
+        // episode changes would be inherited by an episode it was never about.
+        normalSpeed()
         port.openEpisode(animeId, message.episode, message.translationId, 0)
         announce(TogetherEvent.Notice(NoticeKind.EPISODE, peerName, episode = message.episode))
         mentionVoice(message.translationId)
@@ -459,7 +486,11 @@ class TogetherSession @Inject constructor(
 
     private fun reported(message: TogetherMessage.State) {
         peer = PeerReport(message.positionMs, message.playing, message.sentAt, clock.millis())
-        drift = port.state.value.positionMs - (message.positionMs + offsets.offsetMs)
+        // The same extrapolation the policy judges by, so the gap on screen is the gap being
+        // acted on. Read off the raw report instead, the two differ by the one-way delay less the
+        // clock offset — enough, between phones whose clocks are a second apart, to show a steady
+        // drift the session can plainly see is not there.
+        drift = port.state.value.positionMs - (peerPositionNow() ?: return)
         republishLive()
     }
 
@@ -610,7 +641,9 @@ class TogetherSession @Inject constructor(
         try {
             open.send(message)
         } catch (dropped: TogetherFailed) {
-            lastFailure = dropped
+            // Deliberately not recorded as a reason: this is one action that did not make it out,
+            // and the channel's own last word is what says why a session ended.
+            Unit
         }
     }
 

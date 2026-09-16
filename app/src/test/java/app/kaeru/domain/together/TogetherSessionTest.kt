@@ -315,6 +315,24 @@ class TogetherSessionTest {
     }
 
     @Test
+    fun `a write that fails on the way out does not rewrite why the room closed`() = sessionTest {
+        val link = RoomLink("room", ByteArray(16), null)
+        val joining = launch { session.join(link, "Костя") }
+        runCurrent()
+
+        // The relay says the room is full and stops taking writes, in that order.
+        transport.deliver(TogetherFailed(TogetherFailureReason.ROOM_FULL))
+        transport.sendFailure = TogetherFailed(TogetherFailureReason.UNREACHABLE)
+        runCurrent()
+        session.sendChat("ау")
+        transport.finish()
+        runCurrent()
+        joining.join()
+
+        assertEquals(SessionState.Lost(LostReason.ROOM_FULL), session.state.value)
+    }
+
+    @Test
     fun `a room that already has two people in it says which of them this is not`() = sessionTest {
         val link = RoomLink("room", ByteArray(16), null)
         val joining = launch { session.join(link, "Костя") }
@@ -611,21 +629,34 @@ class TogetherSessionTest {
     }
 
     @Test
-    fun `the drift the screen shows follows what the friend reports`() = sessionTest {
+    fun `the drift the screen shows is the drift the session acts on`() = sessionTest {
         live()
+        // Their clock reads three seconds ahead of this one.
+        val ping = transport.sentOf<TogetherMessage.Ping>().single()
+        transport.deliver(
+            TogetherMessage.Pong(ping.sentAt, ping.sentAt + 3_000, ping.sentAt + 3_000, seq = 2),
+        )
+        runCurrent()
+        assertEquals(3_000L, (session.state.value as SessionState.Live).offsetMs)
 
+        // A report a second old by this device's clock, so a second of their playback is missing
+        // from the position it carries.
+        advanceTimeBy(1_000)
+        runCurrent()
         transport.deliver(
             TogetherMessage.State(
                 positionMs = 59_200,
                 playing = true,
                 buffering = false,
-                sentAt = clock.millis(),
-                seq = 20,
+                // Their clock, three seconds ahead, a second ago.
+                sentAt = clock.millis() + 3_000 - 1_000,
+                seq = 3,
             ),
         )
         runCurrent()
 
-        assertEquals(800L, (session.state.value as SessionState.Live).driftMs)
+        // 60 000 here against 59 200 + 1 000 travelled + 3 000 − 3 000 of clock: 200 ms behind.
+        assertEquals(-200L, (session.state.value as SessionState.Live).driftMs)
     }
 
     // ---- talking ----
@@ -826,6 +857,31 @@ class TogetherSessionTest {
         runCurrent()
 
         assertEquals(SessionState.Lost(LostReason.CONNECTION), session.state.value)
+    }
+
+    @Test
+    fun `a session that dies mid-correction gives the picture its speed back`() = sessionTest {
+        live()
+        friendIsAt(59_000)
+        assertEquals(SyncPolicy.SLOW, port.rates.single(), 0.0001f)
+
+        transport.finish()
+        runCurrent()
+
+        assertEquals(SyncPolicy.NORMAL, port.rates.last(), 0.0001f)
+    }
+
+    @Test
+    fun `an episode change mid-correction does not carry the speed into it`() = sessionTest {
+        live()
+        friendIsAt(59_000)
+        assertEquals(SyncPolicy.SLOW, port.rates.single(), 0.0001f)
+
+        transport.deliver(TogetherMessage.Episode(episode = 5, translationId = 11, seq = 30))
+        runCurrent()
+
+        assertEquals(SyncPolicy.NORMAL, port.rates.last(), 0.0001f)
+        assertEquals(5, port.opened.single().episode)
     }
 
     @Test
