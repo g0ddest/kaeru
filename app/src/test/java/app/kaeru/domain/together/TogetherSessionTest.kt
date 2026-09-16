@@ -278,6 +278,18 @@ class TogetherSessionTest {
     }
 
     @Test
+    fun `the host's first outbound message is its hello`() = sessionTest {
+        session.host("Костя")
+        runCurrent()
+        assertTrue(transport.sent.isEmpty())
+
+        transport.deliver(peerHello(name = "Аня"))
+        runCurrent()
+
+        assertTrue(transport.sent.first() is TogetherMessage.Hello)
+    }
+
+    @Test
     fun `nobody says hello back for half a minute and the wait is called off`() = sessionTest {
         val link = RoomLink("room", ByteArray(16), null)
         val joining = launch { session.join(link, "Костя") }
@@ -757,6 +769,53 @@ class TogetherSessionTest {
         runCurrent()
 
         assertEquals(SessionState.Live("Аня", 0, 0), session.state.value)
+    }
+
+    @Test
+    fun `a friend who comes back counting from one again is still let in`() = sessionTest {
+        live()
+        // A minute of state reports and pings, so this side's high-water mark is well past what a
+        // phone that has just reconnected will be sending.
+        repeat(30) { transport.deliver(TogetherMessage.Ping(sentAt = clock.millis(), seq = 2L + it)) }
+        runCurrent()
+
+        transport.deliver(TogetherMessage.PeerLeft())
+        runCurrent()
+        // Their session started over, so their counter did too.
+        transport.deliver(peerHello(name = "Аня", seq = 1))
+        runCurrent()
+        assertEquals(SessionState.Live("Аня", 0, 0), session.state.value)
+
+        // And what they do next is acted on rather than dropped as a replay.
+        transport.deliver(TogetherMessage.Seek(positionMs = 300_000, seq = 2))
+        runCurrent()
+
+        assertEquals(listOf(300_000L), port.seeks)
+        advanceTimeBy(TogetherSession.REJOIN_WINDOW_MS + 1)
+        runCurrent()
+        assertTrue(session.state.value is SessionState.Live)
+    }
+
+    @Test
+    fun `nothing the host does reaches a guest still on its join screen`() = sessionTest {
+        port.showing(animeId = 500, episode = 2, translationId = 11, positionMs = 120_000)
+        val link = RoomLink("room", ByteArray(16), null)
+        val joining = launch { session.join(link, "Костя") }
+        runCurrent()
+        transport.deliver(peerHello(name = "Аня", episode = 7, positionMs = 930_000))
+        runCurrent()
+        joining.join()
+        assertTrue(session.state.value is SessionState.Joining)
+
+        transport.deliver(TogetherMessage.Pause(positionMs = 940_000, seq = 2))
+        transport.deliver(TogetherMessage.Seek(positionMs = 950_000, seq = 3))
+        transport.deliver(TogetherMessage.Episode(episode = 8, translationId = 22, seq = 4))
+        runCurrent()
+
+        assertEquals(0, port.pauses)
+        assertTrue(port.seeks.isEmpty())
+        assertTrue(port.opened.isEmpty())
+        assertEquals(2, port.state.value.episode)
     }
 
     @Test

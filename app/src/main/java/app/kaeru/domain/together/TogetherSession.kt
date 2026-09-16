@@ -250,11 +250,15 @@ class TogetherSession @Inject constructor(
         var connected = false
         transport.state.collect { state ->
             val up = state == ConnectionState.CONNECTED
-            if (up && !connected) {
-                // Before anything else the guest can possibly send: a LAN host holds the slot
-                // open only until a first frame decrypts, and a ping arriving first would be a
-                // frame that says nothing about who sent it.
-                if (!asHost) send(greeting())
+            // The guest only. A host's channel comes up the moment the guest's first frame
+            // decrypts, by a different route than that frame itself, and nothing orders the two —
+            // so a host writing here would send a ping or its hello depending on the weather. A
+            // host answers where the answer belongs, on the inbound path.
+            if (up && !connected && !asHost) {
+                // Before anything else this side can possibly send: a host holds the slot open
+                // only until a first frame decrypts, and a ping arriving first is a frame that
+                // says nothing about who sent it.
+                send(greeting())
                 send(TogetherMessage.Ping(clock.millis(), nextSeq()))
             }
             connected = up
@@ -392,6 +396,12 @@ class TogetherSession @Inject constructor(
      * which one it is, so both settle a photo finish the same way.
      */
     private suspend fun control(seq: Long, apply: suspend () -> Unit) {
+        // Not before this side has joined. A host is live the moment it answers a hello, while a
+        // guest is still on its join screen with nothing started for the session — and a pause or
+        // an episode change applied there would drive whatever that viewer happened to be
+        // watching. The outbound side has always had this guard; this is the same rule read the
+        // other way.
+        if (_state.value !is SessionState.Live) return
         val theirs = Control(seq, byHost = !asHost)
         if (theirs <= lastControl) return
         lastControl = theirs
@@ -410,7 +420,11 @@ class TogetherSession @Inject constructor(
         rejoin?.cancel()
         rejoin = null
         if (asHost) {
+            // The answer first, and only then the round trip the clocks need — for the same
+            // reason the guest leads with one, and so a relay host never pings a room it has
+            // deliberately not greeted.
             send(greeting())
+            send(TogetherMessage.Ping(clock.millis(), nextSeq()))
             goLive(message.name)
             return
         }
@@ -455,6 +469,13 @@ class TogetherSession @Inject constructor(
      */
     private suspend fun departed() {
         if (peerName.isNotEmpty()) announce(TogetherEvent.Notice(NoticeKind.LEFT, peerName))
+        // Their counter starts again when they do, so the replay guard has to let go of the
+        // high-water mark it built up — otherwise the hello of a friend walking back in, carrying
+        // a 1 against a mark in the tens, is dropped as a replay and the window can never be
+        // used. The same for the last action applied: a returned peer must not have to count its
+        // way back up before it is allowed to pause anything.
+        peerSeq = 0
+        lastControl = Control(0, byHost = false)
         rejoin?.cancel()
         rejoin = scope.launch {
             delay(REJOIN_WINDOW_MS)
