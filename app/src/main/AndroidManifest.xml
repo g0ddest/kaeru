@@ -59,6 +59,23 @@
                 <data android:host="pair" />
                 <data android:host="watch" />
             </intent-filter>
+            <!--
+              The invitation as it travels through a messenger. Verified rather than merely
+              declared: the host serves `/.well-known/assetlinks.json` naming this package and
+              both signing certificates, so the system makes Kaeru the default handler and the
+              link opens the app instead of a browser tab. Verification is asynchronous and takes
+              a moment after install, which is why the page behind the same address has a button
+              that fires the link again.
+            -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="kaeru.vitaliy.velikodniy.name"
+                    android:pathPrefix="/w/" />
+            </intent-filter>
         </activity>
 
         <activity

@@ -1,0 +1,13 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.kaeru",
+      "sha256_cert_fingerprints": [
+        "77:4C:B7:B0:FF:31:BF:E7:DA:AC:DB:9F:05:81:8D:EE:D4:35:41:A1:07:41:7C:96:7F:B1:96:92:C6:EB:39:46",
+        "BD:BF:74:BA:85:55:20:B1:F6:05:AB:27:F9:35:F5:61:6B:E1:0C:0B:85:1E:D3:EF:E8:B5:56:0A:54:A9:37:0C"
+      ]
+    }
+  }
+]
