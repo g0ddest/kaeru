@@ -74,6 +74,7 @@ fun MobileShell(
     onRouteConsumed: () -> Unit = {},
     together: TogetherUiState = TogetherUiState(),
     onJoinTogether: () -> Unit = {},
+    onJoinedTogether: () -> Unit = {},
     onDismissTogether: () -> Unit = {},
     nav: NavHostController = rememberNavController(),
 ) {
@@ -219,6 +220,9 @@ fun MobileShell(
                         onJoin = {
                             onJoinTogether()
                             play(join.animeId, join.episode)
+                            // The session carries on without this screen, which would otherwise
+                            // be waiting underneath the episode it just opened.
+                            onJoinedTogether()
                         },
                         onRetry = onJoinTogether,
                         onDismiss = onDismissTogether,

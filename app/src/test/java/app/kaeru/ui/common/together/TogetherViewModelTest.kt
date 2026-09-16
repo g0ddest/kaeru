@@ -494,6 +494,16 @@ class TogetherViewModelTest {
     }
 
     @Test
+    fun `opening the episode closes the screen that asked, and keeps the session`() = runTest {
+        val vm = viewModel()
+        vm.open(link.toHttps())
+        runCurrent()
+        vm.joinScreenDone()
+        assertNull(vm.uiState.value.join)
+        assertEquals(0, session.left)
+    }
+
+    @Test
     fun `saying no to an invitation closes the room behind it`() = runTest {
         val vm = viewModel()
         vm.open(link.toHttps())

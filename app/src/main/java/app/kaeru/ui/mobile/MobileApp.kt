@@ -73,6 +73,7 @@ fun MobileApp(
                 onRouteConsumed = onRouteConsumed,
                 together = together,
                 onJoinTogether = togetherViewModel::join,
+                onJoinedTogether = togetherViewModel::joinScreenDone,
                 onDismissTogether = togetherViewModel::dismissJoin,
             )
             // Signing a television in does not need this phone to be signed in: what crosses the

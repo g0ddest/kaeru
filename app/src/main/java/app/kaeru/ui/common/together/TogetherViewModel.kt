@@ -141,6 +141,15 @@ class TogetherViewModel @Inject constructor(
         viewModelScope.launch { session.join(link, displayName()) }
     }
 
+    /**
+     * The player is open on the room's episode, so the screen that asked about it is done.
+     *
+     * Not the same thing as [dismissJoin]: the session carries on, and only the screen goes. Left
+     * up, it would sit under the player and be the first thing the viewer saw on the way back out
+     * of an episode they are already watching.
+     */
+    fun joinScreenDone() = _uiState.update { it.copy(join = null) }
+
     /** «Не сейчас»: the room is let go of, not left open behind a closed screen. */
     fun dismissJoin() {
         pending = null
