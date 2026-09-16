@@ -1,0 +1,30 @@
+# Kaeru relay — forwards encrypted frames between exactly two peers in a room.
+# Deploy: npx wrangler login && npx wrangler deploy   (see README.md)
+
+name = "kaeru-relay"
+main = "src/index.ts"
+# Pinned to the newest date the vitest pool's bundled workerd accepts, so tests and
+# production run the same runtime semantics.
+compatibility_date = "2026-08-22"
+
+# Workers Logs, so `npx wrangler tail` and the dashboard show the relay's events.
+[observability]
+enabled = true
+
+# One Durable Object per room, addressed by idFromName(roomId).
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "RoomDO"
+
+# SQLite-backed Durable Objects are the ones available on the free plan.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RoomDO"]
+
+# A custom domain is not configured yet; the default workers.dev URL is used first.
+# To move the relay to relay.kaeru.vitaliy.velikodniy.name later, add the zone to
+# Cloudflare and uncomment:
+#
+# [[routes]]
+# pattern = "relay.kaeru.vitaliy.velikodniy.name"
+# custom_domain = true
