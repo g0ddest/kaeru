@@ -114,7 +114,9 @@ fun PlayerScreen(
             var confirmingRemoval by remember(state.episode) { mutableStateOf(false) }
             // What the surface over the video says, decided outside the composition: a downloaded
             // episode failing with a network is a different message with a different way out.
-            val failure = remember(state.errorMessage, state.offline, state.download) { playerFailure(state) }
+            val failure = remember(state.errorMessage, state.offline, state.failedReadingDownload) {
+                playerFailure(state)
+            }
             val snackbar = remember { SnackbarHostState() }
             // Taken once per episode: the only thing measured against it is which day the next one airs.
             val now = remember(state.episode) { Instant.now() }

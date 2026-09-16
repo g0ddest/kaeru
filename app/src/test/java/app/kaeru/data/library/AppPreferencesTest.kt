@@ -8,7 +8,9 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import app.kaeru.domain.download.DownloadPolicy
+import app.kaeru.domain.download.DownloadedEpisode
 import app.kaeru.domain.model.Account
 import app.kaeru.domain.model.Quality
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -281,6 +283,57 @@ class AppPreferencesTest {
         store.edit { it[intPreferencesKey("download_quality")] = 1440 }
 
         assertNull(prefs.downloadPolicy.first().quality)
+    }
+
+    // --- the two notes the download engine keeps between launches -------------------------------
+
+    @Test
+    fun `a promised deletion is remembered until it is kept`() = runTest(dispatcher) {
+        prefs.record(DownloadedEpisode(100, 4))
+        prefs.record(DownloadedEpisode(100, 5))
+
+        assertEquals(setOf(DownloadedEpisode(100, 4), DownloadedEpisode(100, 5)), prefs.pending())
+
+        prefs.forget(DownloadedEpisode(100, 4))
+
+        assertEquals(setOf(DownloadedEpisode(100, 5)), prefs.pending())
+
+        prefs.forgetAll()
+
+        assertEquals(emptySet<DownloadedEpisode>(), prefs.pending())
+    }
+
+    /** A stored row nothing can read is dropped: it names an episode nobody can act on anyway. */
+    @Test
+    fun `a promise written in a spelling this build does not know is ignored`() = runTest(dispatcher) {
+        store.edit { it[stringSetPreferencesKey("download_pending_removals")] = setOf("100:4", "rubbish", "7") }
+
+        assertEquals(setOf(DownloadedEpisode(100, 4)), prefs.pending())
+    }
+
+    @Test
+    fun `a download the network stranded is remembered until something picks it up`() = runTest(dispatcher) {
+        prefs.recordStranded("100:4:609:720")
+        prefs.recordStranded("100:5:609:720")
+
+        assertEquals(setOf("100:4:609:720", "100:5:609:720"), prefs.stranded())
+
+        prefs.forgetStranded("100:4:609:720")
+
+        assertEquals(setOf("100:5:609:720"), prefs.stranded())
+    }
+
+    /** Both notes are about files on this device, so they outlive whoever was signed in. */
+    @Test
+    fun `both download notes survive a sign-out`() = runTest(dispatcher) {
+        prefs.record(DownloadedEpisode(100, 4))
+        prefs.recordStranded("100:5:609:720")
+        prefs.setUserId(42)
+
+        prefs.clear()
+
+        assertEquals(setOf(DownloadedEpisode(100, 4)), prefs.pending())
+        assertEquals(setOf("100:5:609:720"), prefs.stranded())
     }
 
     @Test

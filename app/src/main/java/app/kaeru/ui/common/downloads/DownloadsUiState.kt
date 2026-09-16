@@ -59,7 +59,7 @@ data class DownloadsUiState(
  * @param wifiOnly whether the viewer restricted downloads to Wi-Fi, which is the only thing that
  *   tells «ждём Wi-Fi» apart from «нет сети»: the engine reports one unmet requirement either way.
  */
-fun downloadStateLine(download: EpisodeDownload, wifiOnly: Boolean = true): String? = when (download.state) {
+fun downloadStateLine(download: EpisodeDownload, wifiOnly: Boolean): String? = when (download.state) {
     DownloadState.COMPLETED -> null
     DownloadState.QUEUED -> "В очереди"
     // The resolve is a Kodik round trip the viewer never asked about by name, so it reads as the

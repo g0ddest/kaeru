@@ -16,10 +16,12 @@ import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.WatchState
+import app.kaeru.domain.playback.MarkEpisodeUnwatched
 import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.playback.RankedTranslation
 import app.kaeru.domain.playback.ResolveEpisodeStream
+import app.kaeru.domain.playback.UnwatchedOutcome
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.repository.WatchStateRepository
 import app.kaeru.domain.settings.SettingsStore
@@ -86,6 +88,17 @@ data class DetailsUiState(
      * «Повторить», and a limit reached is «Загрузки», where the space actually is.
      */
     val storageMessage: String? = null,
+    /**
+     * What the last un-mark took away, or null when there is nothing to put back.
+     *
+     * The whole outcome rather than the episode number, because those are two different things to
+     * restore: the snackbar names the episode, and «Отменить» has to give back the count that stood
+     * before — which is usually higher, since un-marking the fifth episode of seven un-marks the
+     * sixth and seventh with it. Set only on a write that actually went through: a refusal is
+     * [errorMessage], and offering to undo something that did not happen would be the app arguing
+     * with itself.
+     */
+    val unwatched: UnwatchedOutcome? = null,
 )
 
 /** What the download engine and the network say about this title, read as one value. */
@@ -104,6 +117,7 @@ class DetailsViewModel @Inject constructor(
     private val streams: ResolveEpisodeStream,
     private val watchStates: WatchStateRepository,
     private val markEpisodeWatched: MarkEpisodeWatched,
+    private val markEpisodeUnwatched: MarkEpisodeUnwatched,
     private val clock: Clock,
     private val downloads: DownloadRepository,
     private val settings: SettingsStore,
@@ -266,11 +280,71 @@ class DetailsViewModel @Inject constructor(
      * sends nothing when the count is already high enough.
      */
     fun markWatched(episode: Int) {
+        // The episode the last un-mark took off is a different request wearing the same words:
+        // it means «put it back», and putting it back means the count that stood before, not this
+        // one episode. Both «Отменить» and the television's own panel arrive here.
+        undoneBy(episode)?.let { taken -> return restoreWatched(taken) }
         viewModelScope.launch {
             work.value = work.value.copy(updatingStatus = true, errorMessage = null, failedPick = null)
             val result = markEpisodeWatched(animeId, episode)
             work.value = work.value.copy(updatingStatus = false, errorMessage = result.errorMessageOrNull())
         }
+    }
+
+    /** The un-mark this episode would undo, while there is still one to undo. */
+    private fun undoneBy(episode: Int): UnwatchedOutcome? = work.value.unwatched?.takeIf { it.episode == episode }
+
+    /** Puts back everything one un-mark took: the count it lowered and the positions it cleared. */
+    private fun restoreWatched(taken: UnwatchedOutcome) {
+        viewModelScope.launch {
+            work.value = work.value.copy(updatingStatus = true, errorMessage = null, failedPick = null)
+            val result = markEpisodeUnwatched.restore(animeId, taken)
+            work.value = work.value.copy(
+                updatingStatus = false,
+                errorMessage = result.errorMessageOrNull(),
+                // Gone on success, kept on failure: a «Отменить» that could not be written is one
+                // the viewer may want to press again.
+                unwatched = work.value.unwatched.takeIf { result.isFailure },
+            )
+        }
+    }
+
+    /**
+     * Takes the watched mark back off an episode.
+     *
+     * Shikimori's count comes down to the episode before this one, and the positions this device
+     * remembers from here on go with it, so «Продолжить» offers the episode again rather than the
+     * one after it. Nothing is asked first: the snackbar's «Отменить» is the confirmation, and it
+     * is a better one — it comes after the viewer has seen what happened.
+     */
+    fun markUnwatched(episode: Int) {
+        viewModelScope.launch {
+            work.value = work.value.copy(
+                updatingStatus = true, errorMessage = null, failedPick = null, unwatched = null,
+            )
+            val result = markEpisodeUnwatched(animeId, episode)
+            work.value = work.value.copy(
+                updatingStatus = false,
+                errorMessage = result.errorMessageOrNull(),
+                unwatched = result.getOrNull(),
+            )
+        }
+    }
+
+    /** «Отменить» on that snackbar: everything the un-mark took, back where it was. */
+    fun undoUnwatched() {
+        restoreWatched(work.value.unwatched ?: return)
+    }
+
+    /**
+     * The snackbar has said its piece, so the same episode is not announced twice.
+     *
+     * It also ends the undo: the count the un-mark lowered is only worth restoring while the
+     * viewer can still see what happened to it. The television never calls this, and that is the
+     * point — it has no snackbar, so its panel is the undo and has to stay one.
+     */
+    fun unwatchedMessageShown() {
+        work.value = work.value.copy(unwatched = null)
     }
 
     /**

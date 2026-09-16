@@ -116,6 +116,12 @@ private val BarHeight = 56.dp
 /** What the snackbar about a full device offers: the screen where the space actually is. */
 private const val DOWNLOADS = "Загрузки"
 
+/** And what the one about an un-marked episode offers: the mark back. */
+private const val UNDO = "Отменить"
+
+/** «Серия 5 отмечена непросмотренной» — the episode by name, so the viewer can see it was theirs. */
+private fun unwatchedMessage(episode: Int) = "Серия $episode отмечена непросмотренной"
+
 /** Where the description stops until the viewer asks for the rest. */
 private const val COLLAPSED_LINES = 4
 
@@ -136,6 +142,9 @@ fun DetailsScreen(
     onLoadTranslations: () -> Unit,
     onPickTranslation: (Translation) -> Unit,
     onMarkWatched: (episode: Int) -> Unit,
+    onMarkUnwatched: (episode: Int) -> Unit,
+    onUndoUnwatched: () -> Unit,
+    onUnwatchedMessageShown: () -> Unit,
     onDownload: (episodes: List<Int>, quality: DownloadQualityChoice?) -> Unit,
     onRemoveDownload: (episode: Int) -> Unit,
     onStorageMessageShown: () -> Unit,
@@ -149,6 +158,15 @@ fun DetailsScreen(
     // A device that is full is a different message with a different way out: «Повторить» would only
     // fail again, so this one leads to the screen where the space can be freed.
     ActionSnackbar(state.storageMessage, DOWNLOADS, snackbar, onDownloads, onStorageMessageShown)
+    // The confirmation the menu deliberately does not ask for, after the fact instead of before it:
+    // the viewer sees the check come off the tile, and «Отменить» is right there if it was a slip.
+    ActionSnackbar(
+        state.unwatched?.let { unwatchedMessage(it.episode) },
+        UNDO,
+        snackbar,
+        onUndoUnwatched,
+        onUnwatchedMessageShown,
+    )
     val scroll = rememberScrollState()
     Box(Modifier.fillMaxSize().background(KaeruBackground)) {
         Column(Modifier.fillMaxSize()) {
@@ -170,6 +188,7 @@ fun DetailsScreen(
                     onLoadTranslations = onLoadTranslations,
                     onPickTranslation = onPickTranslation,
                     onMarkWatched = onMarkWatched,
+                    onMarkUnwatched = onMarkUnwatched,
                     onDownload = onDownload,
                     onRemoveDownload = onRemoveDownload,
                 )
@@ -215,6 +234,7 @@ private fun TitlePage(
     onLoadTranslations: () -> Unit,
     onPickTranslation: (Translation) -> Unit,
     onMarkWatched: (Int) -> Unit,
+    onMarkUnwatched: (Int) -> Unit,
     onDownload: (List<Int>, DownloadQualityChoice?) -> Unit,
     onRemoveDownload: (Int) -> Unit,
 ) {
@@ -249,6 +269,7 @@ private fun TitlePage(
             offline = state.offline,
             onPlay = { episode -> onPlay(anime.id, episode) },
             onMarkWatched = onMarkWatched,
+            onMarkUnwatched = onMarkUnwatched,
             onDownloadSome = { sheetOpen = true },
             onDownload = { episode -> onDownload(listOf(episode), null) },
             onRemoveDownload = onRemoveDownload,

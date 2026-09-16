@@ -7,6 +7,7 @@ import androidx.room.migration.Migration
 import androidx.room.withTransaction
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.execSQL
+import java.time.Instant
 
 @Database(
     entities = [
@@ -35,6 +36,30 @@ abstract class KaeruDatabase : RoomDatabase() {
     suspend fun savePlaybackSample(watch: WatchStateEntity, progress: EpisodeProgressEntity) = withTransaction {
         episodeProgressDao().upsert(progress)
         watchStateDao().upsert(watch)
+    }
+
+    /**
+     * The same two rows, taken away together: an episode the viewer has un-marked, and everything
+     * after it.
+     *
+     * One transaction for the same reason a sample is one. Between the two writes the database
+     * would say the episode has no position of its own while the pointer still stands on it with
+     * one — and that is exactly the state `LibraryEntry` reads as «this episode is where you
+     * stopped», which is what the un-mark is undoing.
+     */
+    suspend fun forgetProgressFrom(animeId: Int, episode: Int, at: Instant) = withTransaction {
+        episodeProgressDao().deleteFrom(animeId, episode)
+        watchStateDao().rewindFrom(animeId, episode, at)
+    }
+
+    /**
+     * The rows [forgetProgressFrom] took away, put back together.
+     *
+     * The anime's pointer is deliberately not touched: it was rewound to the start of an episode
+     * that now has a row of its own again, and that row is what every surface reads.
+     */
+    suspend fun restoreProgress(progress: List<EpisodeProgressEntity>) = withTransaction {
+        episodeProgressDao().upsertAll(progress)
     }
 
     suspend fun clearAccountData() = withTransaction {

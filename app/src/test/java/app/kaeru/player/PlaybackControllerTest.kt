@@ -2,6 +2,7 @@ package app.kaeru.player
 
 import app.kaeru.domain.connectivity.FakeConnectivity
 import app.kaeru.domain.download.DeferredDownloadRemoval
+import app.kaeru.domain.download.FakeDeferredRemovals
 import app.kaeru.domain.download.FakeDownloadRepository
 import app.kaeru.domain.error.EpisodeNotAvailable
 import app.kaeru.domain.error.NetworkUnavailable
@@ -18,6 +19,7 @@ import app.kaeru.domain.playback.FakePlaybackSampleRepository
 import app.kaeru.domain.playback.FakePlaybackPreferences
 import app.kaeru.domain.playback.FakeWatchStateRepository
 import app.kaeru.domain.playback.MarkEpisodeWatched
+import app.kaeru.domain.playback.SuppressedMarks
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.playback.StreamPrefetchCache
 import app.kaeru.domain.playback.WatchProgress
@@ -61,6 +63,7 @@ class PlaybackControllerTest {
     private val downloads = FakeDownloadRepository()
     private val settings = FakeSettingsStore()
     private lateinit var deleteWatched: DeferredDownloadRemoval
+    private val suppressedMarks = SuppressedMarks()
     private lateinit var controller: DefaultPlaybackController
 
     @Before
@@ -76,12 +79,13 @@ class PlaybackControllerTest {
                 null,
             ),
         )
-        deleteWatched = DeferredDownloadRemoval(downloads, library, settings)
+        deleteWatched = DeferredDownloadRemoval(downloads, settings, FakeDeferredRemovals())
         controller = DefaultPlaybackController(
             localEngine = engine,
             resolve = ResolveEpisodeStream(source, watchStates, prefs, clock, StreamPrefetchCache(clock)),
             progress = WatchProgress(watchStates, FakePlaybackSampleRepository(watchStates), clock),
             markWatched = MarkEpisodeWatched(library, watchStates, clock, deleteWatched),
+            suppressedMarks = suppressedMarks,
             deleteWatchedDownloads = deleteWatched,
             library = library,
             prefs = prefs,
@@ -199,6 +203,50 @@ class PlaybackControllerTest {
         engine.moveTo(900_000)
         advanceUntilIdle()
         engine.moveTo(910_000)
+        advanceUntilIdle()
+
+        assertEquals(listOf(100 to 4), library.episodeWrites)
+    }
+
+    /**
+     * Playback outlives the player screen — a cast session keeps running, picture-in-picture keeps
+     * the local engine alive — so an episode can be playing while its own title screen is in front
+     * of the viewer. Un-marking it there and letting the last tenth play out had the app put the
+     * mark straight back, minutes later, with nothing on screen to say so.
+     */
+    @Test
+    fun `an episode un-marked while it plays is not counted again by this session`() =
+        runTest(dispatcher) {
+            start(episode = 4, durationMs = 1_000_000)
+            suppressedMarks.suppress(100, 4)
+
+            engine.moveTo(950_000)
+            advanceUntilIdle()
+
+            assertEquals(emptyList<Pair<Int, Int>>(), library.episodeWrites)
+        }
+
+    @Test
+    fun `and is counted again the next time the viewer opens it`() = runTest(dispatcher) {
+        start(episode = 4, durationMs = 1_000_000)
+        suppressedMarks.suppress(100, 4)
+        engine.moveTo(950_000)
+        advanceUntilIdle()
+
+        // Opening it again is the viewer choosing to watch it, not contradicting themselves.
+        start(episode = 4, durationMs = 1_000_000)
+        engine.moveTo(950_000)
+        advanceUntilIdle()
+
+        assertEquals(listOf(100 to 4), library.episodeWrites)
+    }
+
+    @Test
+    fun `another episode is not caught by one episode's suppression`() = runTest(dispatcher) {
+        suppressedMarks.suppress(100, 9)
+        start(episode = 4, durationMs = 1_000_000)
+
+        engine.moveTo(950_000)
         advanceUntilIdle()
 
         assertEquals(listOf(100 to 4), library.episodeWrites)

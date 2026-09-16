@@ -22,8 +22,15 @@ import javax.inject.Singleton
  */
 @UnstableApi
 interface DownloadCommands {
-    /** Adds, or replaces by id: media3 merges a request onto an existing download of the same id. */
-    fun add(request: DownloadRequest)
+    /**
+     * Adds, or replaces by id: media3 merges a request onto an existing download of the same id.
+     *
+     * Returns whether the command was actually taken. This is the one command that starts a
+     * service in the foreground, which Android refuses to a process the viewer cannot see — and a
+     * caller putting a download back on the wire has to know whether it really went, or it will
+     * tear up the note that says to try again.
+     */
+    fun add(request: DownloadRequest): Boolean
 
     fun remove(id: String)
 
@@ -56,16 +63,20 @@ class Media3DownloadCommands @Inject constructor(
     private val manager: Provider<DownloadManager>,
 ) : DownloadCommands {
 
-    override fun add(request: DownloadRequest) = guard {
+    override fun add(request: DownloadRequest): Boolean = guard {
         DownloadService.sendAddDownload(context, KaeruDownloadService::class.java, request, /* foreground = */ true)
     }
 
-    override fun remove(id: String) = guard {
-        DownloadService.sendRemoveDownload(context, KaeruDownloadService::class.java, id, /* foreground = */ false)
+    override fun remove(id: String) {
+        guard {
+            DownloadService.sendRemoveDownload(context, KaeruDownloadService::class.java, id, /* foreground = */ false)
+        }
     }
 
-    override fun removeAll() = guard {
-        DownloadService.sendRemoveAllDownloads(context, KaeruDownloadService::class.java, /* foreground = */ false)
+    override fun removeAll() {
+        guard {
+            DownloadService.sendRemoveAllDownloads(context, KaeruDownloadService::class.java, /* foreground = */ false)
+        }
     }
 
     /**
@@ -83,29 +94,33 @@ class Media3DownloadCommands @Inject constructor(
      * notification at a viewer with nothing downloading. [DownloadEngine] therefore pairs this
      * call with its own foreground start, and only when the queue has something left in it.
      */
-    override fun setRequirements(requirements: Requirements) = guard {
-        manager.get().setRequirements(requirements)
+    override fun setRequirements(requirements: Requirements) {
+        guard { manager.get().setRequirements(requirements) }
     }
 
-    override fun resume(id: String) = guard {
-        DownloadService.sendSetStopReason(
-            context,
-            KaeruDownloadService::class.java,
-            id,
-            Download.STOP_REASON_NONE,
-            /* foreground = */ false,
-        )
-    }
-
-    private inline fun guard(command: () -> Unit) {
-        try {
-            command()
-        } catch (refused: IllegalStateException) {
-            // Android refuses to start a service from the background. Every one of these calls
-            // follows something the viewer just did in a visible app, so this is the rare case —
-            // and a command that never reached the engine is better than a process that died.
-            Log.w(TAG, "Download service could not be started", refused)
+    override fun resume(id: String) {
+        guard {
+            DownloadService.sendSetStopReason(
+                context,
+                KaeruDownloadService::class.java,
+                id,
+                Download.STOP_REASON_NONE,
+                /* foreground = */ false,
+            )
         }
+    }
+
+    /** Runs the command, and says whether the platform let it through. */
+    private inline fun guard(command: () -> Unit): Boolean = try {
+        command()
+        true
+    } catch (refused: IllegalStateException) {
+        // Android refuses to start a service from the background. Most of these calls follow
+        // something the viewer just did in a visible app, so this is the rare case — and a command
+        // that never reached the engine is better than a process that died. The one caller that
+        // acts on a refusal is the network re-queue, which does not follow a tap at all.
+        Log.w(TAG, "Download service could not be started", refused)
+        false
     }
 
     private companion object {

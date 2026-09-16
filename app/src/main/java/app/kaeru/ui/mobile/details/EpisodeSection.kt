@@ -46,7 +46,9 @@ import app.kaeru.ui.common.design.RowHeader
 import app.kaeru.ui.common.design.TextAction
 import app.kaeru.ui.common.design.pluralEpisodesAccusative
 import app.kaeru.ui.common.details.COLLAPSE
+import app.kaeru.ui.common.details.EpisodeAction
 import app.kaeru.ui.common.details.EpisodeCell
+import app.kaeru.ui.common.details.episodeActions
 import app.kaeru.ui.common.details.watchedLine
 import app.kaeru.ui.common.downloads.DownloadMark
 import app.kaeru.ui.common.downloads.downloadMark
@@ -58,6 +60,7 @@ import app.kaeru.ui.common.theme.KaeruText
 
 private const val EPISODES = "Серии"
 private const val MARK_WATCHED = "Отметить просмотренной"
+private const val MARK_UNWATCHED = "Отметить непросмотренной"
 private const val WATCHED = "Просмотрено"
 private const val NOT_AIRED = "не вышла"
 private const val WATCH = "Смотреть"
@@ -105,6 +108,7 @@ internal fun EpisodeSection(
     offline: Boolean,
     onPlay: (Int) -> Unit,
     onMarkWatched: (Int) -> Unit,
+    onMarkUnwatched: (Int) -> Unit,
     onDownloadSome: () -> Unit,
     onDownload: (Int) -> Unit,
     onRemoveDownload: (Int) -> Unit,
@@ -159,6 +163,10 @@ internal fun EpisodeSection(
                             onMarkWatched = {
                                 menuFor = null
                                 onMarkWatched(cell.number)
+                            },
+                            onMarkUnwatched = {
+                                menuFor = null
+                                onMarkUnwatched(cell.number)
                             },
                             onDownload = {
                                 menuFor = null
@@ -218,10 +226,10 @@ private fun EpisodeTile(
     onLongPress: () -> Unit,
     onDismissMenu: () -> Unit,
     onMarkWatched: () -> Unit,
+    onMarkUnwatched: () -> Unit,
     onDownload: () -> Unit,
     onRemoveDownload: () -> Unit,
 ) {
-    val markable = cell.aired && !cell.watched
     Box(modifier) {
         Column(
             Modifier
@@ -300,32 +308,40 @@ private fun EpisodeTile(
                 tonalElevation = 0.dp,
             ) {
                 // What can be done with the episode, before what can be said about it: playing it
-                // is what the tile itself does, and this menu exists for the rest.
-                when (cell.download) {
-                    // Offline it stays on the list and stops working, with the reason beside it —
-                    // an entry that vanished with the network would look like a bug.
-                    null, DownloadState.FAILED -> MenuItem(
-                        DOWNLOAD,
-                        onDownload,
-                        enabled = !offline,
-                        hint = NO_NETWORK.takeIf { offline },
-                    )
-                    DownloadState.REMOVING -> Unit
-                    else -> MenuItem(REMOVE_DOWNLOAD, onRemoveDownload)
+                // is what the tile itself does, and this menu exists for the rest. Which entries
+                // those are is decided in `ui.common.details`, beside the grid they are about.
+                episodeActions(cell).forEach { action ->
+                    when (action) {
+                        // Offline it stays on the list and stops working, with the reason beside
+                        // it — an entry that vanished with the network would look like a bug.
+                        EpisodeAction.DOWNLOAD -> MenuItem(
+                            DOWNLOAD,
+                            onDownload,
+                            enabled = !offline,
+                            hint = NO_NETWORK.takeIf { offline },
+                        )
+                        EpisodeAction.REMOVE_DOWNLOAD -> MenuItem(REMOVE_DOWNLOAD, onRemoveDownload)
+                        EpisodeAction.WATCH -> MenuItem(WATCH, onPlay)
+                        EpisodeAction.MARK_WATCHED -> MenuItem(MARK_WATCHED, onMarkWatched)
+                        // The one entry that takes something away, so it is the one in red. No
+                        // dialog behind it: the snackbar it raises offers «Отменить», and an undo
+                        // the viewer can see the result of beats a question they cannot.
+                        EpisodeAction.MARK_UNWATCHED -> MenuItem(MARK_UNWATCHED, onMarkUnwatched, destructive = true)
+                    }
                 }
-                MenuItem(WATCH, onPlay)
-                if (markable) MenuItem(MARK_WATCHED, onMarkWatched)
             }
         }
     }
 }
 
+/** [destructive] is for the one entry that takes something away, and reads as red. */
 @Composable
 private fun MenuItem(
     text: String,
     onClick: () -> Unit,
     enabled: Boolean = true,
     hint: String? = null,
+    destructive: Boolean = false,
 ) = DropdownMenuItem(
     text = { Text(text, style = MaterialTheme.typography.titleSmall) },
     onClick = onClick,
@@ -336,7 +352,7 @@ private fun MenuItem(
         { Text(it, style = MaterialTheme.typography.labelMedium, color = KaeruSecondary) }
     },
     colors = MenuDefaults.itemColors(
-        textColor = KaeruText,
+        textColor = if (destructive) KaeruError else KaeruText,
         disabledTextColor = KaeruSecondary,
     ),
 )
@@ -354,7 +370,9 @@ private fun MenuItem(
 @Composable
 private fun DownloadCorner(cell: EpisodeCell, modifier: Modifier) {
     when (downloadMark(cell.download)) {
-        DownloadMark.NONE -> Unit
+        // An episode on its way out keeps the corner it had until the row goes: half a second of
+        // «удаляем» on a 14dp glyph is a flicker, not information.
+        DownloadMark.NONE, DownloadMark.REMOVING -> Unit
         DownloadMark.PENDING -> Icon(
             Icons.Default.Download,
             contentDescription = QUEUED,

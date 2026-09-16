@@ -61,6 +61,7 @@ class DownloadEngineTest {
     private val episodes = FakeEpisodeSource()
     private val outcomes = RecordingOutcomes()
     private val failures = DownloadFailures()
+    private val stranded = FakeStrandedDownloads()
     private val settings = FakeSettingsStore()
     private val connectivity = FakeConnectivity()
     private lateinit var engine: DownloadEngine
@@ -87,6 +88,7 @@ class DownloadEngineTest {
             refresher = DownloadRefresher(commands, resolve, clock),
             outcomes = outcomes,
             failures = failures,
+            stranded = stranded,
             source = source,
             io = dispatcher,
         )
@@ -168,6 +170,76 @@ class DownloadEngineTest {
         runCurrent()
 
         assertTrue(commands.added.isEmpty())
+    }
+
+    /**
+     * The add is the one command that starts a service in the foreground, and the moment a network
+     * returns is very often a moment the app is in the background — where Android refuses exactly
+     * that. Forgetting the failure before knowing the add worked stranded the download for good,
+     * under a row that went on promising it would resume.
+     */
+    @Test
+    fun `a re-add the platform refuses leaves the download eligible for the next try`() =
+        runTest(dispatcher) {
+            engine.start(backgroundScope)
+            runCurrent()
+            source.put(download(Download.STATE_FAILED, Download.FAILURE_REASON_UNKNOWN), IOException("no route"))
+            runCurrent()
+            commands.clear()
+            commands.refuseAdds = true
+
+            connectivity.goOffline()
+            runCurrent()
+            connectivity.goOnline()
+            runCurrent()
+
+            assertTrue(commands.added.isEmpty())
+            assertEquals(setOf(key.id), stranded.stranded())
+
+            // The viewer opens the app, which is where the platform allows a foreground start.
+            commands.refuseAdds = false
+            engine.onForeground()
+            runCurrent()
+
+            assertEquals(listOf(key.id), commands.added.map { it.id })
+            assertTrue(stranded.stranded().isEmpty())
+        }
+
+    /**
+     * The tunnel is usually the last thing that happens before the phone goes in a pocket and the
+     * process is killed. An eligibility that only lived in memory kept the promise for a viewer who
+     * stayed in the app and broke it for everybody else.
+     */
+    @Test
+    fun `a download stranded before a restart is put back when the network returns`() =
+        runTest(dispatcher) {
+            // A new process: the row is in the index, nothing is in memory, the note survived.
+            stranded.seed(key.id)
+            source.put(download(Download.STATE_FAILED, Download.FAILURE_REASON_UNKNOWN))
+
+            engine.start(backgroundScope)
+            runCurrent()
+            connectivity.goOffline()
+            runCurrent()
+            connectivity.goOnline()
+            runCurrent()
+
+            assertEquals(listOf(key.id), commands.added.map { it.id })
+        }
+
+    @Test
+    fun `a note about a download that is no longer there is thrown away`() = runTest(dispatcher) {
+        stranded.seed("100:9:609:720")
+
+        engine.start(backgroundScope)
+        runCurrent()
+        connectivity.goOffline()
+        runCurrent()
+        connectivity.goOnline()
+        runCurrent()
+
+        assertTrue(commands.added.isEmpty())
+        assertTrue(stranded.stranded().isEmpty())
     }
 
     @Test

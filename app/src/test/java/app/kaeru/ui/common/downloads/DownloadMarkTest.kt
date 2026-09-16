@@ -5,7 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * Seven engine states, four things a control can say — and every surface says them the same way.
+ * Seven engine states, five things a control can say — and every surface says them the same way.
  *
  * The test exists because two surfaces used to disagree: an episode waiting for Wi-Fi wore the
  * pending arrow in the season grid and the done mark in the player's top bar, where pressing it
@@ -35,9 +35,18 @@ class DownloadMarkTest {
     }
 
     @Test
-    fun `nothing asked for and something on its way out both draw nothing`() {
+    fun `an episode nothing was ever asked of has nothing to say`() {
         assertEquals(DownloadMark.NONE, downloadMark(null))
-        assertEquals(DownloadMark.NONE, downloadMark(DownloadState.REMOVING))
+    }
+
+    /**
+     * Its own reading rather than «nothing». Both draw nothing, and that is where the likeness
+     * ends: a control over «nothing» offers to download the episode, and over a removal in flight
+     * that press enqueues the very id media3 is busy taking away.
+     */
+    @Test
+    fun `a removal in flight is not the same as never having asked`() {
+        assertEquals(DownloadMark.REMOVING, downloadMark(DownloadState.REMOVING))
     }
 
     @Test

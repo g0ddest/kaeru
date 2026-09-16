@@ -16,6 +16,7 @@ import app.kaeru.domain.model.PlaybackTarget
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.playback.MarkEpisodeWatched
+import app.kaeru.domain.playback.SuppressedMarks
 import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.playback.WatchProgress
@@ -140,6 +141,7 @@ class DefaultPlaybackController @Inject constructor(
     private val deleteWatchedDownloads: DeferredDownloadRemoval,
     private val progress: WatchProgress,
     private val markWatched: MarkEpisodeWatched,
+    private val suppressedMarks: SuppressedMarks,
     private val library: LibraryRepository,
     private val prefs: PlaybackPreferences,
     private val headers: StreamHeaders,
@@ -493,10 +495,25 @@ class DefaultPlaybackController @Inject constructor(
         goIdle()
     }
 
+    /**
+     * Which playback the deferred-removal target belongs to.
+     *
+     * Only [goIdle] reports that target from a coroutine rather than inline, because `release()`
+     * cannot suspend; everything else is already ordered by being on the one dispatcher this
+     * controller runs on. The token is what keeps that one report from arriving late.
+     */
+    private var playbackGeneration = 0
+
     /** Forget what was playing. Which engine is live is the one thing that survives. */
     private fun goIdle() {
-        // Nothing is reading anything now, so anything held back for that reason can go.
-        scope.launch { deleteWatchedDownloads.nowPlaying(null, null) }
+        // Nothing is reading anything now, so anything held back for that reason can go. On a
+        // coroutine because `release()` cannot suspend, and therefore behind a token: a re-open
+        // that begins before this is dispatched has already named its own episode, and nulling the
+        // target out from under it is exactly what lets a mark delete a file mid-episode.
+        val generation = ++playbackGeneration
+        scope.launch {
+            if (generation == playbackGeneration) deleteWatchedDownloads.nowPlaying(null, null)
+        }
         opening = null
         _state.value = PlaybackState(isCasting = casting)
         markedEpisode = false
@@ -553,7 +570,11 @@ class DefaultPlaybackController @Inject constructor(
         // What is being read now. «Удалять просмотренные» holds back any episode named here, and
         // lets go of the one this call moves off — the mark that asks for a deletion is raised at
         // nine tenths of an episode, while its file is still under the engine.
+        playbackGeneration++
         deleteWatchedDownloads.nowPlaying(target.animeId, target.episode)
+        // Whatever the last playback was told not to count belongs to that playback. This one is
+        // the viewer choosing to watch an episode, including when it is the same one.
+        suppressedMarks.clear()
         opening = null
         // Everything the engine said while this transition ran was ignored on purpose. Take its
         // word now, or a player that reports nothing further would leave the screen mid-swap.
@@ -768,6 +789,10 @@ class DefaultPlaybackController @Inject constructor(
     private fun markIfWatched(positionMs: Long, durationMs: Long) {
         if (markedEpisode || !EpisodeQueue.watched(positionMs, durationMs, settings.threshold)) return
         val target = _state.value.target ?: return
+        // The viewer said this episode is not watched while it was playing — from a title screen in
+        // front of a cast session, or behind picture-in-picture. Counting it now would put the mark
+        // back minutes later with nothing on screen to say so.
+        if (suppressedMarks.isSuppressed(target.animeId, target.episode)) return
         markedEpisode = true
         scope.launch {
             markWatched(target.animeId, target.episode).onSuccess { outcome ->

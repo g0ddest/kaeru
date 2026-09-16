@@ -10,13 +10,16 @@ import app.kaeru.data.playback.RoomEpisodeProgressRepository
 import app.kaeru.data.playback.RoomPlaybackSampleRepository
 import app.kaeru.data.playback.RoomWatchStateRepository
 import app.kaeru.domain.download.DeferredDownloadRemoval
+import app.kaeru.domain.download.DeferredRemovals
 import app.kaeru.domain.download.DownloadRepository
+import app.kaeru.domain.playback.MarkEpisodeUnwatched
 import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.PlaybackNotificationPrompt
 import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.playback.PrefetchTopCardStream
 import app.kaeru.domain.playback.ResolveEpisodeStream
 import app.kaeru.domain.playback.StreamPrefetchCache
+import app.kaeru.domain.playback.SuppressedMarks
 import app.kaeru.domain.playback.WatchProgress
 import app.kaeru.domain.repository.EpisodeProgressRepository
 import app.kaeru.domain.repository.LibraryRepository
@@ -163,6 +166,30 @@ object PlaybackModule {
     ): MarkEpisodeWatched = MarkEpisodeWatched(library, watchStates, clock, deleteWatchedDownloads)
 
     /**
+     * The other direction, and deliberately not the mark's mirror image: nothing about downloads
+     * is here, because an episode put back in front of the viewer is one they still want on the
+     * device.
+     */
+    @Provides
+    @Singleton
+    fun markEpisodeUnwatched(
+        library: LibraryRepository,
+        progress: EpisodeProgressRepository,
+        samples: PlaybackSampleRepository,
+        suppressed: SuppressedMarks,
+        clock: Clock,
+    ): MarkEpisodeUnwatched = MarkEpisodeUnwatched(library, progress, samples, suppressed, clock)
+
+    /**
+     * One instance, because it is a conversation between two things that never meet: a title screen
+     * un-marking an episode and a controller deciding whether to count it. Two sets would mean the
+     * controller never heard.
+     */
+    @Provides
+    @Singleton
+    fun suppressedMarks(): SuppressedMarks = SuppressedMarks()
+
+    /**
      * One instance, because it holds what is playing: a second would defer against a target nothing
      * sets and delete a file the first is protecting.
      */
@@ -170,9 +197,9 @@ object PlaybackModule {
     @Singleton
     fun deferredDownloadRemoval(
         downloads: DownloadRepository,
-        library: LibraryRepository,
         settings: SettingsStore,
-    ): DeferredDownloadRemoval = DeferredDownloadRemoval(downloads, library, settings)
+        promises: DeferredRemovals,
+    ): DeferredDownloadRemoval = DeferredDownloadRemoval(downloads, settings, promises)
 }
 
 @UnstableApi

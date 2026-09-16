@@ -308,6 +308,8 @@ private fun TvTitle(animeId: Int, onPlay: (Int, Int) -> Unit) = TvAnimeScope(ani
         onPlay = onPlay,
         onLoadTranslations = viewModel::loadTranslations,
         onPickTranslation = viewModel::pickTranslation,
+        onMarkWatched = viewModel::markWatched,
+        onMarkUnwatched = viewModel::markUnwatched,
     )
 }
 

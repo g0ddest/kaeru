@@ -112,4 +112,36 @@ class TvActionsTest {
         assertTrue(grid.none { it.watched })
         assertTrue(grid.all { it.progress == null })
     }
+
+    // --- what a long press of OK offers -----------------------------------------------------
+
+    @Test
+    fun `a watched episode can be played or put back in front of the viewer`() {
+        val cell = grid(entry(watchedEpisodes = 4)).single { it.episode == 3 }
+
+        assertEquals(listOf(TvEpisodeAction.WATCH, TvEpisodeAction.MARK_UNWATCHED), tvEpisodeActions(cell))
+    }
+
+    @Test
+    fun `an aired episode nobody has watched can be counted instead`() {
+        val cell = grid(entry(watchedEpisodes = 4)).single { it.episode == 6 }
+
+        assertEquals(listOf(TvEpisodeAction.WATCH, TvEpisodeAction.MARK_WATCHED), tvEpisodeActions(cell))
+    }
+
+    /** Both marks on one panel is the television's undo: there is no snackbar to offer one. */
+    @Test
+    fun `the two marks are never offered together`() {
+        val marks = listOf(TvEpisodeAction.MARK_WATCHED, TvEpisodeAction.MARK_UNWATCHED)
+        grid(entry(watchedEpisodes = 4)).filter { it.aired }.forEach { cell ->
+            assertEquals(1, tvEpisodeActions(cell).count { it in marks })
+        }
+    }
+
+    @Test
+    fun `an episode that has not aired has nothing to offer`() {
+        val cell = grid(entry(watchedEpisodes = 4)).single { it.episode == 12 }
+
+        assertEquals(emptyList<TvEpisodeAction>(), tvEpisodeActions(cell))
+    }
 }

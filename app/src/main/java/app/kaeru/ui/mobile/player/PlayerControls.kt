@@ -175,9 +175,9 @@ fun PlayerBottomBar(
             buffered = bufferedPositionMs.coerceIn(0, maxOf(durationMs, 0)).toFloat() / durationSafe.toFloat(),
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
-            DiscButton(Icons.Default.Replay10, "Назад на 10 секунд") { onSeekBy(-EpisodeQueue.SEEK_STEP_MS) }
+            DiscButton(Icons.Default.Replay10, "Назад на 10 секунд", { onSeekBy(-EpisodeQueue.SEEK_STEP_MS) })
             Spacer(Modifier.width(4.dp))
-            DiscButton(Icons.Default.Forward10, "Вперёд на 10 секунд") { onSeekBy(EpisodeQueue.SEEK_STEP_MS) }
+            DiscButton(Icons.Default.Forward10, "Вперёд на 10 секунд", { onSeekBy(EpisodeQueue.SEEK_STEP_MS) })
             Spacer(Modifier.width(4.dp))
             TextButton(onClick = onSkipIntro) { Text("+85 с", color = OnVideo) }
             Spacer(Modifier.weight(1f))
@@ -328,6 +328,10 @@ private fun DownloadButton(download: EpisodeDownload?, onDownload: () -> Unit, o
     when (downloadMark(download?.state)) {
         DownloadMark.NONE, DownloadMark.FAILED ->
             DiscButton(Icons.Default.Download, "Скачать серию", onDownload)
+        // Nothing to ask for while the engine is taking it away: the id a press would enqueue is
+        // the one being removed. It stays on the screen, quiet, until the row goes.
+        DownloadMark.REMOVING ->
+            DiscButton(Icons.Default.Download, "Удаляем загрузку", {}, pending = true, enabled = false)
         DownloadMark.PENDING ->
             DiscButton(Icons.Default.Download, "Отменить загрузку", { confirming = true }, pending = true)
         DownloadMark.RUNNING -> DiscLabel(
@@ -364,21 +368,25 @@ private fun DiscLabel(text: String, description: String, onClick: () -> Unit) {
 }
 
 /**
- * The same disc, drawn a step quieter for an episode that has been asked for but is not here yet.
+ * The disc, drawn a step quieter for an episode that has been asked for but is not here yet.
  *
- * Muted rather than disabled: pressing it is how a queue is cancelled, so it has to stay pressable
- * — it just should not look like something already on the device.
+ * [pending] is muted rather than disabled: pressing it is how a queue is cancelled, so it has to
+ * stay pressable — it just should not look like something already on the device. [enabled] is the
+ * separate case of a removal already under way, where there is nothing left to press.
  */
 @Composable
-private fun DiscButton(icon: ImageVector, description: String, onClick: () -> Unit, pending: Boolean) {
-    IconButton(onClick = onClick, modifier = Modifier.size(48.dp).clip(CircleShape).background(Disc)) {
+private fun DiscButton(
+    icon: ImageVector,
+    description: String,
+    onClick: () -> Unit,
+    pending: Boolean = false,
+    enabled: Boolean = true,
+) {
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(48.dp).clip(CircleShape).background(Disc),
+    ) {
         Icon(icon, contentDescription = description, tint = if (pending) OnVideoMuted else OnVideo)
-    }
-}
-
-@Composable
-private fun DiscButton(icon: ImageVector, description: String, onClick: () -> Unit) {
-    IconButton(onClick = onClick, modifier = Modifier.size(48.dp).clip(CircleShape).background(Disc)) {
-        Icon(icon, contentDescription = description, tint = OnVideo)
     }
 }
