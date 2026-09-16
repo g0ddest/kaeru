@@ -51,8 +51,16 @@ interface DownloadRepository {
      */
     suspend fun enqueue(animeId: Int, episode: Int, quality: DownloadQualityChoice? = null): Result<Unit>
 
-    /** Removes this episode's download and the bytes it took, whatever state it was in. */
-    suspend fun remove(animeId: Int, episode: Int)
+    /**
+     * Removes this episode's download and the bytes it took, whatever state it was in.
+     *
+     * @return whether the command reached the download engine. Not whether the bytes are gone yet
+     *   — that happens on the engine's own thread, after this returns — but the service refuses a
+     *   `startService` from a process the viewer cannot see, and a caller with its own note that a
+     *   removal is owed needs to know whether this one actually reached anything, or the note
+     *   would be torn up over nothing.
+     */
+    suspend fun remove(animeId: Int, episode: Int): Boolean
 
     /** The same for every episode of one title. */
     suspend fun removeAll(animeId: Int)

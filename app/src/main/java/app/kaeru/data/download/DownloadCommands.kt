@@ -32,7 +32,16 @@ interface DownloadCommands {
      */
     fun add(request: DownloadRequest): Boolean
 
-    fun remove(id: String)
+    /**
+     * Removes, by id.
+     *
+     * Returns whether the command reached the service, for the same reason [add] does: this is a
+     * plain `startService` too, which Android refuses to a process the viewer cannot see, and a
+     * caller relying on the removal actually happening — forgetting a promise it made to itself —
+     * has to know whether it really went, or it will tear up a note a refused command never acted
+     * on.
+     */
+    fun remove(id: String): Boolean
 
     fun removeAll()
 
@@ -67,10 +76,8 @@ class Media3DownloadCommands @Inject constructor(
         DownloadService.sendAddDownload(context, KaeruDownloadService::class.java, request, /* foreground = */ true)
     }
 
-    override fun remove(id: String) {
-        guard {
-            DownloadService.sendRemoveDownload(context, KaeruDownloadService::class.java, id, /* foreground = */ false)
-        }
+    override fun remove(id: String): Boolean = guard {
+        DownloadService.sendRemoveDownload(context, KaeruDownloadService::class.java, id, /* foreground = */ false)
     }
 
     override fun removeAll() {

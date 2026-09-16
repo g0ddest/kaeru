@@ -67,10 +67,16 @@ class DeferredDownloadRemoval(
         if (!deferred) keep(watched)
     }
 
-    /** Gives the space back and tears up the note that said to. */
+    /**
+     * Gives the space back and tears up the note that said to.
+     *
+     * Only on a removal that actually reached the engine: [DownloadRepository.remove] is a plain
+     * `startService` underneath, which Android refuses to a process the viewer cannot see, and a
+     * promise torn up over a command that never went anywhere is a file that stays on the device
+     * with nothing left to ask for its removal again. Left standing, the next [sweep] retries it.
+     */
     private suspend fun keep(promise: DownloadedEpisode) {
-        downloads.remove(promise.animeId, promise.episode)
-        promises.forget(promise)
+        if (downloads.remove(promise.animeId, promise.episode)) promises.forget(promise)
     }
 
     /**

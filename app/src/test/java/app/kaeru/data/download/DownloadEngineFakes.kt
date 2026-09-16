@@ -113,6 +113,9 @@ class FakeDownloadCommands(private val engine: FakeDownloadsSource? = null) : Do
     /** While set, every add is turned away, as Android turns away a background foreground start. */
     var refuseAdds = false
 
+    /** While set, every remove is turned away the same way. */
+    var refuseRemoves = false
+
     override fun add(request: DownloadRequest): Boolean {
         if (refuseAdds) return false
         added += request
@@ -122,9 +125,11 @@ class FakeDownloadCommands(private val engine: FakeDownloadsSource? = null) : Do
         return true
     }
 
-    override fun remove(id: String) {
+    override fun remove(id: String): Boolean {
         removed += id
+        if (refuseRemoves) return false
         engine?.drop(id)
+        return true
     }
 
     override fun removeAll() {

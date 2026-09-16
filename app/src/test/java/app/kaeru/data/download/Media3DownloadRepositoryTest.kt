@@ -606,6 +606,32 @@ class Media3DownloadRepositoryTest {
     }
 
     @Test
+    fun `a removal the platform takes says so`() = runTest(dispatcher) {
+        engine.put(download(key(episode = 7)))
+
+        assertTrue(repository.remove(ANIME, 7))
+    }
+
+    /**
+     * `sendRemoveDownload` is a plain `startService`, which Android refuses to a process the
+     * viewer cannot see — the same wall [DownloadCommands.add] already reports through its own
+     * `Boolean`. A caller retrying a promised deletion needs to know this one was refused too.
+     */
+    @Test
+    fun `a removal the platform refuses says so`() = runTest(dispatcher) {
+        engine.put(download(key(episode = 7)))
+        commands.refuseRemoves = true
+
+        assertFalse(repository.remove(ANIME, 7))
+    }
+
+    /** Nothing on the device for this episode is nothing the service needs to be told. */
+    @Test
+    fun `removing an episode already gone is not a refusal`() = runTest(dispatcher) {
+        assertTrue(repository.remove(ANIME, 7))
+    }
+
+    @Test
     fun `removing a title removes every episode of it and nothing else`() = runTest(dispatcher) {
         engine.put(download(key(episode = 7)))
         engine.put(download(key(episode = 8)))

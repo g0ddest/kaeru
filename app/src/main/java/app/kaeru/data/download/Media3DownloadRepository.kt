@@ -309,8 +309,11 @@ class Media3DownloadRepository @Inject constructor(
         }
     }
 
-    override suspend fun remove(animeId: Int, episode: Int) = withContext(io) {
-        source.current().filter { it.matches(animeId, episode) }.forEach { commands.remove(it.request.id) }
+    override suspend fun remove(animeId: Int, episode: Int): Boolean = withContext(io) {
+        // `all` on an empty list is true: nothing on the device for this episode is nothing the
+        // service needs to be told, and a caller waiting to hear the removal went through should
+        // not be made to retry a download that already is not there.
+        source.current().filter { it.matches(animeId, episode) }.map { commands.remove(it.request.id) }.all { it }
     }
 
     override suspend fun removeAll(animeId: Int) = withContext(io) {

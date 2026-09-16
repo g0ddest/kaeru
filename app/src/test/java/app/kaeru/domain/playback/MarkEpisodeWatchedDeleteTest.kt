@@ -199,6 +199,26 @@ class MarkEpisodeWatchedDeleteTest {
         assertEquals(listOf(100 to 4), downloads.removed)
     }
 
+    /**
+     * `remove` is a plain `startService`, which Android refuses to a process the viewer cannot
+     * see. A promise `keep()` tears up over a removal that never reached the engine is a promise
+     * nobody keeps: the file stays exactly where it was, with nothing left to ask for it again.
+     */
+    @Test
+    fun `a removal the platform refuses keeps the promise for the next sweep`() = runTest {
+        seed()
+        deleteWatched(true)
+        downloads.downloaded(100, 4, track, "https://cdn/100/4")
+        deleteWatchedDownloads.nowPlaying(100, 4)
+        assertTrue(mark(100, 4).isSuccess)
+        downloads.refuseRemovals = true
+
+        deleteWatchedDownloads.nowPlaying(100, 5)
+
+        assertEquals(listOf(100 to 4), downloads.removed)
+        assertEquals(setOf(DownloadedEpisode(100, 4)), owed.pending())
+    }
+
     @Test
     fun `or when the player stops altogether`() = runTest {
         seed()
