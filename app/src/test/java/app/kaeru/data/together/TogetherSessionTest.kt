@@ -1,4 +1,19 @@
-package app.kaeru.domain.together
+package app.kaeru.data.together
+
+import app.kaeru.domain.together.FakePlaybackPort
+import app.kaeru.domain.together.FakeTransport
+import app.kaeru.domain.together.LanEndpoint
+import app.kaeru.domain.together.LocalAction
+import app.kaeru.domain.together.LostReason
+import app.kaeru.domain.together.NoticeKind
+import app.kaeru.domain.together.PeerHello
+import app.kaeru.domain.together.ReactionKind
+import app.kaeru.domain.together.RoomLink
+import app.kaeru.domain.together.SessionState
+import app.kaeru.domain.together.SyncPolicy
+import app.kaeru.domain.together.TogetherEvent
+import app.kaeru.domain.together.TogetherMessage
+import app.kaeru.domain.together.VirtualClock
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -724,6 +739,16 @@ class TogetherSessionTest {
     }
 
     @Test
+    fun `a clip nobody could have recorded is dropped rather than sent`() = sessionTest {
+        live()
+
+        session.sendVoice(ByteArray(TogetherSession.MAX_VOICE_BYTES + 1), durationMs = 7_000)
+        runCurrent()
+
+        assertTrue(transport.sentOf<TogetherMessage.Voice>().isEmpty())
+    }
+
+    @Test
     fun `a friend's clip is shown only once every piece of it has arrived`() = sessionTest {
         live()
         val seen = mutableListOf<TogetherEvent>()
@@ -971,6 +996,35 @@ class TogetherSessionTest {
         runCurrent()
 
         assertTrue(session.state.value is SessionState.Live)
+    }
+
+    @Test
+    fun `a channel that throws rather than failing is still only a lost session`() = sessionTest {
+        transport.connectFailure = IllegalStateException("a transport with a bug in it")
+
+        session.host("Костя")
+        runCurrent()
+
+        assertEquals(SessionState.Lost(LostReason.CONNECTION), session.state.value)
+    }
+
+    @Test
+    fun `a throw where nobody is waiting for it does not take the app down`() = sessionTest {
+        port.showing(animeId = null, episode = null, translationId = null, positionMs = 0, playing = false)
+        port.seekFailure = IllegalStateException("the player broke")
+        val link = RoomLink("room", ByteArray(16), null)
+        val joining = launch { session.join(link, "Костя") }
+        runCurrent()
+        transport.deliver(peerHello(name = "Аня", episode = 7))
+        runCurrent()
+        joining.join()
+
+        // The seek that finishes the join is the only thing holding this; it throws into a
+        // coroutine with nothing awaiting it.
+        port.showing(animeId = 100, episode = 7, translationId = 11, positionMs = 0)
+        runCurrent()
+
+        assertEquals(SessionState.Lost(LostReason.CONNECTION), session.state.value)
     }
 
     @Test

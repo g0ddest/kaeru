@@ -835,8 +835,17 @@ class DefaultPlaybackController @Inject constructor(
         val quality = _state.value.quality
         transition {
             _state.update { it.copy(isBuffering = true, error = null) }
-            open(Opening(target.copy(startPositionMs = at), freshEpisode = false, preferQuality = quality))
-                .onFailure(::fail)
+            // Not a local action: this is the same episode opened again behind the viewer's back,
+            // and a friend watching along has no business being switched to what they are already
+            // watching. Same reason `retry()` says so.
+            open(
+                Opening(
+                    target.copy(startPositionMs = at),
+                    freshEpisode = false,
+                    preferQuality = quality,
+                    local = false,
+                ),
+            ).onFailure(::fail)
         }
     }
 

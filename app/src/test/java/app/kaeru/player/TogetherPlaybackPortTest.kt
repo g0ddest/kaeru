@@ -185,6 +185,24 @@ class TogetherPlaybackPortTest {
     }
 
     @Test
+    fun `an expired link resolved again behind the viewer is not an episode change`() =
+        runTest(dispatcher) {
+            controller.play(target(episode = 4))
+            engine.ready(durationMs = 1_440_000)
+            advanceUntilIdle()
+            val seen = mutableListOf<LocalAction>()
+            val watching = launch { port.localActions.toList(seen) }
+            advanceUntilIdle()
+
+            engine.fail(app.kaeru.domain.error.NetworkUnavailable(java.io.IOException("403")))
+            advanceUntilIdle()
+
+            assertEquals(2, engine.prepared.size)
+            assertEquals(emptyList<LocalAction>(), seen)
+            watching.cancel()
+        }
+
+    @Test
     fun `nothing the session applies comes back as something the viewer did`() = runTest(dispatcher) {
         controller.play(target(episode = 4))
         engine.ready(durationMs = 1_440_000)

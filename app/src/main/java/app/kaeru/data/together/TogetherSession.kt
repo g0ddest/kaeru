@@ -1,10 +1,30 @@
-package app.kaeru.domain.together
+package app.kaeru.data.together
 
-import app.kaeru.di.PlaybackScope
+import android.util.Log
 import app.kaeru.domain.error.RelayNotConfigured
 import app.kaeru.domain.error.TogetherFailed
 import app.kaeru.domain.error.TogetherFailureReason
+import app.kaeru.domain.together.ClockOffset
+import app.kaeru.domain.together.ConnectionState
+import app.kaeru.domain.together.LanEndpoint
+import app.kaeru.domain.together.LocalAction
+import app.kaeru.domain.together.LostReason
+import app.kaeru.domain.together.NoticeKind
+import app.kaeru.domain.together.PeerHello
+import app.kaeru.domain.together.PlaybackPort
+import app.kaeru.domain.together.ReactionKind
+import app.kaeru.domain.together.RoomLink
+import app.kaeru.domain.together.SessionState
+import app.kaeru.domain.together.SyncAction
+import app.kaeru.domain.together.SyncPolicy
+import app.kaeru.domain.together.TogetherEvent
+import app.kaeru.domain.together.TogetherMessage
+import app.kaeru.domain.together.TogetherSessionApi
+import app.kaeru.domain.together.TransportFactory
+import app.kaeru.domain.together.WatchTogetherTransport
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
@@ -20,8 +40,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import java.security.SecureRandom
 import java.time.Clock
-import javax.inject.Inject
-import javax.inject.Singleton
 
 /** A room this phone is offering, before there is a link: what listens, and the address to put in it. */
 data class HostChannel(val transport: WatchTogetherTransport, val endpoint: LanEndpoint?)
@@ -44,14 +62,27 @@ fun interface HostTransports {
  * channel that dies are all [SessionState.Lost], because each of them is something a screen has
  * to say out loud and none of them is something a button press can handle.
  */
-@Singleton
-class TogetherSession @Inject constructor(
+class TogetherSession(
     private val transports: TransportFactory,
     private val hosting: HostTransports,
     private val port: PlaybackPort,
     private val clock: Clock,
-    @param:PlaybackScope private val scope: CoroutineScope,
+    private val scope: CoroutineScope,
 ) : TogetherSessionApi {
+
+    /**
+     * The backstop for anything that throws where nobody is waiting to catch it.
+     *
+     * The scope this runs on is the player's, shared with the thing decoding video, and it has no
+     * handler of its own — so an unexpected throwable in a ticker or in the job that waits for a
+     * viewer to open an episode would go to Android's default handler and take the app down in
+     * the middle of somebody's film. A shared viewing failing is worth a state and a line in the
+     * log; it is not worth the process.
+     */
+    private val failures = CoroutineExceptionHandler { _, broken ->
+        Log.w(TAG, "The shared viewing failed unexpectedly", broken)
+        scope.launch { runCatching { lose(LostReason.CONNECTION) } }
+    }
 
     private val _state = MutableStateFlow<SessionState>(SessionState.Idle)
     override val state: StateFlow<SessionState> = _state.asStateFlow()
@@ -75,6 +106,9 @@ class TogetherSession @Inject constructor(
     private var running: Job? = null
     private var rejoin: Job? = null
     private var becomingLive: Job? = null
+
+    /** The five loops and collectors of one session, so losing it stops all of them at once. */
+    private var ticks: Job? = null
     private var asHost = false
     private var myName = ""
     private var peerName = ""
@@ -128,7 +162,7 @@ class TogetherSession @Inject constructor(
         // And returns, with the one thing the join screen is made of. Going live is somebody
         // else's moment: the viewer has not said yes yet, and starting a video behind a question
         // nobody has answered is the thing this order exists to prevent.
-        becomingLive = scope.launch {
+        becomingLive = scope.launch(failures) {
             port.state.first { it.animeId == greeting.animeId && it.episode == greeting.episode }
             // Where they are now, not where they were when they said hello: a viewer reading the
             // invitation for ten seconds is ten seconds behind by the time they say yes.
@@ -163,7 +197,7 @@ class TogetherSession @Inject constructor(
     override fun watchAlone() {
         when (val now = _state.value) {
             is SessionState.Hosting -> _state.value = now.copy(waiting = false)
-            is SessionState.Joining, is SessionState.Lost -> scope.launch {
+            is SessionState.Joining, is SessionState.Lost -> scope.launch(failures) {
                 forceNormalSpeed()
                 stop()
                 _state.value = SessionState.Idle
@@ -188,18 +222,28 @@ class TogetherSession @Inject constructor(
         closingBecause = null
         hello = CompletableDeferred()
         animeId = port.state.value.animeId ?: 0
-        running = scope.launch {
-            launch { greetOnConnect(transport) }
-            launch { pings() }
-            launch { reports() }
-            launch { corrections() }
-            launch { port.localActions.collect { forward(it) } }
-            transport.connect(link, asHost).collect { frame ->
-                frame.onSuccess { receive(it) }.onFailure { closingBecause = closingBecause ?: it }
+        running = scope.launch(failures) {
+            try {
+                ticks = launch {
+                    launch { greetOnConnect(transport) }
+                    launch { pings() }
+                    launch { reports() }
+                    launch { corrections() }
+                    launch { port.localActions.collect { forward(it) } }
+                }
+                transport.connect(link, asHost).collect { frame ->
+                    frame.onSuccess { receive(it) }
+                        .onFailure { closingBecause = closingBecause ?: it }
+                }
+                // Only a channel that is finished for good gets here: a frame that would not
+                // decode is a value inside the flow, not the end of it.
+                lose(reasonOf(closingBecause))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (broken: Throwable) {
+                Log.w(TAG, "The channel failed", broken)
+                lose(reasonOf(broken))
             }
-            // Only a channel that is finished for good gets here: a frame that would not decode
-            // is a value inside the flow, not the end of it.
-            lose(reasonOf(closingBecause))
         }
     }
 
@@ -207,9 +251,11 @@ class TogetherSession @Inject constructor(
     private suspend fun stop() {
         rejoin?.cancel()
         becomingLive?.cancel()
+        ticks?.cancel()
         running?.cancel()
         rejoin = null
         becomingLive = null
+        ticks = null
         running = null
         val open = channel ?: return
         channel = null
@@ -233,6 +279,9 @@ class TogetherSession @Inject constructor(
         _state.value = SessionState.Lost(reason)
         rejoin?.cancel()
         becomingLive?.cancel()
+        // Two of these collect flows that never end on their own — the channel's state and this
+        // viewer's actions — and a lost session has no use for either.
+        ticks?.cancel()
         if (!close) return
         val open = channel ?: return
         channel = null
@@ -288,10 +337,12 @@ class TogetherSession @Inject constructor(
     private suspend fun reports() {
         while (channel != null) {
             delay(STATE_INTERVAL_MS)
+            // Before the guard, not after it: half a clip is thirty seconds' worth of memory
+            // whether or not this side has finished joining.
+            forgetStaleVoice()
             if (_state.value !is SessionState.Live) continue
             val now = port.state.value
             send(TogetherMessage.State(now.positionMs, now.playing, now.buffering, clock.millis(), nextSeq()))
-            forgetStaleVoice()
         }
     }
 
@@ -508,7 +559,7 @@ class TogetherSession @Inject constructor(
         peerSeq = 0
         lastControl = Control(0, byHost = false)
         rejoin?.cancel()
-        rejoin = scope.launch {
+        rejoin = scope.launch(failures) {
             delay(REJOIN_WINDOW_MS)
             lose(LostReason.CONNECTION)
         }
@@ -568,7 +619,10 @@ class TogetherSession @Inject constructor(
     }
 
     override suspend fun sendVoice(bytes: ByteArray, durationMs: Int) {
-        if (channel == null || bytes.isEmpty()) return
+        // A ceiling on the whole clip, not just on each frame. Thirty seconds of Opus is ninety
+        // kilobytes or so, and anything past this many is a caller with a bug rather than somebody
+        // with a lot to say — better dropped here than cut into frames and sent.
+        if (channel == null || bytes.isEmpty() || bytes.size > MAX_VOICE_BYTES) return
         val cut = TogetherMessage.MAX_VOICE_CHUNK_BYTES
         val total = (bytes.size + cut - 1) / cut
         for (index in 0 until total) {
@@ -695,6 +749,11 @@ class TogetherSession @Inject constructor(
         /** A clip nobody finished sending is not worth holding on to. */
         const val VOICE_TIMEOUT_MS = 30_000L
 
+        /** Eight frames — comfortably past thirty seconds of Opus, and nowhere near a frame cap. */
+        const val MAX_VOICE_BYTES = 8 * TogetherMessage.MAX_VOICE_CHUNK_BYTES
+
         private const val EVENT_BUFFER = 64
+
+        private const val TAG = "TogetherSession"
     }
 }
