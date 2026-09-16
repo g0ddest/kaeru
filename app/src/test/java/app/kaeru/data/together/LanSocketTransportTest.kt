@@ -26,6 +26,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.security.SecureRandom
@@ -50,12 +51,13 @@ class LanSocketTransportTest {
     private fun transport(
         siteLocal: String? = advertised,
         resolve: TogetherEndpoints = TogetherEndpoints { InetSocketAddress("127.0.0.1", it.port) },
+        clocks: TogetherTimeouts = timeouts,
     ) = LanSocketTransport(
         object : LanAddresses {
             override fun siteLocalIpv4() = siteLocal
         },
         resolve,
-        timeouts,
+        clocks,
         Dispatchers.IO,
     ).also(opened::add)
 
@@ -195,19 +197,58 @@ class LanSocketTransportTest {
 
     @Test
     fun `a host nobody knocks on gives up rather than holding the port for good`() = runBlocking<Unit> {
-        val host = LanSocketTransport(
-            object : LanAddresses {
-                override fun siteLocalIpv4() = advertised
-            },
-            TogetherEndpoints { InetSocketAddress("127.0.0.1", it.port) },
-            TogetherTimeouts(acceptMs = 300, connectMs = 300, idleMs = 300, authMs = 300),
-            Dispatchers.IO,
-        ).also(opened::add)
+        val host = transport(clocks = TogetherTimeouts(acceptMs = 300, connectMs = 300, idleMs = 300, authMs = 300))
         val link = RoomLink.random(random).copy(lan = requireNotNull(host.hostEndpoint()))
 
         val refused = soon { host.connect(link, asHost = true).first() }
 
         assertEquals(TogetherFailureReason.UNREACHABLE, reasonOf(refused))
+    }
+
+    @Test
+    fun `a friend who goes quiet for the whole deadline is reported, not waited on for ever`() = runBlocking<Unit> {
+        val host = transport(clocks = TogetherTimeouts(acceptMs = 2_000, connectMs = 500, idleMs = 400, authMs = 400))
+        val endpoint = requireNotNull(host.hostEndpoint())
+        val link = RoomLink.random(random).copy(lan = endpoint)
+        val heard = inbox(host, link, asHost = true)
+
+        Socket().use { peer ->
+            peer.connect(InetSocketAddress("127.0.0.1", endpoint.port), 1_000)
+            // Proves the key, takes the seat, and then says nothing at all — a phone that went to
+            // sleep, on a channel that is supposed to carry a ping every few seconds.
+            peer.greet(host, link)
+            soon { heard.receive() }.getOrThrow()
+
+            assertEquals(TogetherFailureReason.UNREACHABLE, reasonOf(soon { heard.receive() }))
+            soon { host.state.first { it == ConnectionState.CLOSED } }
+        }
+    }
+
+    @Test
+    fun `a second knock finds nothing once the friend has the seat`() = runBlocking<Unit> {
+        val host = transport()
+        val endpoint = requireNotNull(host.hostEndpoint())
+        val link = RoomLink.random(random).copy(lan = endpoint)
+        val heard = inbox(host, link, asHost = true)
+
+        Socket().use { friend ->
+            friend.connect(InetSocketAddress("127.0.0.1", endpoint.port), 1_000)
+            val out = friend.greet(host, link)
+            soon { heard.receive() }.getOrThrow()
+
+            // The port stopped being listened on the moment the seat was taken, so a third device
+            // on the same Wi-Fi cannot even reach it.
+            val refused = runCatching {
+                Socket().use { it.connect(InetSocketAddress("127.0.0.1", endpoint.port), 1_000) }
+            }.exceptionOrNull()
+
+            assertTrue(refused is IOException)
+            // And whoever has the seat is untouched by the attempt.
+            val chat = TogetherMessage.Chat("Я ещё тут", seq = 7)
+            out.frame(chat, link)
+            assertEquals(chat, soon { heard.receive() }.getOrThrow())
+            assertEquals(ConnectionState.CONNECTED, host.state.first())
+        }
     }
 
     @Test

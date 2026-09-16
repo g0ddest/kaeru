@@ -17,12 +17,16 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import okhttp3.mockwebserver.Dispatcher as MockDispatcher
 import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.RecordedRequest
 import okhttp3.mockwebserver.MockWebServer
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
@@ -323,6 +327,38 @@ class RelayTransportTest {
         assertEquals(TogetherFailureReason.DISCONNECTED, (thrown as? TogetherFailed)?.reason)
     }
 
+
+    /**
+     * On virtual time, so the half-minute the spec promises costs no wall clock. The relay answers
+     * every dial with a 503, which is a failure the client is supposed to keep retrying through.
+     */
+    @Test
+    fun `reconnection follows the agreed schedule and stops on the half-minute`() = runTest {
+        val dialledAt = CopyOnWriteArrayList<Long>()
+        server.dispatcher = object : MockDispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                dialledAt += testScheduler.currentTime
+                return MockResponse().setResponseCode(503)
+            }
+        }
+        val shipped = TogetherTimeouts()
+        val dialling = RelayTransport(
+            client,
+            server.url("/").toString().removeSuffix("/"),
+            shipped,
+            StandardTestDispatcher(testScheduler),
+        )
+        val emitted = CopyOnWriteArrayList<Result<TogetherMessage>>()
+
+        backgroundScope.launch { dialling.connect(link, asHost = false).collect(emitted::add) }.join()
+
+        assertEquals(listOf(1_000L, 2_000L, 4_000L, 8_000L, 16_000L), shipped.backoffMs)
+        // Six dials: the first, then one after each wait. The last wait is clipped to what is left
+        // of the budget, so the client stops exactly on the half-minute instead of a second past it.
+        assertEquals(listOf(1_000L, 2_000L, 4_000L, 8_000L, 15_000L), dialledAt.zipWithNext { a, b -> b - a })
+        assertEquals(30_000L, dialledAt.last() - dialledAt.first())
+        assertEquals(TogetherFailureReason.UNREACHABLE, reasonOf(emitted.last()))
+    }
 
     @Test
     fun `a build with no relay in it says so instead of dialling nowhere`() = runBlocking<Unit> {
