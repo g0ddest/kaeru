@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.BrightnessMedium
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
@@ -32,6 +33,8 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -53,6 +56,7 @@ import app.kaeru.domain.download.EpisodeDownload
 import app.kaeru.ui.common.downloads.DownloadMark
 import app.kaeru.ui.common.downloads.downloadMark
 import app.kaeru.ui.common.player.CastButton
+import app.kaeru.ui.common.together.TogetherCopy
 import app.kaeru.ui.common.design.KaeruSeekBar
 import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.design.formatTime
@@ -80,6 +84,9 @@ fun PlayerTopBar(
     download: EpisodeDownload? = null,
     onDownload: (() -> Unit)? = null,
     onRemoveDownload: (() -> Unit)? = null,
+    onWatchTogether: (() -> Unit)? = null,
+    togetherPeer: String? = null,
+    onLeaveTogether: (() -> Unit)? = null,
 ) {
     Row(modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         DiscButton(Icons.AutoMirrored.Filled.ArrowBack, "Назад", onBack)
@@ -103,6 +110,10 @@ fun PlayerTopBar(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+        if (onWatchTogether != null) {
+            TogetherButton(togetherPeer, onWatchTogether, onLeaveTogether)
+            Spacer(Modifier.width(4.dp))
         }
         if (onDownload != null && onRemoveDownload != null) {
             DownloadButton(download, onDownload, onRemoveDownload)
@@ -345,6 +356,36 @@ private fun DownloadButton(download: EpisodeDownload?, onDownload: () -> Unit, o
             },
             onDismiss = { confirming = false },
         )
+    }
+}
+
+/**
+ * The invitation, and — once somebody has taken it — who took it.
+ *
+ * Two figures while there is nobody, the friend's name the moment there is. The name is a chip
+ * rather than an icon because that is how this row already says «this is what is currently
+ * chosen»: the dub and the quality are chips, and the person on the other phone is the same kind
+ * of fact about the session. It opens the one thing there is to decide about a session already
+ * running, which is whether to be in it.
+ */
+@Composable
+private fun TogetherButton(peer: String?, onShare: () -> Unit, onLeave: (() -> Unit)?) {
+    if (peer == null) {
+        DiscButton(Icons.Default.Groups, TogetherCopy.WATCH_TOGETHER, onShare)
+        return
+    }
+    var menu by remember { mutableStateOf(false) }
+    Box {
+        Chip(text = peer, onClick = { menu = true })
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            DropdownMenuItem(
+                text = { Text(TogetherCopy.LEAVE) },
+                onClick = {
+                    menu = false
+                    onLeave?.invoke()
+                },
+            )
+        }
     }
 }
 

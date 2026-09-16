@@ -1,7 +1,11 @@
 package app.kaeru.di
 
 import app.kaeru.data.together.NoopTogetherSession
+import app.kaeru.data.together.VoicePlayer
+import app.kaeru.data.together.VoiceRecorder
 import app.kaeru.domain.together.TogetherSessionApi
+import app.kaeru.ui.common.together.VoiceCapture
+import app.kaeru.ui.common.together.VoicePlayback
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -20,7 +24,20 @@ import dagger.hilt.components.SingletonComponent
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class TogetherModule {
-    // Unscoped: the implementation is already @Singleton, so this hands out the one instance.
+    // Unscoped: the implementations are already @Singleton, so these hand out one instance each.
     @Binds
     abstract fun togetherSession(impl: NoopTogetherSession): TogetherSessionApi
+
+    /**
+     * The microphone and the speaker, behind the two interfaces the screens know them by.
+     *
+     * Bound rather than constructed where they are used so that nothing under `ui` has to import
+     * anything under `data`: the overlay holds a `VoiceCapture`, and what that turns out to be is
+     * decided here.
+     */
+    @Binds
+    abstract fun voiceCapture(impl: VoiceRecorder): VoiceCapture
+
+    @Binds
+    abstract fun voicePlayback(impl: VoicePlayer): VoicePlayback
 }
