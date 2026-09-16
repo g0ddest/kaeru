@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -107,6 +108,7 @@ private const val WATCH = "Смотреть"
 private const val MARK_WATCHED = "Отметить просмотренной"
 private const val MARK_UNWATCHED = "Отметить непросмотренной"
 private const val MORE_ACTIONS = "Что сделать с серией"
+private const val MORE = "Ещё"
 private const val DUB = "Озвучка"
 private const val SUBTITLES = "Субтитры"
 private const val OFTEN_CHOSEN = "часто выбираете"
@@ -259,6 +261,16 @@ private fun TvTitleReady(
 /** Which of the two panels is open over the screen. */
 private enum class TvTitleSheet { STATUS, TRANSLATIONS }
 
+/**
+ * Which cell «Ещё» is about: the one the D-pad is on, or was on last, and the next unwatched
+ * episode before the viewer has touched the grid at all — which is the one the screen scrolled to
+ * and the one the watch button offers.
+ */
+private fun focusedIndex(cells: List<TvEpisodeCell>, focused: Int?, next: Int): Int {
+    val known = focused?.let { episode -> cells.indexOfFirst { it.episode == episode } } ?: -1
+    return if (known >= 0) known else next
+}
+
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
 private fun TvTitleDetails(
@@ -352,6 +364,10 @@ private fun TvEpisodeColumn(
     // Which episode a long press of OK opened, remembered for the column rather than for each
     // tile: one panel is over the screen at a time.
     var openFor by remember(animeId) { mutableStateOf<TvEpisodeCell?>(null) }
+    // The tile the D-pad is on, or was on last. What «Ещё» acts on, so the button in the header
+    // means the episode the viewer is looking at rather than a fixed one.
+    var focused by remember(animeId) { mutableStateOf<Int?>(null) }
+    val next = cells.indexOfFirst { !it.watched && it.aired }.coerceAtLeast(0)
     Column(modifier, verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space3)) {
         Row(
             Modifier.fillMaxWidth(),
@@ -360,14 +376,20 @@ private fun TvEpisodeColumn(
         ) {
             Text(EPISODES, style = MaterialTheme.typography.titleMedium, color = KaeruText)
             if (cells.isNotEmpty()) {
-                Text(watched, style = MaterialTheme.typography.labelMedium, color = KaeruSecondary)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(watched, style = MaterialTheme.typography.labelMedium, color = KaeruSecondary)
+                    // The same panel a long press of OK opens, behind a control that is plainly
+                    // there. Holding OK is the quicker way in and the one the home screen already
+                    // uses, but it is invisible and it is the remote's to honour — an action the
+                    // viewer cannot see is an action some remotes do not have.
+                    TextAction(MORE, { openFor = cells.getOrNull(focusedIndex(cells, focused, next)) })
+                }
             }
         }
         if (cells.isEmpty()) {
             Text(NO_EPISODES, style = MaterialTheme.typography.bodyMedium, color = KaeruSecondary)
             return@Column
         }
-        val next = cells.indexOfFirst { !it.watched && it.aired }.coerceAtLeast(0)
         val grid = rememberLazyGridState()
         // Once per title, not once per change to the cells. A status write or a progress update
         // landing from Room rebuilds `cells`, and keying on those would snap a viewer who had
@@ -386,6 +408,7 @@ private fun TvEpisodeColumn(
                     cell,
                     onPlay = { onPlay(cell.episode) },
                     onLongPress = { openFor = cell },
+                    onFocused = { focused = cell.episode },
                 )
             }
         }
@@ -451,10 +474,18 @@ private fun TvEpisodeDialog(
  * already uses on a poster.
  */
 @Composable
-private fun TvEpisodeTile(cell: TvEpisodeCell, onPlay: () -> Unit, onLongPress: () -> Unit) {
+private fun TvEpisodeTile(
+    cell: TvEpisodeCell,
+    onPlay: () -> Unit,
+    onLongPress: () -> Unit,
+    onFocused: () -> Unit,
+) {
     Box(
         Modifier
             .height(EpisodeTile)
+            // Gaining focus only: the tile the D-pad left is still the one «Ещё» in the header is
+            // about, because that is where the viewer was when they went looking for it.
+            .onFocusChanged { if (it.isFocused) onFocused() }
             .kaeruFocus(KaeruTokens.CardShape)
             .clip(KaeruTokens.CardShape)
             .background(if (cell.aired) KaeruElevated else KaeruElevated.copy(alpha = 0.45f))
