@@ -68,6 +68,7 @@ class PlayerScreenSharePromptTest {
                 onDownload = {},
                 onRemoveDownload = {},
                 onRemoveBrokenDownload = {},
+            onBackToEpisodes = {},
                 together = TogetherControls(
                     state = TogetherUiState(
                         phase = TogetherPhase.HOSTING,

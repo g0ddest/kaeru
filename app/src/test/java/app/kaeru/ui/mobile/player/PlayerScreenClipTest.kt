@@ -88,6 +88,7 @@ class PlayerScreenClipTest {
             onDownload = {},
             onRemoveDownload = {},
             onRemoveBrokenDownload = {},
+            onBackToEpisodes = {},
             isInPictureInPicture = inWindow,
             together = TogetherControls(
                 state = TogetherUiState(phase = TogetherPhase.LIVE, peerName = "Аня", playing = clip),
@@ -152,6 +153,7 @@ class PlayerScreenClipTest {
                 onDownload = {},
                 onRemoveDownload = {},
                 onRemoveBrokenDownload = {},
+            onBackToEpisodes = {},
                 isInPictureInPicture = true,
                 together = TogetherControls(
                     state = TogetherUiState(
