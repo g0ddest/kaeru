@@ -27,17 +27,21 @@ class TvLayoutBudgetTest {
     private val panel = 540f
     private val safe = TvLayout.SafeVertical.value
 
-    /** What the hero band holds: a two-line title, a gap, and the line saying what OK does. */
+    /** What the hero band holds: a one-line title, a gap, and the line saying what OK does. */
     private val heroContent =
-        2 * KaeruTvTypography.displaySmall.lineHeight.value +
-            KaeruTokens.Space3.value +
-            KaeruTvTypography.titleMedium.lineHeight.value
-
-    /** The same band with the title cut to one line, which is what a notice above it leaves room for. */
-    private val heroContentOneLine =
         KaeruTvTypography.displaySmall.lineHeight.value +
             KaeruTokens.Space3.value +
             KaeruTvTypography.titleMedium.lineHeight.value
+
+    /**
+     * What sits above the cards inside the rows' own viewport, and what this test used to leave out.
+     *
+     * A card never lives in that viewport alone: its row's heading is above it and the lazy row's
+     * own top padding is between the two. Both terms were missing, and the assertion below passed
+     * at 302 against 311 while the screen was 36dp over — which is exactly these two numbers.
+     */
+    private val rowHeading =
+        KaeruTvTypography.titleMedium.lineHeight.value + KaeruTokens.Space3.value
 
     /** One line of `bodyMedium` with [KaeruTokens.Space1] above and below it: a compact strip. */
     private val noticeContent =
@@ -51,10 +55,10 @@ class TvLayoutBudgetTest {
             KaeruTokens.Space2.value
 
     @Test
-    fun `the hero band is tall enough for the two lines it is sized for`() {
+    fun `the hero band is tall enough for the line it is sized for`() {
         assertTrue(
-            "the band holds $heroContent of content in ${TvLayout.HeroHeight.value}, so a two-line " +
-                "title grows past the safe area into the part of the panel that is cropped",
+            "the band holds $heroContent of content in ${TvLayout.HeroHeight.value}, so the title " +
+                "grows past the safe area into the part of the panel that is cropped",
             TvLayout.HeroHeight.value >= heroContent,
         )
     }
@@ -64,10 +68,10 @@ class TvLayoutBudgetTest {
      * into *that*. A card taller than it can never be shown whole, however the scrolling behaves.
      */
     @Test
-    fun `a whole card fits in the rows' viewport with its focus room`() {
-        val needed = tile + 2 * TvLayout.CardFocusPad.value
+    fun `a whole row fits in the rows' viewport with its heading and its focus room`() {
+        val needed = rowHeading + tile + 2 * TvLayout.CardFocusPad.value
         assertTrue(
-            "a card wants $needed of the ${viewport()} left under the hero band",
+            "a row wants $needed of the ${viewport()} left under the hero band",
             needed <= viewport(),
         )
     }
@@ -86,8 +90,8 @@ class TvLayoutBudgetTest {
      * the viewport is the same number whatever is on screen. That is what this asserts.
      */
     @Test
-    fun `a whole card fits just the same with a notice across the top of the panel`() {
-        val needed = tile + 2 * TvLayout.CardFocusPad.value
+    fun `a whole row fits just the same with a notice across the top of the panel`() {
+        val needed = rowHeading + tile + 2 * TvLayout.CardFocusPad.value
         val withNotice = panel - (TvLayout.NoticeBlock.value + TvLayout.HeroHeightUnderNotice.value) - safe
         assertEquals(
             "a notice must cost the rows nothing, and costs them ${viewport() - withNotice}",
@@ -95,7 +99,7 @@ class TvLayoutBudgetTest {
             withNotice,
             0.001f,
         )
-        assertTrue("a card wants $needed of the $withNotice left under a notice", needed <= withNotice)
+        assertTrue("a row wants $needed of the $withNotice left under a notice", needed <= withNotice)
     }
 
     /** The two halves add up to the one number the rows are measured against, in every state. */
@@ -119,16 +123,18 @@ class TvLayoutBudgetTest {
     }
 
     /**
-     * What the band gives up for a notice is the title's second line, and no more than that.
+     * The band is sized for the state with least room in it, which is the one with a notice on top.
      *
-     * The one-line title is the trade this design makes. It has to actually fit, or the notice
-     * would be paid for twice — once by the second line and again by the first one clipping.
+     * A notice takes its own height *and* the inset the band would otherwise have carried, so this
+     * is the tighter of the two states and the one [TvLayout.HeroHeight] is worked back from. It
+     * has to actually fit, or a notice would be paid for twice — once by the rows and again by the
+     * title clipping.
      */
     @Test
-    fun `the band under a notice still holds a one-line title`() {
+    fun `the band under a notice still holds the whole title and its action`() {
         assertTrue(
-            "the band holds $heroContentOneLine of content in ${TvLayout.HeroHeightUnderNotice.value}",
-            TvLayout.HeroHeightUnderNotice.value >= heroContentOneLine,
+            "the band holds $heroContent of content in ${TvLayout.HeroHeightUnderNotice.value}",
+            TvLayout.HeroHeightUnderNotice.value >= heroContent,
         )
     }
 
