@@ -243,8 +243,15 @@ class DefaultPlaybackController @Inject constructor(
          * Whether another voice may stand in when the one this target names lacks the episode.
          * Never for a voice somebody chose — a pick from the chooser, or a friend's — and always
          * for the rest: an inherited voice is a habit, not an instruction.
+         *
+         * A friend's episode that names no voice at all named nobody's choice: the port hands one
+         * over as null when this side's catalogue has nothing matching, and what plays then is
+         * this side's own remembered voice. So it is stood in for like any other habit, rather
+         * than failing the guest with «Серии N ещё нет в этой озвучке» over a voice they never
+         * picked and cannot change from there.
          */
-        val substitutable: Boolean get() = !pickedTrack && origin == ActionOrigin.LOCAL
+        val substitutable: Boolean
+            get() = !pickedTrack && (origin == ActionOrigin.LOCAL || target.translation == null)
     }
 
     /**

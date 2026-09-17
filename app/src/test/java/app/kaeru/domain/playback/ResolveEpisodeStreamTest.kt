@@ -436,6 +436,35 @@ class ResolveEpisodeStreamTest {
 
         assertEquals(studioBanda.id, resolution.stream.translation.id)
         assertEquals(studioBanda.id, watchStates.saved.single().translationId)
+        // And it is not standing in for anything any more: this anime's voice is the one playing,
+        // so the next episode is asked for in it and nobody is told about a voice never chosen.
+        assertNull(resolution.insteadOf)
+    }
+
+    @Test
+    fun `a track whose own page already said it lacks the episode is not asked again`() = runTest(dispatcher) {
+        // Autoplay and «Повторить» come back to the same lagging voice for as long as it lags;
+        // its page answered for the whole season the first time, so the walk starts straight away.
+        watchStates.seed(row(episode = 3, translationId = anilibria.id))
+        source.listed[anilibria.id] = setOf(1, 2, 3)
+
+        val resolution = resolve(animeId = 100, episode = 4).getOrThrow()
+
+        assertEquals(studioBanda.id, resolution.stream.translation.id)
+        assertEquals(anilibria.id, resolution.insteadOf?.id)
+        assertEquals(listOf(studioBanda.id), source.resolveCalls.map { it.third?.id })
+    }
+
+    @Test
+    fun `a track picked by hand is asked even when its page says it lacks the episode`() = runTest(dispatcher) {
+        // The links come off that page, and a viewer who names a voice gets that voice's answer.
+        source.listed[subtitles.id] = setOf(1, 2, 3)
+        source.lacking(subtitles.id)
+
+        val error = resolve(animeId = 100, episode = 4, translationOverride = subtitles).exceptionOrNull()
+
+        assertEquals(EpisodeUnavailableReason.NOT_IN_TRANSLATION, (error as EpisodeNotAvailable).reason)
+        assertEquals(listOf(subtitles.id), source.resolveCalls.map { it.third?.id })
     }
 
     @Test

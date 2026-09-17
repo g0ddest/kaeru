@@ -838,6 +838,43 @@ class PlaybackControllerTest {
         assertTrue(engine.prepared.isEmpty())
     }
 
+    /**
+     * A friend's episode arrives naming a voice this side's catalogue does not have, and the port
+     * hands it over as none at all — this side plays what it can. Nobody pinned anything then, so
+     * a remembered voice that lags is stood in for rather than failing the guest.
+     */
+    @Test
+    fun `a friend's episode that names no voice may still be stood in for`() = runTest(dispatcher) {
+        rememberingAnilibria()
+        source.missing = mapOf(anilibria.id to setOf(4))
+
+        controller.play(target(episode = 4, translation = null), ActionOrigin.REMOTE)
+        advanceUntilIdle()
+
+        assertEquals(studioBanda, controller.state.value.stream?.translation)
+        assertEquals(anilibria, controller.state.value.insteadOf)
+    }
+
+    @Test
+    fun `a voice that stood in for nothing is what the next episode is asked in`() = runTest(dispatcher) {
+        // Nothing was remembered, so the stand-in became this anime's voice. Asking for the
+        // ranking's opening guess again would cost a failed page fetch and a notice naming a
+        // voice the viewer never chose, once per episode.
+        val events = mutableListOf<PlaybackEvent>()
+        scope.launch { controller.events.collect { events += it } }
+        source.missing = mapOf(anilibria.id to setOf(4))
+
+        start(episode = 4)
+        engine.moveTo(1_439_000)
+        advanceUntilIdle()
+        engine.end()
+        advanceUntilIdle()
+
+        assertEquals(5, controller.state.value.target?.episode)
+        assertEquals("https://cdn/100/5/22/720", engine.prepared.last().url)
+        assertTrue(events.none { it is PlaybackEvent.TranslationSubstituted })
+    }
+
     @Test
     fun `an episode no voice carries is a failure that says so`() = runTest(dispatcher) {
         rememberingAnilibria()

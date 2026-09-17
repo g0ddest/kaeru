@@ -63,8 +63,9 @@ class ResolveEpisodeStream(
         prefetch.take(animeId, episode, translationOverride?.id ?: remembered?.translationId)
             ?.takeIf { it.insteadOf == null || substitute }
             ?.let { ready ->
-                if (persist) remember(ready, remembered)
-                return Result.success(ready)
+                val answer = ready.adopted(remembered, persist)
+                if (persist) remember(answer, remembered)
+                return Result.success(answer)
             }
         val usage = TranslationUsage.of(rows)
         val preferred = prefs.preferredTranslations.first()
@@ -77,21 +78,47 @@ class ResolveEpisodeStream(
             TranslationRanker.pick(available, preferred, remembered?.translationId, usage)?.withSeasonOf(remembered)
         }
 
-        // A source with nothing listed is still asked: only it can say whether this is an
-        // unknown anime, an episode that has not aired, or a page that stopped parsing.
-        val resolution = source.resolve(animeId, episode, chosen).fold(
-            onSuccess = { Resolution(it) },
-            onFailure = { failure ->
-                if (!substitute || chosen == null || !failure.lacksEpisodeInTrack()) return Result.failure(failure)
-                // A carried voice arrives without the catalogue; it is only read once it is needed.
-                val others = listed ?: source.translations(animeId).getOrElse { return Result.failure(it) }
-                standIn(animeId, episode, chosen, others, preferred, remembered, usage)
-                    .getOrElse { return Result.failure(it) }
-            },
-        )
-        if (persist) remember(resolution, remembered)
-        return Result.success(resolution)
+        /** The walk past [from], reading the catalogue only if a carried voice arrived without it. */
+        suspend fun walkPast(from: Translation): Result<Resolution> {
+            val others = listed ?: source.translations(animeId).getOrElse { return Result.failure(it) }
+            return standIn(animeId, episode, from, others, preferred, remembered, usage)
+        }
+
+        val resolution = if (substitute && chosen != null && chosen.knownToHave(animeId, episode) == false) {
+            // Its own page has already answered for the whole season, so asking it again would
+            // buy nothing — and autoplay and «Повторить» come back to it for as long as it lags.
+            walkPast(chosen).getOrElse { return Result.failure(it) }
+        } else {
+            // A source with nothing listed is still asked: only it can say whether this is an
+            // unknown anime, an episode that has not aired, or a page that stopped parsing. And
+            // where nothing is known yet, that page is what makes it known.
+            source.resolve(animeId, episode, chosen).fold(
+                onSuccess = { Resolution(it) },
+                onFailure = { failure ->
+                    if (!substitute || chosen == null || !failure.lacksEpisodeInTrack()) return Result.failure(failure)
+                    walkPast(chosen).getOrElse { return Result.failure(it) }
+                },
+            )
+        }
+        val answer = resolution.adopted(remembered, persist)
+        if (persist) remember(answer, remembered)
+        return Result.success(answer)
     }
+
+    /**
+     * The same resolution, with a stand-in this anime is about to adopt no longer standing in.
+     *
+     * A voice only stands in for one the viewer has. Where nothing was remembered there is
+     * nothing to stand in for — the ranking's opening guess was no choice of theirs — and the
+     * stand-in becomes this anime's voice on the spot. Saying otherwise would have the next
+     * episode asked for in the guess again, failing once per episode and announcing «В озвучке X
+     * серии N нет» about a voice the viewer never picked, while the player names Y.
+     *
+     * Only where the answer is being remembered at all: a resolve done ahead of time changes
+     * nothing, and the links it prepared are still the answer to the voice that was asked for.
+     */
+    private fun Resolution.adopted(previous: WatchState?, persist: Boolean): Resolution =
+        if (persist && insteadOf != null && previous?.translationId == null) Resolution(stream) else this
 
     /**
      * The tracks on offer, ordered the way the selection sheet should show them, each carrying
@@ -217,9 +244,9 @@ class ResolveEpisodeStream(
      * starting another one rewinds to the beginning.
      *
      * A voice that stood in is not a choice, so it does not become the memory: the row keeps the
-     * voice it had, and the next episode is asked for in that voice first. Only an anime with no
-     * voice remembered takes the stand-in — there is nothing to overwrite, and the ranking's guess
-     * it replaced was no more the viewer's choice than it is.
+     * voice it had, and the next episode is asked for in that voice first. An anime with no voice
+     * remembered has nothing to keep and has already adopted the stand-in by the time this runs —
+     * [adopted] is where that is decided, and it leaves nothing standing in behind it.
      *
      * Best effort by design — the stream is already playable, and a lost memory costs the
      * viewer one re-pick, so a logout or a disk failure here must not fail playback.
@@ -227,7 +254,7 @@ class ResolveEpisodeStream(
     private suspend fun remember(resolution: Resolution, previous: WatchState?) {
         val stream = resolution.stream
         val sameEpisode = previous?.episode == stream.episode
-        val kept = previous?.takeIf { resolution.insteadOf != null && it.translationId != null }
+        val kept = previous?.takeIf { resolution.insteadOf != null }
         try {
             watchStates.save(
                 WatchState(

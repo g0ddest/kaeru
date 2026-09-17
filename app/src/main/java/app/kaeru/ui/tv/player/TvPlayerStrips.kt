@@ -36,6 +36,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Devices
@@ -337,7 +339,9 @@ private fun TvStripLabel(label: String) {
  *
  * [enabled] false keeps the chip in the walk and takes the press away: a chip the D-pad cannot
  * land on is a hole in the row, and the remote falls through it into whatever is beside it. The
- * name is dimmed instead, and the caption says why.
+ * name is dimmed instead, the caption says why, and the same thing is said in semantics — a
+ * viewer listening to the screen has neither the colour nor the caption, and a chip announcing
+ * itself as a button makes a promise the press does not keep.
  */
 @Composable
 internal fun TvStripChip(
@@ -357,7 +361,8 @@ internal fun TvStripChip(
             .kaeruFocus(KaeruTokens.ButtonShape)
             .clip(KaeruTokens.ButtonShape)
             .background(if (selected) KaeruAccent.copy(alpha = 0.22f) else KaeruElevated)
-            .selectable(selected = selected, role = Role.Button, onClick = { if (enabled) onClick() }),
+            .selectable(selected = selected, role = Role.Button, onClick = { if (enabled) onClick() })
+            .semantics { if (!enabled) disabled() },
     ) {
         Column(
             Modifier.align(Alignment.Center).padding(horizontal = KaeruTokens.Space4),

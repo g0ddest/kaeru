@@ -95,13 +95,12 @@ private val tabs = listOf(
  * the screen: a title card takes the screen down while it is open, and «where was I» has to outlive
  * that. Back closes the rail first, then the title card, then walks to the home screen, then leaves
  * the app — `tvBack` is where that order is written down and tested.
- */
-@Composable
-/**
+ *
  * @param openTitle a title the player asked for on its way out, opened over whatever the shell
  *   was showing and then reported back through [onTitleOpened], so a restored shell does not
  *   open it twice.
  */
+@Composable
 fun TvShell(
     onPlay: (animeId: Int, episode: Int) -> Unit,
     openTitle: Int? = null,
