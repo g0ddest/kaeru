@@ -60,9 +60,15 @@ class TvHomeCardBoundsTest {
     )
 
     /** One row, so the only two nodes carrying a title are the hero band and the card's own name. */
-    private fun home(vararg items: FeedItem) = HomeUiState(
+    private fun home(
+        vararg items: FeedItem,
+        updateVersion: String? = null,
+        offline: Boolean = false,
+    ) = HomeUiState(
         feed = HomeFeed(items.first(), items.toList(), emptyList(), emptyList(), emptyList(), emptyList()),
         isLoading = false,
+        offline = offline,
+        updateVersion = updateVersion,
     )
 
     private fun showHome(state: HomeUiState) {
@@ -76,6 +82,7 @@ class TvHomeCardBoundsTest {
                     onSeason = {},
                     onRetrySeason = {},
                     onSearch = {},
+                    onUpdate = {},
                 )
             }
         }
@@ -123,6 +130,45 @@ class TvHomeCardBoundsTest {
         showHome(home(continuing(1, title)))
 
         assertOnPanel("the focused card", focusedTileBounds())
+    }
+
+    /**
+     * The same card on the screen most evenings actually show: one with «Доступна версия 0.4.0»
+     * across the top of it.
+     *
+     * A notice added above the hero band used to cost the rows 81dp of a viewport that had nine to
+     * spare, so the bottom of a focused card — its name, and the focus ring under it — was drawn
+     * off the panel. It now takes that height out of the band instead, and this is the composed
+     * proof that it does.
+     */
+    @Test
+    fun `an update notice does not push the focused card off the panel`() {
+        showHome(home(continuing(1, title), updateVersion = "0.4.0"))
+
+        assertOnPanel("the focused card under an update notice", focusedTileBounds())
+    }
+
+    /** The offline strip had the identical cost and the identical fault. */
+    @Test
+    fun `the offline notice does not push the focused card off the panel`() {
+        showHome(home(continuing(1, title), offline = true))
+
+        assertOnPanel("the focused card under the offline notice", focusedTileBounds())
+    }
+
+    /** And the notice itself has to be drawn where a television draws, not in the cropped edge. */
+    @Test
+    fun `the notice sits clear of the top edge the panel crops`() {
+        showHome(home(continuing(1, title), updateVersion = "0.4.0"))
+
+        val notice = compose
+            .onAllNodesWithText("Доступна версия 0.4.0", useUnmergedTree = true)
+            .fetchSemanticsNodes()
+            .single()
+        assertTrue(
+            "the notice starts at ${notice.positionInRoot.y}",
+            notice.positionInRoot.y >= safeMargin,
+        )
     }
 
     /**

@@ -12,6 +12,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.pressKey
@@ -58,6 +59,7 @@ class TvSettingsScreenTest {
                 onStudioRemove = {},
                 onStudiosReset = {},
                 onRetryAccount = {},
+                onUpdates = {},
             )
         }
     }
@@ -96,13 +98,42 @@ class TvSettingsScreenTest {
     @Test
     fun `the D-pad walks the whole page, down to the last line of it`() {
         // The fault the viewer reported: the rows below the fold could not be reached. A D-pad
-        // scrolls by moving focus and nothing else, so every row has to be a stop — including the
-        // version at the bottom, which is why that one is focusable.
+        // scrolls by moving focus and nothing else, so the bottom of the page has to be something
+        // to land on — which is «Проверить обновления», with the version read beside it.
         show()
 
         repeat(40) { compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) } }
 
-        compose.onNodeWithText("Kaeru", substring = true).assertIsDisplayed().assertIsFocused()
+        compose.onNodeWithText(UPDATES_ENTRY).assertIsDisplayed().assertIsFocused()
+        compose.onNodeWithText("Kaeru", substring = true).assertIsDisplayed()
+    }
+
+    /** The way to «Обновления» from a sofa, which is the only one this device has. */
+    @Test
+    fun `the last row opens the updates screen`() {
+        var opened = false
+        compose.setContent {
+            KaeruTvTheme {
+                TvSettingsScreen(
+                    state = state,
+                    onSignOut = {},
+                    onAutoplay = {},
+                    onQuality = {},
+                    onThreshold = {},
+                    onStudioUp = {},
+                    onStudioDown = {},
+                    onStudioRemove = {},
+                    onStudiosReset = {},
+                    onRetryAccount = {},
+                    onUpdates = { opened = true },
+                )
+            }
+        }
+
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText(UPDATES_ENTRY))
+        compose.onNodeWithText(UPDATES_ENTRY).performClick()
+
+        assertTrue("the settings entry did not open the updates screen", opened)
     }
 
     @Test
@@ -132,7 +163,7 @@ class TvSettingsScreenTest {
 
         repeat(40) { compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) } }
 
-        val row = compose.onNodeWithText("Kaeru", substring = true).fetchSemanticsNode()
+        val row = compose.onNodeWithText(UPDATES_ENTRY).fetchSemanticsNode()
         val panel = compose.onRoot().fetchSemanticsNode().size.height.toFloat()
         val top = row.positionInRoot.y
         val bottom = top + row.size.height
@@ -145,5 +176,8 @@ class TvSettingsScreenTest {
     private companion object {
         /** Nothing readable sits closer than this to an edge a television may crop. */
         const val SAFE_MARGIN = 16f
+
+        /** The last row of the page, and the way to «Обновления». */
+        const val UPDATES_ENTRY = "Проверить обновления"
     }
 }

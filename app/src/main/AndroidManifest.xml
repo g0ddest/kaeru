@@ -12,6 +12,14 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- Voice clips during a shared viewing. Asked for at the first hold of the button, never at launch. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!--
+      Updating the app from its own «Обновления» screen. This app is not on any store, so the
+      only way a new version reaches a device is a release APK downloaded from GitHub and handed
+      to the system installer — and the system refuses to open one for an app that has not
+      declared this. It is not a silent install and cannot become one: the viewer still grants
+      «установка из этого источника» once, and answers the installer itself every time.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <!--
@@ -113,6 +121,23 @@
             android:name=".data.download.KaeruDownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!--
+          How a downloaded release APK reaches the system installer, which runs in another
+          process and cannot open a path inside this app's cache. A `file://` URI has been
+          refused since Android 7; this hands out a `content://` one instead, readable only for
+          as long as the intent that carries the grant. Not exported: nothing addresses it except
+          this app, and the grant is what gives the installer its one-time access.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.updates"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <activity
             android:name=".TvActivity"

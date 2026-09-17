@@ -34,4 +34,13 @@ data class HomeUiState(
      * than at the end of the next failed refresh.
      */
     val offline: Boolean = false,
+    /**
+     * The version of a newer release this device has heard about, or null.
+     *
+     * A string rather than the release itself, because a one-line row needs nothing else and the
+     * home screen has no business knowing where an APK lives. It comes from the last completed
+     * check, which means it survives a restart and appears with no network — and it stays null on
+     * a device that is already on the newest version, which is the only honest answer there.
+     */
+    val updateVersion: String? = null,
 )

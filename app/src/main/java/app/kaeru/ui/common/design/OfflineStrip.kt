@@ -7,6 +7,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import app.kaeru.ui.common.theme.KaeruSecondary
@@ -30,21 +31,36 @@ const val OFFLINE = "Нет сети"
  *
  * It appears and disappears with the network and nothing else: there is no enter animation,
  * because the rows below it move when it lands and a slide would turn that into a lurch.
+ *
+ * [compact] halves the air around the line, and exists for exactly one caller: the television home
+ * screen, where the panel is 540dp tall and every one of them is spoken for. The line is the same
+ * line — same colour, same ground, same words — drawn in [app.kaeru.ui.tv.TvLayout.NoticeHeight]
+ * rather than in fifty-four. A phone has the room and keeps the air.
  */
 @Composable
 fun OfflineStrip(
     modifier: Modifier = Modifier,
     text: String = OFFLINE_WITH_DOWNLOADS,
     gutter: Dp = KaeruTokens.GutterPhone,
+    compact: Boolean = false,
 ) {
     Text(
         text,
         style = MaterialTheme.typography.bodyMedium,
         color = KaeruSecondary,
+        // One line only where the height is fixed and spoken for. The phone's sentence is the
+        // longer of the two and has always been allowed to wrap onto a second line on a narrow
+        // screen; clipping it to «Нет сети — доступны скачанны…» would lose the half that says
+        // what the viewer can still do.
+        maxLines = if (compact) 1 else Int.MAX_VALUE,
+        overflow = TextOverflow.Ellipsis,
         modifier = modifier
             .fillMaxWidth()
             .background(KaeruSurface)
-            .padding(horizontal = gutter, vertical = KaeruTokens.Space3),
+            .padding(
+                horizontal = gutter,
+                vertical = if (compact) KaeruTokens.Space1 else KaeruTokens.Space3,
+            ),
     )
 }
 
@@ -55,5 +71,5 @@ private fun OfflineStripPreview() = KaeruTheme { OfflineStrip() }
 @Preview(showBackground = true, backgroundColor = 0xFF0B0C10, widthDp = 720, heightDp = 48)
 @Composable
 private fun OfflineStripTvPreview() = KaeruTheme {
-    OfflineStrip(text = OFFLINE, gutter = KaeruTokens.GutterTv)
+    OfflineStrip(text = OFFLINE, gutter = KaeruTokens.GutterTv, compact = true)
 }

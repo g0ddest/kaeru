@@ -91,6 +91,49 @@ class TvAnimeScopeTest {
         assertTrue("the store of the anime left behind should be cleared", first.cleared)
     }
 
+    /**
+     * «Обновления» is the screen this matters most for, and it carries no argument.
+     *
+     * Without a scope of its own its view model was the activity's, so a back press mid-transfer
+     * left the download running and the system installer opened, minutes later, over whatever the
+     * viewer had moved on to. The phone never behaved that way — a popped back-stack entry clears
+     * its own store — and this is what makes the two devices agree.
+     */
+    @Test
+    fun `a screen's view model is cleared when the screen closes`() {
+        var model: Scoped? = null
+        val open = mutableStateOf(true)
+        compose.setContent {
+            if (open.value) TvScreenScope("updates") { Scoped { model = it } }
+        }
+
+        val opened = requireNonNull(model)
+        assertFalse(opened.cleared)
+
+        open.value = false
+        compose.waitForIdle()
+
+        assertTrue("leaving the screen must cancel what it had in flight", opened.cleared)
+    }
+
+    /** And reopening it is a new one, which is what makes the screen check again. */
+    @Test
+    fun `reopening a screen builds a view model that has not run yet`() {
+        var model: Scoped? = null
+        val open = mutableStateOf(true)
+        compose.setContent {
+            if (open.value) TvScreenScope("updates") { Scoped { model = it } }
+        }
+        val first = requireNonNull(model)
+
+        open.value = false
+        compose.waitForIdle()
+        open.value = true
+        compose.waitForIdle()
+
+        assertNotSame("reopening must not hand back the view model that was cleared", first, model)
+    }
+
     private fun requireNonNull(model: Scoped?): Scoped =
         requireNotNull(model) { "the scope never handed out a view model" }
 }

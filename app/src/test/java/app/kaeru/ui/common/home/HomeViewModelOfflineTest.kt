@@ -1,6 +1,7 @@
 package app.kaeru.ui.common.home
 
 import app.kaeru.domain.connectivity.FakeConnectivity
+import app.kaeru.domain.update.FakeUpdateRepository
 import app.kaeru.domain.discover.Season
 import app.kaeru.domain.download.DownloadRepository
 import app.kaeru.domain.download.EpisodeDownload
@@ -103,7 +104,7 @@ class HomeViewModelOfflineTest {
         )
         return HomeViewModel(
             library, FakeDiscoverRepository(), HomeFeedBuilder(), Clock.fixed(now, ZoneOffset.UTC),
-            prefs, prefetch, engine, connectivity, main.dispatcher,
+            prefs, prefetch, engine, FakeUpdateRepository(), connectivity, main.dispatcher,
         )
     }
 

@@ -7,6 +7,7 @@ import androidx.media3.common.util.UnstableApi
 import app.kaeru.data.download.DownloadEngine
 import app.kaeru.data.image.PosterWarmer
 import app.kaeru.data.library.OfflineSyncStarter
+import app.kaeru.data.update.UpdateCheckStarter
 import app.kaeru.domain.download.DeferredDownloadRemoval
 import app.kaeru.di.ApplicationScope
 import coil3.ImageLoader
@@ -40,6 +41,8 @@ class KaeruApp : Application(), SingletonImageLoader.Factory {
 
     @Inject lateinit var images: ImageLoader
 
+    @Inject lateinit var updates: UpdateCheckStarter
+
     override fun onCreate() {
         super.onCreate()
         offlineSync.start()
@@ -54,6 +57,10 @@ class KaeruApp : Application(), SingletonImageLoader.Factory {
         // Whatever «удалять просмотренные» owed when the process last died. A deletion waits for
         // playback to move off the episode, and a process that goes away first never gets there.
         deleteWatchedDownloads.start(appScope)
+        // Whether a newer release exists, asked at most once a day and never waited for. The
+        // answer is written down; the home screen shows it whenever it lands, which may well be
+        // after the screen is already up.
+        updates.start(appScope)
         registerActivityLifecycleCallbacks(ForegroundWatch())
     }
 

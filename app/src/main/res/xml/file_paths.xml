@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  What the FileProvider is allowed to hand out, which is one directory and nothing else.
+
+  `cache/updates` is where a release APK is downloaded to, and it is the only thing in this app
+  another process ever needs to open: the installer reads the file through a `content://` URI
+  granted for one intent. Episodes, the database and the preferences are deliberately not here —
+  a provider that exported the whole of `files` would be exporting somebody's watch history to
+  anything that could guess a path.
+-->
+<paths>
+    <cache-path name="updates" path="updates/" />
+</paths>

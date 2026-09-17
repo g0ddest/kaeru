@@ -14,6 +14,7 @@ import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.playback.PrefetchTopCardStream
 import app.kaeru.domain.repository.DiscoverRepository
 import app.kaeru.domain.repository.LibraryRepository
+import app.kaeru.domain.update.UpdateRepository
 import app.kaeru.ui.common.errorMessageOrNull
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineDispatcher
@@ -23,6 +24,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -34,8 +36,18 @@ import javax.inject.Inject
 
 private data class RefreshState(val active: Boolean = false, val error: String? = null)
 
-/** What the device itself can answer with: whether there is a network, and what is downloaded. */
-private data class DeviceState(val online: Boolean, val downloads: List<EpisodeDownload>)
+/**
+ * What the device itself can answer with: whether there is a network, what is downloaded, and
+ * whether a newer version of the app has been seen.
+ *
+ * All three come off this device rather than out of Shikimori, and all three are answers the home
+ * screen still has in a tunnel.
+ */
+private data class DeviceState(
+    val online: Boolean,
+    val downloads: List<EpisodeDownload>,
+    val updateVersion: String?,
+)
 
 /**
  * The discovery rows as the view model keeps them.
@@ -73,6 +85,7 @@ class HomeViewModel @Inject constructor(
     prefs: PlaybackPreferences,
     private val prefetchStream: PrefetchTopCardStream,
     downloads: DownloadRepository,
+    updates: UpdateRepository,
     private val connectivity: Connectivity,
     @param:IoDispatcher private val io: CoroutineDispatcher,
 ) : ViewModel() {
@@ -107,6 +120,10 @@ class HomeViewModel @Inject constructor(
         // went. An empty list is the truth for a device with nothing downloaded and a moment early
         // for one that has something.
         downloads.observeAll().onStart { emit(emptyList()) },
+        // Seeded for the same reason: the check's result is read off disk, and a screen should
+        // not wait on that answer to draw the rows it already has. Null is the truth for a device
+        // that has never checked and a moment early for one that has.
+        updates.lastResult.map { it?.release?.version }.onStart { emit(null) },
         ::DeviceState,
     )
 
@@ -129,6 +146,10 @@ class HomeViewModel @Inject constructor(
             // `discoverState`, so the rows come straight back when the network does.
             discover = discovered.toUiState().takeIf { device.online },
             offline = !device.online,
+            // Kept when there is no network, unlike the catalogue: the release was found before
+            // the tunnel, the screen it leads to says the same thing offline, and a row that
+            // came and went with the signal would read as a glitch.
+            updateVersion = device.updateVersion,
         )
     }.stateIn(
         scope = viewModelScope,

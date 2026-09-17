@@ -170,6 +170,32 @@ fun remainingLine(positionMs: Long, durationMs: Long): String? {
 }
 
 /**
+ * The months as a date is read aloud in Russian, which is the genitive: «16 сентября», not
+ * «16 сентябрь».
+ *
+ * Written out rather than taken from a `Locale`. The JVM's Russian month names come from whatever
+ * CLDR the runtime ships and have changed spelling between versions; a date on screen should not
+ * depend on which Android a device happens to be running.
+ */
+private val MONTHS_READ = listOf(
+    "января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря",
+)
+
+/**
+ * `16 сентября 2026` — a fixed date, for the two places a relative one would not do: when a
+ * release came out, and when this device last asked about one.
+ *
+ * [relativeDay] is the right answer for something a viewer is waiting for, and the wrong one here:
+ * «вчера» about a release says nothing about which release it was, and a screen that has to be
+ * read twice a year should print the year.
+ */
+fun shortDate(instant: Instant, zone: ZoneId = ZoneId.systemDefault()): String {
+    val date = instant.atZone(zone).toLocalDate()
+    return "${date.dayOfMonth} ${MONTHS_READ[date.monthValue - 1]} ${date.year}"
+}
+
+/**
  * How far off a date is in whole days as the viewer counts them: two moments four hours apart can
  * still be `завтра`, which is what a release schedule means by tomorrow.
  */
