@@ -49,6 +49,13 @@ class FakePlaybackEngine : PlaybackEngine {
         rate = factor
     }
 
+    /** Every time the picture was turned down or back up, in order. */
+    val ducks = mutableListOf<Boolean>()
+
+    override fun duck(on: Boolean) {
+        ducks += on
+    }
+
     override fun release() {
         releases += 1
         _state.value = EngineState()

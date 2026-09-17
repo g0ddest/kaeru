@@ -72,6 +72,14 @@ interface PlaybackPort {
     suspend fun setRate(factor: Float)
 
     /**
+     * Turns the picture's sound down while somebody is talking over it — a friend's clip through
+     * the speaker, or this viewer holding the microphone — and back up to what it was.
+     *
+     * Not a friend's doing either, and never announced. A picture on a television is left alone.
+     */
+    fun duck(on: Boolean)
+
+    /**
      * Opens what the friend is watching: the same episode, in the same voice if this device has
      * it, from [positionMs]. A voice this device cannot get is not an error — the player picks
      * its own and [state] says which, which is how the session knows to mention it.

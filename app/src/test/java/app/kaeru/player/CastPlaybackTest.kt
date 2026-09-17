@@ -329,6 +329,45 @@ class CastPlaybackTest {
     }
 
     @Test
+    fun `a voice over a picture on the phone turns the phone down and back up`() = runTest(dispatcher) {
+        playOnPhone()
+        advanceUntilIdle()
+
+        controller.duck(true)
+        controller.duck(false)
+
+        assertEquals(listOf(true, false), phone.ducks)
+    }
+
+    @Test
+    fun `a voice over a picture on a television leaves the phone alone`() = runTest(dispatcher) {
+        playOnPhone()
+        advanceUntilIdle()
+        castNow()
+        advanceUntilIdle()
+
+        controller.duck(true)
+        advanceUntilIdle()
+
+        assertTrue(phone.ducks.isEmpty())
+    }
+
+    @Test
+    fun `a picture that comes back mid-voice comes back turned down`() = runTest(dispatcher) {
+        playOnPhone()
+        advanceUntilIdle()
+        castNow()
+        advanceUntilIdle()
+        controller.duck(true)
+        advanceUntilIdle()
+
+        controller.switchEngine(phone, controller.state.value.positionMs)
+        advanceUntilIdle()
+
+        assertEquals(listOf(true), phone.ducks)
+    }
+
+    @Test
     fun `switching to the engine that is already playing changes nothing`() = runTest(dispatcher) {
         playOnPhone()
         advanceUntilIdle()

@@ -11,11 +11,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.core.app.ApplicationProvider
+import app.kaeru.domain.together.FakeVoiceCapture
 import app.kaeru.domain.together.RecordedClip
-import app.kaeru.domain.together.VoiceCapture
 import app.kaeru.ui.common.together.TogetherCopy
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -43,31 +41,9 @@ class VoiceButtonTest {
             .grantPermissions(Manifest.permission.RECORD_AUDIO)
     }
 
-    /** A microphone that opens instantly and produces whatever the test says it produces. */
-    private class FakeCapture(private val clip: RecordedClip?) : VoiceCapture {
-        val open = MutableStateFlow(false)
-        var cancelled = 0
-        override val recording: StateFlow<Boolean> get() = open
-        override val maxDurationMs: Int get() = 30_000
-        override fun start(): Boolean {
-            open.value = true
-            return true
-        }
-        override fun level(): Float = 0.5f
-        override fun elapsedMs(): Int = 1_000
-        override fun stop(): RecordedClip? {
-            open.value = false
-            return clip
-        }
-        override fun cancel() {
-            cancelled++
-            open.value = false
-        }
-    }
-
     @Test
     fun `a tap says how the button works instead of doing nothing at all`() {
-        val capture = FakeCapture(clip = null)
+        val capture = FakeVoiceCapture(clip = null)
         val sent = mutableListOf<Int>()
         compose.setContent {
             VoiceButton(recorder = capture, onClip = { _, ms -> sent += ms }, onDenied = {})
@@ -79,7 +55,7 @@ class VoiceButtonTest {
 
     @Test
     fun `the microphone closing by itself sends what was said`() {
-        val capture = FakeCapture(clip = RecordedClip(byteArrayOf(1, 2, 3), durationMs = 30_000))
+        val capture = FakeVoiceCapture(clip = RecordedClip(byteArrayOf(1, 2, 3), durationMs = 30_000))
         val sent = mutableListOf<Int>()
         compose.setContent {
             VoiceButton(recorder = capture, onClip = { _, ms -> sent += ms }, onDenied = {})
@@ -102,7 +78,7 @@ class VoiceButtonTest {
 
     @Test
     fun `letting go sends the clip`() {
-        val capture = FakeCapture(clip = RecordedClip(byteArrayOf(7), durationMs = 2_400))
+        val capture = FakeVoiceCapture(clip = RecordedClip(byteArrayOf(7), durationMs = 2_400))
         val sent = mutableListOf<Int>()
         compose.setContent {
             VoiceButton(recorder = capture, onClip = { _, ms -> sent += ms }, onDenied = {})

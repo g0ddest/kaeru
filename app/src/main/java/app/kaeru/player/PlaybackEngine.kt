@@ -62,6 +62,16 @@ interface PlaybackEngine {
      */
     fun setRate(factor: Float) = Unit
 
+    /**
+     * Turns the sound down to a fifth while somebody is talking over it, and back up to exactly
+     * what it was before.
+     *
+     * Only a shared viewing asks: a friend's clip comes out of the same speaker as the episode,
+     * and the phone does not duck an app against itself, so the request has to be made here. An
+     * engine with no sound of its own — a receiver across the room — ignores it.
+     */
+    fun duck(on: Boolean) = Unit
+
     /** Stops playback and frees the decoder. The engine stays usable: [prepare] starts it again. */
     fun release()
 }

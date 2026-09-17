@@ -155,6 +155,13 @@ class FakePlaybackPort : PlaybackPort {
         rates += factor
     }
 
+    /** Every time the picture was turned down or back up, in order. */
+    val ducks = mutableListOf<Boolean>()
+
+    override fun duck(on: Boolean) {
+        ducks += on
+    }
+
     override suspend fun openEpisode(animeId: Int, episode: Int, translationId: Int?, positionMs: Long) {
         opened += Opened(animeId, episode, translationId, positionMs)
         _state.update {
@@ -194,6 +201,28 @@ class FakePlaybackPort : PlaybackPort {
     fun did(action: LocalAction) {
         check(_localActions.subscriptionCount.value > 0) { "nobody was listening for $action" }
         check(_localActions.tryEmit(action)) { "$action did not fit in the buffer" }
+    }
+}
+
+/** A microphone that opens instantly and produces whatever the test says it produces. */
+class FakeVoiceCapture(private val clip: RecordedClip? = null) : VoiceCapture {
+    val open = MutableStateFlow(false)
+    var cancelled = 0
+    override val recording: StateFlow<Boolean> get() = open
+    override val maxDurationMs: Int get() = 30_000
+    override fun start(): Boolean {
+        open.value = true
+        return true
+    }
+    override fun level(): Float = 0.5f
+    override fun elapsedMs(): Int = 1_000
+    override fun stop(): RecordedClip? {
+        open.value = false
+        return clip
+    }
+    override fun cancel() {
+        cancelled++
+        open.value = false
     }
 }
 

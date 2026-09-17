@@ -61,6 +61,8 @@ class TogetherPlaybackPort @Inject constructor(
 
     override suspend fun setRate(factor: Float) = controller.setRate(factor)
 
+    override fun duck(on: Boolean) = controller.duck(on)
+
     override suspend fun openEpisode(animeId: Int, episode: Int, translationId: Int?, positionMs: Long) {
         controller.play(
             PlaybackTarget(animeId, episode, positionMs, translation = trackFor(animeId, translationId)),

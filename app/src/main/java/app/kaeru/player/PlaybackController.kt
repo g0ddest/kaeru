@@ -112,6 +112,15 @@ interface PlaybackController {
      */
     fun setRate(factor: Float)
 
+    /**
+     * Turns the picture's sound down while somebody is talking over it, and back up afterwards.
+     *
+     * A shared viewing's request, never a viewer action, so it is never announced. It follows the
+     * picture: an engine that takes over mid-voice is told, and a receiver that cannot be turned
+     * down ignores it.
+     */
+    fun duck(on: Boolean)
+
     /** Same episode, same position, another voice. */
     suspend fun changeTranslation(translation: Translation)
 
@@ -287,6 +296,9 @@ class DefaultPlaybackController @Inject constructor(
 
     private var markedEpisode = false
 
+    /** Whether the sound is wanted down right now, so an engine taking over can be told. */
+    private var ducked = false
+
     /**
      * What is playing came off the device rather than off the network. Only one thing turns on
      * it: handing the episode to a receiver has to resolve it again, because the links a
@@ -361,6 +373,11 @@ class DefaultPlaybackController @Inject constructor(
     }
 
     override fun setRate(factor: Float) = engine.setRate(factor)
+
+    override fun duck(on: Boolean) {
+        ducked = on
+        engine.duck(on)
+    }
 
     /** Says what this viewer did, and says nothing at all about what their friend did. */
     private inline fun announce(origin: ActionOrigin, action: () -> LocalAction) {
@@ -444,6 +461,10 @@ class DefaultPlaybackController @Inject constructor(
             this.engine = next
             following = follow(next)
             previous.release()
+            // Whether the sound is wanted down is this controller's to know, not an engine's: the
+            // one that had the picture put its own volume back on release, and the one taking
+            // over is told the current wish either way — before it prepares anything.
+            next.duck(ducked)
             // A new engine gets its own budget for the one silent re-resolve. A cast session
             // can last hours, and the link that played locally is very likely stale by its end.
             reResolved = false

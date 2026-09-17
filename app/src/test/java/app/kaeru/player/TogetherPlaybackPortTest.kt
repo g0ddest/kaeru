@@ -217,11 +217,28 @@ class TogetherPlaybackPortTest {
         port.play()
         port.seekTo(240_000)
         port.setRate(0.97f)
+        port.duck(true)
+        port.duck(false)
         port.openEpisode(animeId = 100, episode = 5, translationId = source.studioBanda.id, positionMs = 0)
         advanceUntilIdle()
 
         assertEquals(emptyList<LocalAction>(), seen)
         watching.cancel()
+    }
+
+    @Test
+    fun `turning the picture down for a voice reaches the engine`() = runTest(dispatcher) {
+        controller.play(target(episode = 4))
+        engine.ready(durationMs = 1_440_000)
+        advanceUntilIdle()
+
+        port.duck(true)
+        advanceUntilIdle()
+        assertEquals(listOf(true), engine.ducks)
+
+        port.duck(false)
+        advanceUntilIdle()
+        assertEquals(listOf(true, false), engine.ducks)
     }
 
     @Test

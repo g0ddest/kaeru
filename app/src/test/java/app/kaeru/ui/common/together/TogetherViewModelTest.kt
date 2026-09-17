@@ -8,6 +8,8 @@ import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.repository.AccountRepository
+import app.kaeru.domain.together.FakePlaybackPort
+import app.kaeru.domain.together.FakeVoiceCapture
 import app.kaeru.domain.together.LostReason
 import app.kaeru.domain.together.NoticeKind
 import app.kaeru.domain.together.PeerHello
@@ -18,6 +20,7 @@ import app.kaeru.domain.together.TogetherEvent
 import app.kaeru.domain.together.TogetherSessionApi
 import app.kaeru.player.FakeLibraryRepository
 import app.kaeru.test.MainDispatcherRule
+import androidx.lifecycle.ViewModelStore
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -101,9 +104,11 @@ class TogetherViewModelTest {
     private val clock = Clock.fixed(Instant.parse("2026-09-16T19:42:00Z"), ZoneOffset.UTC)
 
     private val parked = PendingWatchLink()
+    private val microphone = FakeVoiceCapture()
+    private val port = FakePlaybackPort()
 
     private fun viewModel(nickname: String? = "vitaliy") =
-        TogetherViewModel(session, FakeAccounts(nickname), library, parked, clock)
+        TogetherViewModel(session, FakeAccounts(nickname), library, parked, clock, microphone, port)
 
     private fun hello(name: String, animeId: Int = 42, episode: Int = 3) = PeerHello(
         name = name,
@@ -382,6 +387,123 @@ class TogetherViewModelTest {
         vm.messageShown()
         assertNull(vm.uiState.value.message)
         assertEquals(TogetherPhase.LIVE, vm.uiState.value.phase)
+    }
+
+    // --- turning the episode down while somebody talks ------------------------------------------
+
+    /** The view model under the player: the one screen allowed to turn the picture down. */
+    private fun TestScope.attachedViewModel(): TogetherViewModel {
+        val vm = viewModel()
+        vm.playerAttached()
+        live()
+        return vm
+    }
+
+    private suspend fun TestScope.clipArrives(id: Long = 7) {
+        session.bus.emit(TogetherEvent.VoiceClip(id, fromPeer = true, bytes = byteArrayOf(1, 2, 3), durationMs = 7_400))
+        runCurrent()
+    }
+
+    @Test
+    fun `holding the microphone turns the episode down, letting go turns it back up`() = runTest {
+        attachedViewModel()
+
+        microphone.open.value = true
+        runCurrent()
+        assertEquals(listOf(true), port.ducks)
+
+        microphone.open.value = false
+        runCurrent()
+        assertEquals(listOf(true, false), port.ducks)
+    }
+
+    @Test
+    fun `a friend's clip turns the episode down until it has been heard`() = runTest {
+        val vm = attachedViewModel()
+
+        clipArrives()
+        assertEquals(listOf(true), port.ducks)
+
+        vm.clipPlayed()
+        runCurrent()
+        assertEquals(listOf(true, false), port.ducks)
+    }
+
+    @Test
+    fun `a clip ending under a held microphone leaves the episode down until the hold ends`() = runTest {
+        val vm = attachedViewModel()
+        clipArrives()
+        microphone.open.value = true
+        runCurrent()
+        assertEquals(listOf(true), port.ducks)
+
+        vm.clipPlayed()
+        runCurrent()
+        assertEquals("the hold is still on", listOf(true), port.ducks)
+
+        microphone.open.value = false
+        runCurrent()
+        assertEquals(listOf(true, false), port.ducks)
+    }
+
+    @Test
+    fun `hearing a clip again turns the episode down again`() = runTest {
+        val vm = attachedViewModel()
+        clipArrives()
+        vm.clipPlayed()
+        runCurrent()
+
+        vm.replay(vm.uiState.value.history.single().id)
+        runCurrent()
+
+        assertEquals(listOf(true, false, true), port.ducks)
+    }
+
+    @Test
+    fun `a clip this viewer sends plays nowhere and turns nothing down`() = runTest {
+        val vm = attachedViewModel()
+
+        vm.sendVoice(byteArrayOf(9), durationMs = 2_000)
+        runCurrent()
+
+        assertTrue(port.ducks.isEmpty())
+    }
+
+    @Test
+    fun `a session that is over takes its clip, and the quiet, with it`() = runTest {
+        attachedViewModel()
+        clipArrives()
+        assertEquals(listOf(true), port.ducks)
+
+        session.sessionState.value = SessionState.Idle
+        runCurrent()
+
+        assertEquals(listOf(true, false), port.ducks)
+    }
+
+    @Test
+    fun `the screen that is not under the player never touches the volume`() = runTest {
+        // The browsing activity's copy hears every clip too, and never hears that one finished.
+        viewModel()
+        live()
+
+        clipArrives()
+        microphone.open.value = true
+        runCurrent()
+
+        assertTrue(port.ducks.isEmpty())
+    }
+
+    @Test
+    fun `a screen cleared mid-clip does not leave the episode quiet`() = runTest {
+        val vm = attachedViewModel()
+        clipArrives()
+        assertEquals(listOf(true), port.ducks)
+
+        ViewModelStore().apply { put("together", vm) }.clear()
+        runCurrent()
+
+        assertEquals(listOf(true, false), port.ducks)
     }
 
     // --- losing it -----------------------------------------------------------------------------

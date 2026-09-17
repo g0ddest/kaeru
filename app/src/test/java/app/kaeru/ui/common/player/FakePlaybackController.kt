@@ -74,6 +74,12 @@ class FakePlaybackController : PlaybackController {
         rate = factor
     }
 
+    val ducks = mutableListOf<Boolean>()
+
+    override fun duck(on: Boolean) {
+        ducks += on
+    }
+
     override fun seekBy(deltaMs: Long) = seekTo(playback.value.positionMs + deltaMs)
 
     override suspend fun changeTranslation(translation: Translation) {
