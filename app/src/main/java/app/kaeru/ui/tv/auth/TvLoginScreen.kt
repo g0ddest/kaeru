@@ -75,14 +75,30 @@ private const val CODE_REJECTED =
 private const val CODE_OFFLINE = "Нет связи с Shikimori. Повторить"
 private const val CODE_THROTTLED = "Shikimori просит подождать. Повторите через минуту"
 
-private val PairingQr = 224.dp
+/**
+ * The big code, sized by the column that has to hold it.
+ *
+ * 208dp square is 416 device pixels on a 1080p panel — about a fifth of the picture's width, which
+ * is well past what a phone camera needs from across a room. It was 224, and the column it sits in
+ * was then 554dp of a 540dp panel: the line at the bottom saying what the television is waiting for
+ * was measured against what was left, and what was left was 8dp of a 26dp line.
+ */
+private val PairingQr = 208.dp
 private val TypedQr = 132.dp
 
 /** The white surround a camera needs to find the code's edges from across a room. */
 private val QrQuietZone = 12.dp
 
 private val ColumnGap = 56.dp
-private val ScreenPadding = 48.dp
+
+/**
+ * The air above and below both columns.
+ *
+ * More than the five per cent a television crops, because this screen is a page rather than a band
+ * of artwork — but not the 48 it was, which cost 96dp of a 540dp panel and left the last line of
+ * the pairing column with nothing to be drawn in.
+ */
+private val ScreenPadding = 32.dp
 
 /** How far the focus ring sits outside the white card, so it never eats into the quiet zone. */
 private val QrFocusInset = KaeruTokens.Space1
