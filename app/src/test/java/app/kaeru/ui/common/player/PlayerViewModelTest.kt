@@ -3,6 +3,7 @@ package app.kaeru.ui.common.player
 import app.kaeru.domain.connectivity.FakeConnectivity
 import app.kaeru.domain.download.FakeDownloadRepository
 import app.kaeru.domain.error.EpisodeNotAvailable
+import app.kaeru.domain.error.EpisodeUnavailableReason
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
@@ -564,7 +565,7 @@ class PlayerViewModelTest {
         viewModel.start(100, 12)
         advanceUntilIdle()
 
-        controller.announced.emit(PlaybackEvent.NextEpisodeUnavailable(EpisodeNotAvailable(100, 13)))
+        controller.announced.emit(PlaybackEvent.NextEpisodeUnavailable(EpisodeNotAvailable(100, 13, EpisodeUnavailableReason.TITLE_NOT_ON_SOURCE)))
         advanceUntilIdle()
 
         assertEquals("Серия ещё не появилась в Kodik", viewModel.uiState.value.toast)
@@ -574,6 +575,36 @@ class PlayerViewModelTest {
         advanceUntilIdle()
         assertNull(viewModel.uiState.value.toast)
     }
+
+    @Test
+    fun `a voice standing in for the one asked for is a passing message naming both`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+
+        controller.announced.emit(PlaybackEvent.TranslationSubstituted(askedFor = anilibria, playing = studioBanda, episode = 4))
+        advanceUntilIdle()
+
+        assertEquals("В озвучке AniLibria.TV серии 4 нет — включена Студийная банда", viewModel.uiState.value.toast)
+        assertNull(viewModel.uiState.value.errorMessage)
+
+        viewModel.consumeToast()
+        advanceUntilIdle()
+        assertNull(viewModel.uiState.value.toast)
+    }
+
+    @Test
+    fun `choosing an episode from the remote asks for the voice the viewer has, not the stand-in`() =
+        runTest(main.dispatcher) {
+            viewModel.start(100, 4)
+            advanceUntilIdle()
+            controller.playback.update { it.copy(stream = stream(4, studioBanda), insteadOf = anilibria) }
+            advanceUntilIdle()
+
+            viewModel.playEpisode(5)
+            advanceUntilIdle()
+
+            assertEquals(anilibria, controller.played.last().translation)
+        }
 
     @Test
     fun `the countdown and the next episode offer come straight from the player`() = runTest(main.dispatcher) {
@@ -782,7 +813,7 @@ class PlayerViewModelTest {
     fun `retrying asks the player to resolve the episode again`() = runTest(main.dispatcher) {
         viewModel.start(100, 4)
         advanceUntilIdle()
-        controller.playback.update { it.copy(error = EpisodeNotAvailable(100, 4)) }
+        controller.playback.update { it.copy(error = EpisodeNotAvailable(100, 4, EpisodeUnavailableReason.TITLE_NOT_ON_SOURCE)) }
         advanceUntilIdle()
 
         viewModel.retry()

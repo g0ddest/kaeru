@@ -9,6 +9,7 @@ import androidx.media3.exoplayer.offline.Download
 import androidx.media3.exoplayer.offline.DownloadRequest
 import app.kaeru.domain.download.DownloadKey
 import app.kaeru.domain.error.EpisodeNotAvailable
+import app.kaeru.domain.error.EpisodeUnavailableReason
 import app.kaeru.domain.model.EpisodeStream
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
@@ -180,7 +181,7 @@ class DownloadRefresherTest {
 
     @Test
     fun `a resolve that fails leaves the download failed`() = runTest(dispatcher) {
-        episodes.stream = { Result.failure(EpisodeNotAvailable(ANIME, 7)) }
+        episodes.stream = { Result.failure(EpisodeNotAvailable(ANIME, 7, EpisodeUnavailableReason.NOT_IN_TRANSLATION)) }
 
         assertNotRequested(refresher.refresh(failed(), forbidden(403)))
         assertTrue(commands.added.isEmpty())

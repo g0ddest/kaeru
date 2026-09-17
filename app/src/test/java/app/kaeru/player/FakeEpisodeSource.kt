@@ -1,6 +1,7 @@
 package app.kaeru.player
 
 import app.kaeru.domain.error.EpisodeNotAvailable
+import app.kaeru.domain.error.EpisodeUnavailableReason
 import app.kaeru.domain.error.SourceUnavailable
 import app.kaeru.domain.error.SourceUnavailableReason
 import app.kaeru.domain.model.EpisodeStream
@@ -23,6 +24,12 @@ class FakeEpisodeSource : EpisodeSourceProvider {
 
     /** Episodes the source will not serve, standing in for a Kodik that is up but unhappy. */
     var rejects: Set<Int> = emptySet()
+
+    /** Per track, the episodes its own page does not list — a studio that has not caught up. */
+    var missing: Map<Int, Set<Int>> = emptyMap()
+
+    /** Titles whose catalogue was told to go, in order. */
+    val forgotten = mutableListOf<Int>()
 
     /** Every episode asked for, in order. */
     val resolves = mutableListOf<Int>()
@@ -62,8 +69,10 @@ class FakeEpisodeSource : EpisodeSourceProvider {
             return Result.failure(SourceUnavailable(SourceUnavailableReason.REJECTED))
         }
         resolveFailure?.let { return Result.failure(it) }
-        if (episode > lastAired) return Result.failure(EpisodeNotAvailable(shikimoriId, episode))
         val track = translation ?: anilibria
+        if (episode > lastAired || episode in missing[track.id].orEmpty()) {
+            return Result.failure(EpisodeNotAvailable(shikimoriId, episode, EpisodeUnavailableReason.NOT_IN_TRANSLATION))
+        }
         return Result.success(
             EpisodeStream(
                 animeId = shikimoriId,
@@ -75,5 +84,9 @@ class FakeEpisodeSource : EpisodeSourceProvider {
                 resolvedAt = Instant.parse("2026-09-13T10:00:00Z"),
             ),
         )
+    }
+
+    override suspend fun forget(shikimoriId: Int) {
+        forgotten += shikimoriId
     }
 }

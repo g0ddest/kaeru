@@ -5,6 +5,7 @@ import app.kaeru.domain.error.AuthCallbackRejected
 import app.kaeru.domain.error.CastLoadFailed
 import app.kaeru.domain.error.DownloadLimitReached
 import app.kaeru.domain.error.EpisodeNotAvailable
+import app.kaeru.domain.error.EpisodeUnavailableReason
 import app.kaeru.domain.error.HttpError
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.error.SourceFormatChanged
@@ -91,8 +92,9 @@ class ErrorMessagesTest {
 
     @Test
     fun `a missing episode reads as one kodik does not have yet`() {
-        assertEquals("Серия ещё не появилась в Kodik", EpisodeNotAvailable(52991, 28).toUserMessage())
-        assertEquals("Серия ещё не появилась в Kodik", EpisodeNotAvailable(52991).toUserMessage())
+        val notOnSource = EpisodeUnavailableReason.TITLE_NOT_ON_SOURCE
+        assertEquals("Серия ещё не появилась в Kodik", EpisodeNotAvailable(52991, 28, notOnSource).toUserMessage())
+        assertEquals("Серия ещё не появилась в Kodik", EpisodeNotAvailable(52991, null, notOnSource).toUserMessage())
     }
 
     @Test

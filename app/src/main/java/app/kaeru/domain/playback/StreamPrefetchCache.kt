@@ -1,6 +1,5 @@
 package app.kaeru.domain.playback
 
-import app.kaeru.domain.model.EpisodeStream
 import java.time.Clock
 import java.time.Duration
 
@@ -24,14 +23,19 @@ import java.time.Duration
  */
 class StreamPrefetchCache(private val clock: Clock) {
 
-    private class Entry(val stream: EpisodeStream, val storedAt: java.time.Instant)
+    private class Entry(val resolution: Resolution, val storedAt: java.time.Instant) {
+        val stream get() = resolution.stream
+
+        /** The voice the press will ask for: the one that stood in is what played, not what was wanted. */
+        val askedFor: Int get() = resolution.insteadOf?.id ?: stream.translation.id
+    }
 
     private var entry: Entry? = null
 
-    /** Keeps [stream], replacing whatever was here. */
+    /** Keeps [resolution], replacing whatever was here. */
     @Synchronized
-    fun put(stream: EpisodeStream) {
-        entry = Entry(stream, clock.instant())
+    fun put(resolution: Resolution) {
+        entry = Entry(resolution, clock.instant())
     }
 
     /**
@@ -40,21 +44,23 @@ class StreamPrefetchCache(private val clock: Clock) {
      *
      * [translationId] is what the caller is about to resolve *with* — the voice this anime
      * remembers, or the one the viewer picked by hand. A null means nothing is remembered, and
-     * nothing prefetched can be trusted to match a choice that has not been made yet.
+     * nothing prefetched can be trusted to match a choice that has not been made yet. A stream
+     * that stood in for that voice matches too: the press asks for the same voice the prefetch
+     * did, and would arrive at the same stand-in by the same road.
      */
     @Synchronized
-    fun take(animeId: Int, episode: Int, translationId: Int?): EpisodeStream? {
+    fun take(animeId: Int, episode: Int, translationId: Int?): Resolution? {
         val held = fresh() ?: return null
         if (translationId == null) return null
         if (held.stream.animeId != animeId || held.stream.episode != episode) return null
-        if (held.stream.translation.id != translationId) {
+        if (held.askedFor != translationId) {
             // The voice changed under the links. They are of no use to anyone now, so they go
             // rather than sit out their half hour taking up the one slot there is.
             entry = null
             return null
         }
         entry = null
-        return held.stream
+        return held.resolution
     }
 
     /** Whether this episode is already held, so a second prefetch of it can be skipped. */

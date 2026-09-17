@@ -42,9 +42,30 @@ enum class SourceUnavailableReason {
 class SourceUnavailable(val reason: SourceUnavailableReason, cause: Throwable? = null) :
     Exception("Video source unavailable: $reason", cause)
 
-/** The source has nothing to play: no entry for this anime at all, or not this episode yet. */
-class EpisodeNotAvailable(val animeId: Int, val episode: Int? = null) :
-    Exception("No source for anime $animeId episode ${episode ?: "-"}")
+/**
+ * Why the source has nothing to play. The three read very differently to a viewer, and only one
+ * of them leaves the dub picker with anything to offer.
+ */
+enum class EpisodeUnavailableReason {
+    /** The source has no entry for this anime at all. Nothing to pick from, nothing to wait for here. */
+    TITLE_NOT_ON_SOURCE,
+
+    /**
+     * The track asked for exists but does not carry this episode. Another track may: a studio that
+     * has not caught up is the ordinary case, and the way past it is a different voice.
+     */
+    NOT_IN_TRANSLATION,
+
+    /**
+     * Every track the source lists was asked, or ruled out by what it lists, and none carries this
+     * episode. Only the resolve that actually walked them may say this; a source never can.
+     */
+    NOT_IN_ANY_TRANSLATION,
+}
+
+/** The source has nothing to play, and [reason] says how much of nothing. */
+class EpisodeNotAvailable(val animeId: Int, val episode: Int?, val reason: EpisodeUnavailableReason) :
+    Exception("No source for anime $animeId episode ${episode ?: "-"}: $reason")
 
 /**
  * A Chromecast took the episode and never started playing it — no error from the receiver,

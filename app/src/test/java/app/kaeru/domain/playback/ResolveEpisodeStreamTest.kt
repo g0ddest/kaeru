@@ -6,6 +6,9 @@ import androidx.datastore.preferences.core.Preferences
 import app.kaeru.data.library.AppPreferences
 import app.kaeru.domain.error.AccountSessionChanged
 import app.kaeru.domain.error.EpisodeNotAvailable
+import app.kaeru.domain.error.EpisodeUnavailableReason
+import app.kaeru.domain.error.SourceUnavailable
+import app.kaeru.domain.error.SourceUnavailableReason
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.model.EpisodeStream
 import app.kaeru.domain.model.Quality
@@ -21,6 +24,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -80,6 +84,10 @@ class ResolveEpisodeStreamTest {
         val translationCalls = mutableListOf<Int>()
         val resolveCalls = mutableListOf<Triple<Int, Int, Translation?>>()
 
+        /** What this source has already seen listed, per track: the pre-check reads it, never the network. */
+        val listed = mutableMapOf<Int, Set<Int>>()
+        val forgotten = mutableListOf<Int>()
+
         override suspend fun translations(shikimoriId: Int): Result<List<Translation>> {
             translationCalls += shikimoriId
             return translations
@@ -88,6 +96,31 @@ class ResolveEpisodeStreamTest {
         override suspend fun resolve(shikimoriId: Int, episode: Int, translation: Translation?): Result<EpisodeStream> {
             resolveCalls += Triple(shikimoriId, episode, translation)
             return stream(shikimoriId, episode, translation)
+        }
+
+        override suspend fun listedEpisodes(shikimoriId: Int, translationId: Int): Set<Int>? = listed[translationId]
+
+        override suspend fun forget(shikimoriId: Int) {
+            forgotten += shikimoriId
+        }
+    }
+
+    /** A source whose tracks in [lacking] do not carry the episode asked for; every other track plays it. */
+    private fun FakeEpisodeSource.lacking(vararg lacking: Int) {
+        stream = { animeId, episode, translation ->
+            if (translation != null && translation.id in lacking) {
+                Result.failure(EpisodeNotAvailable(animeId, episode, EpisodeUnavailableReason.NOT_IN_TRANSLATION))
+            } else {
+                Result.success(
+                    EpisodeStream(
+                        animeId = animeId,
+                        episode = episode,
+                        translation = translation ?: Translation(0, "По умолчанию", TranslationKind.VOICE, null),
+                        urls = mapOf(Quality.P720 to "https://cdn/720.m3u8"),
+                        resolvedAt = now,
+                    ),
+                )
+            }
         }
     }
 
@@ -112,7 +145,7 @@ class ResolveEpisodeStreamTest {
     fun `a hand picked track beats the ranking and spares the catalogue call`() = runTest(dispatcher) {
         watchStates.seed(row(episode = 3, translationId = studioBanda.id))
 
-        val stream = resolve(animeId = 100, episode = 4, translationOverride = subtitles).getOrThrow()
+        val stream = resolve(animeId = 100, episode = 4, translationOverride = subtitles).getOrThrow().stream
 
         assertEquals(subtitles.id, source.resolveCalls.single().third?.id)
         assertEquals(subtitles.id, stream.translation.id)
@@ -208,7 +241,7 @@ class ResolveEpisodeStreamTest {
 
     @Test
     fun `a source that cannot resolve leaves the remembered state untouched`() = runTest(dispatcher) {
-        val failure = EpisodeNotAvailable(100, 4)
+        val failure = EpisodeNotAvailable(100, 4, EpisodeUnavailableReason.TITLE_NOT_ON_SOURCE)
         source.stream = { _, _, _ -> Result.failure(failure) }
 
         val result = resolve(animeId = 100, episode = 4)
@@ -232,7 +265,7 @@ class ResolveEpisodeStreamTest {
     fun `losing the account while remembering still hands back a playable stream`() = runTest(dispatcher) {
         watchStates.failSaveWith = AccountSessionChanged("signed out")
 
-        val stream = resolve(animeId = 100, episode = 4).getOrThrow()
+        val stream = resolve(animeId = 100, episode = 4).getOrThrow().stream
 
         assertEquals(anilibria.id, stream.translation.id)
         assertTrue(watchStates.saved.isEmpty())
@@ -299,9 +332,9 @@ class ResolveEpisodeStreamTest {
     fun `an episode already resolved for the home screen is not resolved again`() = runTest(dispatcher) {
         watchStates.seed(row(episode = 4, translationId = anilibria.id))
         val prepared = EpisodeStream(100, 4, anilibria, mapOf(Quality.P720 to "https://cdn/prepared"), now)
-        prefetch.put(prepared)
+        prefetch.put(Resolution(prepared))
 
-        val stream = resolve(animeId = 100, episode = 4).getOrThrow()
+        val stream = resolve(animeId = 100, episode = 4).getOrThrow().stream
 
         assertSame(prepared, stream)
         assertTrue(source.resolveCalls.isEmpty())
@@ -311,9 +344,9 @@ class ResolveEpisodeStreamTest {
     @Test
     fun `a prefetched stream in a voice the viewer has since changed is ignored`() = runTest(dispatcher) {
         watchStates.seed(row(episode = 4, translationId = studioBanda.id))
-        prefetch.put(EpisodeStream(100, 4, anilibria, mapOf(Quality.P720 to "https://cdn/prepared"), now))
+        prefetch.put(Resolution(EpisodeStream(100, 4, anilibria, mapOf(Quality.P720 to "https://cdn/prepared"), now)))
 
-        val stream = resolve(animeId = 100, episode = 4).getOrThrow()
+        val stream = resolve(animeId = 100, episode = 4).getOrThrow().stream
 
         assertEquals(studioBanda.id, stream.translation.id)
         assertEquals(1, source.resolveCalls.size)
@@ -322,7 +355,7 @@ class ResolveEpisodeStreamTest {
     @Test
     fun `a prefetched stream still becomes this anime's memory when it is played`() = runTest(dispatcher) {
         watchStates.seed(row(episode = 3, positionMs = 90_000, durationMs = 1_440_000, translationId = anilibria.id))
-        prefetch.put(EpisodeStream(100, 4, anilibria, mapOf(Quality.P720 to "https://cdn/prepared"), now))
+        prefetch.put(Resolution(EpisodeStream(100, 4, anilibria, mapOf(Quality.P720 to "https://cdn/prepared"), now)))
 
         resolve(animeId = 100, episode = 4).getOrThrow()
 
@@ -364,5 +397,178 @@ class ResolveEpisodeStreamTest {
         val listed = resolve.translations(animeId = 100, playing = subtitles).getOrThrow()
 
         assertEquals(3, listed.size)
+    }
+
+    // --- an episode the chosen track does not carry ---------------------------------------------
+
+    @Test
+    fun `when the remembered track lacks the episode the best other track plays, marked as standing in`() =
+        runTest(dispatcher) {
+            watchStates.seed(row(episode = 3, translationId = studioBanda.id))
+            source.lacking(studioBanda.id)
+
+            val resolution = resolve(animeId = 100, episode = 4).getOrThrow()
+
+            assertEquals(anilibria.id, resolution.stream.translation.id)
+            assertEquals(studioBanda.id, resolution.insteadOf?.id)
+            assertEquals(listOf(studioBanda.id, anilibria.id), source.resolveCalls.map { it.third?.id })
+        }
+
+    @Test
+    fun `a track standing in does not replace the one this anime remembers`() = runTest(dispatcher) {
+        watchStates.seed(row(episode = 3, translationId = studioBanda.id).copy(translationTitle = "Студийная банда"))
+        source.lacking(studioBanda.id)
+
+        resolve(animeId = 100, episode = 4).getOrThrow()
+
+        val saved = watchStates.saved.single()
+        assertEquals(4, saved.episode)
+        assertEquals(studioBanda.id, saved.translationId)
+        assertEquals("Студийная банда", saved.translationTitle)
+    }
+
+    @Test
+    fun `with nothing remembered the track that stood in becomes the memory`() = runTest(dispatcher) {
+        // Nothing is overwritten: the ranking's guess was never a choice of the viewer's.
+        source.lacking(anilibria.id)
+
+        val resolution = resolve(animeId = 100, episode = 4).getOrThrow()
+
+        assertEquals(studioBanda.id, resolution.stream.translation.id)
+        assertEquals(studioBanda.id, watchStates.saved.single().translationId)
+    }
+
+    @Test
+    fun `an episode no track carries says so, after every track was asked`() = runTest(dispatcher) {
+        watchStates.seed(row(episode = 3, translationId = studioBanda.id))
+        source.lacking(studioBanda.id, anilibria.id, subtitles.id)
+
+        val error = resolve(animeId = 100, episode = 4).exceptionOrNull()
+
+        assertTrue("expected EpisodeNotAvailable, got $error", error is EpisodeNotAvailable)
+        assertEquals(EpisodeUnavailableReason.NOT_IN_ANY_TRANSLATION, (error as EpisodeNotAvailable).reason)
+        assertEquals(4, error.episode)
+        assertEquals(3, source.resolveCalls.size)
+        assertTrue(watchStates.started.isEmpty())
+    }
+
+    @Test
+    fun `a source that stops answering mid-walk is that failure, not a missing episode`() = runTest(dispatcher) {
+        watchStates.seed(row(episode = 3, translationId = studioBanda.id))
+        val outage = SourceUnavailable(SourceUnavailableReason.REJECTED)
+        source.stream = { animeId, episode, translation ->
+            when (translation?.id) {
+                studioBanda.id -> Result.failure(EpisodeNotAvailable(animeId, episode, EpisodeUnavailableReason.NOT_IN_TRANSLATION))
+                else -> Result.failure(outage)
+            }
+        }
+
+        val result = resolve(animeId = 100, episode = 4)
+
+        assertSame(outage, result.exceptionOrNull())
+        assertEquals(2, source.resolveCalls.size)
+    }
+
+    @Test
+    fun `a title the source does not have at all is not walked`() = runTest(dispatcher) {
+        watchStates.seed(row(episode = 3, translationId = studioBanda.id))
+        val missing = EpisodeNotAvailable(100, 4, EpisodeUnavailableReason.TITLE_NOT_ON_SOURCE)
+        source.stream = { _, _, _ -> Result.failure(missing) }
+
+        val result = resolve(animeId = 100, episode = 4)
+
+        assertSame(missing, result.exceptionOrNull())
+        assertEquals(1, source.resolveCalls.size)
+    }
+
+    @Test
+    fun `a track whose count says it ends before the episode is never asked`() = runTest(dispatcher) {
+        // AniLibria counts twelve; the twentieth cannot be there, so the walk goes straight past it.
+        watchStates.seed(row(episode = 19, translationId = studioBanda.id))
+        source.lacking(studioBanda.id)
+
+        val resolution = resolve(animeId = 100, episode = 20).getOrThrow()
+
+        assertEquals(subtitles.id, resolution.stream.translation.id)
+        assertEquals(listOf(studioBanda.id, subtitles.id), source.resolveCalls.map { it.third?.id })
+    }
+
+    @Test
+    fun `the count is not trusted for a season other than the first`() = runTest(dispatcher) {
+        // The count comes off the initial player page, which never says which season it counts.
+        watchStates.seed(row(episode = 19, translationId = studioBanda.id, kodikSeason = 2))
+        source.lacking(studioBanda.id)
+
+        val resolution = resolve(animeId = 100, episode = 20).getOrThrow()
+
+        assertEquals(anilibria.id, resolution.stream.translation.id)
+    }
+
+    @Test
+    fun `a track the source has already listed without the episode is skipped`() = runTest(dispatcher) {
+        watchStates.seed(row(episode = 3, translationId = studioBanda.id))
+        source.listed[anilibria.id] = setOf(1, 2, 3)
+        source.lacking(studioBanda.id)
+
+        val resolution = resolve(animeId = 100, episode = 4).getOrThrow()
+
+        assertEquals(subtitles.id, resolution.stream.translation.id)
+        assertFalse(source.resolveCalls.any { it.third?.id == anilibria.id })
+    }
+
+    @Test
+    fun `a track picked by hand is never swapped for another`() = runTest(dispatcher) {
+        source.lacking(subtitles.id)
+
+        val error = resolve(animeId = 100, episode = 4, translationOverride = subtitles).exceptionOrNull()
+
+        assertEquals(EpisodeUnavailableReason.NOT_IN_TRANSLATION, (error as EpisodeNotAvailable).reason)
+        assertEquals(1, source.resolveCalls.size)
+        assertEquals(emptyList<Int>(), source.translationCalls)
+    }
+
+    @Test
+    fun `a carried voice may be swapped when the caller allows it, the remembered one first`() = runTest(dispatcher) {
+        // Autoplay carries the voice that was playing, which can differ from the remembered one
+        // during a shared viewing; the walk starts from what this anime remembers.
+        watchStates.seed(row(episode = 3, translationId = studioBanda.id))
+        source.lacking(subtitles.id)
+
+        val resolution = resolve(animeId = 100, episode = 4, translationOverride = subtitles, substitute = true).getOrThrow()
+
+        assertEquals(studioBanda.id, resolution.stream.translation.id)
+        assertEquals(subtitles.id, resolution.insteadOf?.id)
+        assertEquals(listOf(subtitles.id, studioBanda.id), source.resolveCalls.map { it.third?.id })
+    }
+
+    @Test
+    fun `forgetting the catalogue reaches the source`() = runTest(dispatcher) {
+        resolve.forgetCatalogue(100)
+
+        assertEquals(listOf(100), source.forgotten)
+    }
+
+    @Test
+    fun `a stream prepared in a stand-in voice is taken by the voice that was asked for`() = runTest(dispatcher) {
+        watchStates.seed(row(episode = 3, translationId = studioBanda.id))
+        val prepared = EpisodeStream(100, 4, anilibria, mapOf(Quality.P720 to "https://cdn/prepared"), now)
+        prefetch.put(Resolution(prepared, insteadOf = studioBanda))
+
+        val resolution = resolve(animeId = 100, episode = 4).getOrThrow()
+
+        assertSame(prepared, resolution.stream)
+        assertEquals(studioBanda.id, resolution.insteadOf?.id)
+        assertTrue(source.resolveCalls.isEmpty())
+        assertEquals(studioBanda.id, watchStates.saved.single().translationId)
+    }
+
+    @Test
+    fun `a stand-in prepared ahead is not handed to a hand pick of the voice it stood in for`() = runTest(dispatcher) {
+        prefetch.put(Resolution(EpisodeStream(100, 4, anilibria, mapOf(Quality.P720 to "u"), now), insteadOf = studioBanda))
+
+        val resolution = resolve(animeId = 100, episode = 4, translationOverride = studioBanda).getOrThrow()
+
+        assertEquals(studioBanda.id, resolution.stream.translation.id)
+        assertEquals(studioBanda.id, source.resolveCalls.single().third?.id)
     }
 }

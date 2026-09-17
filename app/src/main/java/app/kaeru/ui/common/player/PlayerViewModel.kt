@@ -53,6 +53,10 @@ import javax.inject.Inject
 /** How long «Удалить загрузку» waits for the engine to let go of the file before retrying anyway. */
 private const val REMOVAL_TIMEOUT_MS = 5_000L
 
+/** One line naming both voices: the one that did not have the episode, and the one that does. */
+private fun substitutedCopy(event: PlaybackEvent.TranslationSubstituted): String =
+    "В озвучке ${event.askedFor.title} серии ${event.episode} нет — включена ${event.playing.title}"
+
 /**
  * The player screen's brain, shared by the phone and the TV: the screens differ in how they
  * are driven, not in what they show.
@@ -215,6 +219,8 @@ class PlayerViewModel @Inject constructor(
                     // One condition, one sentence: the same copy a failed episode would show.
                     is PlaybackEvent.NextEpisodeUnavailable ->
                         screen.update { it.copy(toast = event.error.toUserMessage()) }
+                    is PlaybackEvent.TranslationSubstituted ->
+                        screen.update { it.copy(toast = substitutedCopy(event)) }
                 }
             }
         }
@@ -339,8 +345,10 @@ class PlayerViewModel @Inject constructor(
      */
     fun playEpisode(episode: Int) {
         val id = animeId.value ?: return
-        if (controller.state.value.target?.episode == episode) return
-        val track = controller.state.value.stream?.translation
+        val live = controller.state.value
+        if (live.target?.episode == episode) return
+        // The voice the viewer has, not one that stood in for it on this episode.
+        val track = live.insteadOf ?: live.stream?.translation
         requested = id to episode
         startJob = viewModelScope.launch {
             val saved = watchStates.observe(id).first()

@@ -23,12 +23,14 @@ class StreamPrefetchCacheTest {
     private val anilibria = Translation(11, "AniLibria.TV", TranslationKind.VOICE, episodesCount = 12)
     private val studioBanda = Translation(22, "Студийная банда", TranslationKind.VOICE, episodesCount = 12)
 
-    private fun stream(animeId: Int = 100, episode: Int = 4, track: Translation = anilibria) = EpisodeStream(
-        animeId = animeId,
-        episode = episode,
-        translation = track,
-        urls = mapOf(Quality.P720 to "https://cdn/$animeId/$episode/${track.id}"),
-        resolvedAt = clock.instant(),
+    private fun stream(animeId: Int = 100, episode: Int = 4, track: Translation = anilibria) = Resolution(
+        EpisodeStream(
+            animeId = animeId,
+            episode = episode,
+            translation = track,
+            urls = mapOf(Quality.P720 to "https://cdn/$animeId/$episode/${track.id}"),
+            resolvedAt = clock.instant(),
+        ),
     )
 
     @Test
@@ -99,7 +101,7 @@ class StreamPrefetchCacheTest {
         cache.put(stream())
         clock.advance(StreamPrefetchCache.TTL.minusSeconds(1))
 
-        assertEquals(4, cache.take(100, 4, 11)?.episode)
+        assertEquals(4, cache.take(100, 4, 11)?.stream?.episode)
     }
 
     @Test
@@ -108,7 +110,7 @@ class StreamPrefetchCacheTest {
         cache.put(stream(episode = 5))
 
         assertNull(cache.take(100, 4, 11))
-        assertEquals(5, cache.take(100, 5, 11)?.episode)
+        assertEquals(5, cache.take(100, 5, 11)?.stream?.episode)
     }
 
     @Test
@@ -119,6 +121,25 @@ class StreamPrefetchCacheTest {
 
         assertTrue(cache.holds(100, 4))
         assertFalse(cache.holds(100, 5))
-        assertEquals(4, cache.take(100, 4, 11)?.episode)
+        assertEquals(4, cache.take(100, 4, 11)?.stream?.episode)
+    }
+
+    @Test
+    fun `a stream that stood in for another voice is keyed on the voice that was asked for`() {
+        // The press resolves with the remembered voice, which is the one the stand-in replaced;
+        // keying on the voice that actually plays would discard exactly the links prepared for it.
+        cache.put(Resolution(stream(track = anilibria).stream, insteadOf = studioBanda))
+
+        assertNull(cache.take(100, 4, translationId = anilibria.id))
+    }
+
+    @Test
+    fun `and comes back with the voice it stood in for still on it`() {
+        cache.put(Resolution(stream(track = anilibria).stream, insteadOf = studioBanda))
+
+        val taken = cache.take(100, 4, translationId = studioBanda.id)
+
+        assertEquals(anilibria.id, taken?.stream?.translation?.id)
+        assertEquals(studioBanda.id, taken?.insteadOf?.id)
     }
 }
