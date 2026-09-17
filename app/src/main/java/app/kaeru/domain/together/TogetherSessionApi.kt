@@ -44,8 +44,19 @@ sealed interface SessionState {
     /** A link exists. [waiting] is true until a friend walks through it. */
     data class Hosting(val link: RoomLink, val waiting: Boolean) : SessionState
 
-    /** Following a link. [hello] is null until the other phone says what it is watching. */
-    data class Joining(val link: RoomLink, val hello: PeerHello?) : SessionState
+    /**
+     * Following a link. [hello] is null until the other phone says what it is watching.
+     *
+     * [pendingEpisode] is the episode the friend has moved on to since — their autoplay running
+     * into the next one while the invitation sat on screen. Null almost always, and when it is
+     * not, it is what the screen should open: the session follows them there the moment the
+     * player is up, so opening the hello's episode is a wasted resolve and a wrong first frame.
+     */
+    data class Joining(
+        val link: RoomLink,
+        val hello: PeerHello?,
+        val pendingEpisode: Int? = null,
+    ) : SessionState
 
     /**
      * Two phones on one episode. [offsetMs] is how far the friend's clock reads from this one and

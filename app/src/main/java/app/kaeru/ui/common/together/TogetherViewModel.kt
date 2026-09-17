@@ -227,15 +227,22 @@ class TogetherViewModel @Inject constructor(
     }
 
     /**
-     * Where the friend is at this moment, for the player to open at.
+     * What the player should be opened at, read at the moment of the press.
      *
-     * The hello is stale by however long the invitation sat on screen, and a player opened at it
-     * jumps visibly once the session catches up. The session keeps up with the friend's reports
-     * meanwhile, and its answer is what the episode opens at; the hello's own position stands in
-     * for a friend who has not reported yet.
+     * The invitation is stale by however long it sat on screen: the friend has watched on, and
+     * their autoplay may have run into the next episode. A player opened on the hello jumps
+     * visibly once the session catches up, or opens the wrong episode entirely. The session has
+     * been keeping up with them meanwhile, and its answer is what the episode opens at; the
+     * hello stands in for a friend who has said nothing since.
      */
-    fun joinPositionNow(): Long =
-        (session.peerPositionNow() ?: _uiState.value.join?.positionMs ?: 0L).coerceAtLeast(0)
+    fun joinTarget(): JoinTarget {
+        val join = _uiState.value.join
+        val moved = (session.state.value as? SessionState.Joining)?.pendingEpisode
+        return JoinTarget(
+            episode = moved ?: join?.episode ?: 0,
+            positionMs = (session.peerPositionNow() ?: join?.positionMs ?: 0L).coerceAtLeast(0),
+        )
+    }
 
     /**
      * The player is open on the room's episode, so the screen that asked about it is done.

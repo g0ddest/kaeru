@@ -358,6 +358,87 @@ class TogetherSessionTest {
     }
 
     @Test
+    fun `a resolve that fails still goes live, so the player's own retry keeps the session`() =
+        sessionTest {
+            port.showing(animeId = null, episode = null, translationId = null, positionMs = 0, playing = false)
+            val link = RoomLink("room", ByteArray(16), null)
+            val joining = launch { session.join(link, "Костя") }
+            runCurrent()
+            transport.deliver(peerHello(name = "Аня", episode = 7, translationId = 11, positionMs = 930_000))
+            runCurrent()
+            joining.join()
+
+            // Kodik is down, or the phone is: the player names the episode and then says it
+            // cannot play it. Nothing here will ever be ready, and a wait for it never ends.
+            port.showing(
+                animeId = 100, episode = 7, translationId = 11,
+                positionMs = 0, playing = false, ready = false, failed = true,
+            )
+            runCurrent()
+
+            // Live on a picture that is not playing: there is nothing to seek and nothing to
+            // pause, and «Повторить» on the player's own error screen is still in the session.
+            assertTrue(port.seeks.isEmpty())
+            assertEquals(0, port.pauses)
+            assertTrue(session.state.value is SessionState.Live)
+
+            // The retry works, and the friend's next report is what puts this side beside them.
+            port.showing(animeId = 100, episode = 7, translationId = 11, positionMs = 0)
+            friendIsAt(960_000)
+
+            assertEquals(listOf(960_000L), port.seeks)
+        }
+
+    @Test
+    fun `a friend who moved on while the invitation was read names the episode to open`() = sessionTest {
+        port.showing(animeId = null, episode = null, translationId = null, positionMs = 0, playing = false)
+        val link = RoomLink("room", ByteArray(16), null)
+        val joining = launch { session.join(link, "Костя") }
+        runCurrent()
+        transport.deliver(peerHello(name = "Аня", episode = 7, translationId = 11, positionMs = 930_000))
+        runCurrent()
+        joining.join()
+
+        transport.deliver(TogetherMessage.Episode(episode = 8, translationId = 11, seq = 5))
+        runCurrent()
+
+        // The screen opens what the session is about to follow anyway, rather than the episode
+        // named in the hello — and at the start of it, because nothing said otherwise yet and
+        // the hello's position is a position in the episode before.
+        assertEquals(8, (session.state.value as SessionState.Joining).pendingEpisode)
+        assertEquals(0L, session.peerPositionNow())
+    }
+
+    @Test
+    fun `a friend who reported from the episode they moved to is joined at their place in it`() =
+        sessionTest {
+            port.showing(animeId = null, episode = null, translationId = null, positionMs = 0, playing = false)
+            val link = RoomLink("room", ByteArray(16), null)
+            val joining = launch { session.join(link, "Костя") }
+            runCurrent()
+            transport.deliver(peerHello(name = "Аня", episode = 7, translationId = 11, positionMs = 930_000))
+            runCurrent()
+            joining.join()
+            transport.deliver(TogetherMessage.Episode(episode = 8, translationId = 11, seq = 5))
+            runCurrent()
+            transport.deliver(
+                TogetherMessage.State(30_000, playing = true, buffering = false, sentAt = clock.millis(), seq = 9),
+            )
+            runCurrent()
+
+            assertEquals(8, (session.state.value as SessionState.Joining).pendingEpisode)
+            assertEquals(30_000L, session.peerPositionNow())
+
+            // And having opened that episode there, the session has nothing left to open.
+            port.showing(animeId = 100, episode = 8, translationId = 11, positionMs = 30_000)
+            runCurrent()
+
+            assertTrue("nothing was opened a second time", port.opened.isEmpty())
+            assertEquals(listOf(30_000L), port.seeks)
+            assertTrue(session.state.value is SessionState.Live)
+        }
+
+    @Test
     fun `a guest acts on the friend's first report at once, not on the next tick`() = sessionTest {
         port.showing(animeId = null, episode = null, translationId = null, positionMs = 0, playing = false)
         val link = RoomLink("room", ByteArray(16), null)

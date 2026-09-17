@@ -41,6 +41,7 @@ import app.kaeru.ui.common.search.SearchViewModel
 import app.kaeru.ui.common.pairing.PairingStage
 import app.kaeru.ui.common.pairing.PairingUiState
 import app.kaeru.ui.common.settings.SettingsViewModel
+import app.kaeru.ui.common.together.JoinTarget
 import app.kaeru.ui.common.together.TogetherUiState
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruElevated
@@ -75,8 +76,8 @@ fun MobileShell(
     onRouteConsumed: () -> Unit = {},
     together: TogetherUiState = TogetherUiState(),
     onJoinTogether: () -> Unit = {},
-    /** Where the friend is at the moment of the press, so the episode opens there and not at the hello. */
-    joinPositionNow: () -> Long = { 0L },
+    /** What the friend is watching at the moment of the press, rather than at the invitation. */
+    joinTarget: () -> JoinTarget = { JoinTarget(0, 0L) },
     onJoinedTogether: () -> Unit = {},
     onDismissTogether: () -> Unit = {},
     nav: NavHostController = rememberNavController(),
@@ -227,8 +228,17 @@ fun MobileShell(
                         // but at the friend's position, so nothing jumps once they are in step.
                         onJoin = {
                             onJoinTogether()
+                            // Their episode and their position, read together: the friend's
+                            // autoplay may have moved on while the invitation was being read,
+                            // and the session follows them there whatever this opens.
+                            val target = joinTarget()
                             context.startActivity(
-                                PlayerActivity.intent(context, join.animeId, join.episode, joinPositionNow()),
+                                PlayerActivity.intent(
+                                    context,
+                                    join.animeId,
+                                    target.episode.takeIf { it > 0 } ?: join.episode,
+                                    target.positionMs,
+                                ),
                             )
                             // The session carries on without this screen, which would otherwise
                             // be waiting underneath the episode it just opened.

@@ -26,6 +26,14 @@ data class PortState(
      * prepared at. A session waits for this before it moves the picture anywhere.
      */
     val ready: Boolean = false,
+    /**
+     * The episode named above will not play: the stream would not resolve, or it stopped.
+     *
+     * The other end of [ready], and the reason a session that waits for one has to watch for the
+     * other. Kodik is down often enough, and a guest whose own resolve fails would otherwise wait
+     * for a readiness that is never coming while the player in front of them offers «Повторить».
+     */
+    val failed: Boolean = false,
 )
 
 /**

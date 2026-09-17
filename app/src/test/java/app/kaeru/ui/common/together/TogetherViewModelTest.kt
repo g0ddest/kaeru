@@ -744,11 +744,29 @@ class TogetherViewModelTest {
 
         // They carried on watching while the invitation sat on screen.
         session.peerPosition = 25_000
-        assertEquals(25_000L, vm.joinPositionNow())
+        assertEquals(JoinTarget(episode = 3, positionMs = 25_000), vm.joinTarget())
 
         // And with nothing reported yet, the hello is all there is.
         session.peerPosition = null
-        assertEquals(10_000L, vm.joinPositionNow())
+        assertEquals(JoinTarget(episode = 3, positionMs = 10_000), vm.joinTarget())
+    }
+
+    @Test
+    fun `the player opens the episode the friend moved on to, not the one in the invitation`() = runTest {
+        val vm = viewModel()
+        vm.open(link.toHttps())
+        runCurrent()
+        session.sessionState.value = SessionState.Joining(link, hello("Вася"))
+        runCurrent()
+
+        // Their autoplay ran into the next episode while the invitation sat on screen. The
+        // session will follow them there the moment the player is up, so that is what opens —
+        // opening the one named in the hello is a wasted resolve and a wrong first frame.
+        session.sessionState.value = SessionState.Joining(link, hello("Вася"), pendingEpisode = 4)
+        session.peerPosition = 0
+        runCurrent()
+
+        assertEquals(JoinTarget(episode = 4, positionMs = 0), vm.joinTarget())
     }
 
     @Test

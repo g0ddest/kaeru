@@ -192,8 +192,10 @@ class FakePlaybackPort : PlaybackPort {
         playing: Boolean = true,
         buffering: Boolean = false,
         ready: Boolean = true,
+        failed: Boolean = false,
     ) {
-        _state.value = PortState(positionMs, playing, buffering, animeId, episode, translationId, ready)
+        _state.value =
+            PortState(positionMs, playing, buffering, animeId, episode, translationId, ready, failed)
     }
 
     /** The manifest was read: the episode on screen can be seeked now. */

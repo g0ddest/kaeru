@@ -42,6 +42,9 @@ class TogetherPlaybackPort @Inject constructor(
                 // serve is not the one the friend should be told this phone is listening to.
                 translationId = playback.stream?.translation?.id ?: playback.target?.translation?.id,
                 ready = playback.ready,
+                // Failed and settled there. A picture that is loading is on its way somewhere,
+                // whatever it last said, and a session has no business calling that the end of it.
+                failed = playback.error != null && !playback.isBuffering,
             )
         }
         .stateIn(scope, SharingStarted.Eagerly, PortState())

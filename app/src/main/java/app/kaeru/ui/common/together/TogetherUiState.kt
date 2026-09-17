@@ -68,6 +68,15 @@ data class PlayingClip(val id: Long, val bytes: ByteArray, val durationMs: Int) 
     }
 }
 
+/**
+ * What the player is opened at when a viewer says yes to an invitation.
+ *
+ * The two travel together because they have to agree: a position is a position *in an episode*,
+ * and reading them a moment apart, with the friend's autoplay moving on in between, is how a
+ * guest lands thirty seconds into an episode that has just started.
+ */
+data class JoinTarget(val episode: Int, val positionMs: Long)
+
 /** The invitation, ready for the system share sheet. */
 data class ShareRequest(val text: String, val link: String)
 
