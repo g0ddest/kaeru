@@ -33,7 +33,7 @@ object TvLayout {
     val SafeVertical = 27.dp
 
     /**
-     * The hero band above the rows: a two-line title, and one line carrying what OK does and where
+     * The hero band above the rows: a one-line title, and one line carrying what OK does and where
      * the viewer is.
      *
      * Fixed, and that is the point. A band that grew with a long title would push the first row of
@@ -41,43 +41,60 @@ object TvLayout {
      * the television screen had before: text over artwork over cards, all fighting for the same
      * 540dp.
      *
-     * The number is the sum of what it holds and is recomputed whenever the type scale moves: two
-     * lines of `displaySmall` at 65dp, [KaeruTokens.Space3] between, and a line of `titleMedium` at
-     * 33dp. It was 150 against a scale whose line boxes were smaller than the font draws in, which
-     * left a two-line title overflowing upward into the five per cent a television crops.
+     * **One line, always.** It was two, and the second one was being paid for by the row below: the
+     * cards, their captions and their focus rings wanted 36dp more than the panel had. The card
+     * under the remote repeats the name in its own caption anyway, so the second line was saying
+     * the same thing twice on the one screen with no room to say anything twice.
+     *
+     * The number is the sum of what it holds and is recomputed whenever the type scale moves: one
+     * line of `displaySmall` at 56dp, [KaeruTokens.Space3] between, and a line of `titleMedium` at
+     * 30dp — 98dp of content. It is sized for where that content has least room, which is under a
+     * notice: a notice takes [NoticeBlock] out of [BandTotal] including the [SafeVertical] the band
+     * would otherwise have carried itself, so the band needs 98 + [NoticeBlock] − [SafeVertical] =
+     * 121 before it is anything at all. The rest is air above the title, where the artwork shows
+     * through.
      */
-    val HeroHeight = 175.dp
+    val HeroHeight = 128.dp
 
     /**
      * Everything above the rows, whatever happens to be inside it.
      *
      * This number is the one the rows are measured against, and it does not move: a notice
      * appearing at the top of the panel takes its height out of the hero band rather than out of
-     * the viewport below. A card is 302dp with its focus room and the panel leaves 311, so nine
-     * device-independent pixels is the whole of the slack there is — which is why a strip that
-     * simply sat above the band cost a focused card its name and its ring.
+     * the viewport below. What is left is 358dp; a row is its heading, [KaeruTokens.Space3] under
+     * it and a card with its focus room — 324dp — so the rows have 34dp of slack in every state a
+     * viewer can put the screen in, rather than the −36 they had.
      */
     val BandTotal = SafeVertical + HeroHeight
 
     /**
      * One line of notice above the band: «Нет сети», or «Доступна версия 0.4.0».
      *
-     * A line of `bodyMedium` on the television scale is 30dp and the compact strips put
+     * A line of `bodyMedium` on the television scale is 26dp and the compact strips put
      * [KaeruTokens.Space1] above and below it. Not the 48dp touch floor the phone uses — nothing
      * here is touched, and on a remote the target is whatever has the focus ring around it.
      */
-    val NoticeHeight = 38.dp
+    val NoticeHeight = 34.dp
 
-    /** The notice and the inset that keeps it out of the five per cent a panel crops. */
-    val NoticeBlock = SafeVertical + NoticeHeight
+    /**
+     * How far the notice is held off the top edge of the panel.
+     *
+     * Less than [SafeVertical], and deliberately: the five per cent figure is what a title, a
+     * poster or a control has to clear, and this is one quiet grey line on a grey ground. 16dp
+     * clears the overscan of every panel this app has been on, and the 11dp it saves goes to the
+     * band below it, which is measuring a hero title against the same 540.
+     */
+    val NoticeInset = 16.dp
+
+    /** The notice and the inset that keeps it out of the part of the panel a television crops. */
+    val NoticeBlock = NoticeInset + NoticeHeight
 
     /**
      * What is left of the band once a notice has taken the top of it.
      *
-     * The notice carries the safe inset, so the band gives up its own as well as the notice's own
-     * height — and with it the second line of the title, which is what [BandTotal] was sized for.
-     * That is the trade: a title that runs long is cut to one line for as long as there is
-     * something to say above it, and every poster card below keeps the height it needs.
+     * The notice carries the inset, so the band gives up its own as well as the notice's height:
+     * 105dp for the 98 the title and its action line need. That is the state [HeroHeight] is sized
+     * for, and the reason a notice costs the rows below nothing at all.
      */
     val HeroHeightUnderNotice = BandTotal - NoticeBlock
 
@@ -98,8 +115,8 @@ object TvLayout {
     /**
      * How many cards of a row can be relied on to be composed, counted low on purpose.
      *
-     * The content column is 960 − 80 − 56 = 824dp and a card's pitch is 156 + 16 = 172dp, so four
-     * and four fifths fit; a lazy row composes a little beyond its viewport as well. Four is the
+     * The content column is 960 − 80 − 56 = 824dp and a card's pitch is 144 + 16 = 160dp, so five
+     * and a sixth fit; a lazy row composes a little beyond its viewport as well. Four is the
      * number that is true even if a future card grows, and being wrong low costs one needless
      * scroll while being wrong high costs a screen the D-pad cannot move.
      */
@@ -112,8 +129,8 @@ object TvLayout {
     const val GridViewport = 10
 
     /**
-     * And for the home screen's column of rows: the band takes 202 of 540dp, the safe area below
-     * takes 27, and a row is about 347 — so the row the screen opens on is the only one with
+     * And for the home screen's column of rows: the band takes 155 of 540dp, the safe area below
+     * takes 27, and a row is about 324 — so the row the screen opens on is the only one with
      * pixels on it and the next one is not composed at all. One, therefore, and being wrong low
      * here costs a scroll nobody sees.
      */

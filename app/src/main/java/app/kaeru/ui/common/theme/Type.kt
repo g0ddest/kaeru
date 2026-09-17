@@ -155,8 +155,23 @@ private val PhoneRoles = KaeruRoles(
 )
 
 /**
- * The same scale at ×1.35 — the distance between a phone in the hand and a television across the
- * room.
+ * The same scale across the room: about a fifth larger than the phone's, and no larger than that.
+ *
+ * It used to be ×1.35, which is the multiplier a television deserves and not one a 540dp panel can
+ * pay. A 1080p television reports 960×540dp — a third of the height a phone has and the same
+ * height a phone has in landscape — and everything a screen carries is measured in line boxes: a
+ * hero band is two of them, a card's caption is one, a row's heading is one more above the card.
+ * At ×1.35 the home screen's rows wanted 36dp more than the panel had, the pairing column 22, and
+ * the title card's left column 103. Rendered at the television's own qualifiers, the three screens
+ * came back cut.
+ *
+ * So the numbers below are what fits, worked back from the panel rather than forward from the
+ * phone: `displaySmall` at 40/56 is the hero band's one line, `titleMedium` at 21/30 is a row
+ * heading and a button, `titleSmall` at 18/26 is a card's name under its artwork. Every one of
+ * them is still well above the 24sp a television interface is meant to reach for body text at
+ * three metres, and every one of them clears Manrope's own line box with [MIN_LINE_RATIO] to
+ * spare — `TvRenderBudgetTest` measures what these sizes actually draw, on every television
+ * screen, at the size a television draws them.
  *
  * With one difference beyond the size: nothing here is tracked tighter than the font draws it.
  * Negative tracking is a phone-sized decision, made so a long title fits the hand; at three metres
@@ -164,21 +179,21 @@ private val PhoneRoles = KaeruRoles(
  * them into the edge of whatever box holds the line.
  */
 private val TvRoles = KaeruRoles(
-    displayLarge = manrope(FontWeight.ExtraBold, 70, 98),
-    displayMedium = manrope(FontWeight.ExtraBold, 57, 80),
-    displaySmall = manrope(FontWeight.ExtraBold, 46, 65),
-    headlineLarge = manrope(FontWeight.Bold, 38, 54),
-    headlineMedium = manrope(FontWeight.Bold, 32, 45),
-    headlineSmall = manrope(FontWeight.Bold, 27, 38),
-    titleLarge = manrope(FontWeight.SemiBold, 27, 38),
-    titleMedium = manrope(FontWeight.SemiBold, 23, 33),
-    titleSmall = manrope(FontWeight.SemiBold, 20, 28),
-    bodyLarge = manrope(FontWeight.Normal, 22, 32),
-    bodyMedium = manrope(FontWeight.Normal, 20, 30),
-    bodySmall = manrope(FontWeight.Normal, 18, 26),
-    labelLarge = manrope(FontWeight.SemiBold, 20, 28),
-    labelMedium = manrope(FontWeight.SemiBold, 18, 26),
-    labelSmall = manrope(FontWeight.SemiBold, 15, 21),
+    displayLarge = manrope(FontWeight.ExtraBold, 56, 79),
+    displayMedium = manrope(FontWeight.ExtraBold, 48, 68),
+    displaySmall = manrope(FontWeight.ExtraBold, 40, 56),
+    headlineLarge = manrope(FontWeight.Bold, 34, 48),
+    headlineMedium = manrope(FontWeight.Bold, 28, 40),
+    headlineSmall = manrope(FontWeight.Bold, 24, 34),
+    titleLarge = manrope(FontWeight.SemiBold, 24, 34),
+    titleMedium = manrope(FontWeight.SemiBold, 21, 30),
+    titleSmall = manrope(FontWeight.SemiBold, 18, 26),
+    bodyLarge = manrope(FontWeight.Normal, 20, 28),
+    bodyMedium = manrope(FontWeight.Normal, 18, 26),
+    bodySmall = manrope(FontWeight.Normal, 16, 23),
+    labelLarge = manrope(FontWeight.SemiBold, 18, 26),
+    labelMedium = manrope(FontWeight.SemiBold, 16, 23),
+    labelSmall = manrope(FontWeight.SemiBold, 14, 20),
 )
 
 val KaeruTypography = PhoneRoles.toMaterial()

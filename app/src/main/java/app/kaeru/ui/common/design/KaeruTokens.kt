@@ -71,12 +71,14 @@ object KaeruTokens {
     /**
      * A television poster, sized by what has to fit *under* it rather than by what looks generous.
      *
-     * 156dp of width is 234dp of 2:3 artwork, and the card is that plus its name: a 540dp panel has
+     * 144dp of width is 216dp of 2:3 artwork, and the card is that plus its name: a 540dp panel has
      * to carry the hero band, a row heading and the whole card inside the five per cent it crops.
-     * It was 168 while the type scale asked for line boxes smaller than Manrope draws in; with the
-     * line heights right the caption is taller, and the artwork gives the difference back.
+     * It was 168 while the type scale asked for line boxes smaller than Manrope draws in, and 156
+     * while that scale was a third larger than the phone's. 144 is fifteen per cent of the panel's
+     * width, which is what a television launcher's row of artwork is, and it is the number the
+     * whole card measures whole in: `TvRenderBudgetTest` renders the row and reads it back.
      */
-    val PosterWidthTv = 156.dp
+    val PosterWidthTv = 144.dp
 
     /** Poster artwork is 2:3; a hero is 4:5, tall enough to be the screen rather than a banner. */
     const val PosterAspect = 2f / 3f

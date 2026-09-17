@@ -276,7 +276,7 @@ private fun TvHomeFeed(
             // holding it clear of the five per cent a television crops.
             when (notice) {
                 TvHomeNotice.Offline -> OfflineStrip(
-                    modifier = Modifier.padding(top = TvLayout.SafeVertical),
+                    modifier = Modifier.padding(top = TvLayout.NoticeInset),
                     text = OFFLINE,
                     gutter = TvLayout.Gutter,
                     compact = true,
@@ -284,7 +284,7 @@ private fun TvHomeFeed(
                 is TvHomeNotice.Update -> UpdateStrip(
                     notice.version,
                     onUpdate ?: {},
-                    Modifier.padding(top = TvLayout.SafeVertical),
+                    Modifier.padding(top = TvLayout.NoticeInset),
                     gutter = TvLayout.Gutter,
                     compact = true,
                 )
@@ -358,8 +358,9 @@ internal fun tvHomeNotice(offline: Boolean, updateVersion: String?): TvHomeNotic
  * The band above the rows: the name of the title the remote is on, what OK does with it, and where
  * the viewer is in it.
  *
- * Bottom-aligned inside a fixed height, so a one-line name sits low and a two-line one grows
- * upwards into the artwork rather than downwards into the cards.
+ * Bottom-aligned inside a fixed height, so the name sits just above the first row of cards and the
+ * air the band has left over is at the top, where the artwork shows through rather than where the
+ * cards are.
  */
 @Composable
 private fun TvHeroBand(hero: TvHero?, underNotice: Boolean) {
@@ -376,9 +377,9 @@ private fun TvHeroBand(hero: TvHero?, underNotice: Boolean) {
                 .fillMaxWidth()
                 // The band and whatever notice sits above it always come to `BandTotal` between
                 // them, so the rows below are measured against one number whatever is on screen.
-                // With nothing above it the band carries the safe area on top of its own content,
-                // so a two-line name grows into the artwork and not into the panel edge; under a
-                // notice the inset has already been spent and the band is what is left.
+                // With nothing above it the band carries the safe area on top of its own content;
+                // under a notice the inset has already been spent and the band is what is left,
+                // which is the state `HeroHeight` is sized for.
                 .height(if (underNotice) TvLayout.HeroHeightUnderNotice else TvLayout.BandTotal)
                 .padding(
                     start = TvLayout.Gutter,
@@ -393,9 +394,11 @@ private fun TvHeroBand(hero: TvHero?, underNotice: Boolean) {
                         shown.title,
                         style = MaterialTheme.typography.displaySmall,
                         color = KaeruText,
-                        // One line under a notice: the band gave that line's height to the line
-                        // above it, and a second one would grow up through it.
-                        maxLines = if (underNotice) 1 else 2,
+                        // One line, whatever is above it. The second line was paid for by the row
+                        // under the band — the cards, their captions and their focus rings were
+                        // 36dp over the panel — and the card the remote is on repeats the name in
+                        // its own caption anyway.
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Row(
