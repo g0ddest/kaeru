@@ -38,12 +38,32 @@ internal const val TV_ANIME_ID = "animeId"
  * built here is built exactly as one built anywhere else in the app.
  */
 @Composable
-fun TvAnimeScope(animeId: Int, content: @Composable () -> Unit) {
+fun TvAnimeScope(animeId: Int, content: @Composable () -> Unit) =
+    TvDestinationScope(animeId, bundleOf(TV_ANIME_ID to animeId), content)
+
+/**
+ * The same store for a screen that carries no argument.
+ *
+ * On the phone every screen is a `NavBackStackEntry`, which is its own view-model store and is
+ * cleared when the entry is popped — so a view model's `viewModelScope` is cancelled by the back
+ * press, and whatever it had in flight stops. The television navigates by plain state, where the
+ * default owner is the activity, and a view model built there outlives every screen on it.
+ *
+ * For «Обновления» that difference is not academic: a download would go on running after back, and
+ * the system installer would open over whatever the viewer had moved on to. This is what makes the
+ * two devices behave the same way.
+ */
+@Composable
+fun TvScreenScope(key: Any, content: @Composable () -> Unit) =
+    TvDestinationScope(key, Bundle.EMPTY, content)
+
+@Composable
+private fun TvDestinationScope(key: Any, args: Bundle, content: @Composable () -> Unit) {
     val host = LocalViewModelStoreOwner.current
     check(host is HasDefaultViewModelProviderFactory) {
-        "The television needs an activity-backed ViewModelStoreOwner to scope a title screen to"
+        "The television needs an activity-backed ViewModelStoreOwner to scope a screen to"
     }
-    val owner = remember(animeId, host) { TvDestinationOwner(host, bundleOf(TV_ANIME_ID to animeId)) }
+    val owner = remember(key, host) { TvDestinationOwner(host, args) }
     DisposableEffect(owner) { onDispose { owner.viewModelStore.clear() } }
     CompositionLocalProvider(LocalViewModelStoreOwner provides owner, content = content)
 }

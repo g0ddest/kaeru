@@ -1,5 +1,6 @@
 package app.kaeru.ui.tv.update
 
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,12 +23,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import app.kaeru.domain.update.UpdateRelease
 import app.kaeru.ui.common.design.IndeterminateStrip
 import app.kaeru.ui.common.design.KaeruTokens
+import app.kaeru.ui.common.design.kaeruFocus
 import app.kaeru.ui.common.design.PrimaryButton
 import app.kaeru.ui.common.design.RowHeader
 import app.kaeru.ui.common.design.SecondaryButton
@@ -107,15 +110,25 @@ fun TvUpdatesScreen(
     listState: LazyListState = rememberLazyListState(),
 ) {
     val first = remember { FocusRequester() }
+    // Which stage the focus was last claimed for, rather than a flag saying it once was.
+    //
+    // Every stage of this page puts its own control where the remote should be, and the control
+    // changes as the page does: the download finishes and «Установить» appears where the progress
+    // was. A latch that only ever fired once left the new control unfocused and the D-pad
+    // wherever the old one had been — which, on the two stages that used to have nothing
+    // focusable at all, was nowhere on this screen.
+    //
     // Latched by the focus arriving rather than by a request being accepted: a node inside a lazy
     // list that is attached but not yet placed takes the request and does nothing with it.
-    var claimed by remember { mutableStateOf(false) }
+    var claimedFor by remember { mutableStateOf<UpdateStage?>(null) }
     LaunchedEffect(state.stage) {
-        if (!claimed) first.claimFocusWhenReady("the action on the television updates screen") { claimed }
+        first.claimFocusWhenReady("the action on the television updates screen") {
+            claimedFor == state.stage
+        }
     }
     val focusFirst = Modifier
         .focusRequester(first)
-        .onFocusChanged { if (it.isFocused) claimed = true }
+        .onFocusChanged { if (it.isFocused) claimedFor = state.stage }
 
     LazyColumn(
         // The safe area is held outside the scrolling viewport, as it is on every other television
@@ -150,9 +163,9 @@ fun TvUpdatesScreen(
                     onCheck,
                     Modifier
                         .widthIn(max = ButtonWidth)
-                        // The opening claim when there is nothing to download: «Проверить» is
-                        // then the only thing on the page worth pressing.
-                        .then(if (state.stage.hasPrimaryAction) Modifier else focusFirst),
+                        // The claim, on the two stages whose own block has nothing to press:
+                        // «Проверить» is then the only thing on the page worth landing on.
+                        .then(if (state.stage.ownsFocus) Modifier else focusFirst),
                 )
             }
         }
@@ -167,7 +180,12 @@ private fun LazyListScope.latest(
     onInstall: () -> Unit,
 ) {
     when (state.stage) {
-        UpdateStage.CHECKING -> row("checking") {
+        // A stop rather than a control, and the only kind of row on this page that does nothing
+        // when pressed. It is here because a D-pad has to be somewhere: with nothing focusable
+        // the remote walks straight out of the screen, and asking again is not an action a check
+        // already in flight can offer. The same reasoning puts a focusable row at the bottom of
+        // the television settings page.
+        UpdateStage.CHECKING -> stop("checking", focusFirst) {
             Column(verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space3)) {
                 UpdateNote(UPDATES_CHECKING)
                 IndeterminateStrip(Modifier.widthIn(max = ButtonWidth))
@@ -200,7 +218,11 @@ private fun LazyListScope.latest(
         }
         UpdateStage.DOWNLOADING -> {
             val release = state.release ?: return
-            row("downloading") {
+            // Focusable for the same reason, and for a better one: this row is the thing that is
+            // happening, and it is worth being able to land on and watch. A transfer over a
+            // television's Wi-Fi is minutes, and for the whole of it the remote would otherwise
+            // have nowhere on this page to be. Back stops it, here as on the phone.
+            stop("downloading", focusFirst) {
                 Column(verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space2)) {
                     UpdateHeadline(availableLine(release.version))
                     UpdateNote(UPDATES_DOWNLOADING)
@@ -236,7 +258,7 @@ private fun LazyListScope.heading(title: String, first: Boolean = false) =
         )
     }
 
-/** One row of the page: a stop for the remote, inset past the rail and held to the text column. */
+/** One row of the page, inset past the rail and held to the text column. */
 private fun LazyListScope.row(key: String, content: @Composable () -> Unit) =
     item(key = key, contentType = ROW) {
         Box(
@@ -247,13 +269,39 @@ private fun LazyListScope.row(key: String, content: @Composable () -> Unit) =
         ) { content() }
     }
 
+/**
+ * The same row, as a place the remote can stand.
+ *
+ * One node rather than two: what the row says is what the row is, so it announces itself with
+ * those words instead of being an unnamed stop with text inside it. No scale on the focus — a row
+ * this wide has nowhere to grow into, and the ring carries the whole signal.
+ */
+private fun LazyListScope.stop(key: String, focus: Modifier, content: @Composable () -> Unit) =
+    item(key = key, contentType = ROW) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = TvLayout.Gutter, end = TvLayout.GutterEnd)
+                .widthIn(max = TextColumn)
+                .then(focus)
+                .kaeruFocus(KaeruTokens.CardShape, focusedScale = 1f)
+                .semantics(mergeDescendants = true) {}
+                .focusable(),
+        ) { content() }
+    }
+
 /** Whether asking again could change the answer. During a transfer it could not. */
 private val UpdateStage.canCheck: Boolean
     get() = this == UpdateStage.UNKNOWN || this == UpdateStage.UP_TO_DATE || this == UpdateStage.AVAILABLE
 
-/** Whether this stage puts an amber button on the page for the remote to open on. */
-private val UpdateStage.hasPrimaryAction: Boolean
-    get() = this == UpdateStage.AVAILABLE || this == UpdateStage.READY
+/**
+ * Whether the stage's own block carries the focus stop, or whether «Проверить» carries it.
+ *
+ * Every stage has one, which is the rule: a television page with nothing focusable on it is a page
+ * the remote leaves and cannot come back to.
+ */
+private val UpdateStage.ownsFocus: Boolean
+    get() = this != UpdateStage.UNKNOWN && this != UpdateStage.UP_TO_DATE
 
 private val previewRelease = UpdateRelease(
     version = "0.4.0",

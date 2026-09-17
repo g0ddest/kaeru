@@ -59,25 +59,33 @@ class GitHubUpdateRepository @Inject constructor(
         }
     }
 
-    override suspend fun check(force: Boolean): Result<UpdateResult> {
+    /**
+     * Everything is inside the `try`, including the read from disk.
+     *
+     * A method that hands back a `Result` is a method nobody guards, and the one caller that runs
+     * without a screen in front of it is the launch-time check on the application scope. DataStore
+     * throws on a file it cannot read or parse, and the read used to sit outside here — so a
+     * corrupt preferences file was an uncaught exception during `Application.onCreate`, which is a
+     * boot loop rather than a missed update.
+     */
+    override suspend fun check(force: Boolean): Result<UpdateResult> = try {
         val now = clock.instant()
         // Read through `lastResult`, so the one filter above governs both readers. The record
         // keeps the version it was written by, which is what the throttle below is asking about:
         // an app updated since the last check has to go and ask again rather than sit out the day
         // on an answer about the build it replaced.
-        val stored = lastResult.first()
-        val usable = stored?.takeIf { it.installedVersion == installedVersion }
-        if (!force && usable != null && !policy.due(usable.checkedAt, now)) return Result.success(usable)
-
-        return try {
+        val usable = lastResult.first()?.takeIf { it.installedVersion == installedVersion }
+        if (!force && usable != null && !policy.due(usable.checkedAt, now)) {
+            Result.success(usable)
+        } else {
             val result = resultOf(api.releases(), now)
             prefs.save(result)
             Result.success(result)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Exception) {
-            Result.failure(error.toUpdateFailure())
         }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        Result.failure(error.toUpdateFailure())
     }
 
     /**

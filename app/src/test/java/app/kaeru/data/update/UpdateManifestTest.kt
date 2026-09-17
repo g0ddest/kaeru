@@ -74,12 +74,24 @@ class UpdateManifestTest {
         assertTrue("file_paths.xml declares no cache-path", found)
     }
 
-    /** The permission check the screen gates on exists from the oldest device this app runs on. */
+    /**
+     * The permission check the screen gates on exists from the oldest device this app runs on.
+     *
+     * Read from the merged manifest rather than from `Build.VERSION.SDK_INT`, which under
+     * Robolectric reports whichever SDK the test is configured for and so can never fail. What
+     * this pins is the real thing: `canRequestPackageInstalls()` arrived in API 26, and a
+     * `minSdk` lowered below that would make the whole install path unreachable on the devices
+     * it let in.
+     */
     @Test
     fun `the install permission can be asked about on the minimum supported release`() {
+        val minSdk = context.packageManager
+            .getApplicationInfo(context.packageName, 0)
+            .minSdkVersion
+
         assertTrue(
-            "canRequestPackageInstalls needs API 26 and minSdk is ${Build.VERSION_CODES.O}",
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O,
+            "canRequestPackageInstalls needs API ${Build.VERSION_CODES.O} and minSdk is $minSdk",
+            minSdk >= Build.VERSION_CODES.O,
         )
     }
 }

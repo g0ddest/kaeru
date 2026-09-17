@@ -1,12 +1,13 @@
 package app.kaeru.data.update
 
 import app.kaeru.di.IoDispatcher
-import app.kaeru.di.PlainClient
 import app.kaeru.di.UpdateCacheDir
+import app.kaeru.di.UpdateDownloadClient
 import app.kaeru.domain.update.ApkDownload
 import app.kaeru.domain.update.ApkDownloads
 import app.kaeru.domain.update.UpdateFailure
 import app.kaeru.domain.update.UpdateRelease
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -41,20 +42,36 @@ private const val BUFFER = 64 * 1024
  * nothing else. A file that fails that check is deleted rather than left for the installer to
  * choke on.
  *
+ * The directory holds one file at a time. It is swept before each transfer, because the file the
+ * installer was handed last month is still sitting there — the installer has to be able to read it
+ * after `install()` returns, so it cannot be deleted on the way out, and thirty megabytes per
+ * release the device has ever seen is not a cache, it is a leak with a lid on it.
+ *
  * The directory is injected rather than taken from a `Context`, which is what lets the whole of
  * this be tested against a temporary folder and a mock server with no Android runtime involved.
  */
 @Singleton
 class ApkDownloader @Inject constructor(
-    @param:PlainClient private val client: OkHttpClient,
+    @param:UpdateDownloadClient private val client: OkHttpClient,
     @param:UpdateCacheDir private val directory: File,
     @param:IoDispatcher private val io: CoroutineDispatcher,
 ) : ApkDownloads {
 
     override fun download(release: UpdateRelease): Flow<ApkDownload> = flow {
         val target = File(directory, safeName(release.apkName))
+        // Anything else in here is a release that has already been installed, or one abandoned
+        // half way. Either way it is dead weight — an installer file is worth exactly one
+        // install — and sweeping before the transfer bounds the directory to one file rather
+        // than to one per release this device has ever seen.
+        sweep(keep = target)
         val outcome = try {
             fetch(release, target)
+        } catch (cancelled: CancellationException) {
+            // Back pressed mid-transfer, which on a phone is the ordinary way to stop one. A
+            // cancellation is not a failure and must go on being thrown, but the half a file it
+            // leaves behind is exactly what the interface promises not to leave.
+            target.delete()
+            throw cancelled
         } catch (failure: IOException) {
             // Nothing half-written is left behind: the next press starts from an empty file
             // rather than appending to the remains of a transfer that died in a tunnel.
@@ -63,6 +80,13 @@ class ApkDownloader @Inject constructor(
         }
         emit(outcome)
     }.flowOn(io)
+
+    /** Everything in the directory except the file about to be written. Failures are not news. */
+    private fun sweep(keep: File) {
+        directory.listFiles()?.forEach { file ->
+            if (file != keep) runCatching { file.delete() }
+        }
+    }
 
     /**
      * An extension on the collector rather than a plain function returning the outcome, because

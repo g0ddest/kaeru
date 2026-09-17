@@ -1,5 +1,6 @@
 package app.kaeru.ui.tv.update
 
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
@@ -189,10 +190,59 @@ class TvUpdatesScreenTest {
         )
     }
 
+    /**
+     * The fault this closes: `canCheck` and the primary action were both false while checking and
+     * while downloading, so on those two stages nothing on the page was focusable at all. A
+     * transfer over a television's Wi-Fi is minutes, and for the whole of it the D-pad had nowhere
+     * on this screen to be — it walks out and does not come back.
+     *
+     * Driven through one composition rather than six, which also pins the second half of the
+     * fault: the claim latched on the first focus it ever got, so «Установить» appearing where the
+     * progress had been was never focused either. The remote follows the page.
+     */
+    @Test
+    fun `every stage of the page has somewhere for the remote to be`() {
+        val stage = mutableStateOf(UpdateStage.CHECKING)
+        compose.setContent {
+            KaeruTvTheme {
+                TvUpdatesScreen(
+                    state = UpdateUiState(
+                        installedVersion = "0.3.0",
+                        stage = stage.value,
+                        checkedAt = Instant.parse("2026-09-16T09:00:00Z"),
+                        release = release.takeIf { stage.value != UpdateStage.UNKNOWN },
+                        downloadedBytes = 15_728_640,
+                    ),
+                    onCheck = {},
+                    onDownload = {},
+                    onInstall = {},
+                    onAllowInstalls = {},
+                )
+            }
+        }
+
+        listOf(
+            UpdateStage.CHECKING to CHECKING_LINE,
+            UpdateStage.AVAILABLE to DOWNLOAD,
+            UpdateStage.DOWNLOADING to DOWNLOADING_LINE,
+            UpdateStage.READY to INSTALL,
+            UpdateStage.UP_TO_DATE to CHECK,
+            UpdateStage.UNKNOWN to CHECK,
+        ).forEach { (next, focused) ->
+            compose.runOnIdle { stage.value = next }
+            compose.waitForIdle()
+
+            compose.onNodeWithText(focused, substring = true).assertIsFocused()
+        }
+    }
+
     private companion object {
         const val DOWNLOAD = "Скачать и установить"
         const val CHECK = "Проверить"
         const val ALLOW = "Разрешить установку"
+        const val INSTALL = "Установить"
+        const val CHECKING_LINE = "Проверяем"
+        const val DOWNLOADING_LINE = "Скачиваем файл"
 
         /** Nothing readable sits closer than this to an edge a television may crop. */
         const val SAFE_MARGIN = 16f

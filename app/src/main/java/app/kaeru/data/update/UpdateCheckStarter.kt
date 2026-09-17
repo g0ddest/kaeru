@@ -1,10 +1,14 @@
 package app.kaeru.data.update
 
+import android.util.Log
 import app.kaeru.domain.update.UpdateRepository
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
+
+private const val TAG = "KaeruUpdates"
 
 /**
  * The quiet check: once per launch, and at most once a day.
@@ -21,7 +25,21 @@ import javax.inject.Singleton
 @Singleton
 class UpdateCheckStarter @Inject constructor(private val repository: UpdateRepository) {
 
+    /**
+     * The handler is not defensive dressing, it is the whole safety of this class.
+     *
+     * This launches on the application scope, during `Application.onCreate`, with nothing in front
+     * of the viewer and nothing to retry it. That scope is a `SupervisorJob` with no handler of its
+     * own, so anything that escaped here would reach the thread's default handler and take the
+     * process down at launch — over a background question about whether a newer APK exists. The
+     * repository already returns failures rather than throwing them; this is what guarantees it
+     * even if that stops being true.
+     */
+    private val quiet = CoroutineExceptionHandler { _, failure ->
+        Log.w(TAG, "The launch-time update check failed", failure)
+    }
+
     fun start(scope: CoroutineScope) {
-        scope.launch { repository.check(force = false) }
+        scope.launch(quiet) { repository.check(force = false) }
     }
 }

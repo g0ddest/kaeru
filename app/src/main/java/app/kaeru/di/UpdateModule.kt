@@ -27,6 +27,7 @@ import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.io.File
+import java.time.Duration
 import javax.inject.Named
 import javax.inject.Qualifier
 import javax.inject.Singleton
@@ -35,6 +36,14 @@ import javax.inject.Singleton
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
 annotation class UpdateCacheDir
+
+/** The client the APK itself travels on, which is the plain one given time to finish. */
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class UpdateDownloadClient
+
+/** How long a transfer may stall before it is treated as dead rather than as slow. */
+private val DOWNLOAD_READ_TIMEOUT: Duration = Duration.ofSeconds(60)
 
 /**
  * The «Обновления» screen and the check behind it.
@@ -67,6 +76,23 @@ object UpdateModule {
     @Singleton
     @UpdateCacheDir
     fun updateCacheDir(@ApplicationContext ctx: Context): File = File(ctx.cacheDir, "updates")
+
+    /**
+     * The same client with room to fetch thirty megabytes over a weak link.
+     *
+     * OkHttp's default read timeout is ten seconds *between packets*, which is generous on a
+     * working connection and short on a television's Wi-Fi at the far end of a flat: a stall
+     * longer than that fails the transfer outright, and the viewer sees «Не удалось скачать файл»
+     * on a link that was merely slow. The API call keeps the default — a few kilobytes of JSON
+     * that takes ten seconds really has failed.
+     */
+    @Provides
+    @Singleton
+    @UpdateDownloadClient
+    fun updateDownloadClient(@PlainClient client: OkHttpClient): OkHttpClient = client.newBuilder()
+        .readTimeout(DOWNLOAD_READ_TIMEOUT)
+        .callTimeout(Duration.ZERO)
+        .build()
 
     /**
      * On the plain client, which is the anonymous one: GitHub is asked without a token, so nothing

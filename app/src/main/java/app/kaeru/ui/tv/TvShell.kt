@@ -308,11 +308,17 @@ private fun TvSettings(onUpdates: () -> Unit) {
 /**
  * «Обновления», which is the one screen on this device that has a system prompt behind it.
  *
- * The lifecycle effect is what carries a press across that prompt: Android reports nothing when
- * its permission screen is answered, so the activity coming back is the only signal there is.
+ * Scoped to itself rather than to the activity, so that back means the same thing here as it does
+ * on the phone: the store is cleared, `viewModelScope` is cancelled, a download in flight stops
+ * and takes its half a file with it, and the installer does not open over whatever the viewer
+ * moved on to. Reopening the screen therefore also asks again, as it does on the phone.
+ *
+ * The lifecycle effect is what carries a press across the system's permission prompt: Android
+ * reports nothing when that screen is answered, so the activity coming back is the only signal
+ * there is.
  */
 @Composable
-private fun TvUpdates() {
+private fun TvUpdates() = TvScreenScope("updates") {
     val viewModel: UpdatesViewModel = hiltViewModel()
     LifecycleResumeEffect(viewModel) {
         viewModel.resumed()

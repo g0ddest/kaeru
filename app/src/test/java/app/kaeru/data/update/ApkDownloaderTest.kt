@@ -3,7 +3,12 @@ package app.kaeru.data.update
 import app.kaeru.domain.update.ApkDownload
 import app.kaeru.domain.update.UpdateFailure
 import app.kaeru.domain.update.UpdateRelease
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
@@ -19,6 +24,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 /**
  * The transfer, and the one integrity check available to it.
@@ -41,7 +47,8 @@ class ApkDownloaderTest {
     @After
     fun tearDown() = server.shutdown()
 
-    private fun downloader() = ApkDownloader(OkHttpClient(), directory, Dispatchers.Unconfined)
+    private fun downloader(io: CoroutineDispatcher = Dispatchers.Unconfined) =
+        ApkDownloader(OkHttpClient(), directory, io)
 
     private fun release(size: Long, name: String = "Kaeru-0.4.0.apk") = UpdateRelease(
         version = "0.4.0",
@@ -123,6 +130,59 @@ class ApkDownloaderTest {
         val stages = downloader().download(release(size = 0)).toList()
 
         assertTrue(stages.last() is ApkDownload.Ready)
+    }
+
+    /**
+     * Back pressed mid-transfer, which on a phone is the ordinary way to stop one.
+     *
+     * `ApkDownloads.download` promises that cancelling leaves nothing behind. The loop checks for
+     * cancellation with `ensureActive`, which throws `CancellationException` — and that is not an
+     * `IOException`, so the clean-up that catches a dead socket used to step right past it and up
+     * to thirty megabytes of half a release stayed in the cache.
+     */
+    @Test
+    fun `a cancelled download leaves nothing behind`() = runBlocking {
+        val payload = 4 * 1024 * 1024
+        // Throttled, so the transfer is genuinely in flight when it is cancelled. Without this the
+        // whole body arrives from the in-memory server before the cancellation lands, and the test
+        // asserts against a download that simply finished.
+        server.enqueue(
+            MockResponse()
+                .setBody(body(payload))
+                .throttleBody(64 * 1024, 100, TimeUnit.MILLISECONDS),
+        )
+        val underway = CompletableDeferred<Unit>()
+        val job = launch(Dispatchers.Default) {
+            downloader(Dispatchers.IO).download(release(payload.toLong())).collect { stage ->
+                if (stage is ApkDownload.Running && stage.bytes > 0) underway.complete(Unit)
+            }
+        }
+
+        underway.await()
+        job.cancelAndJoin()
+
+        assertFalse(
+            "a partial file was left in the cache",
+            File(directory, "Kaeru-0.4.0.apk").exists(),
+        )
+    }
+
+    /**
+     * An installer file is worth exactly one install, and it cannot be deleted on the way out —
+     * the installer still has to read it after `install()` returns. So the next transfer is what
+     * clears the last one, which bounds the directory to one file rather than to one per release
+     * this device has ever seen.
+     */
+    @Test
+    fun `the directory is swept of earlier releases before a transfer`() = runTest {
+        val stale = File(directory, "Kaeru-0.3.0.apk").apply { writeBytes(ByteArray(2048)) }
+        val payload = 1024
+        server.enqueue(MockResponse().setBody(body(payload)))
+
+        downloader().download(release(payload.toLong())).toList()
+
+        assertFalse("the previous release is still taking up the cache", stale.exists())
+        assertEquals(listOf("Kaeru-0.4.0.apk"), directory.list()?.toList())
     }
 
     @Test
