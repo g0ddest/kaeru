@@ -48,6 +48,39 @@ object TvLayout {
      */
     val HeroHeight = 175.dp
 
+    /**
+     * Everything above the rows, whatever happens to be inside it.
+     *
+     * This number is the one the rows are measured against, and it does not move: a notice
+     * appearing at the top of the panel takes its height out of the hero band rather than out of
+     * the viewport below. A card is 302dp with its focus room and the panel leaves 311, so nine
+     * device-independent pixels is the whole of the slack there is — which is why a strip that
+     * simply sat above the band cost a focused card its name and its ring.
+     */
+    val BandTotal = SafeVertical + HeroHeight
+
+    /**
+     * One line of notice above the band: «Нет сети», or «Доступна версия 0.4.0».
+     *
+     * A line of `bodyMedium` on the television scale is 30dp and the compact strips put
+     * [KaeruTokens.Space1] above and below it. Not the 48dp touch floor the phone uses — nothing
+     * here is touched, and on a remote the target is whatever has the focus ring around it.
+     */
+    val NoticeHeight = 38.dp
+
+    /** The notice and the inset that keeps it out of the five per cent a panel crops. */
+    val NoticeBlock = SafeVertical + NoticeHeight
+
+    /**
+     * What is left of the band once a notice has taken the top of it.
+     *
+     * The notice carries the safe inset, so the band gives up its own as well as the notice's own
+     * height — and with it the second line of the title, which is what [BandTotal] was sized for.
+     * That is the trade: a title that runs long is cut to one line for as long as there is
+     * something to say above it, and every poster card below keeps the height it needs.
+     */
+    val HeroHeightUnderNotice = BandTotal - NoticeBlock
+
     /** Between the hero and the first row. */
     val HeroGap = KaeruTokens.Space4
 

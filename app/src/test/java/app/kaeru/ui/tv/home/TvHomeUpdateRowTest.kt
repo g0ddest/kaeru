@@ -19,6 +19,8 @@ import app.kaeru.ui.common.theme.KaeruTvTheme
 import app.kaeru.ui.tv.TV_PREVIEW_NOW
 import app.kaeru.ui.tv.tvPreviewAnime
 import app.kaeru.ui.tv.tvPreviewEntry
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -52,17 +54,18 @@ class TvHomeUpdateRowTest {
         kind = FeedKind.CONTINUE,
     )
 
-    private fun state(updateVersion: String?) = HomeUiState(
+    private fun state(updateVersion: String?, offline: Boolean = false) = HomeUiState(
         feed = HomeFeed(continuing(), listOf(continuing()), emptyList(), emptyList(), emptyList(), emptyList()),
         isLoading = false,
+        offline = offline,
         updateVersion = updateVersion,
     )
 
-    private fun show(updateVersion: String?, onUpdate: (() -> Unit)? = {}) {
+    private fun show(updateVersion: String?, onUpdate: (() -> Unit)? = {}, offline: Boolean = false) {
         compose.setContent {
             KaeruTvTheme {
                 TvHomeScreen(
-                    state = state(updateVersion),
+                    state = state(updateVersion, offline),
                     onRefresh = {},
                     onPlay = { _, _ -> },
                     onDetails = {},
@@ -122,6 +125,49 @@ class TvHomeUpdateRowTest {
             .fetchSemanticsNodes()
             .first()
         assertTrue("the sentence starts at ${text.positionInRoot.x}", text.positionInRoot.x >= RAIL)
+    }
+
+    /**
+     * The one press this row exists for, made with a remote rather than with a mouse.
+     *
+     * `UpdateStrip` is built on foundation's `clickable` rather than on a tv-material component,
+     * so that OK on a D-pad reaches it at all is worth asserting rather than assuming.
+     */
+    @Test
+    fun `OK on the row opens the updates screen`() {
+        var opened = false
+        show("0.4.0", onUpdate = { opened = true })
+        repeat(4) { compose.onRoot().performKeyInput { pressKey(Key.DirectionUp) } }
+
+        compose.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
+
+        assertTrue("the remote did not open the updates screen", opened)
+    }
+
+    /**
+     * Only one line above the band, and the network is the one that gets it.
+     *
+     * Not a preference: everything above the rows has to come to one number or a focused poster
+     * card loses its name off the bottom of the panel, and two lines would take that number out
+     * of the title. The update is still there when the signal comes back.
+     */
+    @Test
+    fun `offline, the network notice takes the line and the update waits`() {
+        show("0.4.0", offline = true)
+
+        compose.onNodeWithText("Нет сети", substring = true).assertIsDisplayed()
+        assertTrue(
+            "both notices cannot share the one line there is",
+            compose.onAllNodesWithText("Доступна версия", substring = true).fetchSemanticsNodes().isEmpty(),
+        )
+    }
+
+    @Test
+    fun `the notice decision is the network first, then the update, then nothing`() {
+        assertEquals(TvHomeNotice.Offline, tvHomeNotice(offline = true, updateVersion = "0.4.0"))
+        assertEquals(TvHomeNotice.Offline, tvHomeNotice(offline = true, updateVersion = null))
+        assertEquals(TvHomeNotice.Update("0.4.0"), tvHomeNotice(offline = false, updateVersion = "0.4.0"))
+        assertNull(tvHomeNotice(offline = false, updateVersion = null))
     }
 
     private companion object {

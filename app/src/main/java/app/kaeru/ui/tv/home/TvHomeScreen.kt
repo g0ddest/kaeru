@@ -192,6 +192,10 @@ private fun TvHomeFeed(
     focus: TvFocusMemory,
     modifier: Modifier = Modifier,
 ) {
+    // One line at the top of the panel, or none: see `tvHomeNotice`.
+    val notice = remember(offline, updateVersion, onUpdate) {
+        tvHomeNotice(offline, updateVersion.takeIf { onUpdate != null })
+    }
     val discoverCards = remember(catalogue) { catalogue.tvCards() }
     val focusRows = remember(rows, discoverCards) {
         rows.map { TvFocusRow(it.title, it.items.map(TvHomeCard::animeId)) } +
@@ -261,36 +265,32 @@ private fun TvHomeFeed(
             Backdrop(url, Modifier.fillMaxSize(), scrimBottom = true, scrimStart = true)
         }
         Column(Modifier.fillMaxSize()) {
-            // Above the hero band rather than over the artwork: the television has no downloads to
-            // offer instead, so this is the whole of what the screen has to say about the network,
-            // and it is said once, at the top, in three words.
-            // The panel crops its own edges, and the band below is what usually carries that
-            // inset; above it, the strip has to carry its own or «Нет сети» lands in the part of
-            // the picture a television does not draw.
-            if (offline) {
-                OfflineStrip(
+            // At most one, and it takes its height out of the band below rather than out of the
+            // rows. Above the band rather than inside the list, for two reasons: the list maps
+            // its items one-for-one onto the feed's rows — the focus memory scrolls by that
+            // index — so an extra item at the top would move every card the remote remembers; and
+            // a remote reaches it by pressing up from the first row, which is where a viewer
+            // already looks for what is above the cards.
+            //
+            // It carries the safe inset itself, because above the band there is nothing else
+            // holding it clear of the five per cent a television crops.
+            when (notice) {
+                TvHomeNotice.Offline -> OfflineStrip(
                     modifier = Modifier.padding(top = TvLayout.SafeVertical),
                     text = OFFLINE,
                     gutter = TvLayout.Gutter,
+                    compact = true,
                 )
-            }
-            // Above the band rather than inside the rows, for two reasons. The list below maps
-            // its items one-for-one onto the feed's rows — the focus memory scrolls by that
-            // index — so an extra item at the top would move every card the remote remembers. And
-            // a remote reaches it by pressing up from the first row, which is where a viewer
-            // already goes looking for what is above the cards.
-            if (updateVersion != null && onUpdate != null) {
-                UpdateStrip(
-                    updateVersion,
-                    onUpdate,
-                    // Carries its own safe inset when it is the topmost thing on the panel, as
-                    // the offline strip does: above the band there is nothing else holding it
-                    // clear of the five per cent a television crops.
-                    Modifier.padding(top = if (offline) 0.dp else TvLayout.SafeVertical),
+                is TvHomeNotice.Update -> UpdateStrip(
+                    notice.version,
+                    onUpdate ?: {},
+                    Modifier.padding(top = TvLayout.SafeVertical),
                     gutter = TvLayout.Gutter,
+                    compact = true,
                 )
+                null -> Unit
             }
-            TvHeroBand(hero)
+            TvHeroBand(hero, underNotice = notice != null)
             LazyColumn(
                 state = listState,
                 // The safe area is held outside the scrolling viewport rather than being content
@@ -329,6 +329,32 @@ private fun TvHomeFeed(
 }
 
 /**
+ * The one line a television home screen is allowed to say above the hero band, or none.
+ *
+ * One, and not two, because of arithmetic rather than taste: the panel is 540dp, everything above
+ * the rows has to come to [TvLayout.BandTotal], and a second line would take that out of the
+ * title. The phone shows both — it has the room, and it has downloads to offer while offline.
+ */
+internal sealed interface TvHomeNotice {
+    data object Offline : TvHomeNotice
+
+    data class Update(val version: String) : TvHomeNotice
+}
+
+/**
+ * Which one it is.
+ *
+ * The network wins. It explains why the rest of the screen looks the way it does, and an update
+ * that cannot be downloaded until the network comes back is not news worth displacing it with —
+ * it is still there afterwards, and the row comes back with the signal.
+ */
+internal fun tvHomeNotice(offline: Boolean, updateVersion: String?): TvHomeNotice? = when {
+    offline -> TvHomeNotice.Offline
+    updateVersion != null -> TvHomeNotice.Update(updateVersion)
+    else -> null
+}
+
+/**
  * The band above the rows: the name of the title the remote is on, what OK does with it, and where
  * the viewer is in it.
  *
@@ -336,7 +362,7 @@ private fun TvHomeFeed(
  * upwards into the artwork rather than downwards into the cards.
  */
 @Composable
-private fun TvHeroBand(hero: TvHero?) {
+private fun TvHeroBand(hero: TvHero?, underNotice: Boolean) {
     Crossfade(
         targetState = hero,
         // Fast, where the backdrop is slow. The picture has time to settle because it waits for
@@ -348,10 +374,17 @@ private fun TvHeroBand(hero: TvHero?) {
         Box(
             Modifier
                 .fillMaxWidth()
-                // The height is the band's content; the safe area sits on top of it rather than
-                // inside it, so a two-line name grows into the artwork and not into the panel edge.
-                .height(TvLayout.SafeVertical + TvLayout.HeroHeight)
-                .padding(start = TvLayout.Gutter, end = TvLayout.GutterEnd, top = TvLayout.SafeVertical),
+                // The band and whatever notice sits above it always come to `BandTotal` between
+                // them, so the rows below are measured against one number whatever is on screen.
+                // With nothing above it the band carries the safe area on top of its own content,
+                // so a two-line name grows into the artwork and not into the panel edge; under a
+                // notice the inset has already been spent and the band is what is left.
+                .height(if (underNotice) TvLayout.HeroHeightUnderNotice else TvLayout.BandTotal)
+                .padding(
+                    start = TvLayout.Gutter,
+                    end = TvLayout.GutterEnd,
+                    top = if (underNotice) 0.dp else TvLayout.SafeVertical,
+                ),
             contentAlignment = Alignment.BottomStart,
         ) {
             if (shown != null) {
@@ -360,7 +393,9 @@ private fun TvHeroBand(hero: TvHero?) {
                         shown.title,
                         style = MaterialTheme.typography.displaySmall,
                         color = KaeruText,
-                        maxLines = 2,
+                        // One line under a notice: the band gave that line's height to the line
+                        // above it, and a second one would grow up through it.
+                        maxLines = if (underNotice) 1 else 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Row(

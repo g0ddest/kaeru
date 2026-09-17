@@ -53,6 +53,10 @@ fun updateAvailableText(version: String): String = "Доступна верси�
  *
  * It is a 48dp target and takes the focus treatment, so the remote can land on it: on a television
  * this is the only way to «Обновления» that is not three presses into the settings page.
+ *
+ * [compact] drops the touch floor and halves the air, for the television home screen — where the
+ * whole panel is 540dp and this line is spending height a poster card needs. It changes nothing
+ * about what the row says or how the focus reads.
  */
 @Composable
 fun UpdateStrip(
@@ -60,6 +64,7 @@ fun UpdateStrip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     gutter: Dp = KaeruTokens.GutterPhone,
+    compact: Boolean = false,
 ) {
     Row(
         modifier
@@ -69,8 +74,14 @@ fun UpdateStrip(
             // signal — as it does on a settings row, and for the same reason.
             .kaeruFocus(KaeruTokens.CardShape, focusedScale = 1f)
             .clickable(role = Role.Button, onClick = onClick)
-            .heightIn(min = KaeruTokens.MinTouchTarget)
-            .padding(horizontal = gutter, vertical = KaeruTokens.Space3)
+            // The 48dp floor is a rule about fingers, and the one screen that asks for [compact]
+            // has none: a television is driven by a remote, where the target is whatever has the
+            // focus ring around it and its height buys nothing.
+            .then(if (compact) Modifier else Modifier.heightIn(min = KaeruTokens.MinTouchTarget))
+            .padding(
+                horizontal = gutter,
+                vertical = if (compact) KaeruTokens.Space1 else KaeruTokens.Space3,
+            )
             // One announcement rather than two: the sentence is what this row is.
             .semantics(mergeDescendants = true) {},
         verticalAlignment = Alignment.CenterVertically,
@@ -100,5 +111,5 @@ private fun UpdateStripPreview() = KaeruTheme { UpdateStrip("0.4.0", {}) }
 @Preview(showBackground = true, backgroundColor = 0xFF0B0C10, widthDp = 720, heightDp = 56)
 @Composable
 private fun UpdateStripTvPreview() = KaeruTheme {
-    UpdateStrip("0.4.0", {}, gutter = KaeruTokens.GutterTv)
+    UpdateStrip("0.4.0", {}, gutter = KaeruTokens.GutterTv, compact = true)
 }
