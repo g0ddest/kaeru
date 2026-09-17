@@ -46,6 +46,7 @@ import app.kaeru.ui.common.design.RowHeader
 import app.kaeru.ui.common.design.SkeletonHero
 import app.kaeru.ui.common.design.SkeletonRow
 import app.kaeru.ui.common.design.SyncingNotice
+import app.kaeru.ui.common.design.UpdateStrip
 import app.kaeru.ui.common.design.episodeLine
 import app.kaeru.ui.common.design.primaryAction
 import app.kaeru.ui.common.home.DiscoverRows
@@ -102,6 +103,7 @@ fun HomeScreen(
     onSearch: () -> Unit,
     onSeason: (Season) -> Unit,
     onRetrySeason: () -> Unit,
+    onUpdate: () -> Unit = {},
 ) {
     val content = homeContentState(state)
     val snackbar = remember { SnackbarHostState() }
@@ -116,9 +118,11 @@ fun HomeScreen(
     // Built here rather than inside a list content lambda: it allocates a card per title and
     // formats a line per card, and that lambda re-runs on every recomposition of the screen.
     val catalogue = remember(state.discover) { state.discover?.let(::discoverRows) }
-    // Whether the content still has to leave room for the floating bar. Offline it does not: the
-    // strip above already reserved that height, and a second reservation would be a hole.
-    val barSpace = !state.offline
+    // Whether the content still has to leave room for the floating bar. It does not once anything
+    // is stacked above the feed — the strip there already reserved that height, and a second
+    // reservation would be a hole.
+    val update = state.updateVersion
+    val barSpace = !state.offline && update == null
     // The first sync says what it is doing in words and an amber strip. Material pins its spinner
     // open for the whole of any refresh, gesture or not, so on a first launch the screen would say
     // the same thing twice in two vocabularies. The gesture stays armed; only its indicator waits.
@@ -131,6 +135,16 @@ fun HomeScreen(
             if (state.offline) {
                 Spacer(Modifier.windowInsetsPadding(WindowInsets.statusBars).height(BarHeight))
                 OfflineStrip()
+            }
+            // Above the feed rather than inside it, so it is on every one of the five states this
+            // screen has rather than only on the one with rows. It sits under the offline strip
+            // when both are up: no network is the more useful of the two facts, and the update is
+            // not going anywhere.
+            if (update != null) {
+                if (!state.offline) {
+                    Spacer(Modifier.windowInsetsPadding(WindowInsets.statusBars).height(BarHeight))
+                }
+                UpdateStrip(update, onUpdate)
             }
             PullToRefreshBox(
                 isRefreshing = spinning,

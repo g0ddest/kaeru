@@ -2,6 +2,7 @@ package app.kaeru.ui.common.home
 
 import app.kaeru.domain.download.FakeDownloadRepository
 import app.kaeru.domain.connectivity.FakeConnectivity
+import app.kaeru.domain.update.FakeUpdateRepository
 import app.kaeru.domain.discover.Season
 import app.kaeru.domain.discover.SeasonKind
 import app.kaeru.domain.error.HttpError
@@ -142,10 +143,51 @@ class HomeViewModelTest {
         library: FakeLibraryRepository = FakeLibraryRepository(),
         discover: FakeDiscoverRepository = FakeDiscoverRepository(),
         prefs: FakePlaybackPreferences = FakePlaybackPreferences(),
+        updates: FakeUpdateRepository = FakeUpdateRepository(),
     ) = HomeViewModel(
         library, discover, HomeFeedBuilder(), Clock.fixed(now, ZoneOffset.UTC), prefs,
-        prefetching(prefs), FakeDownloadRepository(), FakeConnectivity(), main.dispatcher,
+        prefetching(prefs), FakeDownloadRepository(), updates, FakeConnectivity(),
+        main.dispatcher,
     )
+
+    /**
+     * The one-line row on the home screen, which is the whole of what this app says unprompted
+     * about an update.
+     *
+     * It reads the last completed check rather than making one: the screen must not wait on
+     * GitHub, and what the app learned this morning is still true when the phone is in a tunnel.
+     */
+    @Test
+    fun `a release found by an earlier check reaches the home screen`() = runTest {
+        val updates = FakeUpdateRepository()
+        updates.remember(FakeUpdateRepository.found())
+
+        val state = viewModel(updates = updates).uiState
+        advanceUntilIdle()
+
+        assertEquals("0.4.0", state.value.updateVersion)
+        // Reading it is not asking for it. The launch-time check is the only thing that asks.
+        assertTrue("the home screen must not run a check of its own", updates.checks.isEmpty())
+    }
+
+    @Test
+    fun `a device on the newest version has nothing to put on the home screen`() = runTest {
+        val updates = FakeUpdateRepository()
+        updates.remember(FakeUpdateRepository.found(release = null))
+
+        val state = viewModel(updates = updates).uiState
+        advanceUntilIdle()
+
+        assertNull(state.value.updateVersion)
+    }
+
+    @Test
+    fun `a device that has never checked says nothing`() = runTest {
+        val state = viewModel().uiState
+        advanceUntilIdle()
+
+        assertNull(state.value.updateVersion)
+    }
 
     /** The phone's home screen asks for the catalogue; nothing else does. */
     private fun TestScope.openedHome(

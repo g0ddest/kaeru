@@ -50,6 +50,7 @@ import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.design.OFFLINE
 import app.kaeru.ui.common.design.OfflineStrip
 import app.kaeru.ui.common.design.RowHeader
+import app.kaeru.ui.common.design.UpdateStrip
 import app.kaeru.ui.common.design.SkeletonHero
 import app.kaeru.ui.common.design.SkeletonRow
 import app.kaeru.ui.common.design.StatusPill
@@ -133,6 +134,7 @@ fun TvHomeScreen(
     onRetrySeason: () -> Unit,
     modifier: Modifier = Modifier,
     onSearch: (() -> Unit)? = null,
+    onUpdate: (() -> Unit)? = null,
     listState: LazyListState = rememberLazyListState(),
     rowStates: TvRowStates = remember { TvRowStates() },
     focus: TvFocusMemory = rememberTvFocusMemory(),
@@ -154,6 +156,8 @@ fun TvHomeScreen(
             rows = if (content is HomeContent.Feed) rows else emptyList(),
             catalogue = catalogue,
             offline = state.offline,
+            updateVersion = state.updateVersion,
+            onUpdate = onUpdate,
             syncError = state.errorMessage.takeIf { content is HomeContent.Feed },
             onRefresh = onRefresh,
             onPlay = onPlay,
@@ -174,6 +178,8 @@ private fun TvHomeFeed(
     rows: List<TvHomeRow>,
     catalogue: DiscoverRows?,
     offline: Boolean,
+    updateVersion: String?,
+    onUpdate: (() -> Unit)?,
     syncError: String?,
     onRefresh: () -> Unit,
     onPlay: (Int, Int) -> Unit,
@@ -265,6 +271,22 @@ private fun TvHomeFeed(
                 OfflineStrip(
                     modifier = Modifier.padding(top = TvLayout.SafeVertical),
                     text = OFFLINE,
+                    gutter = TvLayout.Gutter,
+                )
+            }
+            // Above the band rather than inside the rows, for two reasons. The list below maps
+            // its items one-for-one onto the feed's rows — the focus memory scrolls by that
+            // index — so an extra item at the top would move every card the remote remembers. And
+            // a remote reaches it by pressing up from the first row, which is where a viewer
+            // already goes looking for what is above the cards.
+            if (updateVersion != null && onUpdate != null) {
+                UpdateStrip(
+                    updateVersion,
+                    onUpdate,
+                    // Carries its own safe inset when it is the topmost thing on the panel, as
+                    // the offline strip does: above the band there is nothing else holding it
+                    // clear of the five per cent a television crops.
+                    Modifier.padding(top = if (offline) 0.dp else TvLayout.SafeVertical),
                     gutter = TvLayout.Gutter,
                 )
             }

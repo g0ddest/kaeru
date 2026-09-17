@@ -153,6 +153,7 @@ fun MobileShell(
                     onPlay = play,
                     onAnime = openAnime,
                     onSettings = { nav.navigate(Routes.SETTINGS) { launchSingleTop = true } },
+                    onUpdate = openUpdates,
                     onSearch = { openTab(Routes.SEARCH) },
                     onSeason = vm::selectSeason,
                     onRetrySeason = vm::retrySeason,

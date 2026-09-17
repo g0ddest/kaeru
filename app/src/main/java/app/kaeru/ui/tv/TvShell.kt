@@ -253,6 +253,7 @@ private fun TvHome(
         onSeason = viewModel::selectSeason,
         onRetrySeason = viewModel::retrySeason,
         onSearch = { onRoute(route.open(TvDestination.SEARCH)) },
+        onUpdate = { onRoute(route.openUpdates()) },
         listState = state.list,
         rowStates = state.rows,
         focus = state.focus,
