@@ -6,12 +6,13 @@ import app.kaeru.domain.together.RoomLink
 /**
  * The invitation an intent carries, or null when it carries none.
  *
- * Both forms of a room land on the launcher activity: the https one, which is what travels through
- * a messenger, and the `kaeru://watch` one, which names a phone on this Wi-Fi. Either can be fired
- * by anything on the device, so the room is parsed here — before a screen opens — and a link that
- * is not a room never becomes a screen asking whether to join one. [RoomLink.parse] is what says
- * no: to a missing key, to a room id of the wrong length, and to a LAN address that could be
- * routed off this network.
+ * Every form of a room lands on the launcher activity: the https one, which is what travels
+ * through a messenger, and the `kaeru://watch` one, which either names a phone on this Wi-Fi or,
+ * with no address in it, is the same relay room fired by the landing page's button. Any of them
+ * can be fired by anything on the device, so the room is parsed here — before a screen opens —
+ * and a link that is not a room never becomes a screen asking whether to join one.
+ * [RoomLink.parse] is what says no: to a missing key, to a room id of the wrong length, and to a
+ * LAN address that could be routed off this network.
  *
  * The host is checked here as well, and on purpose. [RoomLink.parse] reads the room and the key
  * and has no opinion about which site an https link came from — reasonably, since neither half of

@@ -102,7 +102,7 @@ class DownloadLimitReached(val limitBytes: Long, val usedBytes: Long) :
 
 /** Why a shared viewing would not start, or would not carry on. */
 enum class TogetherFailureReason {
-    /** The `kaeru://watch` or https link was malformed, or its LAN address was not a private one. */
+    /** The `kaeru://watch` or https link was malformed, or the LAN address in it was not a private one. */
     BAD_LINK,
 
     /** Nothing answered at the address in the link, or the connection died and would not come back. */
