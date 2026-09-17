@@ -8,6 +8,8 @@ import app.kaeru.domain.update.UpdateResult
 import app.kaeru.domain.update.isNewerVersion
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import retrofit2.HttpException
 import java.io.IOException
 import java.time.Clock
@@ -18,6 +20,9 @@ import javax.inject.Singleton
 
 /** GitHub says how much of the hourly budget is left in this header, and zero is the refusal. */
 private const val RATE_LIMIT_REMAINING = "X-RateLimit-Remaining"
+
+/** How the secondary limit says the same thing: come back in this many seconds. */
+private const val RETRY_AFTER = "Retry-After"
 
 /**
  * What GitHub says about releases of this app, and what this device remembers of the answer.
@@ -36,13 +41,31 @@ class GitHubUpdateRepository @Inject constructor(
     @param:Named("versionName") private val installedVersion: String,
 ) : UpdateRepository {
 
-    override val lastResult: Flow<UpdateResult?> = prefs.lastResult
+    /**
+     * The stored answer, re-read against the build that is actually running.
+     *
+     * This is the update installing itself out of existence. A record written by 0.3.0 offering
+     * 0.4.0 stays on disk through the install, and the new process reads it before it has had time
+     * to ask GitHub anything — so without this the home screen says «Доступна версия 0.4.0» while
+     * running 0.4.0, and goes on saying it for as long as the next check keeps failing.
+     *
+     * The comparison is the one the whole feature rests on, applied a second time at the point of
+     * reading rather than only at the point of writing. What survives is the check's date, which
+     * is still true: the app did ask, on that day, and the answer just stopped being an offer.
+     */
+    override val lastResult: Flow<UpdateResult?> = prefs.lastResult.map { stored ->
+        stored?.let { result ->
+            result.copy(release = result.release?.takeIf { isNewerVersion(it.version, installedVersion) })
+        }
+    }
 
     override suspend fun check(force: Boolean): Result<UpdateResult> {
         val now = clock.instant()
-        val stored = prefs.last()
-        // The stored answer is only an answer while it is about this build. An app updated since
-        // the last check would otherwise go on offering the version it is already running.
+        // Read through `lastResult`, so the one filter above governs both readers. The record
+        // keeps the version it was written by, which is what the throttle below is asking about:
+        // an app updated since the last check has to go and ask again rather than sit out the day
+        // on an answer about the build it replaced.
+        val stored = lastResult.first()
         val usable = stored?.takeIf { it.installedVersion == installedVersion }
         if (!force && usable != null && !policy.due(usable.checkedAt, now)) return Result.success(usable)
 
@@ -90,6 +113,13 @@ internal fun Throwable.toUpdateFailure(): Throwable = when {
 
 private fun HttpException.rateLimited(): Boolean = when (code()) {
     429 -> true
-    403 -> response()?.headers()?.get(RATE_LIMIT_REMAINING) == "0"
+    // Two different limits answer with a 403. The hourly budget spends itself down to a
+    // `X-RateLimit-Remaining` of zero; the secondary limit, which is about asking too fast rather
+    // than too often, leaves that count alone and sends `Retry-After` instead. Both mean the same
+    // thing to a viewer — wait — so both are read the same way.
+    403 -> {
+        val headers = response()?.headers()
+        headers?.get(RATE_LIMIT_REMAINING) == "0" || headers?.get(RETRY_AFTER) != null
+    }
     else -> false
 }

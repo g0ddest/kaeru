@@ -159,6 +159,75 @@ class GitHubUpdateRepositoryTest {
         assertNull(afterUpdate.release)
     }
 
+    /**
+     * The update installing itself out of existence.
+     *
+     * The record written by 0.3.0 is still on disk when 0.4.0 starts for the first time, and the
+     * home screen reads it long before any request could return. Without the filter it advertises
+     * the build it is running — and keeps advertising it for as long as the next check fails.
+     */
+    @Test
+    fun `a release that is now installed is no longer an offer`() = runTest {
+        releases()
+        repository(installed = "0.3.0").check(force = false).getOrThrow()
+
+        val afterInstalling = repository(installed = "0.4.0")
+
+        assertNull(afterInstalling.lastResult.first()?.release)
+        // Nothing was asked: the record was read, not replaced.
+        assertEquals(1, server.requestCount)
+    }
+
+    /** What survives is the date. The app did ask; the answer simply stopped being an offer. */
+    @Test
+    fun `the date of the last check survives the version that made it stale`() = runTest {
+        releases()
+        repository(installed = "0.3.0").check(force = false).getOrThrow()
+
+        val known = repository(installed = "0.4.0").lastResult.first()
+
+        assertEquals(Instant.parse("2026-09-16T08:00:00Z"), known?.checkedAt)
+        assertEquals("0.3.0", known?.installedVersion)
+    }
+
+    /** A release still ahead of this build is still an offer, which is the other half of the rule. */
+    @Test
+    fun `a release newer than the running build is still offered`() = runTest {
+        releases()
+        repository(installed = "0.3.0").check(force = false).getOrThrow()
+
+        assertEquals("0.4.0", repository(installed = "0.3.1").lastResult.first()?.release?.version)
+    }
+
+    /**
+     * A stale record must not satisfy the throttle either. The version it names is the version it
+     * was written by, so an app that has since updated goes and asks rather than sitting out the
+     * day on an answer about the build it replaced.
+     */
+    @Test
+    fun `a stale record does not hold off the next check`() = runTest {
+        releases()
+        repository(installed = "0.3.0").check(force = false).getOrThrow()
+
+        clock.advance(Duration.ofMinutes(1))
+        releases()
+        repository(installed = "0.4.0").check(force = false).getOrThrow()
+
+        assertEquals(2, server.requestCount)
+    }
+
+    /** The secondary limit says «too fast» rather than «too often», and leaves the count alone. */
+    @Test
+    fun `a secondary rate limit is read as a rate limit too`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(403).setHeader("Retry-After", "60").setBody("{}"),
+        )
+
+        val failure = repository().check(force = false).exceptionOrNull()
+
+        assertEquals(UpdateFailure.RATE_LIMITED, (failure as UpdateFailed).reason)
+    }
+
     @Test
     fun `a newer release with no apk on it is a failure and not a quiet up-to-date`() = runTest {
         server.enqueue(
