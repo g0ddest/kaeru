@@ -57,9 +57,6 @@ import kotlinx.coroutines.delay
 import java.time.Instant
 
 private const val CONTROLS_LINGER_MS = 3_000L
-
-/** How far the episode drops while somebody's voice is coming out of the same speaker. */
-private const val DUCKED_VOLUME = 0.25f
 private const val PULSE_MS = 450L
 
 /** How long the brightness or volume strip stays up after the finger leaves. */
@@ -106,6 +103,26 @@ fun PlayerScreen(
         // and creates the other — detaching and re-attaching the player's video output, which
         // is the picture blinking on the way into the window and again on the way out.
         if (!state.isCasting && player != null) ContentFrame(player, Modifier.fillMaxSize())
+
+        // A clip plays once, straight away — and above the branch below, because a shared viewing
+        // carries on in the floating window and a friend talking has to come out of the speaker
+        // there too. Left inside it, the clip waited for the window to be expanded, the receipt
+        // that ends the duck never arrived, and the episode stayed quiet for as long as the
+        // window was open.
+        //
+        // Turning the episode down under the clip is not this screen's business: the view model
+        // asks the player itself, which is the only thing that knows the volume to go back to —
+        // and the only thing that can keep it down while the microphone is still held after the
+        // clip ends.
+        val clip = together.state.playing
+        LaunchedEffect(clip) {
+            val playing = clip ?: return@LaunchedEffect
+            together.player?.play(playing.id, playing.bytes, together.onClipPlayed)
+                ?: together.onClipPlayed()
+        }
+        DisposableEffect(together.player) {
+            onDispose { together.player?.stop() }
+        }
 
         // A floating window is a few centimetres of picture with the system's own two buttons
         // under it, and everything below would cover the episode rather than explain it. The
@@ -172,6 +189,9 @@ fun PlayerScreen(
             val context = LocalContext.current
             LaunchedEffect(together.state.share) {
                 val request = together.state.share ?: return@LaunchedEffect
+                // Said first: the chooser sends this task to the background, and a window folded
+                // over the messenger the host has just picked is not what they asked for.
+                together.onSystemPrompt(true)
                 shareInvitation(context, request)
                 together.onShareShown()
             }
@@ -179,26 +199,6 @@ fun PlayerScreen(
             // screen reader running the corner keeps what it is given until it is dismissed.
             val talkback = touchExploration()
             LaunchedEffect(talkback) { together.onAutoHide(!talkback) }
-            // A clip plays once, straight away, over an episode turned down to a quarter. The
-            // system will not duck this app against itself, so the video is turned down here —
-            // which is deterministic and needs no version check.
-            val clip = together.state.playing
-            LaunchedEffect(clip) {
-                val playing = clip ?: return@LaunchedEffect
-                together.player?.play(playing.id, playing.bytes, together.onClipPlayed)
-                    ?: together.onClipPlayed()
-            }
-            LaunchedEffect(clip, player) {
-                player?.volume = if (clip != null) DUCKED_VOLUME else 1f
-            }
-            // Keyed on both: a media3 instance that changes under this would otherwise have its
-            // volume restored on the one that had gone.
-            DisposableEffect(together.player, player) {
-                onDispose {
-                    together.player?.stop()
-                    player?.volume = 1f
-                }
-            }
 
             if (state.isCasting) {
                 // Nothing is decoded here while a receiver has the picture, so there is no surface
@@ -239,6 +239,7 @@ fun PlayerScreen(
                             onCloseHistory = together.onCloseHistory,
                             onReplay = together.onReplay,
                             onLeaveWait = together.onLeaveWait,
+                            onSystemPrompt = together.onSystemPrompt,
                             recorder = together.recorder,
                         )
                     }
@@ -387,6 +388,7 @@ fun PlayerScreen(
                         onCloseHistory = together.onCloseHistory,
                         onReplay = together.onReplay,
                         onLeaveWait = together.onLeaveWait,
+                        onSystemPrompt = together.onSystemPrompt,
                         recorder = together.recorder,
                     )
                 }

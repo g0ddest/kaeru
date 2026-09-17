@@ -43,6 +43,7 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
     private val watchedThresholdKey = floatPreferencesKey("watched_threshold")
     private val preferredTranslationsKey = stringPreferencesKey("preferred_translations")
     private val autoplayNextKey = booleanPreferencesKey("autoplay_next")
+    private val pipOnLeaveKey = booleanPreferencesKey("pip_on_leave")
     private val defaultQualityKey = intPreferencesKey("default_quality")
     private val notificationsAskedKey = booleanPreferencesKey("notifications_asked")
     private val accountNicknameKey = stringPreferencesKey("account_nickname")
@@ -135,6 +136,13 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
 
     override suspend fun setAutoplayNext(enabled: Boolean) {
         dataStore.edit { it[autoplayNextKey] = enabled }
+    }
+
+    /** On until somebody says otherwise: the window is what plan 3 asked for, the switch is the way out. */
+    override val pipOnLeave: Flow<Boolean> = dataStore.data.map { it[pipOnLeaveKey] ?: true }
+
+    override suspend fun setPipOnLeave(enabled: Boolean) {
+        dataStore.edit { it[pipOnLeaveKey] = enabled }
     }
 
     /**

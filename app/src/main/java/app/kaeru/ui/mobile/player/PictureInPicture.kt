@@ -80,12 +80,33 @@ data class PipPlan(
  * watching: the picture is on a television, the stream failed, or nothing has loaded yet. Playing
  * is what turns permission into intent: a viewer who paused and went to answer a message is not
  * asking for a window to follow them around.
+ *
+ * Folding by itself on top of that needs the viewer's say-so — the switch in settings, on unless
+ * they turned it off — and a picture with nothing over it. A chooser or a question on top means
+ * the viewer is mid-decision, and Android 12 folds the window on every opaque task switch: a
+ * messenger notification, a permission prompt, recents. With a friend driving the picture over a
+ * session, whether a given trip out of the app produced a window used to depend on what the friend
+ * had last done, which is what made it feel unruly.
+ *
+ * Two of the things that can be over the picture are not in [state] at all, and are passed in
+ * rather than guessed at: a sheet belonging to the shared viewing, and a question this app put to
+ * the system and has not had answered. Leaving them out is what put a floating window over the
+ * messenger a host had just picked to send the invitation through.
+ *
+ * @param historyOpen everything said this session, in a sheet the player's own state knows
+ *   nothing about.
+ * @param promptUp a chooser or a permission request is up: launched from here, not yet answered.
  */
-fun pipPlan(state: PlayerUiState): PipPlan {
+fun pipPlan(
+    state: PlayerUiState,
+    historyOpen: Boolean = false,
+    promptUp: Boolean = false,
+): PipPlan {
     val allowed = !state.isCasting && state.errorMessage == null && state.episode > 0
+    val modal = state.sheet != null || state.completedPrompt || historyOpen || promptUp
     return PipPlan(
         allowed = allowed,
-        autoEnter = allowed && state.isPlaying,
+        autoEnter = state.pipOnLeave && allowed && state.isPlaying && !modal,
         showNext = state.nextEpisodeAvailable,
         playing = state.isPlaying,
     )

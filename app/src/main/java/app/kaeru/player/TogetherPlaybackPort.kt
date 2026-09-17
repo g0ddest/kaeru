@@ -41,6 +41,10 @@ class TogetherPlaybackPort @Inject constructor(
                 // What is playing, and only then what was asked for: a track the source would not
                 // serve is not the one the friend should be told this phone is listening to.
                 translationId = playback.stream?.translation?.id ?: playback.target?.translation?.id,
+                ready = playback.ready,
+                // Failed and settled there. A picture that is loading is on its way somewhere,
+                // whatever it last said, and a session has no business calling that the end of it.
+                failed = playback.error != null && !playback.isBuffering,
             )
         }
         .stateIn(scope, SharingStarted.Eagerly, PortState())
@@ -60,6 +64,8 @@ class TogetherPlaybackPort @Inject constructor(
     override val supportsRate: Boolean get() = !controller.state.value.isCasting
 
     override suspend fun setRate(factor: Float) = controller.setRate(factor)
+
+    override fun duck(on: Boolean) = controller.duck(on)
 
     override suspend fun openEpisode(animeId: Int, episode: Int, translationId: Int?, positionMs: Long) {
         controller.play(

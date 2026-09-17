@@ -59,6 +59,7 @@ private const val RETRY = "Повторить"
 
 private const val PLAYBACK = "Воспроизведение"
 private const val AUTOPLAY = "Следующая серия автоматически"
+private const val PIP_ON_LEAVE = "Сворачивать в окно при выходе из приложения"
 private const val QUALITY = "Качество по умолчанию"
 private const val THRESHOLD = "Порог просмотра"
 private const val THRESHOLD_NOTE = "Серия считается просмотренной после этой доли"
@@ -100,6 +101,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onSignOut: () -> Unit,
     onAutoplay: (Boolean) -> Unit,
+    onPipOnLeave: (Boolean) -> Unit,
     onQuality: (Quality?) -> Unit,
     onThreshold: (Float) -> Unit,
     onStudioUp: (Int) -> Unit,
@@ -125,7 +127,7 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space8),
         ) {
             AccountSection(state, onRetryAccount, onSignOutPressed = { confirming = true })
-            PlaybackSection(state, onAutoplay, onQuality, onThreshold)
+            PlaybackSection(state, onAutoplay, onPipOnLeave, onQuality, onThreshold)
             DownloadsSection(onDownloads)
             DubsSection(state, onStudioUp, onStudioDown, onStudioRemove, onStudioAdd, onStudiosReset)
             KodikSection(state.kodikToken, onKodikToken)
@@ -176,11 +178,14 @@ private fun AccountSection(state: SettingsUiState, onRetry: () -> Unit, onSignOu
 private fun PlaybackSection(
     state: SettingsUiState,
     onAutoplay: (Boolean) -> Unit,
+    onPipOnLeave: (Boolean) -> Unit,
     onQuality: (Quality?) -> Unit,
     onThreshold: (Float) -> Unit,
 ) {
     SettingsSection(PLAYBACK) {
         SettingSwitchRow(AUTOPLAY, state.autoplayNext, onAutoplay)
+        // Phone only: the television has no floating window, and its own screen does not offer this.
+        SettingSwitchRow(PIP_ON_LEAVE, state.pipOnLeave, onPipOnLeave)
         SettingLabel(QUALITY)
         SettingChoiceRow(
             options = qualityOptions(state.defaultQuality),

@@ -20,10 +20,13 @@ import javax.inject.Singleton
  * the app does not want for a two-second remark.
  *
  * Focus is asked for as `TRANSIENT_MAY_DUCK`, which is what quietens music and podcasts in other
- * apps while somebody speaks. It will not quieten this app's own video — the system does not duck
- * a process against itself — so the episode is turned down by the screen that owns the player,
- * which is deterministic and needs no version checks. Both are wanted: one is about the phone, the
- * other about the picture.
+ * apps while somebody speaks. The system applies no ducking of its own within one app, but it
+ * does hand the loss to this app's own player, and media3 answers it by itself — a movie-typed
+ * player multiplies its volume by 0.2 for as long as the focus is held. That is not relied on:
+ * the episode is turned down explicitly through the playback port, which also covers the
+ * microphone (a `MediaRecorder` takes no focus at all) and knows the volume to go back to. While
+ * a clip plays the two stack, so the episode is quieter under a clip than under a recording;
+ * both are wanted, one for the phone and one for the picture.
  */
 @Singleton
 class VoicePlayer @Inject constructor(@ApplicationContext context: Context) : VoicePlayback {

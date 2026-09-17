@@ -1,5 +1,6 @@
 package app.kaeru.ui.mobile.player
 
+import app.kaeru.ui.common.player.PlayerSheet
 import app.kaeru.ui.common.player.PlayerUiState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -97,6 +98,51 @@ class PictureInPictureTest {
     @Test
     fun `a paused episode may be put in a window but never goes on its own`() {
         val plan = pipPlan(playing.copy(isPlaying = false))
+
+        assertTrue(plan.allowed)
+        assertFalse(plan.autoEnter)
+    }
+
+    @Test
+    fun `with the switch off, a playing episode may be put in a window but never goes on its own`() {
+        val plan = pipPlan(playing.copy(pipOnLeave = false))
+
+        // The button in the top bar still works; only leaving the app stops folding it.
+        assertTrue(plan.allowed)
+        assertFalse(plan.autoEnter)
+        assertTrue(plan.playing)
+    }
+
+    @Test
+    fun `a chooser open over the picture keeps it from folding on its own`() {
+        val plan = pipPlan(playing.copy(sheet = PlayerSheet.QUALITY))
+
+        assertTrue(plan.allowed)
+        assertFalse(plan.autoEnter)
+    }
+
+    @Test
+    fun `a question over the picture keeps it from folding on its own`() {
+        val plan = pipPlan(playing.copy(completedPrompt = true))
+
+        assertTrue(plan.allowed)
+        assertFalse(plan.autoEnter)
+    }
+
+    @Test
+    fun `the session's own sheet over the picture keeps it from folding on its own`() {
+        // Everything said this evening, in a sheet the player's own state knows nothing about.
+        val plan = pipPlan(playing, historyOpen = true)
+
+        assertTrue(plan.allowed)
+        assertFalse(plan.autoEnter)
+    }
+
+    @Test
+    fun `a question the system put up over the picture keeps it from folding on its own`() {
+        // The microphone permission, and the chooser the invitation goes out through: both take
+        // the viewer out of the app mid-decision, which is not a request for a floating window.
+        val plan = pipPlan(playing, promptUp = true)
 
         assertTrue(plan.allowed)
         assertFalse(plan.autoEnter)

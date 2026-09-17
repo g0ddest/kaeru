@@ -17,6 +17,23 @@ data class PortState(
     val animeId: Int? = null,
     val episode: Int? = null,
     val translationId: Int? = null,
+    /**
+     * The episode named above can be seeked: its stream is resolved and its manifest read.
+     *
+     * Named is not the same as ready. A player says which episode it is opening the moment it is
+     * told to, then spends seconds resolving the stream and reading the manifest, and a seek made
+     * in that window lands on nothing and is written over by the position the episode is then
+     * prepared at. A session waits for this before it moves the picture anywhere.
+     */
+    val ready: Boolean = false,
+    /**
+     * The episode named above will not play: the stream would not resolve, or it stopped.
+     *
+     * The other end of [ready], and the reason a session that waits for one has to watch for the
+     * other. Kodik is down often enough, and a guest whose own resolve fails would otherwise wait
+     * for a readiness that is never coming while the player in front of them offers «Повторить».
+     */
+    val failed: Boolean = false,
 )
 
 /**
@@ -70,6 +87,14 @@ interface PlaybackPort {
 
     /** Slightly slow or slightly fast, to close a gap of a second or two without a visible jump. */
     suspend fun setRate(factor: Float)
+
+    /**
+     * Turns the picture's sound down while somebody is talking over it — a friend's clip through
+     * the speaker, or this viewer holding the microphone — and back up to what it was.
+     *
+     * Not a friend's doing either, and never announced. A picture on a television is left alone.
+     */
+    fun duck(on: Boolean)
 
     /**
      * Opens what the friend is watching: the same episode, in the same voice if this device has

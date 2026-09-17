@@ -2,13 +2,10 @@ package app.kaeru.ui.mobile.player
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.app.PendingIntent
 import android.app.PictureInPictureParams
 import android.app.RemoteAction
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Rect
 import android.graphics.drawable.Icon
@@ -100,6 +97,17 @@ class PlayerActivity : FragmentActivity() {
     /** Whether the picture is in a floating window right now, which is all the screen needs to know. */
     private var inPictureInPicture by mutableStateOf(false)
 
+    /**
+     * Something of the system's is up over the picture and has not been answered: the share
+     * chooser, or the microphone permission.
+     *
+     * Neither is an activity of this app's, so nothing in the player's own state would know about
+     * them. Both take the viewer out of the app mid-decision, and a host who picks a messenger to
+     * send the invitation through should arrive in it rather than behind a floating window of the
+     * episode they were watching. Cleared in [onResume], the one thing every way out has in common.
+     */
+    private var promptUp by mutableStateOf(false)
+
     /** Whether this device has floating windows at all; some do not, and the button must not lie. */
     private val supportsPictureInPicture: Boolean by lazy {
         packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
@@ -124,17 +132,16 @@ class PlayerActivity : FragmentActivity() {
     }
 
     /**
-     * The two controls the floating window has room for. They arrive as broadcasts because that
-     * is the only thing a [RemoteAction] can carry; the filter is registered for this app alone,
-     * so nothing outside it can press them.
+     * The two controls the floating window has room for, and the broadcast that carries a press
+     * back here — the only thing a [RemoteAction] can be made of. See [WindowControls], where the
+     * registration and the intents that Android 14 is particular about are tested.
      */
-    private val windowControls = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.getIntExtra(EXTRA_WINDOW_CONTROL, 0)) {
-                CONTROL_PLAY_PAUSE -> viewModel.togglePlayPause()
-                CONTROL_NEXT -> viewModel.playNext()
-            }
-        }
+    private val windowControls by lazy {
+        WindowControls(
+            context = this,
+            onPlayPause = { viewModel.togglePlayPause() },
+            onNext = { viewModel.playNext() },
+        )
     }
 
     /**
@@ -162,12 +169,7 @@ class PlayerActivity : FragmentActivity() {
         // first is the one that starts listening for receivers.
         castSessions.start()
         addOnPictureInPictureModeChangedListener(windowMode)
-        ContextCompat.registerReceiver(
-            this,
-            windowControls,
-            IntentFilter(ACTION_WINDOW_CONTROL),
-            ContextCompat.RECEIVER_NOT_EXPORTED,
-        )
+        windowControls.register()
         setContent {
             KaeruTheme {
                 val castAvailable by cast.isAvailable.collectAsStateWithLifecycle()
@@ -214,6 +216,11 @@ class PlayerActivity : FragmentActivity() {
                     state.nextEpisodeAvailable,
                     state.errorMessage,
                     state.episode,
+                    state.sheet,
+                    state.completedPrompt,
+                    state.pipOnLeave,
+                    session.historyOpen,
+                    promptUp,
                     videoSize,
                 ) {
                     describeWindow()
@@ -269,6 +276,7 @@ class PlayerActivity : FragmentActivity() {
                             onMessageShown = together::messageShown,
                             onPlayerAttached = together::playerAttached,
                             onAutoHide = together::setAutoHide,
+                            onSystemPrompt = ::systemPrompt,
                             enabled = true,
                         ),
                     )
@@ -297,6 +305,20 @@ class PlayerActivity : FragmentActivity() {
         deliver(explicit = false)
     }
 
+    /**
+     * In front again, so whatever was over the picture has been answered, dismissed or left.
+     *
+     * Every way out of a dialog that was actually drawn comes back through here, including the
+     * ones that are not an answer — the back button, a tap outside — which is why the flag is
+     * cleared here as well as in the permission's own result callback, which only an answer
+     * reaches. The share chooser has nothing but this: it is started as a new task and always
+     * pauses this activity, so there is no case where it goes up and this never runs.
+     */
+    override fun onResume() {
+        super.onResume()
+        systemPrompt(up = false)
+    }
+
     /** Hands the launch to the view model, remembering that it has now been made. */
     private fun deliver(explicit: Boolean) {
         val current = launch
@@ -308,7 +330,9 @@ class PlayerActivity : FragmentActivity() {
             if (!viewModel.attachLive()) finish()
             return
         }
-        viewModel.start(current.animeId, current.episode, explicit)
+        // The position only ever rides on a choice: the same intent comes back out of recents and
+        // through a rebuild, hours later, and by then it names where a friend was, not is.
+        viewModel.start(current.animeId, current.episode, explicit, current.startPositionMs.takeIf { explicit })
     }
 
     /** Backgrounding is not stopping: the position is written down, the video carries on. */
@@ -325,14 +349,14 @@ class PlayerActivity : FragmentActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) return
-        if (!pipPlan(viewModel.uiState.value).autoEnter) return
+        if (!windowPlan().autoEnter) return
         enterWindow()
     }
 
     @OptIn(UnstableApi::class)
     override fun onDestroy() {
         removeOnPictureInPictureModeChangedListener(windowMode)
-        runCatching { unregisterReceiver(windowControls) }
+        windowControls.unregister()
         if (isFinishing) {
             // The shared viewing goes with the player, and only when the player is going for good:
             // a rotation, a trip to the background and a floating window all leave it running.
@@ -341,6 +365,24 @@ class PlayerActivity : FragmentActivity() {
             runCatching { stopService(Intent(this, KaeruPlaybackService::class.java)) }
         }
         super.onDestroy()
+    }
+
+    /**
+     * A chooser or a permission question going up over the picture, or coming back down.
+     *
+     * The parameters are re-sent from here rather than left to the effect above: on Android 12
+     * and later the system reads whatever it was last given at the moment the task switches, and
+     * the chooser starts in the same frame as the flag being raised.
+     *
+     * Told when it comes down as well as when it goes up. A permission the app already holds is
+     * answered by the contract itself, with no dialog and no trip out of the app — so [onResume],
+     * which every other way out comes back through, is never called and would leave the question
+     * standing for the life of the activity with the window quietly disabled behind it.
+     */
+    private fun systemPrompt(up: Boolean) {
+        if (promptUp == up) return
+        promptUp = up
+        describeWindow()
     }
 
     /**
@@ -353,7 +395,7 @@ class PlayerActivity : FragmentActivity() {
      */
     private fun enterWindow() {
         if (!supportsPictureInPicture) return
-        val plan = pipPlan(viewModel.uiState.value)
+        val plan = windowPlan()
         if (!plan.allowed) return
         // A device that refuses the window is not a device that should lose the episode.
         runCatching { enterPictureInPictureMode(windowParams(plan)) }
@@ -362,8 +404,19 @@ class PlayerActivity : FragmentActivity() {
     /** Keeps the system's idea of the window in step with what is playing. */
     private fun describeWindow() {
         if (!supportsPictureInPicture) return
-        runCatching { setPictureInPictureParams(windowParams(pipPlan(viewModel.uiState.value))) }
+        runCatching { setPictureInPictureParams(windowParams(windowPlan())) }
     }
+
+    /**
+     * What the window should do, from everything that has a say in it — including the two things
+     * the player's own state has never heard of: the session's history sheet, and a system
+     * question this screen put up.
+     */
+    private fun windowPlan(): PipPlan = pipPlan(
+        state = viewModel.uiState.value,
+        historyOpen = together.uiState.value.historyOpen,
+        promptUp = promptUp,
+    )
 
     private fun windowParams(plan: PipPlan): PictureInPictureParams {
         val size = videoSize
@@ -387,26 +440,16 @@ class PlayerActivity : FragmentActivity() {
      */
     private fun windowActions(plan: PipPlan): List<RemoteAction> {
         val playPause = if (plan.playing) {
-            windowAction(R.drawable.ic_pip_pause, "Пауза", CONTROL_PLAY_PAUSE)
+            windowAction(R.drawable.ic_pip_pause, "Пауза", WindowControls.CONTROL_PLAY_PAUSE)
         } else {
-            windowAction(R.drawable.ic_pip_play, "Продолжить", CONTROL_PLAY_PAUSE)
+            windowAction(R.drawable.ic_pip_play, "Продолжить", WindowControls.CONTROL_PLAY_PAUSE)
         }
-        val next = windowAction(R.drawable.ic_pip_next, "Следующая серия", CONTROL_NEXT)
+        val next = windowAction(R.drawable.ic_pip_next, "Следующая серия", WindowControls.CONTROL_NEXT)
         return if (plan.showNext) listOf(playPause, next) else listOf(playPause)
     }
 
-    private fun windowAction(icon: Int, label: String, control: Int): RemoteAction {
-        val intent = Intent(ACTION_WINDOW_CONTROL)
-            .setPackage(packageName)
-            .putExtra(EXTRA_WINDOW_CONTROL, control)
-        val pending = PendingIntent.getBroadcast(
-            this,
-            control,
-            intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        return RemoteAction(Icon.createWithResource(this, icon), label, label, pending)
-    }
+    private fun windowAction(icon: Int, label: String, control: Int): RemoteAction =
+        RemoteAction(Icon.createWithResource(this, icon), label, label, windowControls.action(control))
 
     private fun read(intent: Intent?, explicit: Boolean) = readLaunch(intent, explicit, ++launches)
 
@@ -448,11 +491,6 @@ class PlayerActivity : FragmentActivity() {
     }
 
     companion object {
-        /** Registered for this app only, so nothing outside it can drive the floating window. */
-        private const val ACTION_WINDOW_CONTROL = "app.kaeru.player.WINDOW_CONTROL"
-        private const val EXTRA_WINDOW_CONTROL = "control"
-        private const val CONTROL_PLAY_PAUSE = 1
-        private const val CONTROL_NEXT = 2
         /**
          * Inlined on purpose: the name is a plain string that older platforms simply do not
          * know, and nothing ever asks for it there — [shouldAskForNotifications] is what keeps
@@ -461,10 +499,15 @@ class PlayerActivity : FragmentActivity() {
         @SuppressLint("InlinedApi")
         private const val POST_NOTIFICATIONS = Manifest.permission.POST_NOTIFICATIONS
 
-        fun intent(context: Context, animeId: Int, episode: Int): Intent =
+        /**
+         * @param startPositionMs where to open the episode, instead of where this device left it.
+         *   Joining a friend names theirs; everything else leaves it out and resumes as usual.
+         */
+        fun intent(context: Context, animeId: Int, episode: Int, startPositionMs: Long? = null): Intent =
             Intent(context, PlayerActivity::class.java)
                 .putExtra(EXTRA_ANIME_ID, animeId)
                 .putExtra(EXTRA_EPISODE, episode)
+                .apply { if (startPositionMs != null) putExtra(EXTRA_POSITION, startPositionMs) }
     }
 }
 
@@ -478,6 +521,12 @@ internal data class Launch(
     val animeId: Int = 0,
     val episode: Int = 1,
     val explicit: Boolean = false,
+    /**
+     * Where to open the episode, when the screen that opened it knew better than this device's
+     * own row — a friend's position, on joining them. Null, not zero, when nothing was said: zero
+     * is a position too, and would silence the episode's own resume.
+     */
+    val startPositionMs: Long? = null,
     /**
      * Which launch this is, counted from one.
      *
@@ -494,11 +543,18 @@ internal fun readLaunch(intent: Intent?, explicit: Boolean, seq: Int) = Launch(
     animeId = intent?.getIntExtra(EXTRA_ANIME_ID, 0) ?: 0,
     episode = intent?.getIntExtra(EXTRA_EPISODE, 1) ?: 1,
     explicit = explicit,
+    // Only a choice carries a position. The same intent comes back out of recents and through a
+    // rebuild, hours later, still naming where a friend was when the invitation was pressed.
+    startPositionMs = intent
+        ?.takeIf { explicit && it.hasExtra(EXTRA_POSITION) }
+        ?.getLongExtra(EXTRA_POSITION, -1L)
+        ?.takeIf { it >= 0 },
     seq = seq,
 )
 
 private const val EXTRA_ANIME_ID = "animeId"
 private const val EXTRA_EPISODE = "episode"
+private const val EXTRA_POSITION = "positionMs"
 
 /**
  * Whether a launch of the player is the viewer asking for an episode, or the same session coming

@@ -159,6 +159,47 @@ class PlayerViewModelTest {
     }
 
     @Test
+    fun `an episode opened at a given position starts there, not at the one saved for it`() =
+        runTest(main.dispatcher) {
+            // Joining a friend: the row this device keeps for the episode is not where they are.
+            episodes.seed(EpisodeProgress(100, 7, 300_000, 1_440_000, now))
+            watchStates.seed(WatchState(100, 7, 300_000, 1_440_000, translationId = 11, kodikSeason = 1, updatedAt = now))
+
+            viewModel.start(animeId = 100, episode = 7, explicit = true, startPositionMs = 930_000)
+            advanceUntilIdle()
+
+            assertEquals(PlaybackTarget(100, 7, 930_000, null), controller.played.single())
+        }
+
+    @Test
+    fun `a screen coming back never carries a position`() = runTest(main.dispatcher) {
+        // Recreated, or relaunched out of recents, with the intent the join built an hour ago.
+        episodes.seed(EpisodeProgress(100, 7, 300_000, 1_440_000, now))
+
+        viewModel.start(animeId = 100, episode = 7, explicit = false, startPositionMs = 930_000)
+        advanceUntilIdle()
+
+        assertEquals(300_000L, controller.played.single().startPositionMs)
+    }
+
+    @Test
+    fun `an episode already playing is not restarted or moved by a position carried in`() =
+        runTest(main.dispatcher) {
+            viewModel.start(100, 4)
+            advanceUntilIdle()
+            playingOn(episode = 7, positionMs = 300_000)
+            val started = controller.played.size
+
+            // The session's own seek is what moves a prepared player; a seek made here would be
+            // announced to the friend as this viewer's.
+            viewModel.start(100, 7, explicit = true, startPositionMs = 930_000)
+            advanceUntilIdle()
+
+            assertEquals(started, controller.played.size)
+            assertTrue(controller.seeks.isEmpty())
+        }
+
+    @Test
     fun `choosing an episode from the remote resumes that episode's own position`() = runTest(main.dispatcher) {
         episodes.seed(EpisodeProgress(100, 9, 700_000, 1_440_000, now))
         viewModel.start(100, 4)
@@ -857,6 +898,18 @@ class PlayerViewModelTest {
             statusWrites += animeId to status
             return Result.success(Unit)
         }
+    }
+
+    @Test
+    fun `the screen knows whether leaving the app should fold it into a window`() = runTest(main.dispatcher) {
+        viewModel.start(animeId = 100, episode = 4)
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.pipOnLeave)
+
+        prefs.pipOnLeave.value = false
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.pipOnLeave)
     }
 
     @Test

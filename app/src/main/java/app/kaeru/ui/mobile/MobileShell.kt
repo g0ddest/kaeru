@@ -42,6 +42,7 @@ import app.kaeru.ui.common.search.SearchViewModel
 import app.kaeru.ui.common.pairing.PairingStage
 import app.kaeru.ui.common.pairing.PairingUiState
 import app.kaeru.ui.common.settings.SettingsViewModel
+import app.kaeru.ui.common.together.JoinTarget
 import app.kaeru.ui.common.update.UpdatesViewModel
 import app.kaeru.ui.common.together.TogetherUiState
 import app.kaeru.ui.common.theme.KaeruAccent
@@ -78,6 +79,8 @@ fun MobileShell(
     onRouteConsumed: () -> Unit = {},
     together: TogetherUiState = TogetherUiState(),
     onJoinTogether: () -> Unit = {},
+    /** What the friend is watching at the moment of the press, rather than at the invitation. */
+    joinTarget: () -> JoinTarget = { JoinTarget(0, 0L) },
     onJoinedTogether: () -> Unit = {},
     onDismissTogether: () -> Unit = {},
     nav: NavHostController = rememberNavController(),
@@ -189,6 +192,7 @@ fun MobileShell(
                     onBack = { nav.popBackStack() },
                     onSignOut = vm::signOut,
                     onAutoplay = vm::setAutoplayNext,
+                    onPipOnLeave = vm::setPipOnLeave,
                     onQuality = vm::setDefaultQuality,
                     onThreshold = vm::setWatchedThreshold,
                     onStudioUp = vm::moveStudioUp,
@@ -244,10 +248,22 @@ fun MobileShell(
                         state = join,
                         // Two halves of one press: the room is already known to the session, and
                         // this opens the viewer's own copy of the same episode. The stream is
-                        // resolved by the player, exactly as it is for an episode started by hand.
+                        // resolved by the player, exactly as it is for an episode started by hand —
+                        // but at the friend's position, so nothing jumps once they are in step.
                         onJoin = {
                             onJoinTogether()
-                            play(join.animeId, join.episode)
+                            // Their episode and their position, read together: the friend's
+                            // autoplay may have moved on while the invitation was being read,
+                            // and the session follows them there whatever this opens.
+                            val target = joinTarget()
+                            context.startActivity(
+                                PlayerActivity.intent(
+                                    context,
+                                    join.animeId,
+                                    target.episode.takeIf { it > 0 } ?: join.episode,
+                                    target.positionMs,
+                                ),
+                            )
                             // The session carries on without this screen, which would otherwise
                             // be waiting underneath the episode it just opened.
                             onJoinedTogether()

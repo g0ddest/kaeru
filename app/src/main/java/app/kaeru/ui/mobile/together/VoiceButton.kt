@@ -102,6 +102,16 @@ fun VoiceButton(
     onClip: (ByteArray, Int) -> Unit,
     onDenied: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * Whether the system has a question of its own up over the player: the microphone permission.
+     *
+     * Said out loud because the dialog is not this app's window, and whatever is watching the
+     * player has no other way to know that the viewer is mid-decision rather than watching an
+     * episode. Both ways round, because the question is not always asked: with the permission
+     * already granted the contract answers out of hand, and a screen told only that one was going
+     * up would wait for ever for it to come down.
+     */
+    onSystemPrompt: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     var recording by remember { mutableStateOf(false) }
@@ -119,6 +129,10 @@ fun VoiceButton(
     }
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
         granted = allowed
+        // Answered, whether or not a dialog was ever drawn. An already-granted permission is
+        // answered synchronously and never pauses the activity, so this is the only notice the
+        // player gets that its picture is free to fold into a window again.
+        onSystemPrompt(false)
         // Nothing starts recording on the way back: the finger that asked has long since lifted,
         // and audio a person did not know had started is the one thing a microphone must never do.
         if (!allowed) onDenied()
@@ -229,6 +243,7 @@ fun VoiceButton(
                         if (!granted) {
                             down.consume()
                             waitForUp(down.id)
+                            onSystemPrompt(true)
                             ask.launch(Manifest.permission.RECORD_AUDIO)
                             return@awaitEachGesture
                         }

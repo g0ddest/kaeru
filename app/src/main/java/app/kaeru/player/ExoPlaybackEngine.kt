@@ -71,10 +71,37 @@ class ExoPlaybackEngine @Inject constructor(
 
     private var poll: Job? = null
 
+    /**
+     * Whether the sound is wanted down right now, kept apart from the player it applies to.
+     *
+     * The player can be gone when the wish arrives: a cast that ended mid-clip asks for the duck
+     * before it prepares anything, and the service may already have given the player back. The
+     * one built next has to start quiet.
+     */
+    private var ducked = false
+
+    /** The volume to go back to, remembered only while it is turned down. */
+    private var loudVolume: Float? = null
+
     /** The player, built if this is the first thing to ask for it. Main thread only. */
     fun acquirePlayer(): ExoPlayer = instance ?: build().also {
         instance = it
         _videoPlayer.value = it
+        duckIfWished(it)
+    }
+
+    /**
+     * Turns a player down because the wish was made while it was not there to hear it.
+     *
+     * Two ways that happens, and both leave [loudVolume] empty: a player built after the duck was
+     * asked for, and one that survived a [release] — which puts the volume back and forgets what
+     * it was, keeping only the wish. Anything else is already down and has a level to go back to,
+     * and writing one again would remember the quiet level as the loud one.
+     */
+    private fun duckIfWished(player: ExoPlayer) {
+        if (!ducked || loudVolume != null) return
+        loudVolume = player.volume
+        player.volume = DUCKED_VOLUME
     }
 
     private fun build(): ExoPlayer = ExoPlayer.Builder(context)
@@ -93,6 +120,9 @@ class ExoPlaybackEngine @Inject constructor(
 
     override fun prepare(url: String, headers: StreamHeaders, startPositionMs: Long, metadata: StreamMetadata?) {
         val player = acquirePlayer()
+        // The wish outlives a release, the level does not: an episode prepared on a player that
+        // was let go mid-clip would come back at full volume with the session still talking.
+        duckIfWished(player)
         // [headers] are not read here: they ride on [dataSource], which is built from the very
         // StreamHeaders the controller passes in, and are needed on every cache miss rather than
         // on one request.
@@ -122,12 +152,30 @@ class ExoPlaybackEngine @Inject constructor(
         instance?.setPlaybackSpeed(factor)
     }
 
+    override fun duck(on: Boolean) {
+        ducked = on
+        val player = instance ?: return
+        if (on) {
+            // Captured once: a clip arriving while the microphone is already held would otherwise
+            // remember the ducked level as the one to go back to.
+            if (loudVolume == null) loudVolume = player.volume
+            player.volume = DUCKED_VOLUME
+        } else {
+            loudVolume?.let { player.volume = it }
+            loudVolume = null
+        }
+    }
+
     override fun release() {
         stopPolling()
         // Normal speed goes back with the episode. A shared viewing handed the picture to a
         // receiver mid-correction leaves this player at 0.97, the player instance outlives the
         // release, and there is no speed control anywhere in this app to put it right.
         instance?.setPlaybackSpeed(1f)
+        // And so does the volume, for the same reason. The wish itself stays: whoever hands the
+        // picture back says again whether it is wanted down, and says so before preparing.
+        loudVolume?.let { instance?.volume = it }
+        loudVolume = null
         instance?.stop()
         instance?.clearMediaItems()
         _state.value = EngineState()
@@ -150,6 +198,8 @@ class ExoPlaybackEngine @Inject constructor(
         player.release()
         instance = null
         _videoPlayer.value = null
+        // The volume went with the player; the wish is kept for the next one.
+        loudVolume = null
         _state.value = EngineState()
     }
 
@@ -196,5 +246,8 @@ class ExoPlaybackEngine @Inject constructor(
 
     private companion object {
         const val POLL_INTERVAL_MS = 250L
+
+        /** How far the episode drops while somebody's voice is coming out of the same speaker. */
+        const val DUCKED_VOLUME = 0.2f
     }
 }

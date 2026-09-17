@@ -7,17 +7,22 @@ import app.kaeru.domain.repository.AccountRepository
 import app.kaeru.domain.together.NoticeKind
 import app.kaeru.domain.together.PendingWatchLink
 import app.kaeru.domain.together.PeerHello
+import app.kaeru.domain.together.PlaybackPort
 import app.kaeru.domain.together.ReactionKind
 import app.kaeru.domain.together.RoomLink
 import app.kaeru.domain.together.SessionState
 import app.kaeru.domain.together.TogetherEvent
 import app.kaeru.domain.together.TogetherSessionApi
+import app.kaeru.domain.together.VoiceCapture
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -87,6 +92,10 @@ class TogetherViewModel @Inject constructor(
     private val library: LibraryRepository,
     private val pending: PendingWatchLink,
     private val clock: Clock,
+    /** The microphone, watched for whether it is open — never driven from here. */
+    private val microphone: VoiceCapture,
+    /** The picture, for the one thing this screen does to it: turning it down while somebody talks. */
+    private val port: PlaybackPort,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(TogetherUiState())
@@ -120,6 +129,18 @@ class TogetherViewModel @Inject constructor(
      * button; a screen that never saw the session it is about has nothing to be told.
      */
     private var sawSession = false
+
+    /**
+     * Whether a player screen has attached to this instance.
+     *
+     * Two of these exist at once (see the class comment), and only the one under the player may
+     * turn the picture down: the browsing activity's copy hears every clip too, never hears that
+     * one finished, and would otherwise hold the episode quiet until the session ended.
+     */
+    private var attached = false
+
+    /** Whether this screen has the picture turned down right now. */
+    private var ducked = false
 
     private val expiryJobs = mutableMapOf<Long, Job>()
 
@@ -206,6 +227,24 @@ class TogetherViewModel @Inject constructor(
     }
 
     /**
+     * What the player should be opened at, read at the moment of the press.
+     *
+     * The invitation is stale by however long it sat on screen: the friend has watched on, and
+     * their autoplay may have run into the next episode. A player opened on the hello jumps
+     * visibly once the session catches up, or opens the wrong episode entirely. The session has
+     * been keeping up with them meanwhile, and its answer is what the episode opens at; the
+     * hello stands in for a friend who has said nothing since.
+     */
+    fun joinTarget(): JoinTarget {
+        val join = _uiState.value.join
+        val moved = (session.state.value as? SessionState.Joining)?.pendingEpisode
+        return JoinTarget(
+            episode = moved ?: join?.episode ?: 0,
+            positionMs = (session.peerPositionNow() ?: join?.positionMs ?: 0L).coerceAtLeast(0),
+        )
+    }
+
+    /**
      * The player is open on the room's episode, so the screen that asked about it is done.
      *
      * Not the same thing as [dismissJoin]: the session carries on, and only the screen goes. Left
@@ -285,9 +324,38 @@ class TogetherViewModel @Inject constructor(
      * worth keeping.
      */
     fun playerAttached() {
+        if (!attached) {
+            attached = true
+            viewModelScope.launch { quietWhileTalking() }
+        }
         if (sawSession || _uiState.value.phase != TogetherPhase.ENDED) return
         armWait(null)
         _uiState.update { it.copy(wait = null) }
+    }
+
+    /**
+     * The episode is turned down while a clip is coming out of the speaker and while the
+     * microphone is open — from the first frame of the hold to whatever ends it: a release, a
+     * swipe, the thirty-second ceiling, the app going to the background. When the two overlap it
+     * stays down until the last of them ends.
+     *
+     * Explicit rather than left to audio focus: the phone will not duck an app against itself,
+     * and the microphone takes no focus at all.
+     */
+    private suspend fun quietWhileTalking() {
+        combine(microphone.recording, _uiState.map { it.playing != null }) { held, clip -> held || clip }
+            .distinctUntilChanged()
+            .collect { quiet ->
+                if (quiet == ducked) return@collect
+                ducked = quiet
+                port.duck(quiet)
+            }
+    }
+
+    override fun onCleared() {
+        // The collector above dies with the scope, so an episode this screen turned down is put
+        // back here rather than left quiet for the rest of the evening.
+        if (ducked) port.duck(false)
     }
 
     fun sendChat(text: String) {

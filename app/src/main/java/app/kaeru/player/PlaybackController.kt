@@ -112,6 +112,15 @@ interface PlaybackController {
      */
     fun setRate(factor: Float)
 
+    /**
+     * Turns the picture's sound down while somebody is talking over it, and back up afterwards.
+     *
+     * A shared viewing's request, never a viewer action, so it is never announced. It follows the
+     * picture: an engine that takes over mid-voice is told, and a receiver that cannot be turned
+     * down ignores it.
+     */
+    fun duck(on: Boolean)
+
     /** Same episode, same position, another voice. */
     suspend fun changeTranslation(translation: Translation)
 
@@ -287,6 +296,9 @@ class DefaultPlaybackController @Inject constructor(
 
     private var markedEpisode = false
 
+    /** Whether the sound is wanted down right now, so an engine taking over can be told. */
+    private var ducked = false
+
     /**
      * What is playing came off the device rather than off the network. Only one thing turns on
      * it: handing the episode to a receiver has to resolve it again, because the links a
@@ -362,6 +374,11 @@ class DefaultPlaybackController @Inject constructor(
 
     override fun setRate(factor: Float) = engine.setRate(factor)
 
+    override fun duck(on: Boolean) {
+        ducked = on
+        engine.duck(on)
+    }
+
     /** Says what this viewer did, and says nothing at all about what their friend did. */
     private inline fun announce(origin: ActionOrigin, action: () -> LocalAction) {
         if (origin == ActionOrigin.LOCAL) _localActions.tryEmit(action())
@@ -381,7 +398,7 @@ class DefaultPlaybackController @Inject constructor(
             )
             opening = plan
             flushProgressNow()
-            _state.update { it.copy(isBuffering = true, error = null) }
+            _state.update { it.copy(isBuffering = true, ready = false, error = null) }
             open(plan).onFailure(::fail)
         }.join()
     }
@@ -407,7 +424,7 @@ class DefaultPlaybackController @Inject constructor(
                 // on disk before that happens or the sample lands after it and puts the row back
                 // on the episode being left.
                 flushProgressNow()
-                _state.update { it.copy(isBuffering = true, error = null) }
+                _state.update { it.copy(isBuffering = true, ready = false, error = null) }
                 // The plan carries whatever it was: a move to the next episode that fails is
                 // still a passing message, not the error screen over an episode that played.
                 open(plan).onFailure { failure ->
@@ -420,7 +437,7 @@ class DefaultPlaybackController @Inject constructor(
             val at = current.positionMs
             flushProgressNow()
             lastReportedMs = at
-            _state.update { it.copy(quality = quality, isBuffering = true, error = null) }
+            _state.update { it.copy(quality = quality, isBuffering = true, ready = false, error = null) }
             // No metadata: the session is already showing this episode, and a quality swap is
             // not a new thing to announce.
             engine.prepare(url, headers, at)
@@ -444,6 +461,10 @@ class DefaultPlaybackController @Inject constructor(
             this.engine = next
             following = follow(next)
             previous.release()
+            // Whether the sound is wanted down is this controller's to know, not an engine's: the
+            // one that had the picture put its own volume back on release, and the one taking
+            // over is told the current wish either way — before it prepares anything.
+            next.duck(ducked)
             // A new engine gets its own budget for the one silent re-resolve. A cast session
             // can last hours, and the link that played locally is very likely stale by its end.
             reResolved = false
@@ -469,6 +490,7 @@ class DefaultPlaybackController @Inject constructor(
                 // Nothing loaded is not "loading": a session that starts before the first
                 // episode only decides where the next one will play.
                 isBuffering = target != null || unfinished != null,
+                ready = false,
                 positionMs = carryPositionMs,
                 error = null,
             )
@@ -542,7 +564,7 @@ class DefaultPlaybackController @Inject constructor(
             )
             opening = plan
             flushProgressNow()
-            _state.update { it.copy(isBuffering = true, error = null) }
+            _state.update { it.copy(isBuffering = true, ready = false, error = null) }
             open(plan).onFailure(::fail)
         }.join()
     }
@@ -809,6 +831,9 @@ class DefaultPlaybackController @Inject constructor(
         _state.value = current.copy(
             isPlaying = engineState.isPlaying,
             isBuffering = engineState.isBuffering,
+            // Once known, known until the next prepare: a report with no length in it mid-episode
+            // is the engine between two words, not an episode that has become unseekable.
+            ready = current.ready || lengthKnown,
             positionMs = position,
             bufferedPositionMs = buffered,
             durationMs = duration,
@@ -845,7 +870,7 @@ class DefaultPlaybackController @Inject constructor(
         val at = _state.value.positionMs
         val quality = _state.value.quality
         transition {
-            _state.update { it.copy(isBuffering = true, error = null) }
+            _state.update { it.copy(isBuffering = true, ready = false, error = null) }
             // Not a local action: this is the same episode opened again behind the viewer's back,
             // and a friend watching along has no business being switched to what they are already
             // watching. Same reason `retry()` says so.

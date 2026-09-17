@@ -1,9 +1,12 @@
 package app.kaeru.ui.mobile.player
 
+import android.content.Context
 import android.content.Intent
+import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -58,6 +61,28 @@ class LaunchIntentTest {
         assertEquals(100, second.animeId)
         assertEquals(7, second.episode)
         assertTrue(second.explicit)
+    }
+
+    @Test
+    fun `a launch with a position carries it, and one without carries none`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+
+        val joining = readLaunch(PlayerActivity.intent(context, 100, 7, startPositionMs = 930_000), explicit = true, seq = 1)
+        val ordinary = readLaunch(PlayerActivity.intent(context, 100, 7), explicit = true, seq = 2)
+
+        assertEquals(930_000L, joining.startPositionMs)
+        // None, not zero: zero is a position, and would silence the episode's own resume.
+        assertNull(ordinary.startPositionMs)
+    }
+
+    @Test
+    fun `a launch out of recents does not bring the join position along`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+
+        val back = readLaunch(PlayerActivity.intent(context, 100, 7, startPositionMs = 930_000), explicit = false, seq = 1)
+
+        assertNull(back.startPositionMs)
+        assertEquals(7, back.episode)
     }
 
     @Test

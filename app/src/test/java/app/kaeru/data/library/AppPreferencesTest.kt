@@ -59,6 +59,16 @@ class AppPreferencesTest {
         assertTrue(prefs.autoplayNext.first())
         assertNull(prefs.defaultQuality.first())
         assertEquals(0.9f, prefs.watchedThreshold.first(), 0.0001f)
+        assertTrue(prefs.pipOnLeave.first())
+    }
+
+    @Test
+    fun `the floating window switch is on until somebody turns it off, and stays off`() = runTest(dispatcher) {
+        prefs.setPipOnLeave(false)
+        assertEquals(false, prefs.pipOnLeave.first())
+
+        prefs.setPipOnLeave(true)
+        assertEquals(true, prefs.pipOnLeave.first())
     }
 
     @Test
@@ -105,6 +115,7 @@ class AppPreferencesTest {
         prefs.setPreferredTranslations(listOf("AniDUB"))
         prefs.setAutoplayNext(false)
         prefs.setDefaultQuality(Quality.P480)
+        prefs.setPipOnLeave(false)
 
         prefs.clearAccount()
 
@@ -113,6 +124,7 @@ class AppPreferencesTest {
         assertEquals(listOf("AniDUB"), prefs.preferredTranslations.first())
         assertEquals(false, prefs.autoplayNext.first())
         assertEquals(Quality.P480, prefs.defaultQuality.first())
+        assertEquals(false, prefs.pipOnLeave.first())
     }
 
     @Test
@@ -126,6 +138,7 @@ class AppPreferencesTest {
         prefs.setLastFullSync(Instant.ofEpochMilli(1_000))
         prefs.setPreferredTranslations(listOf("AniDUB"))
         prefs.setAutoplayNext(false)
+        prefs.setPipOnLeave(false)
         prefs.markNotificationsAsked()
 
         prefs.clear()
@@ -139,6 +152,7 @@ class AppPreferencesTest {
         assertNull(prefs.lastFullSync())
         assertEquals(emptyList<String>(), prefs.preferredTranslations.first())
         assertTrue(prefs.autoplayNext.first())
+        assertTrue(prefs.pipOnLeave.first())
     }
 
     @Test

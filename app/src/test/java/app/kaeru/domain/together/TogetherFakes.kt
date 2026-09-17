@@ -135,6 +135,13 @@ class FakePlaybackPort : PlaybackPort {
     /** False stands in for a Chromecast, which has no speed control. */
     override var supportsRate: Boolean = true
 
+    /**
+     * Whether an episode this fake opens is ready the moment it is opened. False stands in for
+     * the seconds a real player spends resolving and reading the manifest, during which the
+     * episode is named but nothing can be seeked.
+     */
+    var opensReady: Boolean = true
+
     override suspend fun play() {
         plays += 1
         _state.update { it.copy(playing = true) }
@@ -155,6 +162,13 @@ class FakePlaybackPort : PlaybackPort {
         rates += factor
     }
 
+    /** Every time the picture was turned down or back up, in order. */
+    val ducks = mutableListOf<Boolean>()
+
+    override fun duck(on: Boolean) {
+        ducks += on
+    }
+
     override suspend fun openEpisode(animeId: Int, episode: Int, translationId: Int?, positionMs: Long) {
         opened += Opened(animeId, episode, translationId, positionMs)
         _state.update {
@@ -164,6 +178,7 @@ class FakePlaybackPort : PlaybackPort {
                 translationId = fallbackTranslationId ?: translationId,
                 positionMs = positionMs,
                 playing = true,
+                ready = opensReady,
             )
         }
     }
@@ -176,9 +191,15 @@ class FakePlaybackPort : PlaybackPort {
         positionMs: Long = 0,
         playing: Boolean = true,
         buffering: Boolean = false,
+        ready: Boolean = true,
+        failed: Boolean = false,
     ) {
-        _state.value = PortState(positionMs, playing, buffering, animeId, episode, translationId)
+        _state.value =
+            PortState(positionMs, playing, buffering, animeId, episode, translationId, ready, failed)
     }
+
+    /** The manifest was read: the episode on screen can be seeked now. */
+    fun ready() = _state.update { it.copy(ready = true) }
 
     fun moveTo(positionMs: Long) = _state.update { it.copy(positionMs = positionMs) }
 
@@ -194,6 +215,28 @@ class FakePlaybackPort : PlaybackPort {
     fun did(action: LocalAction) {
         check(_localActions.subscriptionCount.value > 0) { "nobody was listening for $action" }
         check(_localActions.tryEmit(action)) { "$action did not fit in the buffer" }
+    }
+}
+
+/** A microphone that opens instantly and produces whatever the test says it produces. */
+class FakeVoiceCapture(private val clip: RecordedClip? = null) : VoiceCapture {
+    val open = MutableStateFlow(false)
+    var cancelled = 0
+    override val recording: StateFlow<Boolean> get() = open
+    override val maxDurationMs: Int get() = 30_000
+    override fun start(): Boolean {
+        open.value = true
+        return true
+    }
+    override fun level(): Float = 0.5f
+    override fun elapsedMs(): Int = 1_000
+    override fun stop(): RecordedClip? {
+        open.value = false
+        return clip
+    }
+    override fun cancel() {
+        cancelled++
+        open.value = false
     }
 }
 

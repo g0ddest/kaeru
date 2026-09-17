@@ -93,13 +93,15 @@ class PlayerViewModel @Inject constructor(
      * viewer settled on, whether there is a network at all, and what of this title is already on
      * the device.
      *
-     * Gathered into one value because none of the four depends on which episode is playing, and
+     * Gathered into one value because none of the five depends on which episode is playing, and
      * because `combine` is typed up to five flows — the episode itself already spends four of them.
      */
     private data class Surroundings(
         val receiverName: String? = null,
         val settledQuality: Quality? = null,
         val offline: Boolean = false,
+        /** Whether leaving the app folds a playing picture into a window. The viewer's setting. */
+        val pipOnLeave: Boolean = true,
         /**
          * The title [downloads] are about. Carried rather than read off the screen's own field,
          * because the controller is process-wide: between a screen naming its title and playback
@@ -154,8 +156,9 @@ class PlayerViewModel @Inject constructor(
         animeId.flatMapLatest { id ->
             if (id == null) flowOf(null to emptyList()) else downloads.observe(id).map { id to it }
         },
-    ) { receiverName, settledQuality, online, downloaded ->
-        Surroundings(receiverName, settledQuality, !online, downloaded.first, downloaded.second)
+        prefs.pipOnLeave,
+    ) { receiverName, settledQuality, online, downloaded, pipOnLeave ->
+        Surroundings(receiverName, settledQuality, !online, pipOnLeave, downloaded.first, downloaded.second)
     }
 
     /** The player a video surface attaches to, or null while there is none to attach to. */
@@ -204,6 +207,7 @@ class PlayerViewModel @Inject constructor(
                 ?.takeIf { it.animeId == around.animeId }
                 ?.let { live -> around.downloads.firstOrNull { it.episode == live.episode } },
             toast = screen.toast,
+            pipOnLeave = around.pipOnLeave,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, PlayerUiState())
 
@@ -241,8 +245,14 @@ class PlayerViewModel @Inject constructor(
      * that knows what to play. A start still on its way counts as loaded, so the two calls a
      * screen makes on the way in — one from the lifecycle, one from composition — are one
      * playback.
+     *
+     * [startPositionMs] is where the episode opens when the screen knows better than this device's
+     * own row: a friend's position, on joining them. Honoured only with a choice, and only when the
+     * episode is actually started here. A screen that finds the episode already loaded attaches to
+     * it as it is — a seek made from here would be announced to the friend as this viewer's own,
+     * and the session's corrections already move a player that is prepared.
      */
-    fun start(animeId: Int, episode: Int, explicit: Boolean = true) {
+    fun start(animeId: Int, episode: Int, explicit: Boolean = true, startPositionMs: Long? = null) {
         // Said every time, including on the path that starts nothing: it is how playback left on
         // a receiver learns that somebody is looking at it again.
         controller.attachScreen()
@@ -266,7 +276,10 @@ class PlayerViewModel @Inject constructor(
             // row is not: autoplay writes it as it goes. So on a launch that is not a choice the
             // row wins, and the intent is only the answer when there is no row at all.
             val wanted = if (explicit) episode else saved?.episode ?: episode
-            controller.play(PlaybackTarget(animeId, wanted, resumeFrom(saved, animeId, wanted), translation = null))
+            // A position that came with the choice replaces the resume outright: the row this
+            // device keeps for the episode is where this viewer stopped, not where the friend is.
+            val from = startPositionMs?.takeIf { explicit } ?: resumeFrom(saved, animeId, wanted)
+            controller.play(PlaybackTarget(animeId, wanted, from, translation = null))
         }
     }
 
