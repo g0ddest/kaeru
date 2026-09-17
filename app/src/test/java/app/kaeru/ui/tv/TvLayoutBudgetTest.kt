@@ -44,8 +44,6 @@ class TvLayoutBudgetTest {
         KaeruTvTypography.bodyMedium.lineHeight.value + 2 * KaeruTokens.Space1.value
 
     /** Artwork, the gap under it, the name, and the clearance that keeps the card's corner off it. */
-
-    /** Artwork, the gap under it, the name, and the clearance that keeps the card's corner off it. */
     private val tile =
         KaeruTokens.PosterWidthTv.value / KaeruTokens.PosterAspect +
             KaeruTokens.Space2.value +

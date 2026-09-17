@@ -48,7 +48,11 @@ fun OfflineStrip(
         text,
         style = MaterialTheme.typography.bodyMedium,
         color = KaeruSecondary,
-        maxLines = 1,
+        // One line only where the height is fixed and spoken for. The phone's sentence is the
+        // longer of the two and has always been allowed to wrap onto a second line on a narrow
+        // screen; clipping it to «Нет сети — доступны скачанны…» would lose the half that says
+        // what the viewer can still do.
+        maxLines = if (compact) 1 else Int.MAX_VALUE,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier
             .fillMaxWidth()
