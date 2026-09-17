@@ -75,6 +75,8 @@ fun MobileShell(
     onRouteConsumed: () -> Unit = {},
     together: TogetherUiState = TogetherUiState(),
     onJoinTogether: () -> Unit = {},
+    /** Where the friend is at the moment of the press, so the episode opens there and not at the hello. */
+    joinPositionNow: () -> Long = { 0L },
     onJoinedTogether: () -> Unit = {},
     onDismissTogether: () -> Unit = {},
     nav: NavHostController = rememberNavController(),
@@ -220,10 +222,13 @@ fun MobileShell(
                         state = join,
                         // Two halves of one press: the room is already known to the session, and
                         // this opens the viewer's own copy of the same episode. The stream is
-                        // resolved by the player, exactly as it is for an episode started by hand.
+                        // resolved by the player, exactly as it is for an episode started by hand —
+                        // but at the friend's position, so nothing jumps once they are in step.
                         onJoin = {
                             onJoinTogether()
-                            play(join.animeId, join.episode)
+                            context.startActivity(
+                                PlayerActivity.intent(context, join.animeId, join.episode, joinPositionNow()),
+                            )
                             // The session carries on without this screen, which would otherwise
                             // be waiting underneath the episode it just opened.
                             onJoinedTogether()

@@ -68,6 +68,9 @@ class TogetherViewModelTest {
         var alone = 0
         var hostLink = RoomLink("aG9zdDEyMzQ", ByteArray(16))
 
+        /** Where the friend is by the session's reckoning, or null while it has no idea. */
+        var peerPosition: Long? = null
+
         override val state: StateFlow<SessionState> get() = sessionState
         override val events: SharedFlow<TogetherEvent> get() = bus
         override suspend fun host(name: String): RoomLink {
@@ -91,6 +94,7 @@ class TogetherViewModelTest {
         override suspend fun sendReaction(kind: ReactionKind) { reactions += kind }
         override suspend fun sendVoice(bytes: ByteArray, durationMs: Int) { voices += bytes to durationMs }
         override fun watchAlone() { alone++ }
+        override fun peerPositionNow(): Long? = peerPosition
     }
 
     private class FakeAccounts(nickname: String?) : AccountRepository {
@@ -727,6 +731,24 @@ class TogetherViewModelTest {
         assertEquals("https://poster/42.jpg", join.posterUrl)
         assertEquals(42, join.animeId)
         assertEquals(7, join.episode)
+    }
+
+    @Test
+    fun `the player opens where the friend is now, which the hello no longer says`() = runTest {
+        val vm = viewModel()
+        vm.open(link.toHttps())
+        runCurrent()
+        session.sessionState.value = SessionState.Joining(link, hello("Вася"))
+        runCurrent()
+        assertEquals(10_000L, vm.uiState.value.join?.positionMs)
+
+        // They carried on watching while the invitation sat on screen.
+        session.peerPosition = 25_000
+        assertEquals(25_000L, vm.joinPositionNow())
+
+        // And with nothing reported yet, the hello is all there is.
+        session.peerPosition = null
+        assertEquals(10_000L, vm.joinPositionNow())
     }
 
     @Test

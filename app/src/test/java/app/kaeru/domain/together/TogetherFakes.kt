@@ -135,6 +135,13 @@ class FakePlaybackPort : PlaybackPort {
     /** False stands in for a Chromecast, which has no speed control. */
     override var supportsRate: Boolean = true
 
+    /**
+     * Whether an episode this fake opens is ready the moment it is opened. False stands in for
+     * the seconds a real player spends resolving and reading the manifest, during which the
+     * episode is named but nothing can be seeked.
+     */
+    var opensReady: Boolean = true
+
     override suspend fun play() {
         plays += 1
         _state.update { it.copy(playing = true) }
@@ -171,6 +178,7 @@ class FakePlaybackPort : PlaybackPort {
                 translationId = fallbackTranslationId ?: translationId,
                 positionMs = positionMs,
                 playing = true,
+                ready = opensReady,
             )
         }
     }
@@ -183,9 +191,13 @@ class FakePlaybackPort : PlaybackPort {
         positionMs: Long = 0,
         playing: Boolean = true,
         buffering: Boolean = false,
+        ready: Boolean = true,
     ) {
-        _state.value = PortState(positionMs, playing, buffering, animeId, episode, translationId)
+        _state.value = PortState(positionMs, playing, buffering, animeId, episode, translationId, ready)
     }
+
+    /** The manifest was read: the episode on screen can be seeked now. */
+    fun ready() = _state.update { it.copy(ready = true) }
 
     fun moveTo(positionMs: Long) = _state.update { it.copy(positionMs = positionMs) }
 

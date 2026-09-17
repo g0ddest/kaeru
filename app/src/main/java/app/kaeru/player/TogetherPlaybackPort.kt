@@ -41,6 +41,7 @@ class TogetherPlaybackPort @Inject constructor(
                 // What is playing, and only then what was asked for: a track the source would not
                 // serve is not the one the friend should be told this phone is listening to.
                 translationId = playback.stream?.translation?.id ?: playback.target?.translation?.id,
+                ready = playback.ready,
             )
         }
         .stateIn(scope, SharingStarted.Eagerly, PortState())

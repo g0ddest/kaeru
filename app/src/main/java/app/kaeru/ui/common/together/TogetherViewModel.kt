@@ -227,6 +227,17 @@ class TogetherViewModel @Inject constructor(
     }
 
     /**
+     * Where the friend is at this moment, for the player to open at.
+     *
+     * The hello is stale by however long the invitation sat on screen, and a player opened at it
+     * jumps visibly once the session catches up. The session keeps up with the friend's reports
+     * meanwhile, and its answer is what the episode opens at; the hello's own position stands in
+     * for a friend who has not reported yet.
+     */
+    fun joinPositionNow(): Long =
+        (session.peerPositionNow() ?: _uiState.value.join?.positionMs ?: 0L).coerceAtLeast(0)
+
+    /**
      * The player is open on the room's episode, so the screen that asked about it is done.
      *
      * Not the same thing as [dismissJoin]: the session carries on, and only the screen goes. Left

@@ -80,6 +80,7 @@ fun MobileApp(
                 onRouteConsumed = onRouteConsumed,
                 together = together,
                 onJoinTogether = togetherViewModel::join,
+                joinPositionNow = togetherViewModel::joinPositionNow,
                 onJoinedTogether = togetherViewModel::joinScreenDone,
                 onDismissTogether = togetherViewModel::dismissJoin,
             )

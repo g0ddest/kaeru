@@ -17,6 +17,15 @@ data class PortState(
     val animeId: Int? = null,
     val episode: Int? = null,
     val translationId: Int? = null,
+    /**
+     * The episode named above can be seeked: its stream is resolved and its manifest read.
+     *
+     * Named is not the same as ready. A player says which episode it is opening the moment it is
+     * told to, then spends seconds resolving the stream and reading the manifest, and a seek made
+     * in that window lands on nothing and is written over by the position the episode is then
+     * prepared at. A session waits for this before it moves the picture anywhere.
+     */
+    val ready: Boolean = false,
 )
 
 /**

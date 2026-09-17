@@ -241,8 +241,14 @@ class PlayerViewModel @Inject constructor(
      * that knows what to play. A start still on its way counts as loaded, so the two calls a
      * screen makes on the way in — one from the lifecycle, one from composition — are one
      * playback.
+     *
+     * [startPositionMs] is where the episode opens when the screen knows better than this device's
+     * own row: a friend's position, on joining them. Honoured only with a choice, and only when the
+     * episode is actually started here. A screen that finds the episode already loaded attaches to
+     * it as it is — a seek made from here would be announced to the friend as this viewer's own,
+     * and the session's corrections already move a player that is prepared.
      */
-    fun start(animeId: Int, episode: Int, explicit: Boolean = true) {
+    fun start(animeId: Int, episode: Int, explicit: Boolean = true, startPositionMs: Long? = null) {
         // Said every time, including on the path that starts nothing: it is how playback left on
         // a receiver learns that somebody is looking at it again.
         controller.attachScreen()
@@ -266,7 +272,10 @@ class PlayerViewModel @Inject constructor(
             // row is not: autoplay writes it as it goes. So on a launch that is not a choice the
             // row wins, and the intent is only the answer when there is no row at all.
             val wanted = if (explicit) episode else saved?.episode ?: episode
-            controller.play(PlaybackTarget(animeId, wanted, resumeFrom(saved, animeId, wanted), translation = null))
+            // A position that came with the choice replaces the resume outright: the row this
+            // device keeps for the episode is where this viewer stopped, not where the friend is.
+            val from = startPositionMs?.takeIf { explicit } ?: resumeFrom(saved, animeId, wanted)
+            controller.play(PlaybackTarget(animeId, wanted, from, translation = null))
         }
     }
 

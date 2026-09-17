@@ -141,6 +141,18 @@ class TogetherSession(
     private var pendingEpisode: TogetherMessage.Episode? = null
     private var hello = CompletableDeferred<TogetherMessage.Hello>()
 
+    /** When the friend's hello arrived, on this clock, for carrying its position forward. */
+    private var helloAt = 0L
+
+    /**
+     * Whether the friend's next report should be looked at the moment it arrives.
+     *
+     * Set by a guest on going live, so the first correction happens as soon as there is something
+     * to correct against rather than up to two seconds later on the next tick — the seconds spent
+     * reading the invitation are closed on the first report, not the second.
+     */
+    private var syncOnReport = false
+
     /**
      * Why the channel is ending, as the channel itself said it — set once and never overwritten.
      *
@@ -187,8 +199,14 @@ class TogetherSession(
             // Any episode this side has been told about, because the screen opens the one named in
             // the hello and the friend may have moved on since. Waiting only for where they are
             // now would be waiting for something nobody is going to open.
+            //
+            // And ready, not merely named. The player names the episode the moment it is told to
+            // open it and then spends seconds resolving the stream and reading the manifest; a
+            // seek made inside that window lands on an empty player and is written over by the
+            // position the episode is then prepared at — which is this viewer's own, not the
+            // friend's. The same goes for a pause, which the start itself would undo.
             port.state.first {
-                it.animeId == greeting.animeId &&
+                it.ready && it.animeId == greeting.animeId &&
                     (it.episode == greeting.episode || it.episode == pendingEpisode?.episode)
             }
             // And then, if they did move on, following them there before going live rather than
@@ -198,22 +216,41 @@ class TogetherSession(
                 pendingEpisode = null
                 lastControl = Control(moved.seq, byHost = !asHost)
                 changed(moved)
+                // Opening returns before the manifest is read: the same wait, for the same reason.
+                port.state.first { it.ready && it.animeId == greeting.animeId && it.episode == moved.episode }
             }
             // Where they are now, not where they were when they said hello: a viewer reading the
             // invitation for ten seconds is ten seconds behind by the time they say yes.
-            port.seekTo(peerPositionNow() ?: (greeting.positionMs + offsets.offsetMs))
-            // A friend who is paused is not an invitation to start playing at them.
-            if (!greeting.playing) port.pause()
+            port.seekTo(reportedPositionNow() ?: (greeting.positionMs + offsets.offsetMs))
+            // A friend who is paused is not an invitation to start playing at them — including
+            // one who paused after saying hello: their pause cannot reach a join screen, but
+            // their reports say so all the same.
+            if (!(peer?.playing ?: greeting.playing)) port.pause()
             goLive(greeting.name)
+            // One look at the gap now rather than on the next tick, and another at the friend's
+            // first report: the picture may still be buffering at the seek, and the policy does
+            // not judge a picture that is not moving.
+            correct()
+            syncOnReport = true
             if (moved == null) mentionVoice(greeting.translationId)
         }
     }
 
     /** The friend's position on this device's clock, from their last report, or null if silent. */
-    private fun peerPositionNow(): Long? {
+    private fun reportedPositionNow(): Long? {
         val report = peer ?: return null
         val moved = if (report.playing) clock.millis() - report.sentAt else 0
         return report.positionMs + moved + offsets.offsetMs
+    }
+
+    override fun peerPositionNow(): Long? {
+        reportedPositionNow()?.let { return it }
+        // Nothing reported yet: the hello, carried forward by the time spent reading it. Bounded,
+        // because a position past the end of the episode would open the player on its last frame
+        // and start the countdown to the next one.
+        val greeting = (_state.value as? SessionState.Joining)?.hello ?: return null
+        val since = if (greeting.playing) (clock.millis() - helloAt).coerceIn(0, HELLO_CARRY_MAX_MS) else 0
+        return greeting.positionMs + since
     }
 
     override suspend fun leave() {
@@ -277,6 +314,8 @@ class TogetherSession(
         closingBecause = null
         refused = 0
         hello = CompletableDeferred()
+        helloAt = 0
+        syncOnReport = false
         animeId = port.state.value.animeId ?: 0
         running = scope.launch(failures) {
             try {
@@ -602,7 +641,10 @@ class TogetherSession(
 
     private suspend fun arrived(message: TogetherMessage.Hello) {
         peerName = message.name
-        if (animeId == 0) animeId = message.animeId
+        // A guest is about to open what the friend is watching, whatever this phone had on: the
+        // hello's title is the session's from here, or following the friend to their next episode
+        // would open it under the title this phone was on before.
+        if (animeId == 0 || !asHost) animeId = message.animeId
         rejoin?.cancel()
         rejoin = null
         if (asHost) {
@@ -616,7 +658,10 @@ class TogetherSession(
         }
         // The guest's own join is still suspended on this; everything it does next happens there,
         // where it can be waited on.
-        if (!hello.isCompleted) hello.complete(message)
+        if (!hello.isCompleted) {
+            helloAt = clock.millis()
+            hello.complete(message)
+        }
         if (_state.value is SessionState.Joining) {
             _state.value = SessionState.Joining(
                 link = (_state.value as SessionState.Joining).link,
@@ -646,14 +691,18 @@ class TogetherSession(
         mentionVoice(message.translationId)
     }
 
-    private fun reported(message: TogetherMessage.State) {
+    private suspend fun reported(message: TogetherMessage.State) {
         peer = PeerReport(message.positionMs, message.playing, message.sentAt, clock.millis())
         // The same extrapolation the policy judges by, so the gap on screen is the gap being
         // acted on. Read off the raw report instead, the two differ by the one-way delay less the
         // clock offset — enough, between phones whose clocks are a second apart, to show a steady
         // drift the session can plainly see is not there.
-        drift = port.state.value.positionMs - (peerPositionNow() ?: return)
+        drift = port.state.value.positionMs - (reportedPositionNow() ?: return)
         republishLive()
+        if (syncOnReport) {
+            syncOnReport = false
+            correct()
+        }
     }
 
     /**
@@ -869,6 +918,9 @@ class TogetherSession(
 
         /** Past this, the friend's last report is too old to extrapolate from. */
         const val STALE_STATE_MS = 5_000L
+
+        /** How far a hello is carried forward with no report to go on. A join screen lives half as long. */
+        const val HELLO_CARRY_MAX_MS = 60_000L
 
         /** A clip nobody finished sending is not worth holding on to. */
         const val VOICE_TIMEOUT_MS = 30_000L

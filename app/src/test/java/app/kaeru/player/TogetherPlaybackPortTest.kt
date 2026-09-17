@@ -22,6 +22,7 @@ import app.kaeru.domain.playback.WatchProgress
 import app.kaeru.domain.settings.FakeSettingsStore
 import app.kaeru.domain.together.LocalAction
 import app.kaeru.test.MutableClock
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
@@ -224,6 +225,58 @@ class TogetherPlaybackPortTest {
 
         assertEquals(emptyList<LocalAction>(), seen)
         watching.cancel()
+    }
+
+    @Test
+    fun `the port calls the episode ready only once the engine reports a length`() = runTest(dispatcher) {
+        source.gate = CompletableDeferred()
+        val starting = launch { controller.play(target(episode = 7, startPositionMs = 300_000)) }
+        advanceUntilIdle()
+
+        // Named at once, so a session waiting for it would be satisfied here — with nothing
+        // prepared to seek yet.
+        assertEquals(7, port.state.value.episode)
+        assertFalse(port.state.value.ready)
+
+        source.gate?.complete(Unit)
+        advanceUntilIdle()
+        starting.join()
+        // Prepared, but the manifest is not read: still nothing to seek.
+        assertEquals(1, engine.prepared.size)
+        assertFalse(port.state.value.ready)
+
+        engine.ready(durationMs = 1_440_000)
+        advanceUntilIdle()
+        assertTrue(port.state.value.ready)
+
+        // And a seek made now sticks: the start position the episode was prepared at is the
+        // viewer's own, the picture is where the friend is.
+        port.seekTo(930_000)
+        advanceUntilIdle()
+        assertEquals(930_000L, engine.state.value.positionMs)
+        assertEquals(300_000L, engine.prepared.single().startPositionMs)
+    }
+
+    @Test
+    fun `the episode stops being ready while another voice is being resolved for it`() = runTest(dispatcher) {
+        controller.play(target(episode = 4))
+        engine.ready(durationMs = 1_440_000)
+        advanceUntilIdle()
+        assertTrue(port.state.value.ready)
+
+        source.gate = CompletableDeferred()
+        val changing = launch { controller.changeTranslation(source.studioBanda) }
+        advanceUntilIdle()
+        assertFalse(port.state.value.ready)
+
+        source.gate?.complete(Unit)
+        advanceUntilIdle()
+        changing.join()
+        assertFalse(port.state.value.ready)
+
+        engine.ready(durationMs = 1_440_000)
+        advanceUntilIdle()
+        assertTrue(port.state.value.ready)
     }
 
     @Test

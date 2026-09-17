@@ -16,6 +16,15 @@ data class PlaybackState(
     val quality: Quality? = null,
     val isPlaying: Boolean = false,
     val isBuffering: Boolean = false,
+    /**
+     * The engine has read this episode's manifest, so a seek lands where it is asked to.
+     *
+     * False from the moment a transition that will prepare again begins — a fresh episode, another
+     * voice, another rung, another engine, a retry — until the engine reports a length for what
+     * it was handed. [durationMs] cannot stand in for it: a change of voice keeps the length it
+     * already knows so the timeline does not flash empty.
+     */
+    val ready: Boolean = false,
     val positionMs: Long = 0,
     /** How far ahead of [positionMs] the media is already downloaded. */
     val bufferedPositionMs: Long = 0,

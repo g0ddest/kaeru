@@ -140,4 +140,15 @@ interface TogetherSessionApi {
 
     /** The exit every wait has to have: stop waiting, stop hoping, keep watching. */
     fun watchAlone()
+
+    /**
+     * Where the friend is at this moment, as a position in the episode: their last report carried
+     * forward on this device's clock, or the hello carried forward until they have reported. Null
+     * while there is nobody to ask about.
+     *
+     * For the screen that opens the episode on the friend's behalf: the hello is stale by however
+     * long the invitation sat on screen, and opening at it means a visible jump once the session
+     * catches up.
+     */
+    fun peerPositionNow(): Long?
 }

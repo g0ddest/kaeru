@@ -398,7 +398,7 @@ class DefaultPlaybackController @Inject constructor(
             )
             opening = plan
             flushProgressNow()
-            _state.update { it.copy(isBuffering = true, error = null) }
+            _state.update { it.copy(isBuffering = true, ready = false, error = null) }
             open(plan).onFailure(::fail)
         }.join()
     }
@@ -424,7 +424,7 @@ class DefaultPlaybackController @Inject constructor(
                 // on disk before that happens or the sample lands after it and puts the row back
                 // on the episode being left.
                 flushProgressNow()
-                _state.update { it.copy(isBuffering = true, error = null) }
+                _state.update { it.copy(isBuffering = true, ready = false, error = null) }
                 // The plan carries whatever it was: a move to the next episode that fails is
                 // still a passing message, not the error screen over an episode that played.
                 open(plan).onFailure { failure ->
@@ -437,7 +437,7 @@ class DefaultPlaybackController @Inject constructor(
             val at = current.positionMs
             flushProgressNow()
             lastReportedMs = at
-            _state.update { it.copy(quality = quality, isBuffering = true, error = null) }
+            _state.update { it.copy(quality = quality, isBuffering = true, ready = false, error = null) }
             // No metadata: the session is already showing this episode, and a quality swap is
             // not a new thing to announce.
             engine.prepare(url, headers, at)
@@ -490,6 +490,7 @@ class DefaultPlaybackController @Inject constructor(
                 // Nothing loaded is not "loading": a session that starts before the first
                 // episode only decides where the next one will play.
                 isBuffering = target != null || unfinished != null,
+                ready = false,
                 positionMs = carryPositionMs,
                 error = null,
             )
@@ -563,7 +564,7 @@ class DefaultPlaybackController @Inject constructor(
             )
             opening = plan
             flushProgressNow()
-            _state.update { it.copy(isBuffering = true, error = null) }
+            _state.update { it.copy(isBuffering = true, ready = false, error = null) }
             open(plan).onFailure(::fail)
         }.join()
     }
@@ -830,6 +831,9 @@ class DefaultPlaybackController @Inject constructor(
         _state.value = current.copy(
             isPlaying = engineState.isPlaying,
             isBuffering = engineState.isBuffering,
+            // Once known, known until the next prepare: a report with no length in it mid-episode
+            // is the engine between two words, not an episode that has become unseekable.
+            ready = current.ready || lengthKnown,
             positionMs = position,
             bufferedPositionMs = buffered,
             durationMs = duration,
@@ -866,7 +870,7 @@ class DefaultPlaybackController @Inject constructor(
         val at = _state.value.positionMs
         val quality = _state.value.quality
         transition {
-            _state.update { it.copy(isBuffering = true, error = null) }
+            _state.update { it.copy(isBuffering = true, ready = false, error = null) }
             // Not a local action: this is the same episode opened again behind the viewer's back,
             // and a friend watching along has no business being switched to what they are already
             // watching. Same reason `retry()` says so.

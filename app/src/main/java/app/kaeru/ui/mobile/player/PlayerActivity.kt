@@ -308,7 +308,9 @@ class PlayerActivity : FragmentActivity() {
             if (!viewModel.attachLive()) finish()
             return
         }
-        viewModel.start(current.animeId, current.episode, explicit)
+        // The position only ever rides on a choice: the same intent comes back out of recents and
+        // through a rebuild, hours later, and by then it names where a friend was, not is.
+        viewModel.start(current.animeId, current.episode, explicit, current.startPositionMs.takeIf { explicit })
     }
 
     /** Backgrounding is not stopping: the position is written down, the video carries on. */
@@ -461,10 +463,15 @@ class PlayerActivity : FragmentActivity() {
         @SuppressLint("InlinedApi")
         private const val POST_NOTIFICATIONS = Manifest.permission.POST_NOTIFICATIONS
 
-        fun intent(context: Context, animeId: Int, episode: Int): Intent =
+        /**
+         * @param startPositionMs where to open the episode, instead of where this device left it.
+         *   Joining a friend names theirs; everything else leaves it out and resumes as usual.
+         */
+        fun intent(context: Context, animeId: Int, episode: Int, startPositionMs: Long? = null): Intent =
             Intent(context, PlayerActivity::class.java)
                 .putExtra(EXTRA_ANIME_ID, animeId)
                 .putExtra(EXTRA_EPISODE, episode)
+                .apply { if (startPositionMs != null) putExtra(EXTRA_POSITION, startPositionMs) }
     }
 }
 
@@ -478,6 +485,12 @@ internal data class Launch(
     val animeId: Int = 0,
     val episode: Int = 1,
     val explicit: Boolean = false,
+    /**
+     * Where to open the episode, when the screen that opened it knew better than this device's
+     * own row — a friend's position, on joining them. Null, not zero, when nothing was said: zero
+     * is a position too, and would silence the episode's own resume.
+     */
+    val startPositionMs: Long? = null,
     /**
      * Which launch this is, counted from one.
      *
@@ -494,11 +507,18 @@ internal fun readLaunch(intent: Intent?, explicit: Boolean, seq: Int) = Launch(
     animeId = intent?.getIntExtra(EXTRA_ANIME_ID, 0) ?: 0,
     episode = intent?.getIntExtra(EXTRA_EPISODE, 1) ?: 1,
     explicit = explicit,
+    // Only a choice carries a position. The same intent comes back out of recents and through a
+    // rebuild, hours later, still naming where a friend was when the invitation was pressed.
+    startPositionMs = intent
+        ?.takeIf { explicit && it.hasExtra(EXTRA_POSITION) }
+        ?.getLongExtra(EXTRA_POSITION, -1L)
+        ?.takeIf { it >= 0 },
     seq = seq,
 )
 
 private const val EXTRA_ANIME_ID = "animeId"
 private const val EXTRA_EPISODE = "episode"
+private const val EXTRA_POSITION = "positionMs"
 
 /**
  * Whether a launch of the player is the viewer asking for an episode, or the same session coming
