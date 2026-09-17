@@ -2,13 +2,10 @@ package app.kaeru.ui.mobile.player
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.app.PendingIntent
 import android.app.PictureInPictureParams
 import android.app.RemoteAction
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Rect
 import android.graphics.drawable.Icon
@@ -124,17 +121,16 @@ class PlayerActivity : FragmentActivity() {
     }
 
     /**
-     * The two controls the floating window has room for. They arrive as broadcasts because that
-     * is the only thing a [RemoteAction] can carry; the filter is registered for this app alone,
-     * so nothing outside it can press them.
+     * The two controls the floating window has room for, and the broadcast that carries a press
+     * back here — the only thing a [RemoteAction] can be made of. See [WindowControls], where the
+     * registration and the intents that Android 14 is particular about are tested.
      */
-    private val windowControls = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.getIntExtra(EXTRA_WINDOW_CONTROL, 0)) {
-                CONTROL_PLAY_PAUSE -> viewModel.togglePlayPause()
-                CONTROL_NEXT -> viewModel.playNext()
-            }
-        }
+    private val windowControls by lazy {
+        WindowControls(
+            context = this,
+            onPlayPause = { viewModel.togglePlayPause() },
+            onNext = { viewModel.playNext() },
+        )
     }
 
     /**
@@ -162,12 +158,7 @@ class PlayerActivity : FragmentActivity() {
         // first is the one that starts listening for receivers.
         castSessions.start()
         addOnPictureInPictureModeChangedListener(windowMode)
-        ContextCompat.registerReceiver(
-            this,
-            windowControls,
-            IntentFilter(ACTION_WINDOW_CONTROL),
-            ContextCompat.RECEIVER_NOT_EXPORTED,
-        )
+        windowControls.register()
         setContent {
             KaeruTheme {
                 val castAvailable by cast.isAvailable.collectAsStateWithLifecycle()
@@ -337,7 +328,7 @@ class PlayerActivity : FragmentActivity() {
     @OptIn(UnstableApi::class)
     override fun onDestroy() {
         removeOnPictureInPictureModeChangedListener(windowMode)
-        runCatching { unregisterReceiver(windowControls) }
+        windowControls.unregister()
         if (isFinishing) {
             // The shared viewing goes with the player, and only when the player is going for good:
             // a rotation, a trip to the background and a floating window all leave it running.
@@ -392,26 +383,16 @@ class PlayerActivity : FragmentActivity() {
      */
     private fun windowActions(plan: PipPlan): List<RemoteAction> {
         val playPause = if (plan.playing) {
-            windowAction(R.drawable.ic_pip_pause, "Пауза", CONTROL_PLAY_PAUSE)
+            windowAction(R.drawable.ic_pip_pause, "Пауза", WindowControls.CONTROL_PLAY_PAUSE)
         } else {
-            windowAction(R.drawable.ic_pip_play, "Продолжить", CONTROL_PLAY_PAUSE)
+            windowAction(R.drawable.ic_pip_play, "Продолжить", WindowControls.CONTROL_PLAY_PAUSE)
         }
-        val next = windowAction(R.drawable.ic_pip_next, "Следующая серия", CONTROL_NEXT)
+        val next = windowAction(R.drawable.ic_pip_next, "Следующая серия", WindowControls.CONTROL_NEXT)
         return if (plan.showNext) listOf(playPause, next) else listOf(playPause)
     }
 
-    private fun windowAction(icon: Int, label: String, control: Int): RemoteAction {
-        val intent = Intent(ACTION_WINDOW_CONTROL)
-            .setPackage(packageName)
-            .putExtra(EXTRA_WINDOW_CONTROL, control)
-        val pending = PendingIntent.getBroadcast(
-            this,
-            control,
-            intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        return RemoteAction(Icon.createWithResource(this, icon), label, label, pending)
-    }
+    private fun windowAction(icon: Int, label: String, control: Int): RemoteAction =
+        RemoteAction(Icon.createWithResource(this, icon), label, label, windowControls.action(control))
 
     private fun read(intent: Intent?, explicit: Boolean) = readLaunch(intent, explicit, ++launches)
 
@@ -453,11 +434,6 @@ class PlayerActivity : FragmentActivity() {
     }
 
     companion object {
-        /** Registered for this app only, so nothing outside it can drive the floating window. */
-        private const val ACTION_WINDOW_CONTROL = "app.kaeru.player.WINDOW_CONTROL"
-        private const val EXTRA_WINDOW_CONTROL = "control"
-        private const val CONTROL_PLAY_PAUSE = 1
-        private const val CONTROL_NEXT = 2
         /**
          * Inlined on purpose: the name is a plain string that older platforms simply do not
          * know, and nothing ever asks for it there — [shouldAskForNotifications] is what keeps

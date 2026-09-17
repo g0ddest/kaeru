@@ -104,6 +104,26 @@ fun PlayerScreen(
         // is the picture blinking on the way into the window and again on the way out.
         if (!state.isCasting && player != null) ContentFrame(player, Modifier.fillMaxSize())
 
+        // A clip plays once, straight away — and above the branch below, because a shared viewing
+        // carries on in the floating window and a friend talking has to come out of the speaker
+        // there too. Left inside it, the clip waited for the window to be expanded, the receipt
+        // that ends the duck never arrived, and the episode stayed quiet for as long as the
+        // window was open.
+        //
+        // Turning the episode down under the clip is not this screen's business: the view model
+        // asks the player itself, which is the only thing that knows the volume to go back to —
+        // and the only thing that can keep it down while the microphone is still held after the
+        // clip ends.
+        val clip = together.state.playing
+        LaunchedEffect(clip) {
+            val playing = clip ?: return@LaunchedEffect
+            together.player?.play(playing.id, playing.bytes, together.onClipPlayed)
+                ?: together.onClipPlayed()
+        }
+        DisposableEffect(together.player) {
+            onDispose { together.player?.stop() }
+        }
+
         // A floating window is a few centimetres of picture with the system's own two buttons
         // under it, and everything below would cover the episode rather than explain it. The
         // state behind it is remembered inside this branch, so it goes with the branch: leaving
@@ -176,19 +196,6 @@ fun PlayerScreen(
             // screen reader running the corner keeps what it is given until it is dismissed.
             val talkback = touchExploration()
             LaunchedEffect(talkback) { together.onAutoHide(!talkback) }
-            // A clip plays once, straight away. Turning the episode down under it is not this
-            // screen's business: the view model asks the player itself, which is the only thing
-            // that knows the volume to go back to — and the only thing that can keep it down
-            // while the microphone is still held after the clip ends.
-            val clip = together.state.playing
-            LaunchedEffect(clip) {
-                val playing = clip ?: return@LaunchedEffect
-                together.player?.play(playing.id, playing.bytes, together.onClipPlayed)
-                    ?: together.onClipPlayed()
-            }
-            DisposableEffect(together.player) {
-                onDispose { together.player?.stop() }
-            }
 
             if (state.isCasting) {
                 // Nothing is decoded here while a receiver has the picture, so there is no surface
