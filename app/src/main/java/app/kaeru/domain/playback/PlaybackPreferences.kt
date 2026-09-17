@@ -4,7 +4,7 @@ import app.kaeru.domain.model.Quality
 import kotlinx.coroutines.flow.Flow
 
 /**
- * The settings playback obeys, as the playback code sees them: four flows and nothing about
+ * The settings playback obeys, as the playback code sees them: five flows and nothing about
  * where they are stored.
  *
  * It exists so that the use-cases, the controller and the screens depend on a domain type
@@ -16,6 +16,15 @@ interface PlaybackPreferences {
 
     /** Whether finishing an episode starts the next one by itself. */
     val autoplayNext: Flow<Boolean>
+
+    /**
+     * Whether leaving the app with an episode playing folds it into a floating window.
+     *
+     * On unless the viewer turns it off. Off means the player never enters a window on its own —
+     * neither through the system's automatic entry nor on the leave hint — while the button that
+     * asks for one by hand keeps working.
+     */
+    val pipOnLeave: Flow<Boolean>
 
     /** Quality to start playback at, or null for the best the source offers. */
     val defaultQuality: Flow<Quality?>

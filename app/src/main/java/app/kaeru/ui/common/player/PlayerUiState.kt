@@ -77,6 +77,11 @@ data class PlayerUiState(
     val failedReadingDownload: Boolean = false,
     /** Something worth one line and no decision, shown and then forgotten. */
     val toast: String? = null,
+    /**
+     * Whether leaving the app should fold a playing picture into a floating window. The viewer's
+     * setting; on by default, and the one thing besides playback itself that decides it.
+     */
+    val pipOnLeave: Boolean = true,
 ) {
     /** Nothing to show yet: the first frame has not arrived and nothing has gone wrong. */
     val isLoading: Boolean get() = isBuffering && durationMs == 0L && errorMessage == null

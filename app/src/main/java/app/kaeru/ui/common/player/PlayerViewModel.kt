@@ -93,13 +93,15 @@ class PlayerViewModel @Inject constructor(
      * viewer settled on, whether there is a network at all, and what of this title is already on
      * the device.
      *
-     * Gathered into one value because none of the four depends on which episode is playing, and
+     * Gathered into one value because none of the five depends on which episode is playing, and
      * because `combine` is typed up to five flows — the episode itself already spends four of them.
      */
     private data class Surroundings(
         val receiverName: String? = null,
         val settledQuality: Quality? = null,
         val offline: Boolean = false,
+        /** Whether leaving the app folds a playing picture into a window. The viewer's setting. */
+        val pipOnLeave: Boolean = true,
         /**
          * The title [downloads] are about. Carried rather than read off the screen's own field,
          * because the controller is process-wide: between a screen naming its title and playback
@@ -154,8 +156,9 @@ class PlayerViewModel @Inject constructor(
         animeId.flatMapLatest { id ->
             if (id == null) flowOf(null to emptyList()) else downloads.observe(id).map { id to it }
         },
-    ) { receiverName, settledQuality, online, downloaded ->
-        Surroundings(receiverName, settledQuality, !online, downloaded.first, downloaded.second)
+        prefs.pipOnLeave,
+    ) { receiverName, settledQuality, online, downloaded, pipOnLeave ->
+        Surroundings(receiverName, settledQuality, !online, pipOnLeave, downloaded.first, downloaded.second)
     }
 
     /** The player a video surface attaches to, or null while there is none to attach to. */
@@ -204,6 +207,7 @@ class PlayerViewModel @Inject constructor(
                 ?.takeIf { it.animeId == around.animeId }
                 ?.let { live -> around.downloads.firstOrNull { it.episode == live.episode } },
             toast = screen.toast,
+            pipOnLeave = around.pipOnLeave,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, PlayerUiState())
 

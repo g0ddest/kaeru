@@ -168,6 +168,25 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `turning the floating window off is written and shown at once`() = runTest(main.dispatcher) {
+        val store = FakeSettingsStore(echo = false)
+        val vm = viewModel(store)
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.pipOnLeave)
+
+        vm.setPipOnLeave(false)
+        advanceUntilIdle()
+
+        assertFalse(vm.uiState.value.pipOnLeave)
+        assertEquals(listOf("pip=false"), store.writes)
+
+        // Saying it again is not a second write.
+        vm.setPipOnLeave(false)
+        advanceUntilIdle()
+        assertEquals(listOf("pip=false"), store.writes)
+    }
+
+    @Test
     fun `a setting shows its new value before the store says so`() = runTest(main.dispatcher) {
         val store = FakeSettingsStore(quality = Quality.P720, echo = false)
         val vm = viewModel(store)

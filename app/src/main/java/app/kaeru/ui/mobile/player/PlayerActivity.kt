@@ -214,6 +214,9 @@ class PlayerActivity : FragmentActivity() {
                     state.nextEpisodeAvailable,
                     state.errorMessage,
                     state.episode,
+                    state.sheet,
+                    state.completedPrompt,
+                    state.pipOnLeave,
                     videoSize,
                 ) {
                     describeWindow()

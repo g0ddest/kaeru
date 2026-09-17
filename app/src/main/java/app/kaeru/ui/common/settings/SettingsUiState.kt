@@ -20,6 +20,8 @@ data class SettingsUiState(
     val accountLoading: Boolean = true,
     val account: Account? = null,
     val autoplayNext: Boolean = true,
+    /** Whether leaving the app with an episode playing folds it into a floating window. */
+    val pipOnLeave: Boolean = true,
     /** null is «Авто»: whatever the source offers best. */
     val defaultQuality: Quality? = null,
     val watchedThreshold: Float = 0.9f,

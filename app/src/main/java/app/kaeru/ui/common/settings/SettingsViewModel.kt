@@ -50,6 +50,7 @@ class SettingsViewModel @Inject constructor(
     /** What the viewer has chosen on this screen, ahead of the store having said it back. */
     private data class Overrides(
         val autoplay: Boolean? = null,
+        val pipOnLeave: Boolean? = null,
         val quality: Quality? = null,
         /** Quality's own null means «Авто», so whether an override exists is a separate fact. */
         val qualityChosen: Boolean = false,
@@ -58,13 +59,14 @@ class SettingsViewModel @Inject constructor(
         val token: String? = null,
     )
 
-    /** The five settings, read together so one recomposition carries all of them. */
+    /** The six settings, read together so one recomposition carries all of them. */
     private data class Stored(
         val studios: List<String>,
         val autoplay: Boolean,
         val quality: Quality?,
         val threshold: Float,
         val token: String?,
+        val pipOnLeave: Boolean = true,
     )
 
     private data class AccountState(val loaded: Boolean, val account: Account?)
@@ -77,13 +79,17 @@ class SettingsViewModel @Inject constructor(
     /** The question currently out, so a second press of «Повторить» does not start a second one. */
     private var asked: Job? = null
 
+    // Two steps, because `combine` is typed up to five flows and there are six.
     private val stored = combine(
-        settings.preferredTranslations,
-        settings.autoplayNext,
-        settings.defaultQuality,
-        settings.watchedThreshold,
-        settings.kodikToken,
-    ) { studios, autoplay, quality, threshold, token -> Stored(studios, autoplay, quality, threshold, token) }
+        combine(
+            settings.preferredTranslations,
+            settings.autoplayNext,
+            settings.defaultQuality,
+            settings.watchedThreshold,
+            settings.kodikToken,
+        ) { studios, autoplay, quality, threshold, token -> Stored(studios, autoplay, quality, threshold, token) },
+        settings.pipOnLeave,
+    ) { playback, pipOnLeave -> playback.copy(pipOnLeave = pipOnLeave) }
 
     private val accountState = accounts.account
         .map { AccountState(loaded = true, account = it) }
@@ -98,6 +104,7 @@ class SettingsViewModel @Inject constructor(
                 accountLoading = !account.loaded || (account.account == null && asking),
                 account = account.account,
                 autoplayNext = chosen.autoplay ?: settings.autoplay,
+                pipOnLeave = chosen.pipOnLeave ?: settings.pipOnLeave,
                 defaultQuality = if (chosen.qualityChosen) chosen.quality else settings.quality,
                 watchedThreshold = chosen.threshold ?: settings.threshold,
                 studios = TranslationPriorityEditor.shown(studios, TranslationRanker.DEFAULT_STUDIOS),
@@ -134,6 +141,12 @@ class SettingsViewModel @Inject constructor(
         if (enabled == uiState.value.autoplayNext) return
         overrides.update { it.copy(autoplay = enabled) }
         viewModelScope.launch { settings.setAutoplayNext(enabled) }
+    }
+
+    fun setPipOnLeave(enabled: Boolean) {
+        if (enabled == uiState.value.pipOnLeave) return
+        overrides.update { it.copy(pipOnLeave = enabled) }
+        viewModelScope.launch { settings.setPipOnLeave(enabled) }
     }
 
     fun setDefaultQuality(quality: Quality?) {

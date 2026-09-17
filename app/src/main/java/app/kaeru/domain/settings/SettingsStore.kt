@@ -40,6 +40,11 @@ interface SettingsStore {
 
     suspend fun setAutoplayNext(enabled: Boolean)
 
+    /** Whether leaving the app with an episode playing folds it into a floating window. */
+    val pipOnLeave: Flow<Boolean>
+
+    suspend fun setPipOnLeave(enabled: Boolean)
+
     /** Quality to start playback at, or null for the best the source offers. */
     val defaultQuality: Flow<Quality?>
 

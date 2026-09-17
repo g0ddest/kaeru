@@ -1,5 +1,6 @@
 package app.kaeru.ui.mobile.player
 
+import app.kaeru.ui.common.player.PlayerSheet
 import app.kaeru.ui.common.player.PlayerUiState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -97,6 +98,32 @@ class PictureInPictureTest {
     @Test
     fun `a paused episode may be put in a window but never goes on its own`() {
         val plan = pipPlan(playing.copy(isPlaying = false))
+
+        assertTrue(plan.allowed)
+        assertFalse(plan.autoEnter)
+    }
+
+    @Test
+    fun `with the switch off, a playing episode may be put in a window but never goes on its own`() {
+        val plan = pipPlan(playing.copy(pipOnLeave = false))
+
+        // The button in the top bar still works; only leaving the app stops folding it.
+        assertTrue(plan.allowed)
+        assertFalse(plan.autoEnter)
+        assertTrue(plan.playing)
+    }
+
+    @Test
+    fun `a chooser open over the picture keeps it from folding on its own`() {
+        val plan = pipPlan(playing.copy(sheet = PlayerSheet.QUALITY))
+
+        assertTrue(plan.allowed)
+        assertFalse(plan.autoEnter)
+    }
+
+    @Test
+    fun `a question over the picture keeps it from folding on its own`() {
+        val plan = pipPlan(playing.copy(completedPrompt = true))
 
         assertTrue(plan.allowed)
         assertFalse(plan.autoEnter)

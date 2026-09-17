@@ -186,6 +186,7 @@ fun MobileShell(
                     onBack = { nav.popBackStack() },
                     onSignOut = vm::signOut,
                     onAutoplay = vm::setAutoplayNext,
+                    onPipOnLeave = vm::setPipOnLeave,
                     onQuality = vm::setDefaultQuality,
                     onThreshold = vm::setWatchedThreshold,
                     onStudioUp = vm::moveStudioUp,

@@ -12,9 +12,11 @@ class FakePlaybackPreferences(
     autoplay: Boolean = true,
     quality: Quality? = null,
     preferred: List<String> = emptyList(),
+    pip: Boolean = true,
 ) : PlaybackPreferences {
     override val watchedThreshold = MutableStateFlow(threshold)
     override val autoplayNext = MutableStateFlow(autoplay)
+    override val pipOnLeave = MutableStateFlow(pip)
     override val defaultQuality = MutableStateFlow(quality)
     override val preferredTranslations = MutableStateFlow(preferred)
 

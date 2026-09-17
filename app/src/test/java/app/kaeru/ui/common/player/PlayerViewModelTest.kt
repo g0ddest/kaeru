@@ -901,6 +901,18 @@ class PlayerViewModelTest {
     }
 
     @Test
+    fun `the screen knows whether leaving the app should fold it into a window`() = runTest(main.dispatcher) {
+        viewModel.start(animeId = 100, episode = 4)
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.pipOnLeave)
+
+        prefs.pipOnLeave.value = false
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.pipOnLeave)
+    }
+
+    @Test
     fun `a screen casting says so, so it can draw a remote control instead of a player`() = runTest(main.dispatcher) {
         viewModel.start(animeId = 100, episode = 4)
         advanceUntilIdle()
