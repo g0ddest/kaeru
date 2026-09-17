@@ -97,8 +97,22 @@ private val tabs = listOf(
  * the app — `tvBack` is where that order is written down and tested.
  */
 @Composable
-fun TvShell(onPlay: (animeId: Int, episode: Int) -> Unit) {
+/**
+ * @param openTitle a title the player asked for on its way out, opened over whatever the shell
+ *   was showing and then reported back through [onTitleOpened], so a restored shell does not
+ *   open it twice.
+ */
+fun TvShell(
+    onPlay: (animeId: Int, episode: Int) -> Unit,
+    openTitle: Int? = null,
+    onTitleOpened: () -> Unit = {},
+) {
     var route by rememberSaveable(stateSaver = TvRouteSaver) { mutableStateOf(TvRoute()) }
+    LaunchedEffect(openTitle) {
+        if (openTitle == null) return@LaunchedEffect
+        route = route.openTitle(openTitle)
+        onTitleOpened()
+    }
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val home = rememberTvDestinationState()
     val library = rememberTvDestinationState()

@@ -1,5 +1,6 @@
 package app.kaeru.ui.common.player
 
+import app.kaeru.domain.error.EpisodeUnavailableReason
 
 /** Said when an episode that is on the device will not play and the network is not the problem. */
 private const val BROKEN_DOWNLOAD =
@@ -8,10 +9,11 @@ private const val BROKEN_DOWNLOAD =
 /**
  * The second way forward on the surface over a failed video. «Повторить» is always the first.
  *
- * Two, because a failure has two different shapes here and each has its own escape. A stream that
- * will not load is a Kodik problem, and another voice is a different stream; a downloaded file that
- * will not decode is a problem with this device's copy, and the way past it is to stop using that
- * copy.
+ * Three, because a failure has three different shapes here and each has its own escape. A stream
+ * that will not load is a Kodik problem, and another voice is a different stream; a downloaded
+ * file that will not decode is a problem with this device's copy, and the way past it is to stop
+ * using that copy; an episode that no voice has yet is nothing the player can fix, and the way
+ * past it is the season list — the picker would open on a list with nothing in it to pick.
  */
 enum class PlayerRecovery {
     /** Another voice from the source, for a stream that will not load. */
@@ -19,6 +21,9 @@ enum class PlayerRecovery {
 
     /** Take the broken copy away and play from the source instead. */
     REMOVE_DOWNLOAD,
+
+    /** Back to the season, for an episode that no voice carries yet. */
+    BACK_TO_EPISODES,
 }
 
 /** What the surface over a failed video says, and what it offers besides trying again. */
@@ -40,14 +45,19 @@ data class PlayerFailure(val message: String, val recovery: PlayerRecovery)
  * belongs to the source with the file sitting there untouched. Offering to delete it — which is
  * what this branch offers — would then destroy a working download over somebody else's fault.
  *
+ * An episode nobody has is keyed on the reason and on nothing else — not on the list of voices,
+ * which on the phone is empty at failure time and only fetched on demand. The reason is already
+ * the proof: it is only ever said after every voice was asked.
+ *
  * The message for everything else is the one the failure already carried: it comes from
  * `toUserMessage()`, which names the cause and the next step, and there is nothing to add to it.
  */
 fun playerFailure(state: PlayerUiState): PlayerFailure? {
     val message = state.errorMessage ?: return null
-    return if (!state.offline && state.failedReadingDownload) {
-        PlayerFailure(BROKEN_DOWNLOAD, PlayerRecovery.REMOVE_DOWNLOAD)
-    } else {
-        PlayerFailure(message, PlayerRecovery.CHANGE_TRANSLATION)
+    return when {
+        !state.offline && state.failedReadingDownload -> PlayerFailure(BROKEN_DOWNLOAD, PlayerRecovery.REMOVE_DOWNLOAD)
+        state.episodeUnavailable == EpisodeUnavailableReason.NOT_IN_ANY_TRANSLATION ->
+            PlayerFailure(message, PlayerRecovery.BACK_TO_EPISODES)
+        else -> PlayerFailure(message, PlayerRecovery.CHANGE_TRANSLATION)
     }
 }

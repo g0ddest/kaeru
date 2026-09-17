@@ -105,8 +105,15 @@ class ResolveEpisodeStream(
      *   list is the app denying what the viewer can plainly hear; the track that is playing is
      *   the honest answer to «which voice is this», so it stands in for the list it is missing
      *   from. It is never added to a list the source did answer with.
+     * @param episode the episode the chooser is open over, so each track can say whether it has
+     *   it — out of what is already known, never by asking. Null for a chooser about the anime
+     *   rather than one episode of it, where the question does not arise.
      */
-    suspend fun translations(animeId: Int, playing: Translation? = null): Result<List<RankedTranslation>> {
+    suspend fun translations(
+        animeId: Int,
+        playing: Translation? = null,
+        episode: Int? = null,
+    ): Result<List<RankedTranslation>> {
         val rows = watchStates.observeAll().first()
         val remembered = rows.rowFor(animeId)
         val listed = source.translations(animeId).getOrElse { return Result.failure(it) }
@@ -120,6 +127,7 @@ class ResolveEpisodeStream(
                 RankedTranslation(
                     translation = track,
                     oftenChosen = rememberedId == null && TranslationUsage.oftenChosen(usage, track.id),
+                    hasEpisode = episode?.let { track.knownToHave(animeId, it) },
                 )
             },
         )

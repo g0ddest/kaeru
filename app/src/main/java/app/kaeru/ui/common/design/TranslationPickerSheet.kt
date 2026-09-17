@@ -63,6 +63,10 @@ private const val SKELETON_ROWS = 3
  * @param loading the list is still being read; the rows are skeletons.
  * @param errorMessage why it could not be read, shown inside the sheet rather than over the screen.
  * @param enabled false while the last pick is still being written, so the same row cannot be sent twice.
+ * @param episode the episode the sheet is open over, if one is. A track known not to carry it is
+ *   drawn but cannot be picked, and says «нет серии N» where its length would go: picking it
+ *   would only fail, and a sheet that offers what cannot play is the dead end this exists to
+ *   close. Null on the title screen, which chooses for the anime rather than for one episode.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,6 +79,7 @@ fun TranslationPickerSheet(
     errorMessage: String? = null,
     enabled: Boolean = true,
     onRetry: () -> Unit = {},
+    episode: Int? = null,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -96,12 +101,14 @@ fun TranslationPickerSheet(
             )
             else -> LazyColumn(Modifier.heightIn(max = ListHeight)) {
                 items(translations, key = { it.translation.id }) { ranked ->
+                    val lacksEpisode = episode != null && ranked.hasEpisode == false
                     TrackRow(
                         ranked.translation,
                         selected = ranked.translation.id == currentId,
                         oftenChosen = ranked.oftenChosen,
-                        enabled = enabled,
+                        enabled = enabled && !lacksEpisode,
                         onClick = { onPick(ranked.translation) },
+                        missingEpisode = episode.takeIf { lacksEpisode },
                     )
                 }
             }
@@ -120,6 +127,7 @@ private fun LoadingTracks() = SkeletonGroup {
     }
 }
 
+/** @param missingEpisode the episode this track is known not to carry, which is then the whole caption. */
 @Composable
 private fun TrackRow(
     track: Translation,
@@ -127,6 +135,7 @@ private fun TrackRow(
     oftenChosen: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
+    missingEpisode: Int? = null,
 ) {
     Row(
         Modifier
@@ -156,7 +165,7 @@ private fun TrackRow(
                 if (oftenChosen) OftenChosenChip()
             }
             Text(
-                caption(track),
+                missingEpisode?.let { "нет серии $it" } ?: caption(track),
                 style = MaterialTheme.typography.labelMedium,
                 color = KaeruSecondary,
                 maxLines = 1,

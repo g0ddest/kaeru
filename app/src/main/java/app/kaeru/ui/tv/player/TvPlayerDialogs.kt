@@ -35,6 +35,8 @@ import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.design.PrimaryButton
 import app.kaeru.ui.common.design.ProgressStrip
 import app.kaeru.ui.common.design.SecondaryButton
+import app.kaeru.ui.common.player.PlayerFailure
+import app.kaeru.ui.common.player.PlayerRecovery
 import app.kaeru.ui.common.theme.KaeruBackground
 import app.kaeru.ui.common.theme.KaeruSecondary
 import app.kaeru.ui.common.theme.KaeruSurface
@@ -60,6 +62,7 @@ private const val COMPLETE_TITLE = "Перевести в завершённые
 private const val COMPLETE_YES = "Перевести"
 private const val COMPLETE_LATER = "Пока нет"
 private const val RETRY_TRACK = "Сменить озвучку"
+private const val BACK_TO_EPISODES = "К списку серий"
 private const val REWIND_SPOKEN = "Назад"
 private const val FORWARD_SPOKEN = "Вперёд"
 
@@ -153,14 +156,22 @@ fun TvCompletedDialog(title: String, onConfirm: () -> Unit, onDismiss: () -> Uni
  * Nothing is playing and nothing will until the viewer chooses one of two ways forward.
  *
  * The same state the rest of the app draws when something fails — the cause, and a button per way
- * out — over a scrim heavy enough to read it against a frozen frame. The second way out is the
- * voices strip, because a source that will not play one track very often plays another.
+ * out — over a scrim heavy enough to read it against a frozen frame. Which second way out is the
+ * [PlayerRecovery]'s call, made once for both screens: the voices strip, because a source that
+ * will not play one track very often plays another; or the title, for an episode no track has.
+ * A recovery the television cannot draw — deleting a download it never made — leaves «Повторить»
+ * on its own.
  *
  * The focus request lands on the group rather than on a button, so «Повторить» takes it without
  * this file reaching into the shared component for a requester it has no business holding.
  */
 @Composable
-fun TvPlaybackFailure(message: String, onRetry: () -> Unit, onChangeTranslation: () -> Unit) {
+fun TvPlaybackFailure(
+    failure: PlayerFailure,
+    onRetry: () -> Unit,
+    onChangeTranslation: () -> Unit,
+    onBackToEpisodes: () -> Unit,
+) {
     val buttons = remember { FocusRequester() }
     LaunchedEffect(Unit) { buttons.requestFocusOrLog("кнопки экрана ошибки") }
     Box(
@@ -168,11 +179,19 @@ fun TvPlaybackFailure(message: String, onRetry: () -> Unit, onChangeTranslation:
         contentAlignment = Alignment.Center,
     ) {
         ErrorState(
-            message = message,
+            message = failure.message,
             onRetry = onRetry,
             modifier = Modifier.focusRequester(buttons).focusGroup(),
-            secondaryLabel = RETRY_TRACK,
-            onSecondary = onChangeTranslation,
+            secondaryLabel = when (failure.recovery) {
+                PlayerRecovery.CHANGE_TRANSLATION -> RETRY_TRACK
+                PlayerRecovery.BACK_TO_EPISODES -> BACK_TO_EPISODES
+                PlayerRecovery.REMOVE_DOWNLOAD -> null
+            },
+            onSecondary = when (failure.recovery) {
+                PlayerRecovery.CHANGE_TRANSLATION -> onChangeTranslation
+                PlayerRecovery.BACK_TO_EPISODES -> onBackToEpisodes
+                PlayerRecovery.REMOVE_DOWNLOAD -> null
+            },
         )
     }
 }
@@ -252,9 +271,10 @@ private fun TvWaitingCardPreview() {
 private fun TvPlaybackFailurePreview() {
     KaeruTvTheme {
         TvPlaybackFailure(
-            "Нет соединения. Проверьте интернет",
+            PlayerFailure("Нет соединения. Проверьте интернет", PlayerRecovery.CHANGE_TRANSLATION),
             onRetry = {},
             onChangeTranslation = {},
+            onBackToEpisodes = {},
         )
     }
 }

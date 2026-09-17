@@ -8,6 +8,7 @@ import app.kaeru.domain.connectivity.Connectivity
 import app.kaeru.domain.download.DownloadRepository
 import app.kaeru.domain.download.DownloadState
 import app.kaeru.domain.download.EpisodeDownload
+import app.kaeru.domain.error.EpisodeNotAvailable
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.EpisodeProgress
@@ -197,6 +198,7 @@ class PlayerViewModel @Inject constructor(
             episodes = shown.episodes,
             autoplayCountdownSec = playback.autoplayCountdownSec,
             errorMessage = playback.error?.toUserMessage(),
+            episodeUnavailable = (playback.error as? EpisodeNotAvailable)?.reason,
             // Straight through from the controller, which is the only layer that knows whether the
             // file or the source was what broke.
             failedReadingDownload = playback.failedReadingDownload,
@@ -445,10 +447,15 @@ class PlayerViewModel @Inject constructor(
 
     private fun fetchTranslations(show: Boolean) {
         val id = animeId.value ?: return
-        val playing = controller.state.value.stream?.translation
+        val live = controller.state.value
+        val playing = live.stream?.translation
+        // The episode on screen, so each voice can say whether it has it. Only while the
+        // controller is on this title: between naming it and playback reaching it, the episode
+        // it holds belongs to the title before.
+        val episode = live.target?.takeIf { it.animeId == id }?.episode
         screen.update { it.copy(loadingTranslations = true) }
         viewModelScope.launch {
-            withContext(io) { resolve.translations(id, playing) }
+            withContext(io) { resolve.translations(id, playing, episode) }
                 .onSuccess { tracks ->
                     screen.update {
                         it.copy(

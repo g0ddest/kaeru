@@ -96,6 +96,8 @@ fun PlayerScreen(
     onDownload: () -> Unit,
     onRemoveDownload: () -> Unit,
     onRemoveBrokenDownload: () -> Unit,
+    /** «К списку серий» over an episode no voice has: back to the title, which lists the season. */
+    onBackToEpisodes: () -> Unit,
     isInPictureInPicture: Boolean = false,
     onEnterPictureInPicture: (() -> Unit)? = null,
     together: TogetherControls = TogetherControls(),
@@ -125,7 +127,7 @@ fun PlayerScreen(
             var confirmingRemoval by remember(state.episode) { mutableStateOf(false) }
             // What the surface over the video says, decided outside the composition: a downloaded
             // episode failing with a network is a different message with a different way out.
-            val failure = remember(state.errorMessage, state.offline, state.failedReadingDownload) {
+            val failure = remember(state.errorMessage, state.offline, state.failedReadingDownload, state.episodeUnavailable) {
                 playerFailure(state)
             }
             val snackbar = remember { SnackbarHostState() }
@@ -294,6 +296,7 @@ fun PlayerScreen(
                         // Asked for first, exactly as the top bar asks: this is the same deletion,
                         // and an error screen is the worst place to make one a single tap away.
                         onRemoveDownload = { confirmingRemoval = true },
+                        onBackToEpisodes = onBackToEpisodes,
                     )
                 }
 
@@ -440,6 +443,7 @@ fun PlayerScreen(
             currentId = state.translationId,
             onPick = onPickTranslation,
             onDismiss = onCloseSheet,
+            episode = state.episode.takeIf { it > 0 },
         )
         PlayerSheet.QUALITY -> QualitySheet(
             qualities = state.qualities,
@@ -491,7 +495,8 @@ private fun SeekPulseBadge(pulse: SeekPulse) {
  * chooser behind this. For an episode that is on the device and will not play with a network
  * present, the copy on the device is what failed, so the way past it is to take that copy away —
  * which also starts the episode again from the source, since one without the other leaves the
- * viewer on the same still frame wondering whether anything happened.
+ * viewer on the same still frame wondering whether anything happened. For an episode no voice
+ * has yet there is nothing to choose, so the way out is the season list.
  */
 @Composable
 private fun PlaybackFailure(
@@ -499,6 +504,7 @@ private fun PlaybackFailure(
     onRetry: () -> Unit,
     onChangeTranslation: () -> Unit,
     onRemoveDownload: () -> Unit,
+    onBackToEpisodes: () -> Unit,
 ) {
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.88f)), contentAlignment = Alignment.Center) {
         ErrorState(
@@ -507,10 +513,12 @@ private fun PlaybackFailure(
             secondaryLabel = when (failure.recovery) {
                 PlayerRecovery.CHANGE_TRANSLATION -> "Сменить озвучку"
                 PlayerRecovery.REMOVE_DOWNLOAD -> "Удалить загрузку"
+                PlayerRecovery.BACK_TO_EPISODES -> "К списку серий"
             },
             onSecondary = when (failure.recovery) {
                 PlayerRecovery.CHANGE_TRANSLATION -> onChangeTranslation
                 PlayerRecovery.REMOVE_DOWNLOAD -> onRemoveDownload
+                PlayerRecovery.BACK_TO_EPISODES -> onBackToEpisodes
             },
         )
     }

@@ -38,6 +38,7 @@ import app.kaeru.domain.model.Translation
 import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.design.waitingLabel
 import app.kaeru.ui.common.player.PlayerUiState
+import app.kaeru.ui.common.player.playerFailure
 import app.kaeru.ui.tv.claimFocusWhenReady
 import app.kaeru.ui.tv.requestFocusOrLog
 import kotlinx.coroutines.delay
@@ -81,6 +82,8 @@ fun TvPlayerScreen(
     onConfirmCompleted: () -> Unit,
     onDismissCompleted: () -> Unit,
     onToastShown: () -> Unit,
+    /** «К списку серий» over an episode no voice has: leaves the player for the title's screen. */
+    onBackToEpisodes: () -> Unit,
 ) {
     var panel by remember { mutableStateOf(TvPanel()) }
     var seek by remember { mutableStateOf<Long?>(null) }
@@ -95,6 +98,10 @@ fun TvPlayerScreen(
     // strip — but only once there is a strip to step aside for. [tvShowsFailure] is the rule.
     var choosingTrack by remember(state.errorMessage) { mutableStateOf(false) }
     val failed = tvShowsFailure(state, choosingTrack)
+    // What the card says and offers, decided in the same place the phone decides it.
+    val failure = remember(state.errorMessage, state.offline, state.failedReadingDownload, state.episodeUnavailable) {
+        playerFailure(state)
+    }
     val countdown = state.autoplayCountdownSec != null && state.nextEpisodeAvailable
     /** Something on screen is asking a question, and owns both the focus and the remote. */
     val cardOpen = failed || state.completedPrompt || countdown
@@ -313,10 +320,11 @@ fun TvPlayerScreen(
             }
         }
 
-        if (failed) {
+        if (failed && failure != null) {
             TvPlaybackFailure(
-                message = state.errorMessage.orEmpty(),
+                failure = failure,
                 onRetry = onRetry,
+                onBackToEpisodes = onBackToEpisodes,
                 onChangeTranslation = {
                     choosingTrack = true
                     if (!tracksAsked) {

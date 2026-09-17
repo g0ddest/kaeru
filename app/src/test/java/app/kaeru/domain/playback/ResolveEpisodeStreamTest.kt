@@ -542,6 +542,33 @@ class ResolveEpisodeStreamTest {
     }
 
     @Test
+    fun `the sheet says which tracks carry the episode, from what is already known`() = runTest(dispatcher) {
+        // AniLibria counts twelve; the subtitles' own page has been read and stops at two.
+        source.listed[subtitles.id] = setOf(1, 2)
+
+        val listed = resolve.translations(animeId = 100, episode = 20).getOrThrow()
+
+        assertEquals(listOf(anilibria.id, studioBanda.id, subtitles.id), listed.map { it.translation.id })
+        assertEquals(listOf(false, true, false), listed.map { it.hasEpisode })
+    }
+
+    @Test
+    fun `with no episode in question the sheet claims nothing`() = runTest(dispatcher) {
+        val listed = resolve.translations(animeId = 100).getOrThrow()
+
+        assertEquals(listOf(null, null, null), listed.map { it.hasEpisode })
+    }
+
+    @Test
+    fun `the sheet does not read the count against a later season`() = runTest(dispatcher) {
+        watchStates.seed(row(episode = 19, translationId = studioBanda.id, kodikSeason = 2))
+
+        val listed = resolve.translations(animeId = 100, episode = 20).getOrThrow()
+
+        assertEquals(listOf(null, null, null), listed.map { it.hasEpisode })
+    }
+
+    @Test
     fun `forgetting the catalogue reaches the source`() = runTest(dispatcher) {
         resolve.forgetCatalogue(100)
 

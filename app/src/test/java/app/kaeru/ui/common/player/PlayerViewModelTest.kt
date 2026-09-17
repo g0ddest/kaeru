@@ -445,6 +445,39 @@ class PlayerViewModelTest {
     }
 
     @Test
+    fun `an episode no voice has is told apart from every other failure`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+        controller.playback.update {
+            it.copy(error = EpisodeNotAvailable(100, 4, EpisodeUnavailableReason.NOT_IN_ANY_TRANSLATION))
+        }
+        advanceUntilIdle()
+
+        assertEquals("Серия 4 пока не вышла ни в одной озвучке", viewModel.uiState.value.errorMessage)
+        assertEquals(EpisodeUnavailableReason.NOT_IN_ANY_TRANSLATION, viewModel.uiState.value.episodeUnavailable)
+
+        controller.playback.update { it.copy(error = NetworkUnavailable(IOException("boom"))) }
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.episodeUnavailable)
+    }
+
+    @Test
+    fun `the sheet says which voices carry the episode on screen`() = runTest(main.dispatcher) {
+        // Студийная банда counts ten episodes; the twelfth cannot be there.
+        source.translationsResult = Result.success(listOf(studioBanda.copy(episodesCount = 10), anilibria))
+        viewModel.start(100, 12)
+        advanceUntilIdle()
+
+        viewModel.openTranslations()
+        advanceUntilIdle()
+
+        val listed = viewModel.uiState.value.translations
+        assertEquals(listOf(anilibria.id, studioBanda.id), listed.map { it.translation.id })
+        assertEquals(listOf(true, false), listed.map { it.hasEpisode })
+    }
+
+    @Test
     fun `opening the track sheet loads what the source offers, ranked`() = runTest(main.dispatcher) {
         viewModel.start(100, 4)
         advanceUntilIdle()

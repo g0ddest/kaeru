@@ -43,6 +43,7 @@ import app.kaeru.domain.playback.PlaybackNotificationPrompt
 import app.kaeru.player.CastFramework
 import app.kaeru.player.CastSessionBridge
 import app.kaeru.player.KaeruPlaybackService
+import app.kaeru.MainActivity
 import app.kaeru.R
 import app.kaeru.ui.common.player.LocalCastAvailable
 import app.kaeru.ui.common.player.PlayerViewModel
@@ -245,6 +246,7 @@ class PlayerActivity : FragmentActivity() {
                         onDownload = viewModel::download,
                         onRemoveDownload = viewModel::removeDownload,
                         onRemoveBrokenDownload = viewModel::removeDownloadAndRetry,
+                        onBackToEpisodes = { openTitle(launch.animeId) },
                         isInPictureInPicture = inPictureInPicture,
                         onEnterPictureInPicture = ::enterWindow.takeIf { supportsPictureInPicture },
                         together = TogetherControls(
@@ -445,6 +447,18 @@ class PlayerActivity : FragmentActivity() {
     @OptIn(UnstableApi::class)
     private fun startPlaybackService() {
         runCatching { startService(Intent(this, KaeruPlaybackService::class.java)) }
+    }
+
+    /**
+     * «К списку серий»: the title screen, opened explicitly rather than reached by finishing.
+     *
+     * Finishing only lands on the title when the title launched the player, and the home screen's
+     * watch button, the downloads list and a notification all launch it too. The shell is a single
+     * task, so this is one intent into the activity already there, and then this one is gone.
+     */
+    private fun openTitle(animeId: Int) {
+        startActivity(MainActivity.titleIntent(this, animeId))
+        finish()
     }
 
     companion object {

@@ -1,6 +1,7 @@
 package app.kaeru.ui.common.player
 
 import app.kaeru.domain.download.EpisodeDownload
+import app.kaeru.domain.error.EpisodeUnavailableReason
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.playback.RankedTranslation
 import app.kaeru.ui.common.details.EpisodeCell
@@ -50,6 +51,12 @@ data class PlayerUiState(
     val episodes: List<EpisodeCell> = emptyList(),
     val autoplayCountdownSec: Int? = null,
     val errorMessage: String? = null,
+    /**
+     * Why the episode could not be had, when that is what [errorMessage] is about; null for every
+     * other failure. The one that matters to the screen is «ни в одной озвучке»: the way out of
+     * that is the season list, and offering the dub picker over it would be offering nothing.
+     */
+    val episodeUnavailable: EpisodeUnavailableReason? = null,
     /** The picture is on a Chromecast: the screen is a remote control, not a player. */
     val isCasting: Boolean = false,
     /** What the receiver calls itself, so the remote can say where the picture went. */

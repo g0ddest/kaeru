@@ -1,5 +1,6 @@
 package app.kaeru
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -37,7 +38,10 @@ class MainActivity : FragmentActivity() {
     /** An invitation to watch with somebody, as it arrived. Validated before it gets here. */
     private var pendingWatch by mutableStateOf<String?>(null)
 
-    /** A screen the app was asked to open from outside it: today, «Загрузки» from the notification. */
+    /**
+     * A screen the app was asked to open from outside it: «Загрузки» from the notification, or a
+     * title from the player's «К списку серий».
+     */
     private var pendingRoute by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -84,7 +88,7 @@ class MainActivity : FragmentActivity() {
      */
     private fun readRoute(intent: Intent?) {
         val route = intent?.getStringExtra(Routes.EXTRA_ROUTE) ?: return
-        if (route == Routes.DOWNLOADS) pendingRoute = route
+        if (route == Routes.DOWNLOADS || Routes.isDetails(route)) pendingRoute = route
         intent.removeExtra(Routes.EXTRA_ROUTE)
     }
 
@@ -117,5 +121,11 @@ class MainActivity : FragmentActivity() {
             else -> return
         }
         intent.data = null
+    }
+
+    companion object {
+        /** Opens the shell on one title's screen: the player's way back to the season list. */
+        fun titleIntent(context: Context, animeId: Int): Intent =
+            Intent(context, MainActivity::class.java).putExtra(Routes.EXTRA_ROUTE, Routes.details(animeId))
     }
 }
