@@ -128,7 +128,13 @@ private val PosterWidth = KaeruTokens.PosterWidthTv
 private val HeadingBlock = 32.dp
 private val LineBlock = 22.dp
 
-/** Long enough to be worth reading, short enough to leave room for the controls above it. */
+/**
+ * Long enough to be worth reading, short enough to leave room for the controls above it.
+ *
+ * Three lines of `bodyMedium` is 78dp of the 486 the left column has, and the column comes to 446
+ * with them: `TvRenderBudgetTest` renders this screen with the longest name and description the
+ * catalogue produces and asserts there is nothing left to scroll.
+ */
 private const val DESCRIPTION_LINES = 3
 
 /**
@@ -285,6 +291,7 @@ private fun TvTitleDetails(
 ) {
     var expanded by rememberSaveable(anime.id) { mutableStateOf(false) }
     val meta = remember(anime) { detailsMeta(anime) }
+    val description = anime.description?.takeIf { it.isNotBlank() }
     Column(
         modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
@@ -296,7 +303,7 @@ private fun TvTitleDetails(
                     anime.title,
                     style = MaterialTheme.typography.headlineMedium,
                     color = KaeruText,
-                    maxLines = 3,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 FlowRow(
@@ -314,6 +321,13 @@ private fun TvTitleDetails(
             enabled = action.enabled,
             modifier = Modifier.focusRequester(primary),
         )
+        // One row of quiet controls, and «Развернуть» is one of them.
+        //
+        // It used to sit on its own line under the paragraph, where it cost 48dp and a gap on a
+        // panel that had neither: the description was drawn through by the bottom of the screen
+        // and the control itself was not drawn at all. Beside the two controls it already has
+        // room next to, it costs nothing, the D-pad reaches it with one press of right from
+        // «Озвучка», and the paragraph under it keeps the whole width of the column to read in.
         Row(horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space3)) {
             StatusPill(
                 text = state.entry?.rate?.status?.let(::statusLabel) ?: ADD_TO_LIST,
@@ -325,16 +339,18 @@ private fun TvTitleDetails(
                 text = translationLabel(state.translations, state.entry?.watch?.translationId),
                 onClick = { onOpenSheet(TvTitleSheet.TRANSLATIONS) },
             )
+            if (description != null) {
+                TextAction(if (expanded) COLLAPSE else EXPAND, { expanded = !expanded })
+            }
         }
-        anime.description?.takeIf { it.isNotBlank() }?.let { description ->
+        description?.let {
             Text(
-                description,
+                it,
                 style = MaterialTheme.typography.bodyMedium,
                 color = KaeruSecondary,
                 maxLines = if (expanded) Int.MAX_VALUE else DESCRIPTION_LINES,
                 overflow = TextOverflow.Ellipsis,
             )
-            TextAction(if (expanded) COLLAPSE else EXPAND, { expanded = !expanded })
         }
         state.errorMessage?.let {
             // The phone puts this failure in a snackbar with «Повторить». A television has no
