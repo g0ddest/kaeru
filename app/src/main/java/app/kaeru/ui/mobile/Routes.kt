@@ -10,6 +10,14 @@ object Routes {
     const val DOWNLOADS = "downloads"
 
     /**
+     * Reached from the settings page and from the one-line row on the home screen.
+     *
+     * Never pushed by the app itself. A screen about installing something is a screen somebody has
+     * to have gone looking for, and an app that opened it unasked would be an app that interrupts.
+     */
+    const val UPDATES = "updates"
+
+    /**
      * How something outside the app asks for a screen inside it: the downloads notification, today.
      *
      * Here rather than beside the notification that sends it, so nothing in the data layer has to

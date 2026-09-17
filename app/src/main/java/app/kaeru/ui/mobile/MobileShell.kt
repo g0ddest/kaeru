@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -41,6 +42,7 @@ import app.kaeru.ui.common.search.SearchViewModel
 import app.kaeru.ui.common.pairing.PairingStage
 import app.kaeru.ui.common.pairing.PairingUiState
 import app.kaeru.ui.common.settings.SettingsViewModel
+import app.kaeru.ui.common.update.UpdatesViewModel
 import app.kaeru.ui.common.together.TogetherUiState
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruElevated
@@ -55,6 +57,7 @@ import app.kaeru.ui.mobile.player.PlayerActivity
 import app.kaeru.ui.mobile.search.SearchScreen
 import app.kaeru.ui.mobile.settings.SettingsScreen
 import app.kaeru.ui.mobile.together.JoinScreen
+import app.kaeru.ui.mobile.update.UpdatesScreen
 
 private data class Tab(val route: String, val label: String, val icon: ImageVector)
 
@@ -119,6 +122,7 @@ fun MobileShell(
         }
     }
     val openAnime: (Int) -> Unit = { animeId -> nav.navigate(Routes.details(animeId)) }
+    val openUpdates: () -> Unit = { nav.navigate(Routes.UPDATES) { launchSingleTop = true } }
     Scaffold(bottomBar = { if (current in tabRoutes) BottomBar(current, openTab) }) { padding ->
         // Only the bottom inset is handed down. The home screen runs its artwork under the status
         // bar and carries that inset in its own top bar; the screens that are not edge-to-edge yet
@@ -194,6 +198,25 @@ fun MobileShell(
                     onKodikToken = vm::setKodikToken,
                     onRetryAccount = vm::refreshAccount,
                     onDownloads = { nav.navigate(Routes.DOWNLOADS) { launchSingleTop = true } },
+                    onUpdates = openUpdates,
+                )
+            }
+            composable(Routes.UPDATES) {
+                val vm: UpdatesViewModel = hiltViewModel()
+                // The system's permission screen reports nothing when it is answered, so coming
+                // back to this screen is the only signal there is that it was — and the press the
+                // permission interrupted carries on from there.
+                LifecycleResumeEffect(vm) {
+                    vm.resumed()
+                    onPauseOrDispose {}
+                }
+                UpdatesScreen(
+                    state = vm.uiState.collectAsStateWithLifecycle().value,
+                    onBack = { nav.popBackStack() },
+                    onCheck = { vm.check() },
+                    onDownload = vm::download,
+                    onInstall = vm::install,
+                    onAllowInstalls = vm::allowInstalls,
                 )
             }
             composable(Routes.DOWNLOADS) {

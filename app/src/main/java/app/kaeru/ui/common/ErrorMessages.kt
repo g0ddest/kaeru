@@ -13,6 +13,8 @@ import app.kaeru.domain.error.SourceFormatChanged
 import app.kaeru.domain.error.SourceUnavailable
 import app.kaeru.domain.error.SourceUnavailableReason
 import app.kaeru.domain.error.StorageFailure
+import app.kaeru.domain.update.UpdateFailed
+import app.kaeru.domain.update.UpdateFailure
 
 private const val OFFLINE = "Нет соединения. Проверьте интернет"
 private const val SIGNED_OUT = "Сессия истекла, войдите снова"
@@ -35,6 +37,23 @@ private const val PAIR_NO_ADDRESS = "Телевизор не в локально
 private const val UNKNOWN = "Что-то пошло не так. Повторите попытку"
 
 /**
+ * The «Обновления» screen names its own failures, and every one of them differently.
+ *
+ * Not because the screen is special but because each of these leads somewhere else: a rate limit
+ * is over in an hour and only waiting fixes it, a release with no file on it is the maintainer's
+ * problem, and a truncated download is worth pressing the button again for. «Нет связи» rather
+ * than the app's usual «Нет соединения. Проверьте интернет» — the screen is one short block of
+ * prose, and there is nothing to check but the obvious.
+ */
+private const val UPDATE_OFFLINE = "Нет связи"
+private const val UPDATE_RATE_LIMITED = "GitHub ограничил запросы, попробуйте через час"
+private const val UPDATE_NO_ASSET = "У выпуска нет файла для установки"
+private const val UPDATE_DOWNLOAD_FAILED = "Не удалось скачать файл"
+private const val UPDATE_CORRUPTED = "Файл повреждён, попробуйте ещё раз"
+private const val UPDATE_INSTALLER_REFUSED = "Android не открыл установщик"
+private const val UPDATE_UNKNOWN = "Не удалось проверить обновления"
+
+/**
  * The single place where a failure becomes user-facing copy. Exception text is never shown:
  * it is English, often a stack-trace fragment, and sometimes carries request details.
  */
@@ -53,11 +72,27 @@ fun Throwable.toUserMessage(): String = when {
     this is AccountSessionChanged -> SESSION_CHANGED
     this is StorageFailure -> STORAGE_FAILED
     this is DownloadLimitReached -> DOWNLOAD_LIMIT
+    this is UpdateFailed -> updateFailureMessage(reason)
     this is PairingFailed && reason == PairingFailureReason.BAD_LINK -> PAIR_BAD_LINK
     this is PairingFailed && reason == PairingFailureReason.UNREACHABLE -> PAIR_UNREACHABLE
     this is PairingFailed && reason == PairingFailureReason.NO_LOCAL_ADDRESS -> PAIR_NO_ADDRESS
     this is PairingFailed -> PAIR_REFUSED
     else -> UNKNOWN
+}
+
+/**
+ * The same words for a download stage, which carries a reason without being a throwable.
+ *
+ * One function for both, so «Файл повреждён» cannot come to be written two ways.
+ */
+fun updateFailureMessage(reason: UpdateFailure): String = when (reason) {
+    UpdateFailure.NO_NETWORK -> UPDATE_OFFLINE
+    UpdateFailure.RATE_LIMITED -> UPDATE_RATE_LIMITED
+    UpdateFailure.NO_ASSET -> UPDATE_NO_ASSET
+    UpdateFailure.DOWNLOAD_FAILED -> UPDATE_DOWNLOAD_FAILED
+    UpdateFailure.CORRUPTED -> UPDATE_CORRUPTED
+    UpdateFailure.INSTALLER_REFUSED -> UPDATE_INSTALLER_REFUSED
+    UpdateFailure.UNKNOWN -> UPDATE_UNKNOWN
 }
 
 /** Null when the result succeeded; the mapped message otherwise. */

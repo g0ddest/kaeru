@@ -50,6 +50,35 @@ class TvRouteTest {
     }
 
     @Test
+    fun `opening the updates screen keeps the destination it was opened from`() {
+        assertEquals(
+            TvRoute(TvDestination.SETTINGS, updates = true),
+            TvRoute(TvDestination.SETTINGS).openUpdates(),
+        )
+    }
+
+    /** Two places lead there — the settings page and the home row — and back returns to each. */
+    @Test
+    fun `back from the updates screen returns to where it was opened from`() {
+        assertEquals(
+            TvRoute(TvDestination.SETTINGS),
+            TvRoute(TvDestination.SETTINGS, updates = true).back(),
+        )
+        assertEquals(
+            TvRoute(TvDestination.HOME),
+            TvRoute(TvDestination.HOME, updates = true).back(),
+        )
+    }
+
+    @Test
+    fun `the drawer closes the updates screen like anything else over a destination`() {
+        val overSettings = TvRoute(TvDestination.SETTINGS, updates = true)
+
+        assertEquals(TvRoute(TvDestination.SETTINGS), overSettings.open(TvDestination.SETTINGS))
+        assertEquals(TvRoute(TvDestination.HOME), overSettings.open(TvDestination.HOME))
+    }
+
+    @Test
     fun `back from any other destination returns home`() {
         assertEquals(TvRoute(TvDestination.SETTINGS).back(), TvRoute(TvDestination.HOME))
     }

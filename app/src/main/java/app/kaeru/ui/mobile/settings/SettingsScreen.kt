@@ -1,6 +1,5 @@
 package app.kaeru.ui.mobile.settings
 
-import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,9 +20,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
 import app.kaeru.BuildConfig
 import app.kaeru.domain.model.Quality
 import app.kaeru.ui.common.design.DestructiveButton
@@ -82,7 +79,6 @@ private const val CLEAR = "Очистить"
 
 private const val ABOUT = "О приложении"
 private const val CHECK_UPDATES = "Проверить обновления"
-private const val RELEASES_URL = "https://github.com/g0ddest/kaeru/releases"
 
 /**
  * Settings, written as a page rather than laid out as a control panel.
@@ -114,6 +110,7 @@ fun SettingsScreen(
     onKodikToken: (String) -> Unit,
     onRetryAccount: () -> Unit,
     onDownloads: () -> Unit,
+    onUpdates: () -> Unit,
 ) {
     var confirming by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
@@ -132,7 +129,7 @@ fun SettingsScreen(
             DownloadsSection(onDownloads)
             DubsSection(state, onStudioUp, onStudioDown, onStudioRemove, onStudioAdd, onStudiosReset)
             KodikSection(state.kodikToken, onKodikToken)
-            AboutSection()
+            AboutSection(onUpdates)
         }
     }
     if (confirming) {
@@ -282,19 +279,19 @@ private fun KodikSection(token: String, onToken: (String) -> Unit) {
     }
 }
 
+/**
+ * Which version this is, and the way to a newer one.
+ *
+ * The button used to open the releases page in a browser, which left the viewer to download an
+ * APK by hand and find it again in a file manager. It now opens a screen of this app's own that
+ * reads the same releases, shows what changed, and installs the file — so the one thing a
+ * sideloaded app cannot get from a store is the one thing it now does for itself.
+ */
 @Composable
-private fun AboutSection() {
-    val context = LocalContext.current
+private fun AboutSection(onUpdates: () -> Unit) {
     SettingsSection(ABOUT) {
         SettingNote("Kaeru ${BuildConfig.VERSION_NAME}")
-        SecondaryButton(
-            CHECK_UPDATES,
-            // A device with no browser and no Custom Tabs provider has nowhere to send this. There
-            // is nothing useful to say about that, so the press does nothing rather than crashing.
-            onClick = {
-                runCatching { CustomTabsIntent.Builder().build().launchUrl(context, RELEASES_URL.toUri()) }
-            },
-        )
+        SecondaryButton(CHECK_UPDATES, onClick = onUpdates)
     }
 }
 

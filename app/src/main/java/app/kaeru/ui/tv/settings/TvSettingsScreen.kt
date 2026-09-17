@@ -1,6 +1,5 @@
 package app.kaeru.ui.tv.settings
 
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,7 +7,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,12 +20,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -36,7 +32,6 @@ import app.kaeru.domain.model.Account
 import app.kaeru.domain.model.Quality
 import app.kaeru.ui.common.design.DestructiveButton
 import app.kaeru.ui.common.design.KaeruTokens
-import app.kaeru.ui.common.design.kaeruFocus
 import app.kaeru.ui.common.design.RowHeader
 import app.kaeru.ui.common.design.SecondaryButton
 import app.kaeru.ui.common.design.TextAction
@@ -77,6 +72,7 @@ private const val DUBS_NOTE = "Порядок работает, когда у а
 private const val RESET = "Сбросить"
 
 private const val ABOUT = "О приложении"
+private const val CHECK_UPDATES = "Проверить обновления"
 
 /** What each slot holds, so the list reuses a studio's node for a studio and not for a heading. */
 private const val HEADING = "heading"
@@ -127,6 +123,7 @@ fun TvSettingsScreen(
     onStudioRemove: (Int) -> Unit,
     onStudiosReset: () -> Unit,
     onRetryAccount: () -> Unit,
+    onUpdates: () -> Unit,
     modifier: Modifier = Modifier,
     listState: LazyListState = rememberLazyListState(),
 ) {
@@ -215,24 +212,15 @@ fun TvSettingsScreen(
         }
 
         heading(ABOUT)
-        // A stop for the remote, and the only one on this page that does nothing when pressed.
-        // It is here because a D-pad scrolls by moving focus and nothing else: with the version
-        // as plain text the list stopped at «Сбросить», and the last line of the page was one a
-        // viewer could never bring on screen. A row that can be landed on is how a television
-        // settings page says «this is the end», and every one Android's own settings ends with.
-        row("version") {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = KaeruTokens.MinTouchTarget)
-                    .kaeruFocus(KaeruTokens.CardShape, focusedScale = 1f)
-                    // One node rather than two: the version is what this row is, so the row
-                    // announces itself with those words instead of being an unnamed stop with a
-                    // line of text inside it.
-                    .semantics(mergeDescendants = true) {}
-                    .focusable(),
-                contentAlignment = Alignment.CenterStart,
-            ) { SettingNote("Kaeru ${BuildConfig.VERSION_NAME}") }
+        // The version and the way to a newer one, as one item: they are read together, and the
+        // button is what makes the end of the page reachable. A D-pad scrolls by moving focus and
+        // nothing else, so the last row has to be something to land on — the version was a bare
+        // focus stop before this screen existed, for exactly that reason, and no longer has to be.
+        row("about") {
+            Column(verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space3)) {
+                SettingNote("Kaeru ${BuildConfig.VERSION_NAME}")
+                SecondaryButton(CHECK_UPDATES, onUpdates, Modifier.fillMaxWidth(0.5f))
+            }
         }
     }
 
@@ -319,6 +307,7 @@ private fun TvSettingsPreviewAt(index: Int) = KaeruTvTheme {
         onStudioRemove = {},
         onStudiosReset = {},
         onRetryAccount = {},
+        onUpdates = {},
         listState = rememberLazyListState(initialFirstVisibleItemIndex = index),
     )
 }

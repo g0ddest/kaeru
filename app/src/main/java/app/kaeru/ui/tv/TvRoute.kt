@@ -19,6 +19,14 @@ data class TvRoute(
     val destination: TvDestination = TvDestination.HOME,
     /** The anime whose title card is open over [destination], or null when none is. */
     val titleId: Int? = null,
+    /**
+     * Whether «Обновления» is open over [destination].
+     *
+     * A flag rather than a fifth destination, for the reason a title card is not one either: it is
+     * opened from a screen and closed back onto it. Two places lead here — the settings page and
+     * the one-line row on the home screen — and back has to return to whichever it was.
+     */
+    val updates: Boolean = false,
 ) {
     /**
      * A destination chosen in the drawer.
@@ -26,17 +34,22 @@ data class TvRoute(
      * Choosing the one already open closes whatever is over it, because the drawer stays reachable
      * from a title card and «Главная» pressed there has to mean something. Moving elsewhere closes
      * it too: a card left open under another destination would reappear on the way back with no
-     * press of back to explain it.
+     * press of back to explain it. The same goes for «Обновления».
      */
     fun open(destination: TvDestination): TvRoute = TvRoute(destination)
 
     fun openTitle(animeId: Int): TvRoute = copy(titleId = animeId)
+
+    fun openUpdates(): TvRoute = copy(updates = true)
 
     /**
      * One step back, or null when there is nowhere left to go and the press belongs to the
      * launcher: the title card first, then the way home from anywhere else.
      */
     fun back(): TvRoute? = when {
+        // Closed before a title card, because it is the thing on top: the two are never open
+        // together in practice, and an order written down is one a test can read.
+        updates -> copy(updates = false)
         titleId != null -> copy(titleId = null)
         destination != TvDestination.HOME -> TvRoute(TvDestination.HOME)
         else -> null

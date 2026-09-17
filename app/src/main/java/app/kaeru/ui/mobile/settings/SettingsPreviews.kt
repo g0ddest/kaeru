@@ -32,6 +32,7 @@ private fun Preview(state: SettingsUiState) = KaeruTheme {
         onKodikToken = {},
         onRetryAccount = {},
         onDownloads = {},
+        onUpdates = {},
     )
 }
 

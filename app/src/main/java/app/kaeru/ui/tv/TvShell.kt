@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.DrawerValue
 import androidx.tv.material3.Icon
@@ -53,6 +54,7 @@ import app.kaeru.ui.common.home.HomeViewModel
 import app.kaeru.ui.common.library.LibraryViewModel
 import app.kaeru.ui.common.search.SearchViewModel
 import app.kaeru.ui.common.settings.SettingsViewModel
+import app.kaeru.ui.common.update.UpdatesViewModel
 import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruBackground
 import app.kaeru.ui.common.theme.KaeruSecondary
@@ -63,6 +65,7 @@ import app.kaeru.ui.tv.home.TvHomeScreen
 import app.kaeru.ui.tv.library.TvLibraryScreen
 import app.kaeru.ui.tv.search.TvSearchScreen
 import app.kaeru.ui.tv.settings.TvSettingsScreen
+import app.kaeru.ui.tv.update.TvUpdatesScreen
 import kotlinx.coroutines.launch
 
 private const val HOME = "Главная"
@@ -144,14 +147,17 @@ fun TvShell(onPlay: (animeId: Int, episode: Int) -> Unit) {
             // composed under an overlay is a screen the D-pad can walk back into, which on a
             // television means focus disappearing into rows nobody can see; the scroll position and
             // the focused card the destination would lose are held above it here instead.
-            if (titleId != null) {
-                TvTitle(titleId, onPlay)
-            } else {
-                when (route.destination) {
+            //
+            // «Обновления» replaces it for the same reason, and is checked first because it is the
+            // thing on top — the same order `tvBack` closes them in.
+            when {
+                route.updates -> TvUpdates()
+                titleId != null -> TvTitle(titleId, onPlay)
+                else -> when (route.destination) {
                     TvDestination.HOME -> TvHome(route, home, onPlay) { route = it }
                     TvDestination.LIBRARY -> TvLibrary(route, library) { route = it }
                     TvDestination.SEARCH -> TvSearch(route) { route = it }
-                    TvDestination.SETTINGS -> TvSettings()
+                    TvDestination.SETTINGS -> TvSettings { route = route.openUpdates() }
                 }
             }
         }
@@ -281,10 +287,11 @@ private fun TvSearch(route: TvRoute, onRoute: (TvRoute) -> Unit) {
 }
 
 @Composable
-private fun TvSettings() {
+private fun TvSettings(onUpdates: () -> Unit) {
     val viewModel: SettingsViewModel = hiltViewModel()
     TvSettingsScreen(
         state = viewModel.uiState.collectAsStateWithLifecycle().value,
+        onUpdates = onUpdates,
         onSignOut = viewModel::signOut,
         onAutoplay = viewModel::setAutoplayNext,
         onQuality = viewModel::setDefaultQuality,
@@ -294,6 +301,28 @@ private fun TvSettings() {
         onStudioRemove = viewModel::removeStudio,
         onStudiosReset = viewModel::resetStudios,
         onRetryAccount = viewModel::refreshAccount,
+    )
+}
+
+/**
+ * «Обновления», which is the one screen on this device that has a system prompt behind it.
+ *
+ * The lifecycle effect is what carries a press across that prompt: Android reports nothing when
+ * its permission screen is answered, so the activity coming back is the only signal there is.
+ */
+@Composable
+private fun TvUpdates() {
+    val viewModel: UpdatesViewModel = hiltViewModel()
+    LifecycleResumeEffect(viewModel) {
+        viewModel.resumed()
+        onPauseOrDispose {}
+    }
+    TvUpdatesScreen(
+        state = viewModel.uiState.collectAsStateWithLifecycle().value,
+        onCheck = { viewModel.check() },
+        onDownload = viewModel::download,
+        onInstall = viewModel::install,
+        onAllowInstalls = viewModel::allowInstalls,
     )
 }
 
@@ -321,11 +350,12 @@ private fun TvTitle(animeId: Int, onPlay: (Int, Int) -> Unit) = TvAnimeScope(ani
  * viewer made rather than one the system did.
  */
 private val TvRouteSaver: Saver<TvRoute, List<Any>> = Saver(
-    save = { listOf(it.destination.name, it.titleId ?: 0) },
+    save = { listOf(it.destination.name, it.titleId ?: 0, it.updates) },
     restore = { saved ->
         TvRoute(
             destination = TvDestination.valueOf(saved[0] as String),
             titleId = (saved[1] as Int).takeIf { it != 0 },
+            updates = saved[2] as Boolean,
         )
     },
 )

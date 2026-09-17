@@ -62,6 +62,39 @@ class TvLayoutBudgetTest {
         )
     }
 
+    /**
+     * «Обновления» opens with its button on screen, without the remote having to scroll for it.
+     *
+     * Composed here rather than in `TvUpdatesScreenTest` for the reason this whole class exists:
+     * Robolectric measures text with a synthetic face whose metrics do not move with the type
+     * scale, so a composed test says the pieces are arranged correctly and nothing about whether
+     * they fit. This adds the declared numbers up — two headings, two lines of prose, the release
+     * line, and the button — against the panel a 1080p television reports.
+     *
+     * The release note is deliberately not in the sum. It is the one thing on the page of unknown
+     * length, it sits below the button precisely so it cannot push it off, and it is capped.
+     */
+    @Test
+    fun `the updates page reaches its button inside one panel`() {
+        val heading = KaeruTvTypography.titleMedium.lineHeight.value
+        val body = KaeruTvTypography.bodyMedium.lineHeight.value
+        val label = KaeruTvTypography.titleSmall.lineHeight.value
+        val gap = KaeruTokens.Space3.value
+        val sectionGap = KaeruTokens.Space8.value - gap
+        val needed = safe +
+            heading + gap +
+            body + gap +
+            sectionGap + heading + gap +
+            label + KaeruTokens.Space2.value + body + gap +
+            KaeruTokens.ButtonHeight.value +
+            safe
+
+        assertTrue(
+            "the page wants $needed of a $panel panel before the button is reachable",
+            needed <= panel,
+        )
+    }
+
     /** And the focus ring has to be drawn, not shaved off by the row's own clipping. */
     @Test
     fun `the row reserves the room a focused card grows into`() {
