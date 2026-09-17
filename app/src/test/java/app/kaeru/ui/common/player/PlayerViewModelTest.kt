@@ -477,6 +477,63 @@ class PlayerViewModelTest {
         assertEquals(listOf(true, false), listed.map { it.hasEpisode })
     }
 
+    /**
+     * The television asks for the voices once and keeps the row on screen for the rest of the
+     * session, so a list computed for the episode that was playing then would caption the wrong
+     * episode after autoplay — and refuse a press on a voice that does carry the new one.
+     */
+    @Test
+    fun `the voices follow the episode on screen`() = runTest(main.dispatcher) {
+        // Студийная банда counts four episodes: it has the fourth and not the fifth.
+        source.translationsResult = Result.success(listOf(studioBanda.copy(episodesCount = 4), anilibria))
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+        viewModel.loadTranslations()
+        advanceUntilIdle()
+        assertEquals(listOf(true, true), viewModel.uiState.value.translations.map { it.hasEpisode })
+        val asked = source.translationCalls
+
+        // Autoplay moves on. The catalogue is read once more and no oftener — and the real one
+        // answers that read from the six hours it keeps, without touching the network.
+        controller.playback.update { it.copy(target = PlaybackTarget(100, 5, 0, null)) }
+        advanceUntilIdle()
+
+        val listed = viewModel.uiState.value.translations
+        assertEquals(listOf(anilibria.id, studioBanda.id), listed.map { it.translation.id })
+        assertEquals(listOf(true, false), listed.map { it.hasEpisode })
+        assertEquals(asked + 1, source.translationCalls)
+    }
+
+    @Test
+    fun `a screen that never asked for the voices asks for nothing when the episode moves`() =
+        runTest(main.dispatcher) {
+            viewModel.start(100, 4)
+            advanceUntilIdle()
+
+            controller.playback.update { it.copy(target = PlaybackTarget(100, 5, 0, null)) }
+            advanceUntilIdle()
+
+            assertEquals(0, source.translationCalls)
+            assertTrue(viewModel.uiState.value.translations.isEmpty())
+        }
+
+    @Test
+    fun `a list that fails to come back again leaves the one on screen alone`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+        viewModel.loadTranslations()
+        advanceUntilIdle()
+        val listed = viewModel.uiState.value.translations
+        source.translationsResult = Result.failure(NetworkUnavailable(IOException("down")))
+
+        controller.playback.update { it.copy(target = PlaybackTarget(100, 5, 0, null)) }
+        advanceUntilIdle()
+
+        // Nothing the viewer asked for went wrong, so nothing is said and the row keeps its chips.
+        assertEquals(listed, viewModel.uiState.value.translations)
+        assertNull(viewModel.uiState.value.toast)
+    }
+
     @Test
     fun `opening the track sheet loads what the source offers, ranked`() = runTest(main.dispatcher) {
         viewModel.start(100, 4)
@@ -897,7 +954,14 @@ class PlayerViewModelTest {
     private inner class FakeEpisodeSource : EpisodeSourceProvider {
         var translationsResult: Result<List<Translation>> = Result.success(listOf(studioBanda, anilibria))
 
-        override suspend fun translations(shikimoriId: Int) = translationsResult
+        /** How often the catalogue was read: a list re-derived for a new episode must not fetch. */
+        var translationCalls = 0
+            private set
+
+        override suspend fun translations(shikimoriId: Int): Result<List<Translation>> {
+            translationCalls += 1
+            return translationsResult
+        }
 
         override suspend fun resolve(shikimoriId: Int, episode: Int, translation: Translation?) =
             Result.success(stream(episode, translation ?: anilibria))

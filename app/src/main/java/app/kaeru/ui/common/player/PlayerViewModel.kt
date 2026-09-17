@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -226,6 +227,37 @@ class PlayerViewModel @Inject constructor(
                 }
             }
         }
+        // What the voices say about the episode is about *this* episode, and the episode moves
+        // under them: autoplay runs into the next one, and the television picks one from the
+        // strip beside them. That television asks for the list once a session and leaves it up,
+        // so a list left as it was captions the episode it was built for — «нет серии 4» over a
+        // fifth the voice does have — and refuses the press as well.
+        viewModelScope.launch {
+            controller.state
+                .map { it.target }
+                .distinctUntilChanged { was, now -> was?.animeId == now?.animeId && was?.episode == now?.episode }
+                .collect { target -> refreshTranslations(target) }
+        }
+    }
+
+    /**
+     * Says again what the voices already on screen carry, for the episode now on it.
+     *
+     * Nothing is fetched: the answer comes from what the source already holds — the catalogue it
+     * keeps for six hours, and the pages it has read — so following the picture costs nothing.
+     *
+     * Only ever while a list is up. A screen that never opened the voices asks for nothing, and a
+     * list that does not come back leaves the one on screen exactly as it was: nobody asked for
+     * this, so there is nothing to tell the viewer about it going wrong.
+     */
+    private suspend fun refreshTranslations(target: PlaybackTarget?) {
+        val id = animeId.value ?: return
+        if (target == null || target.animeId != id || screen.value.translations.isEmpty()) return
+        val playing = controller.state.value.stream?.translation
+        withContext(io) { resolve.translations(id, playing, target.episode) }
+            .onSuccess { tracks ->
+                screen.update { if (it.translations.isEmpty()) it else it.copy(translations = tracks) }
+            }
     }
 
     /**

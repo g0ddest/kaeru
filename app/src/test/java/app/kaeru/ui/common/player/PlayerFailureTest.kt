@@ -156,11 +156,31 @@ class PlayerFailureTest {
 
     @Test
     fun `an episode one dub lacks still offers the others`() {
-        listOf(EpisodeUnavailableReason.NOT_IN_TRANSLATION, EpisodeUnavailableReason.TITLE_NOT_ON_SOURCE).forEach { reason ->
-            val failure = playerFailure(PlayerUiState(errorMessage = "Серии 5 ещё нет в этой озвучке", episodeUnavailable = reason))
+        val failure = playerFailure(
+            PlayerUiState(
+                errorMessage = "Серии 5 ещё нет в этой озвучке",
+                episodeUnavailable = EpisodeUnavailableReason.NOT_IN_TRANSLATION,
+            ),
+        )
 
-            assertEquals(reason.name, PlayerRecovery.CHANGE_TRANSLATION, failure?.recovery)
-        }
+        assertEquals(PlayerRecovery.CHANGE_TRANSLATION, failure?.recovery)
+    }
+
+    /**
+     * A title the source does not carry at all has no voices to list: the picker would open on
+     * the very failure that is already on screen, with nothing in it to press.
+     */
+    @Test
+    fun `a title the source does not have leads back to the season list too`() {
+        val failure = playerFailure(
+            PlayerUiState(
+                errorMessage = "Серия ещё не появилась в Kodik",
+                episodeUnavailable = EpisodeUnavailableReason.TITLE_NOT_ON_SOURCE,
+            ),
+        )
+
+        assertEquals("Серия ещё не появилась в Kodik", failure?.message)
+        assertEquals(PlayerRecovery.BACK_TO_EPISODES, failure?.recovery)
     }
 
     @Test

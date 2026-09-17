@@ -69,7 +69,8 @@ fun Throwable.toUserMessage(): String = when {
  * The number goes in wherever it is known: «Серия 5 пока не вышла ни в одной озвучке» is a fact
  * the viewer can check against the studios' own pages, and it is only said after every one of
  * them was asked. The first sentence is the old one and still right for a title Kodik does not
- * have at all — no dub picker helps there, and none is offered.
+ * have at all — no dub picker helps there, and none is offered: that failure leads back to the
+ * season list, the same way «ни в одной озвучке» does.
  */
 private fun EpisodeNotAvailable.episodeMissingCopy(): String = when (reason) {
     EpisodeUnavailableReason.TITLE_NOT_ON_SOURCE -> EPISODE_MISSING
