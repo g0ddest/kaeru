@@ -189,6 +189,9 @@ fun PlayerScreen(
             val context = LocalContext.current
             LaunchedEffect(together.state.share) {
                 val request = together.state.share ?: return@LaunchedEffect
+                // Said first: the chooser sends this task to the background, and a window folded
+                // over the messenger the host has just picked is not what they asked for.
+                together.onSystemPrompt()
                 shareInvitation(context, request)
                 together.onShareShown()
             }
@@ -236,6 +239,7 @@ fun PlayerScreen(
                             onCloseHistory = together.onCloseHistory,
                             onReplay = together.onReplay,
                             onLeaveWait = together.onLeaveWait,
+                            onSystemPrompt = together.onSystemPrompt,
                             recorder = together.recorder,
                         )
                     }
@@ -384,6 +388,7 @@ fun PlayerScreen(
                         onCloseHistory = together.onCloseHistory,
                         onReplay = together.onReplay,
                         onLeaveWait = together.onLeaveWait,
+                        onSystemPrompt = together.onSystemPrompt,
                         recorder = together.recorder,
                     )
                 }

@@ -130,6 +130,25 @@ class PictureInPictureTest {
     }
 
     @Test
+    fun `the session's own sheet over the picture keeps it from folding on its own`() {
+        // Everything said this evening, in a sheet the player's own state knows nothing about.
+        val plan = pipPlan(playing, historyOpen = true)
+
+        assertTrue(plan.allowed)
+        assertFalse(plan.autoEnter)
+    }
+
+    @Test
+    fun `a question the system put up over the picture keeps it from folding on its own`() {
+        // The microphone permission, and the chooser the invitation goes out through: both take
+        // the viewer out of the app mid-decision, which is not a request for a floating window.
+        val plan = pipPlan(playing, promptUp = true)
+
+        assertTrue(plan.allowed)
+        assertFalse(plan.autoEnter)
+    }
+
+    @Test
     fun `a picture on a television never folds into a window on the phone`() {
         val plan = pipPlan(playing.copy(isCasting = true))
 

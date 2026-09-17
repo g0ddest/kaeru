@@ -127,6 +127,8 @@ fun TogetherOverlay(
     onReplay: (Long) -> Unit,
     onLeaveWait: () -> Unit,
     modifier: Modifier = Modifier,
+    /** The microphone permission is about to be asked for, which takes the viewer out of the app. */
+    onSystemPrompt: () -> Unit = {},
     recorder: VoiceCapture = NoVoiceCapture,
 ) {
     Box(modifier.fillMaxSize()) {
@@ -161,6 +163,7 @@ fun TogetherOverlay(
                     onReaction = onReaction,
                     onVoice = onVoice,
                     onMicDenied = onMicDenied,
+                    onSystemPrompt = onSystemPrompt,
                 )
             }
         }
@@ -299,6 +302,7 @@ private fun Controls(
     onReaction: (ReactionKind) -> Unit,
     onVoice: (ByteArray, Int) -> Unit,
     onMicDenied: () -> Unit,
+    onSystemPrompt: () -> Unit,
 ) {
     var picking by remember { mutableStateOf(false) }
     var composing by remember { mutableStateOf(false) }
@@ -332,7 +336,12 @@ private fun Controls(
         ) {
             Text("😀", style = MaterialTheme.typography.titleMedium)
         }
-        VoiceButton(recorder = recorder, onClip = onVoice, onDenied = onMicDenied)
+        VoiceButton(
+            recorder = recorder,
+            onClip = onVoice,
+            onDenied = onMicDenied,
+            onSystemPrompt = onSystemPrompt,
+        )
         if (picking) {
             ReactionPicker(
                 onPick = {

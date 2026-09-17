@@ -77,6 +77,48 @@ class VoiceButtonTest {
     }
 
     @Test
+    fun `asking the system for the microphone says a question is going up`() {
+        // The permission dialog is not this app's window, so a player folding itself into a
+        // floating window on every task switch would fold over the question being asked.
+        shadowOf(ApplicationProvider.getApplicationContext<Application>())
+            .denyPermissions(Manifest.permission.RECORD_AUDIO)
+        val capture = FakeVoiceCapture(clip = null)
+        var prompts = 0
+        compose.setContent {
+            VoiceButton(
+                recorder = capture,
+                onClip = { _, _ -> },
+                onDenied = {},
+                onSystemPrompt = { prompts += 1 },
+            )
+        }
+
+        compose.onNodeWithContentDescription(TogetherCopy.VOICE).performClick()
+        compose.waitForIdle()
+
+        assertEquals(1, prompts)
+    }
+
+    @Test
+    fun `a microphone already granted asks the system nothing`() {
+        val capture = FakeVoiceCapture(clip = RecordedClip(byteArrayOf(7), durationMs = 2_400))
+        var prompts = 0
+        compose.setContent {
+            VoiceButton(
+                recorder = capture,
+                onClip = { _, _ -> },
+                onDenied = {},
+                onSystemPrompt = { prompts += 1 },
+            )
+        }
+
+        compose.onNodeWithContentDescription(TogetherCopy.VOICE).performClick()
+        compose.waitForIdle()
+
+        assertEquals(0, prompts)
+    }
+
+    @Test
     fun `letting go sends the clip`() {
         val capture = FakeVoiceCapture(clip = RecordedClip(byteArrayOf(7), durationMs = 2_400))
         val sent = mutableListOf<Int>()

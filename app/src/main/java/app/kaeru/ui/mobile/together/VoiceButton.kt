@@ -102,6 +102,12 @@ fun VoiceButton(
     onClip: (ByteArray, Int) -> Unit,
     onDenied: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * The system is about to be asked for the microphone. Said out loud because the dialog is
+     * not this app's window, and whatever is watching the player has no other way to know that
+     * the viewer is now mid-decision rather than watching an episode.
+     */
+    onSystemPrompt: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var recording by remember { mutableStateOf(false) }
@@ -229,6 +235,7 @@ fun VoiceButton(
                         if (!granted) {
                             down.consume()
                             waitForUp(down.id)
+                            onSystemPrompt()
                             ask.launch(Manifest.permission.RECORD_AUDIO)
                             return@awaitEachGesture
                         }

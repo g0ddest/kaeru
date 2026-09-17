@@ -41,6 +41,12 @@ data class TogetherControls(
     val onPlayerAttached: () -> Unit = {},
     /** Whether the corner may empty itself on a timer; false while a screen reader is running. */
     val onAutoHide: (Boolean) -> Unit = {},
+    /**
+     * Something of the system's is about to come up over the player and take the viewer out of
+     * the app mid-decision: the share chooser, the microphone permission. Whoever owns the window
+     * has to know, because neither is an activity of this app's and nothing else here can tell.
+     */
+    val onSystemPrompt: () -> Unit = {},
     /** Whether the player offers to start one at all. Off on a build with no session behind it. */
     val enabled: Boolean = false,
 )

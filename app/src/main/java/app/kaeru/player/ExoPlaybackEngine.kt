@@ -87,10 +87,21 @@ class ExoPlaybackEngine @Inject constructor(
     fun acquirePlayer(): ExoPlayer = instance ?: build().also {
         instance = it
         _videoPlayer.value = it
-        if (ducked) {
-            loudVolume = it.volume
-            it.volume = DUCKED_VOLUME
-        }
+        duckIfWished(it)
+    }
+
+    /**
+     * Turns a player down because the wish was made while it was not there to hear it.
+     *
+     * Two ways that happens, and both leave [loudVolume] empty: a player built after the duck was
+     * asked for, and one that survived a [release] — which puts the volume back and forgets what
+     * it was, keeping only the wish. Anything else is already down and has a level to go back to,
+     * and writing one again would remember the quiet level as the loud one.
+     */
+    private fun duckIfWished(player: ExoPlayer) {
+        if (!ducked || loudVolume != null) return
+        loudVolume = player.volume
+        player.volume = DUCKED_VOLUME
     }
 
     private fun build(): ExoPlayer = ExoPlayer.Builder(context)
@@ -109,6 +120,9 @@ class ExoPlaybackEngine @Inject constructor(
 
     override fun prepare(url: String, headers: StreamHeaders, startPositionMs: Long, metadata: StreamMetadata?) {
         val player = acquirePlayer()
+        // The wish outlives a release, the level does not: an episode prepared on a player that
+        // was let go mid-clip would come back at full volume with the session still talking.
+        duckIfWished(player)
         // [headers] are not read here: they ride on [dataSource], which is built from the very
         // StreamHeaders the controller passes in, and are needed on every cache miss rather than
         // on one request.

@@ -37,6 +37,7 @@ class ExoPlaybackEngineTest {
     private lateinit var database: StandaloneDatabaseProvider
     private lateinit var cache: SimpleCache
     private lateinit var engine: ExoPlaybackEngine
+    private val headers = StreamHeaders("Chrome/128.0", "https://kodikplayer.com/")
 
     @Before
     fun setUp() {
@@ -88,6 +89,23 @@ class ExoPlaybackEngineTest {
 
         engine.release()
 
+        assertEquals(0.7f, engine.acquirePlayer().volume, 0.0001f)
+    }
+
+    @Test
+    fun `released and prepared again while the voice is still on, the episode comes back quiet`() {
+        engine.acquirePlayer().volume = 0.7f
+        engine.duck(true)
+        // The screen let the episode go while a friend was still talking. The wish stays — the
+        // next picture is wanted down too — but the level went back with the release.
+        engine.release()
+        assertEquals(0.7f, engine.acquirePlayer().volume, 0.0001f)
+
+        engine.prepare("https://example.test/episode.m3u8", headers, startPositionMs = 0)
+
+        assertEquals(0.2f, engine.acquirePlayer().volume, 0.0001f)
+
+        engine.duck(false)
         assertEquals(0.7f, engine.acquirePlayer().volume, 0.0001f)
     }
 }

@@ -97,6 +97,17 @@ class PlayerActivity : FragmentActivity() {
     /** Whether the picture is in a floating window right now, which is all the screen needs to know. */
     private var inPictureInPicture by mutableStateOf(false)
 
+    /**
+     * Something of the system's is up over the picture and has not been answered: the share
+     * chooser, or the microphone permission.
+     *
+     * Neither is an activity of this app's, so nothing in the player's own state would know about
+     * them. Both take the viewer out of the app mid-decision, and a host who picks a messenger to
+     * send the invitation through should arrive in it rather than behind a floating window of the
+     * episode they were watching. Cleared in [onResume], the one thing every way out has in common.
+     */
+    private var promptUp by mutableStateOf(false)
+
     /** Whether this device has floating windows at all; some do not, and the button must not lie. */
     private val supportsPictureInPicture: Boolean by lazy {
         packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
@@ -208,6 +219,8 @@ class PlayerActivity : FragmentActivity() {
                     state.sheet,
                     state.completedPrompt,
                     state.pipOnLeave,
+                    session.historyOpen,
+                    promptUp,
                     videoSize,
                 ) {
                     describeWindow()
@@ -263,6 +276,7 @@ class PlayerActivity : FragmentActivity() {
                             onMessageShown = together::messageShown,
                             onPlayerAttached = together::playerAttached,
                             onAutoHide = together::setAutoHide,
+                            onSystemPrompt = ::systemPromptGoingUp,
                             enabled = true,
                         ),
                     )
@@ -289,6 +303,20 @@ class PlayerActivity : FragmentActivity() {
         // leaving before starting the episode they asked for.
         if (launch.explicit && delivered != launch) return
         deliver(explicit = false)
+    }
+
+    /**
+     * In front again, so whatever was over the picture has been answered, dismissed or left.
+     *
+     * Every way out of a chooser and of a permission dialog comes back through here, including
+     * the ones that are not an answer — the back button, a tap outside — which is why the flag is
+     * cleared here rather than in a result callback that only some of them reach.
+     */
+    override fun onResume() {
+        super.onResume()
+        if (!promptUp) return
+        promptUp = false
+        describeWindow()
     }
 
     /** Hands the launch to the view model, remembering that it has now been made. */
@@ -321,7 +349,7 @@ class PlayerActivity : FragmentActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) return
-        if (!pipPlan(viewModel.uiState.value).autoEnter) return
+        if (!windowPlan().autoEnter) return
         enterWindow()
     }
 
@@ -340,6 +368,18 @@ class PlayerActivity : FragmentActivity() {
     }
 
     /**
+     * A chooser or a permission question is about to be put to the viewer.
+     *
+     * The parameters are re-sent from here rather than left to the effect above: on Android 12
+     * and later the system reads whatever it was last given at the moment the task switches, and
+     * the chooser starts in the same frame as this.
+     */
+    private fun systemPromptGoingUp() {
+        promptUp = true
+        describeWindow()
+    }
+
+    /**
      * Folds the picture into a floating window now.
      *
      * Nothing is stopped and nothing is saved: the activity stays started, so progress keeps
@@ -349,7 +389,7 @@ class PlayerActivity : FragmentActivity() {
      */
     private fun enterWindow() {
         if (!supportsPictureInPicture) return
-        val plan = pipPlan(viewModel.uiState.value)
+        val plan = windowPlan()
         if (!plan.allowed) return
         // A device that refuses the window is not a device that should lose the episode.
         runCatching { enterPictureInPictureMode(windowParams(plan)) }
@@ -358,8 +398,19 @@ class PlayerActivity : FragmentActivity() {
     /** Keeps the system's idea of the window in step with what is playing. */
     private fun describeWindow() {
         if (!supportsPictureInPicture) return
-        runCatching { setPictureInPictureParams(windowParams(pipPlan(viewModel.uiState.value))) }
+        runCatching { setPictureInPictureParams(windowParams(windowPlan())) }
     }
+
+    /**
+     * What the window should do, from everything that has a say in it — including the two things
+     * the player's own state has never heard of: the session's history sheet, and a system
+     * question this screen put up.
+     */
+    private fun windowPlan(): PipPlan = pipPlan(
+        state = viewModel.uiState.value,
+        historyOpen = together.uiState.value.historyOpen,
+        promptUp = promptUp,
+    )
 
     private fun windowParams(plan: PipPlan): PictureInPictureParams {
         val size = videoSize

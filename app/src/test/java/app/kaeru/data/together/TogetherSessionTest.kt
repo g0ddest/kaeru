@@ -462,6 +462,41 @@ class TogetherSessionTest {
     }
 
     @Test
+    fun `the first correction waits for the picture to start rather than for the next tick`() =
+        sessionTest {
+            port.showing(animeId = null, episode = null, translationId = null, positionMs = 0, playing = false)
+            val link = RoomLink("room", ByteArray(16), null)
+            val joining = launch { session.join(link, "Костя") }
+            runCurrent()
+            transport.deliver(peerHello(name = "Аня", episode = 7, translationId = 11, positionMs = 930_000))
+            runCurrent()
+            joining.join()
+
+            // Ready, and then buffering the first frames — which is where a guest on HLS spends
+            // the seconds after the seek. The policy will not judge a picture that is not moving.
+            port.showing(
+                animeId = 100, episode = 7, translationId = 11,
+                positionMs = 0, playing = false, buffering = true,
+            )
+            runCurrent()
+            assertEquals(listOf(930_000L), port.seeks)
+            assertTrue(session.state.value is SessionState.Live)
+
+            transport.deliver(
+                TogetherMessage.State(950_000, playing = true, buffering = false, sentAt = clock.millis(), seq = 9),
+            )
+            runCurrent()
+            assertEquals("nothing to judge while the picture is stopped", listOf(930_000L), port.seeks)
+
+            // The first frames arrive, twenty seconds behind, and the gap is closed there and
+            // then rather than on whichever tick comes next.
+            port.showing(animeId = 100, episode = 7, translationId = 11, positionMs = 930_000)
+            runCurrent()
+
+            assertEquals(listOf(930_000L, 950_000L), port.seeks)
+        }
+
+    @Test
     fun `where the friend is now is their last report carried forward, or the hello until then`() =
         sessionTest {
             port.showing(animeId = null, episode = null, translationId = null, positionMs = 0, playing = false)

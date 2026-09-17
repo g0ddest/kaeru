@@ -247,11 +247,20 @@ class TogetherSession(
             }
             goLive(greeting.name)
             // One look at the gap now rather than on the next tick, and another at the friend's
-            // first report: the picture may still be buffering at the seek, and the policy does
-            // not judge a picture that is not moving.
+            // first report.
             correct()
             syncOnReport = true
             if (moved == null) mentionVoice(greeting.translationId)
+            // And one more when the picture actually starts moving, which is the only one of the
+            // three that is reliably worth anything: the policy refuses to judge a picture that is
+            // not playing, and a guest spends the seconds after the seek buffering HLS segments.
+            // Without this the first real correction is whichever two-second tick comes next.
+            //
+            // Last in this coroutine on purpose: it suspends until the episode starts, and the
+            // job is cancelled with the session, so nothing is left waiting for a picture that
+            // is never going to play.
+            port.state.first { it.playing }
+            correct()
         }
     }
 
