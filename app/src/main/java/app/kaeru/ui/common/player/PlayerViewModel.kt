@@ -8,6 +8,7 @@ import app.kaeru.domain.connectivity.Connectivity
 import app.kaeru.domain.download.DownloadRepository
 import app.kaeru.domain.download.DownloadState
 import app.kaeru.domain.download.EpisodeDownload
+import app.kaeru.domain.error.EpisodeNotAvailable
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.EpisodeProgress
@@ -38,6 +39,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -52,6 +54,10 @@ import javax.inject.Inject
 
 /** How long «Удалить загрузку» waits for the engine to let go of the file before retrying anyway. */
 private const val REMOVAL_TIMEOUT_MS = 5_000L
+
+/** One line naming both voices: the one that did not have the episode, and the one that does. */
+private fun substitutedCopy(event: PlaybackEvent.TranslationSubstituted): String =
+    "В озвучке ${event.askedFor.title} серии ${event.episode} нет — включена ${event.playing.title}"
 
 /**
  * The player screen's brain, shared by the phone and the TV: the screens differ in how they
@@ -196,6 +202,7 @@ class PlayerViewModel @Inject constructor(
             episodes = shown.episodes,
             autoplayCountdownSec = playback.autoplayCountdownSec,
             errorMessage = playback.error?.toUserMessage(),
+            episodeUnavailable = (playback.error as? EpisodeNotAvailable)?.reason,
             // Straight through from the controller, which is the only layer that knows whether the
             // file or the source was what broke.
             failedReadingDownload = playback.failedReadingDownload,
@@ -219,9 +226,42 @@ class PlayerViewModel @Inject constructor(
                     // One condition, one sentence: the same copy a failed episode would show.
                     is PlaybackEvent.NextEpisodeUnavailable ->
                         screen.update { it.copy(toast = event.error.toUserMessage()) }
+                    is PlaybackEvent.TranslationSubstituted ->
+                        screen.update { it.copy(toast = substitutedCopy(event)) }
                 }
             }
         }
+        // What the voices say about the episode is about *this* episode, and the episode moves
+        // under them: autoplay runs into the next one, and the television picks one from the
+        // strip beside them. That television asks for the list once a session and leaves it up,
+        // so a list left as it was captions the episode it was built for — «нет серии 4» over a
+        // fifth the voice does have — and refuses the press as well.
+        viewModelScope.launch {
+            controller.state
+                .map { it.target }
+                .distinctUntilChanged { was, now -> was?.animeId == now?.animeId && was?.episode == now?.episode }
+                .collect { target -> refreshTranslations(target) }
+        }
+    }
+
+    /**
+     * Says again what the voices already on screen carry, for the episode now on it.
+     *
+     * Nothing is fetched: the answer comes from what the source already holds — the catalogue it
+     * keeps for six hours, and the pages it has read — so following the picture costs nothing.
+     *
+     * Only ever while a list is up. A screen that never opened the voices asks for nothing, and a
+     * list that does not come back leaves the one on screen exactly as it was: nobody asked for
+     * this, so there is nothing to tell the viewer about it going wrong.
+     */
+    private suspend fun refreshTranslations(target: PlaybackTarget?) {
+        val id = animeId.value ?: return
+        if (target == null || target.animeId != id || screen.value.translations.isEmpty()) return
+        val playing = controller.state.value.stream?.translation
+        withContext(io) { resolve.translations(id, playing, target.episode) }
+            .onSuccess { tracks ->
+                screen.update { if (it.translations.isEmpty()) it else it.copy(translations = tracks) }
+            }
     }
 
     /**
@@ -352,8 +392,10 @@ class PlayerViewModel @Inject constructor(
      */
     fun playEpisode(episode: Int) {
         val id = animeId.value ?: return
-        if (controller.state.value.target?.episode == episode) return
-        val track = controller.state.value.stream?.translation
+        val live = controller.state.value
+        if (live.target?.episode == episode) return
+        // The voice the viewer has, not one that stood in for it on this episode.
+        val track = live.insteadOf ?: live.stream?.translation
         requested = id to episode
         startJob = viewModelScope.launch {
             val saved = watchStates.observe(id).first()
@@ -450,10 +492,15 @@ class PlayerViewModel @Inject constructor(
 
     private fun fetchTranslations(show: Boolean) {
         val id = animeId.value ?: return
-        val playing = controller.state.value.stream?.translation
+        val live = controller.state.value
+        val playing = live.stream?.translation
+        // The episode on screen, so each voice can say whether it has it. Only while the
+        // controller is on this title: between naming it and playback reaching it, the episode
+        // it holds belongs to the title before.
+        val episode = live.target?.takeIf { it.animeId == id }?.episode
         screen.update { it.copy(loadingTranslations = true) }
         viewModelScope.launch {
-            withContext(io) { resolve.translations(id, playing) }
+            withContext(io) { resolve.translations(id, playing, episode) }
                 .onSuccess { tracks ->
                     screen.update {
                         it.copy(

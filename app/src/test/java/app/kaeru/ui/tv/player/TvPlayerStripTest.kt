@@ -139,6 +139,23 @@ class TvPlayerStripTest {
     }
 
     @Test
+    fun `a track without the episode on screen says so, whatever else it is`() {
+        val behind = ranked(7, "Studio Band", TranslationKind.VOICE, oftenChosen = true).copy(hasEpisode = false)
+
+        assertEquals("нет серии 5", translationCaption(behind, currentId = 7, episode = 5))
+        assertEquals("нет серии 5", translationCaption(behind, currentId = null, episode = 5))
+    }
+
+    @Test
+    fun `a track that has the episode, or is not known not to, is captioned as before`() {
+        val has = ranked(7, "AniLibria", TranslationKind.VOICE).copy(hasEpisode = true)
+        val unknown = ranked(8, "AniDUB", TranslationKind.VOICE)
+
+        assertEquals("Выбрано", translationCaption(has, currentId = 7, episode = 5))
+        assertNull(translationCaption(unknown, currentId = 7, episode = 5))
+    }
+
+    @Test
     fun `the track in play says only that, however often it is chosen`() {
         // Two marks on one chip say less than one, which is the same argument the ranking itself
         // makes: a track already chosen here does not also need to be recommended.

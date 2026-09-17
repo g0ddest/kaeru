@@ -3,6 +3,7 @@ package app.kaeru.ui.common.player
 import app.kaeru.domain.download.DownloadKey
 import app.kaeru.domain.download.DownloadState
 import app.kaeru.domain.download.EpisodeDownload
+import app.kaeru.domain.error.EpisodeUnavailableReason
 import app.kaeru.domain.model.Quality
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -138,5 +139,62 @@ class PlayerFailureTest {
 
         assertEquals(OFFLINE, failure?.message)
         assertEquals(PlayerRecovery.CHANGE_TRANSLATION, failure?.recovery)
+    }
+
+    @Test
+    fun `an episode no dub has leads back to the season list, not to a picker with nothing in it`() {
+        val failure = playerFailure(
+            PlayerUiState(
+                errorMessage = "Серия 5 пока не вышла ни в одной озвучке",
+                episodeUnavailable = EpisodeUnavailableReason.NOT_IN_ANY_TRANSLATION,
+            ),
+        )
+
+        assertEquals("Серия 5 пока не вышла ни в одной озвучке", failure?.message)
+        assertEquals(PlayerRecovery.BACK_TO_EPISODES, failure?.recovery)
+    }
+
+    @Test
+    fun `an episode one dub lacks still offers the others`() {
+        val failure = playerFailure(
+            PlayerUiState(
+                errorMessage = "Серии 5 ещё нет в этой озвучке",
+                episodeUnavailable = EpisodeUnavailableReason.NOT_IN_TRANSLATION,
+            ),
+        )
+
+        assertEquals(PlayerRecovery.CHANGE_TRANSLATION, failure?.recovery)
+    }
+
+    /**
+     * A title the source does not carry at all has no voices to list: the picker would open on
+     * the very failure that is already on screen, with nothing in it to press.
+     */
+    @Test
+    fun `a title the source does not have leads back to the season list too`() {
+        val failure = playerFailure(
+            PlayerUiState(
+                errorMessage = "Серия ещё не появилась в Kodik",
+                episodeUnavailable = EpisodeUnavailableReason.TITLE_NOT_ON_SOURCE,
+            ),
+        )
+
+        assertEquals("Серия ещё не появилась в Kodik", failure?.message)
+        assertEquals(PlayerRecovery.BACK_TO_EPISODES, failure?.recovery)
+    }
+
+    @Test
+    fun `the season list is offered without waiting for the voices to load`() {
+        // On the phone the list is empty at failure time — it is fetched on demand — and the
+        // reason is already the proof that no other dub has the episode.
+        val failure = playerFailure(
+            PlayerUiState(
+                errorMessage = "Серия 5 пока не вышла ни в одной озвучке",
+                episodeUnavailable = EpisodeUnavailableReason.NOT_IN_ANY_TRANSLATION,
+                translations = emptyList(),
+            ),
+        )
+
+        assertEquals(PlayerRecovery.BACK_TO_EPISODES, failure?.recovery)
     }
 }

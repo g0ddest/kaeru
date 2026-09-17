@@ -5,6 +5,7 @@ import app.kaeru.domain.download.DeferredDownloadRemoval
 import app.kaeru.domain.download.FakeDeferredRemovals
 import app.kaeru.domain.download.FakeDownloadRepository
 import app.kaeru.domain.error.EpisodeNotAvailable
+import app.kaeru.domain.error.EpisodeUnavailableReason
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
@@ -15,6 +16,7 @@ import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.model.UserRate
+import app.kaeru.domain.model.WatchState
 import app.kaeru.domain.playback.AddStartedTitleToList
 import app.kaeru.domain.playback.FakePlaybackSampleRepository
 import app.kaeru.domain.playback.FakePlaybackPreferences
@@ -751,4 +753,172 @@ class PlaybackControllerTest {
 
         assertEquals(listOf(555 to ListStatus.WATCHING), library.statusWrites)
     }
+
+    // --- a voice that does not carry the episode --------------------------------------------------
+
+    /** This anime remembers AniLibria; it is what every plain open asks for. */
+    private fun rememberingAnilibria() = watchStates.seed(
+        WatchState(100, 3, 0, 0, translationId = anilibria.id, kodikSeason = 1, updatedAt = now, translationTitle = anilibria.title),
+    )
+
+    @Test
+    fun `an episode the remembered voice lacks plays in another, and the screen is told which`() = runTest(dispatcher) {
+        val events = mutableListOf<PlaybackEvent>()
+        scope.launch { controller.events.collect { events += it } }
+        rememberingAnilibria()
+        source.missing = mapOf(anilibria.id to setOf(4))
+
+        controller.play(target(episode = 4))
+        advanceUntilIdle()
+
+        assertEquals("https://cdn/100/4/22/720", engine.prepared.single().url)
+        assertEquals(studioBanda, controller.state.value.stream?.translation)
+        assertEquals(anilibria, controller.state.value.insteadOf)
+        assertEquals(
+            listOf(PlaybackEvent.TranslationSubstituted(askedFor = anilibria, playing = studioBanda, episode = 4)),
+            events,
+        )
+    }
+
+    @Test
+    fun `a voice standing in is not written into this anime's memory by the position ticks`() = runTest(dispatcher) {
+        rememberingAnilibria()
+        source.missing = mapOf(anilibria.id to setOf(4))
+
+        start(episode = 4)
+        engine.moveTo(5_000)
+        advanceUntilIdle()
+        engine.moveTo(10_000)
+        advanceUntilIdle()
+
+        assertEquals(10_000L, watchStates.saved.last().positionMs)
+        assertEquals(anilibria.id, watchStates.saved.last().translationId)
+        assertEquals(anilibria.title, watchStates.saved.last().translationTitle)
+    }
+
+    @Test
+    fun `the next episode is asked for in the voice the viewer has, not in the one standing in`() = runTest(dispatcher) {
+        rememberingAnilibria()
+        source.missing = mapOf(anilibria.id to setOf(4))
+        start(episode = 4)
+        engine.moveTo(1_439_000)
+        advanceUntilIdle()
+
+        engine.end()
+        advanceUntilIdle()
+
+        assertEquals(5, controller.state.value.target?.episode)
+        assertEquals("https://cdn/100/5/11/720", engine.prepared.last().url)
+        assertNull(controller.state.value.insteadOf)
+    }
+
+    @Test
+    fun `a voice picked by hand that lacks the episode fails honestly rather than switching`() = runTest(dispatcher) {
+        source.missing = mapOf(studioBanda.id to setOf(4))
+        start()
+
+        controller.changeTranslation(studioBanda)
+        advanceUntilIdle()
+
+        val error = controller.state.value.error
+        assertTrue("expected EpisodeNotAvailable, got $error", error is EpisodeNotAvailable)
+        assertEquals(EpisodeUnavailableReason.NOT_IN_TRANSLATION, (error as EpisodeNotAvailable).reason)
+        assertEquals(1, engine.prepared.size)
+    }
+
+    @Test
+    fun `a friend's voice is played as asked or not at all`() = runTest(dispatcher) {
+        source.missing = mapOf(studioBanda.id to setOf(4))
+
+        controller.play(target(episode = 4, translation = studioBanda), ActionOrigin.REMOTE)
+        advanceUntilIdle()
+
+        val error = controller.state.value.error
+        assertEquals(EpisodeUnavailableReason.NOT_IN_TRANSLATION, (error as EpisodeNotAvailable).reason)
+        assertTrue(engine.prepared.isEmpty())
+    }
+
+    /**
+     * A friend's episode arrives naming a voice this side's catalogue does not have, and the port
+     * hands it over as none at all — this side plays what it can. Nobody pinned anything then, so
+     * a remembered voice that lags is stood in for rather than failing the guest.
+     */
+    @Test
+    fun `a friend's episode that names no voice may still be stood in for`() = runTest(dispatcher) {
+        rememberingAnilibria()
+        source.missing = mapOf(anilibria.id to setOf(4))
+
+        controller.play(target(episode = 4, translation = null), ActionOrigin.REMOTE)
+        advanceUntilIdle()
+
+        assertEquals(studioBanda, controller.state.value.stream?.translation)
+        assertEquals(anilibria, controller.state.value.insteadOf)
+    }
+
+    @Test
+    fun `a voice that stood in for nothing is what the next episode is asked in`() = runTest(dispatcher) {
+        // Nothing was remembered, so the stand-in became this anime's voice. Asking for the
+        // ranking's opening guess again would cost a failed page fetch and a notice naming a
+        // voice the viewer never chose, once per episode.
+        val events = mutableListOf<PlaybackEvent>()
+        scope.launch { controller.events.collect { events += it } }
+        source.missing = mapOf(anilibria.id to setOf(4))
+
+        start(episode = 4)
+        engine.moveTo(1_439_000)
+        advanceUntilIdle()
+        engine.end()
+        advanceUntilIdle()
+
+        assertEquals(5, controller.state.value.target?.episode)
+        assertEquals("https://cdn/100/5/22/720", engine.prepared.last().url)
+        assertTrue(events.none { it is PlaybackEvent.TranslationSubstituted })
+    }
+
+    @Test
+    fun `an episode no voice carries is a failure that says so`() = runTest(dispatcher) {
+        rememberingAnilibria()
+        source.missing = mapOf(anilibria.id to setOf(4), studioBanda.id to setOf(4))
+
+        controller.play(target(episode = 4))
+        advanceUntilIdle()
+
+        val error = controller.state.value.error
+        assertEquals(EpisodeUnavailableReason.NOT_IN_ANY_TRANSLATION, (error as EpisodeNotAvailable).reason)
+    }
+
+    @Test
+    fun `a retry forgets what the source said about the title before asking again`() = runTest(dispatcher) {
+        rememberingAnilibria()
+        source.missing = mapOf(anilibria.id to setOf(4), studioBanda.id to setOf(4))
+        controller.play(target(episode = 4))
+        advanceUntilIdle()
+
+        // The studio caught up in the meantime; a retry that trusted the six-hour catalogue would not see it.
+        source.missing = emptyMap()
+        controller.retry()
+        advanceUntilIdle()
+
+        assertEquals(listOf(100), source.forgotten)
+        assertEquals("https://cdn/100/4/11/720", engine.prepared.single().url)
+        assertNull(controller.state.value.error)
+    }
+
+    @Test
+    fun `an expired link resolved again behind the viewer does not announce the same stand-in twice`() =
+        runTest(dispatcher) {
+            val events = mutableListOf<PlaybackEvent>()
+            scope.launch { controller.events.collect { events += it } }
+            rememberingAnilibria()
+            source.missing = mapOf(anilibria.id to setOf(4))
+            start(episode = 4)
+            engine.moveTo(320_000)
+            advanceUntilIdle()
+
+            engine.fail(NetworkUnavailable(java.io.IOException("403")))
+            advanceUntilIdle()
+
+            assertEquals(2, engine.prepared.size)
+            assertEquals(1, events.count { it is PlaybackEvent.TranslationSubstituted })
+        }
 }

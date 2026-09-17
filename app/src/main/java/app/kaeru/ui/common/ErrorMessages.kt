@@ -5,6 +5,7 @@ import app.kaeru.domain.error.AuthCallbackRejected
 import app.kaeru.domain.error.CastLoadFailed
 import app.kaeru.domain.error.DownloadLimitReached
 import app.kaeru.domain.error.EpisodeNotAvailable
+import app.kaeru.domain.error.EpisodeUnavailableReason
 import app.kaeru.domain.error.HttpError
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.error.PairingFailed
@@ -27,6 +28,8 @@ private const val SOURCE_REJECTED = "Kodik временно недоступен
 private const val SOURCE_OFFLINE = "Нет сети. Скачайте серию заранее"
 private const val DOWNLOAD_LIMIT = "Лимит места исчерпан. Удалите загрузки или увеличьте лимит в настройках"
 private const val EPISODE_MISSING = "Серия ещё не появилась в Kodik"
+private const val EPISODE_NOT_IN_TRACK = "Этой серии ещё нет в выбранной озвучке"
+private const val EPISODE_NOWHERE = "Серия пока не вышла ни в одной озвучке"
 private const val CAST_LOAD_FAILED = "Chromecast не смог загрузить видео"
 private const val SOURCE_CHANGED = "Источник обновился, ждите обновления приложения"
 private const val STORAGE_FAILED = "Не удалось сохранить прогресс просмотра"
@@ -66,7 +69,7 @@ fun Throwable.toUserMessage(): String = when {
     this is SourceUnavailable && reason == SourceUnavailableReason.NO_KEY -> SOURCE_NO_KEY
     this is SourceUnavailable && reason == SourceUnavailableReason.OFFLINE -> SOURCE_OFFLINE
     this is SourceUnavailable -> SOURCE_REJECTED
-    this is EpisodeNotAvailable -> EPISODE_MISSING
+    this is EpisodeNotAvailable -> episodeMissingCopy()
     this is CastLoadFailed -> CAST_LOAD_FAILED
     this is SourceFormatChanged -> SOURCE_CHANGED
     this is AccountSessionChanged -> SESSION_CHANGED
@@ -93,6 +96,23 @@ fun updateFailureMessage(reason: UpdateFailure): String = when (reason) {
     UpdateFailure.CORRUPTED -> UPDATE_CORRUPTED
     UpdateFailure.INSTALLER_REFUSED -> UPDATE_INSTALLER_REFUSED
     UpdateFailure.UNKNOWN -> UPDATE_UNKNOWN
+}
+
+/**
+ * How much of nothing the source had, as one sentence each.
+ *
+ * The number goes in wherever it is known: «Серия 5 пока не вышла ни в одной озвучке» is a fact
+ * the viewer can check against the studios' own pages, and it is only said after every one of
+ * them was asked. The first sentence is the old one and still right for a title Kodik does not
+ * have at all — no dub picker helps there, and none is offered: that failure leads back to the
+ * season list, the same way «ни в одной озвучке» does.
+ */
+private fun EpisodeNotAvailable.episodeMissingCopy(): String = when (reason) {
+    EpisodeUnavailableReason.TITLE_NOT_ON_SOURCE -> EPISODE_MISSING
+    EpisodeUnavailableReason.NOT_IN_TRANSLATION ->
+        episode?.let { "Серии $it ещё нет в этой озвучке" } ?: EPISODE_NOT_IN_TRACK
+    EpisodeUnavailableReason.NOT_IN_ANY_TRANSLATION ->
+        episode?.let { "Серия $it пока не вышла ни в одной озвучке" } ?: EPISODE_NOWHERE
 }
 
 /** Null when the result succeeded; the mapped message otherwise. */

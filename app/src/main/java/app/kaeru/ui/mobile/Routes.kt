@@ -39,4 +39,13 @@ object Routes {
     const val WATCH = "watch"
     const val DETAILS = "details/{animeId}"
     fun details(animeId: Int) = "details/$animeId"
+
+    /**
+     * Whether [route] names one title's screen with a real id in it. A route that arrives in an
+     * intent extra is only trusted this far: navigating to `details/abc` would take the app down.
+     */
+    fun isDetails(route: String): Boolean =
+        route.startsWith(DETAILS_PREFIX) && route.removePrefix(DETAILS_PREFIX).toIntOrNull() != null
+
+    private const val DETAILS_PREFIX = "details/"
 }

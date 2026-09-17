@@ -57,6 +57,9 @@ fun TvApp(authViewModel: AuthViewModel = hiltViewModel()) {
     // playing has to survive a process death on a device that is left switched on for days.
     var playingId by rememberSaveable { mutableIntStateOf(NOTHING) }
     var playingEpisode by rememberSaveable { mutableIntStateOf(NOTHING) }
+    // A title the player asked the shell to open on its way out: «К списку серий» has to land on
+    // the season, whichever screen the episode was started from.
+    var titleToOpen by rememberSaveable { mutableIntStateOf(NOTHING) }
     val shell = rememberSaveableStateHolder()
 
     KaeruTvTheme {
@@ -93,6 +96,10 @@ fun TvApp(authViewModel: AuthViewModel = hiltViewModel()) {
                     episode = playingEpisode,
                     onEpisode = { playingEpisode = it },
                     onExit = { playingId = NOTHING },
+                    onExitToTitle = {
+                        titleToOpen = playingId
+                        playingId = NOTHING
+                    },
                 )
                 // The shell is taken down while an episode plays rather than drawn over, so that
                 // the remote cannot walk out of the player and into rows nobody can see. What it
@@ -104,6 +111,8 @@ fun TvApp(authViewModel: AuthViewModel = hiltViewModel()) {
                             playingId = animeId
                             playingEpisode = episode
                         },
+                        openTitle = titleToOpen.takeIf { it != NOTHING },
+                        onTitleOpened = { titleToOpen = NOTHING },
                     )
                 }
             }
@@ -120,7 +129,13 @@ fun TvApp(authViewModel: AuthViewModel = hiltViewModel()) {
  */
 @UnstableApi
 @Composable
-private fun TvPlayer(animeId: Int, episode: Int, onEpisode: (Int) -> Unit, onExit: () -> Unit) {
+private fun TvPlayer(
+    animeId: Int,
+    episode: Int,
+    onEpisode: (Int) -> Unit,
+    onExit: () -> Unit,
+    onExitToTitle: () -> Unit,
+) {
     val viewModel: PlayerViewModel = hiltViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val player by viewModel.videoPlayer.collectAsStateWithLifecycle()
@@ -156,6 +171,11 @@ private fun TvPlayer(animeId: Int, episode: Int, onEpisode: (Int) -> Unit, onExi
             viewModel.reportProgress()
             viewModel.release()
             onExit()
+        },
+        onBackToEpisodes = {
+            viewModel.reportProgress()
+            viewModel.release()
+            onExitToTitle()
         },
         // Routed through the caller so the screen's target and the controller agree on which
         // episode is playing; the effect above is what actually starts it.

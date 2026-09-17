@@ -1,6 +1,7 @@
 package app.kaeru.data.kodik
 
 import app.kaeru.domain.error.EpisodeNotAvailable
+import app.kaeru.domain.error.EpisodeUnavailableReason
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.error.SourceFormatChanged
 import app.kaeru.domain.error.SourceUnavailable
@@ -150,6 +151,7 @@ class KodikSourceProviderTest {
         assertTrue("expected EpisodeNotAvailable, got $error", error is EpisodeNotAvailable)
         assertEquals(SHIKIMORI_ID, (error as EpisodeNotAvailable).animeId)
         assertNull(error.episode)
+        assertEquals(EpisodeUnavailableReason.TITLE_NOT_ON_SOURCE, error.reason)
     }
 
     @Test
@@ -159,6 +161,7 @@ class KodikSourceProviderTest {
         val error = provider.translations(SHIKIMORI_ID).exceptionOrNull()
 
         assertTrue("expected EpisodeNotAvailable, got $error", error is EpisodeNotAvailable)
+        assertEquals(EpisodeUnavailableReason.TITLE_NOT_ON_SOURCE, (error as EpisodeNotAvailable).reason)
     }
 
     @Test
@@ -341,6 +344,8 @@ class KodikSourceProviderTest {
         assertTrue("expected EpisodeNotAvailable, got $error", error is EpisodeNotAvailable)
         assertEquals(SHIKIMORI_ID, (error as EpisodeNotAvailable).animeId)
         assertEquals(99, error.episode)
+        // The title is there and the track is there; only the episode is not. Another track may have it.
+        assertEquals(EpisodeUnavailableReason.NOT_IN_TRANSLATION, error.reason)
     }
 
     @Test
@@ -350,6 +355,45 @@ class KodikSourceProviderTest {
         val error = provider.resolve(SHIKIMORI_ID, episode = 1, translation = unknown).exceptionOrNull()
 
         assertTrue("expected EpisodeNotAvailable, got $error", error is EpisodeNotAvailable)
+        assertEquals(EpisodeUnavailableReason.NOT_IN_TRANSLATION, (error as EpisodeNotAvailable).reason)
+    }
+
+    // --- what a track's own page said it carries ---------------------------------------------
+
+    @Test
+    fun `a track's episodes are known once its page has been read, and not before`() = runTest {
+        assertNull(provider.listedEpisodes(SHIKIMORI_ID, 3560))
+
+        provider.resolve(SHIKIMORI_ID, episode = 1).getOrThrow()
+
+        assertEquals((1..28).toSet(), provider.listedEpisodes(SHIKIMORI_ID, 3560))
+        assertNull(provider.listedEpisodes(SHIKIMORI_ID, 923))
+    }
+
+    @Test
+    fun `a missing episode still leaves the track's list behind, which is the point of asking`() = runTest {
+        provider.resolve(SHIKIMORI_ID, episode = 99)
+
+        assertEquals((1..28).toSet(), provider.listedEpisodes(SHIKIMORI_ID, 3560))
+    }
+
+    @Test
+    fun `forgetting a title drops both the catalogue and what its tracks listed`() = runTest {
+        provider.resolve(SHIKIMORI_ID, episode = 1).getOrThrow()
+
+        provider.forget(SHIKIMORI_ID)
+
+        assertNull(provider.listedEpisodes(SHIKIMORI_ID, 3560))
+        provider.translations(SHIKIMORI_ID).getOrThrow()
+        assertEquals(2, routes.getPlayerCalls)
+    }
+
+    @Test
+    fun `a catalogue that expired takes the lists with it`() = runTest {
+        provider.resolve(SHIKIMORI_ID, episode = 1).getOrThrow()
+        clock.advance(Duration.ofHours(6).plusSeconds(1))
+
+        assertNull(provider.listedEpisodes(SHIKIMORI_ID, 3560))
     }
 
     @Test

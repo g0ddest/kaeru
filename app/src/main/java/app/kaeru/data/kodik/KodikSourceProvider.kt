@@ -1,6 +1,7 @@
 package app.kaeru.data.kodik
 
 import app.kaeru.domain.error.EpisodeNotAvailable
+import app.kaeru.domain.error.EpisodeUnavailableReason
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.error.SourceFormatChanged
 import app.kaeru.domain.error.SourceUnavailable
@@ -32,6 +33,10 @@ import javax.inject.Singleton
  * The translation list is cached for six hours per anime because it costs two
  * requests and barely changes. The signed links are never cached: they expire
  * in hours and look bound to the IP that asked.
+ *
+ * Every translation's own page lists the episodes of the season it was opened on, and that list
+ * is kept beside the catalogue for as long as the catalogue is: it is what says, without another
+ * request, which tracks cannot have the episode a viewer is about to be offered.
  */
 @Singleton
 class KodikSourceProvider @Inject constructor(
@@ -51,8 +56,18 @@ class KodikSourceProvider @Inject constructor(
     private val cacheLock = Mutex()
     private val cache = mutableMapOf<Int, Catalogue>()
 
+    /** Per anime, per translation id: the episode numbers that track's page listed. Lives and dies with [cache]. */
+    private val listed = mutableMapOf<Int, MutableMap<Int, Set<Int>>>()
+
     override suspend fun translations(shikimoriId: Int): Result<List<Translation>> =
         attempt(episode = null) { catalogue(shikimoriId).translations }
+
+    override suspend fun listedEpisodes(shikimoriId: Int, translationId: Int): Set<Int>? =
+        cacheLock.withLock { cached(shikimoriId)?.let { listed[shikimoriId]?.get(translationId) } }
+
+    override suspend fun forget(shikimoriId: Int) {
+        cacheLock.withLock { drop(shikimoriId) }
+    }
 
     override suspend fun resolve(
         shikimoriId: Int,
@@ -63,7 +78,7 @@ class KodikSourceProvider @Inject constructor(
         val index = when (translation) {
             null -> catalogue.translations.indices.firstOrNull()
             else -> catalogue.translations.indexOfFirst { it.id == translation.id }.takeIf { it >= 0 }
-        } ?: throw KodikError.NotFound(shikimoriId)
+        } ?: throw KodikError.NotFound(shikimoriId, EpisodeUnavailableReason.NOT_IN_TRANSLATION)
         val option = catalogue.page.translations[index]
         // The page never says which season it lists, so a caller that remembers
         // one (WatchState.kodikSeason) outranks the default of 1.
@@ -82,8 +97,17 @@ class KodikSourceProvider @Inject constructor(
             season = season.takeIf { isSerial },
             episode = episode.takeIf { isSerial },
         )
+        // Written down whether or not the episode is there: a page that was fetched to find out
+        // has answered for the whole season, and the next question about this track is free.
+        if (page.episodes.isNotEmpty()) {
+            cacheLock.withLock {
+                listed.getOrPut(shikimoriId) { mutableMapOf() }[chosen.id] = page.episodes.map { it.number }.toSet()
+            }
+        }
         val wanted = page.episodes.firstOrNull { it.number == episode }
-        if (wanted == null && page.episodes.isNotEmpty()) throw KodikError.NotFound(shikimoriId)
+        if (wanted == null && page.episodes.isNotEmpty()) {
+            throw KodikError.NotFound(shikimoriId, EpisodeUnavailableReason.NOT_IN_TRANSLATION)
+        }
 
         // A page with no episode list is a movie: its only video is the one it already shows.
         val links = extractor.resolveLinks(
@@ -106,14 +130,19 @@ class KodikSourceProvider @Inject constructor(
     }
 
     private suspend fun catalogue(shikimoriId: Int): Catalogue {
-        cached(shikimoriId)?.let { return it }
+        cacheLock.withLock { cached(shikimoriId) }?.let { return it }
         val answer = getPlayer(shikimoriId)
         val link = answer.link
             ?.takeIf { answer.found && it.isNotBlank() }
-            ?: throw KodikError.NotFound(shikimoriId)
+            ?: throw KodikError.NotFound(shikimoriId, EpisodeUnavailableReason.TITLE_NOT_ON_SOURCE)
         val page = extractor.loadPage(link).withSoleTrack()
         val fresh = Catalogue(page, page.translations.map { it.toDomain() }, clock.instant())
-        cacheLock.withLock { cache[shikimoriId] = fresh }
+        cacheLock.withLock {
+            // What the old catalogue's tracks listed was read against media ids the new page may
+            // no longer carry, so the lists go with the catalogue they were read under.
+            drop(shikimoriId)
+            cache[shikimoriId] = fresh
+        }
         return fresh
     }
 
@@ -148,11 +177,19 @@ class KodikSourceProvider @Inject constructor(
         return copy(translations = listOf(sole))
     }
 
-    private suspend fun cached(shikimoriId: Int): Catalogue? = cacheLock.withLock {
-        cache[shikimoriId]?.takeIf {
-            val age = Duration.between(it.at, clock.instant())
-            !age.isNegative && age < CACHE_TTL
-        }
+    /** The catalogue still worth answering from, or null having dropped one that has aged out. Under [cacheLock]. */
+    private fun cached(shikimoriId: Int): Catalogue? {
+        val held = cache[shikimoriId] ?: return null
+        val age = Duration.between(held.at, clock.instant())
+        if (!age.isNegative && age < CACHE_TTL) return held
+        drop(shikimoriId)
+        return null
+    }
+
+    /** Everything remembered about one anime. Under [cacheLock]. */
+    private fun drop(shikimoriId: Int) {
+        cache.remove(shikimoriId)
+        listed.remove(shikimoriId)
     }
 
     /**
@@ -187,7 +224,7 @@ class KodikSourceProvider @Inject constructor(
     /** `ui.*` only knows `domain.error`, so no Kodik, OkHttp or Retrofit type may leave this class. */
     private fun Throwable.toDomainFailure(episode: Int?): Throwable = when (this) {
         is KodikError.NoToken -> SourceUnavailable(SourceUnavailableReason.NO_KEY, this)
-        is KodikError.NotFound -> EpisodeNotAvailable(shikimoriId, episode)
+        is KodikError.NotFound -> EpisodeNotAvailable(shikimoriId, episode, reason)
         is KodikError.ParserBroken -> SourceFormatChanged(step, this)
         is KodikError.Network -> NetworkUnavailable(this)
         is KodikError.Rejected -> SourceUnavailable(SourceUnavailableReason.REJECTED, this)

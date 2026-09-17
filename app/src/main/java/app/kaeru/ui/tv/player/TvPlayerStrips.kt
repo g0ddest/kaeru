@@ -36,6 +36,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Devices
@@ -145,6 +147,8 @@ fun TvTranslationStrip(
     focus: FocusRequester,
     onPick: (Translation) -> Unit,
     modifier: Modifier = Modifier,
+    /** The episode on screen, so a voice known not to carry it can say so and refuse the press. */
+    episode: Int? = null,
 ) {
     if (translations.isEmpty()) {
         // A chip's worth of «on its way», so the row keeps its place in the column and the
@@ -165,8 +169,9 @@ fun TvTranslationStrip(
             label = translationName(ranked),
             onClick = { onPick(ranked.translation) },
             modifier = chipModifier,
-            caption = translationCaption(ranked, translationId),
+            caption = translationCaption(ranked, translationId, episode),
             selected = ranked.translation.id == translationId,
+            enabled = !(episode != null && ranked.hasEpisode == false),
         )
     }
 }
@@ -213,10 +218,14 @@ internal fun translationName(ranked: RankedTranslation): String {
 /**
  * The line under a track's name, or null when there is nothing to add.
  *
- * The track in play says only that. Two marks on one chip say less than one — the same argument
- * the ranking itself makes when it stops calling a remembered track often-chosen.
+ * A track known not to carry [episode] says that before anything else: it is the one fact that
+ * makes the chip unpressable, and a viewer who just saw «серии нет» wants to know which voices
+ * that applies to. Otherwise the track in play says only that. Two marks on one chip say less
+ * than one — the same argument the ranking itself makes when it stops calling a remembered
+ * track often-chosen.
  */
-internal fun translationCaption(ranked: RankedTranslation, currentId: Int?): String? = when {
+internal fun translationCaption(ranked: RankedTranslation, currentId: Int?, episode: Int? = null): String? = when {
+    episode != null && ranked.hasEpisode == false -> "нет серии $episode"
     ranked.translation.id == currentId -> CHOSEN
     ranked.oftenChosen -> OFTEN_CHOSEN
     else -> null
@@ -327,6 +336,12 @@ private fun TvStripLabel(label: String) {
  *
  * [selected] is the thing in play, not the thing under the D-pad: focus is the amber ring, and
  * the two have to stay distinguishable while the viewer walks past what they are watching.
+ *
+ * [enabled] false keeps the chip in the walk and takes the press away: a chip the D-pad cannot
+ * land on is a hole in the row, and the remote falls through it into whatever is beside it. The
+ * name is dimmed instead, the caption says why, and the same thing is said in semantics — a
+ * viewer listening to the screen has neither the colour nor the caption, and a chip announcing
+ * itself as a button makes a promise the press does not keep.
  */
 @Composable
 internal fun TvStripChip(
@@ -337,6 +352,7 @@ internal fun TvStripChip(
     selected: Boolean = false,
     progress: Float? = null,
     watched: Boolean = false,
+    enabled: Boolean = true,
 ) {
     Box(
         modifier
@@ -345,7 +361,8 @@ internal fun TvStripChip(
             .kaeruFocus(KaeruTokens.ButtonShape)
             .clip(KaeruTokens.ButtonShape)
             .background(if (selected) KaeruAccent.copy(alpha = 0.22f) else KaeruElevated)
-            .selectable(selected = selected, role = Role.Button, onClick = onClick),
+            .selectable(selected = selected, role = Role.Button, onClick = { if (enabled) onClick() })
+            .semantics { if (!enabled) disabled() },
     ) {
         Column(
             Modifier.align(Alignment.Center).padding(horizontal = KaeruTokens.Space4),
@@ -354,7 +371,11 @@ internal fun TvStripChip(
             Text(
                 label,
                 style = MaterialTheme.typography.titleMedium,
-                color = if (selected) KaeruAccent else KaeruText,
+                color = when {
+                    !enabled -> KaeruSecondary
+                    selected -> KaeruAccent
+                    else -> KaeruText
+                },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,

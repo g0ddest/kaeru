@@ -13,6 +13,7 @@ import app.kaeru.domain.download.DownloadQualityChoice
 import app.kaeru.domain.download.DownloadState
 import app.kaeru.domain.error.DownloadLimitReached
 import app.kaeru.domain.error.EpisodeNotAvailable
+import app.kaeru.domain.error.EpisodeUnavailableReason
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.EpisodeStream
@@ -584,7 +585,7 @@ class Media3DownloadRepositoryTest {
 
     @Test
     fun `a resolve that fails comes back as the failure and leaves nothing behind`() = runTest(dispatcher) {
-        episodes.stream = { _, _, _ -> Result.failure(EpisodeNotAvailable(ANIME, 7)) }
+        episodes.stream = { _, _, _ -> Result.failure(EpisodeNotAvailable(ANIME, 7, EpisodeUnavailableReason.NOT_IN_TRANSLATION)) }
 
         val failed = repository.enqueue(ANIME, 7)
 

@@ -241,7 +241,27 @@ class DefaultPlaybackController @Inject constructor(
          * episode already on screen, and an engine handing the same episode to a receiver.
          */
         val local: Boolean = true,
-    )
+        /**
+         * Who asked. Separate from [local], which is false for a retry too: a retry is still this
+         * viewer's, and a voice they never pinned may still be stood in for on it. A friend's
+         * episode arrives naming their voice, and that voice is played as named or not at all.
+         */
+        val origin: ActionOrigin = ActionOrigin.LOCAL,
+    ) {
+        /**
+         * Whether another voice may stand in when the one this target names lacks the episode.
+         * Never for a voice somebody chose — a pick from the chooser, or a friend's — and always
+         * for the rest: an inherited voice is a habit, not an instruction.
+         *
+         * A friend's episode that names no voice at all named nobody's choice: the port hands one
+         * over as null when this side's catalogue has nothing matching, and what plays then is
+         * this side's own remembered voice. So it is stood in for like any other habit, rather
+         * than failing the guest with «Серии N ещё нет в этой озвучке» over a voice they never
+         * picked and cannot change from there.
+         */
+        val substitutable: Boolean
+            get() = !pickedTrack && (origin == ActionOrigin.LOCAL || target.translation == null)
+    }
 
     /**
      * One episode's links, and where they came from.
@@ -250,7 +270,7 @@ class DefaultPlaybackController @Inject constructor(
      * carries the address it was fetched from, whose signature expired hours ago and whose bytes
      * are in a cache only this phone can read.
      */
-    private data class Source(val stream: EpisodeStream, val onDevice: Boolean)
+    private data class Source(val stream: EpisodeStream, val onDevice: Boolean, val insteadOf: Translation? = null)
 
     /** Settings are read once per episode: changing them mid-episode should not move the goalposts. */
     private data class Settings(
@@ -333,7 +353,7 @@ class DefaultPlaybackController @Inject constructor(
         transition {
             // Recorded before the flush, which suspends: an engine switch landing in that window
             // has to resume this episode rather than the one it supersedes.
-            val plan = Opening(target, freshEpisode = true, local = origin == ActionOrigin.LOCAL)
+            val plan = Opening(target, freshEpisode = true, local = origin == ActionOrigin.LOCAL, origin = origin)
             opening = plan
             flushProgressNow()
             _state.value = PlaybackState(
@@ -554,6 +574,10 @@ class DefaultPlaybackController @Inject constructor(
         transition {
             val current = _state.value.target ?: return@transition
             reResolved = false
+            // Asked afresh, not out of the cache the failure was answered from. An episode that
+            // no voice had when the viewer pressed play may well be there by the time they press
+            // «Повторить», and the catalogue lives six hours.
+            resolve.forgetCatalogue(current.animeId)
             val plan = Opening(
                 current.copy(startPositionMs = _state.value.positionMs),
                 freshEpisode = false,
@@ -632,12 +656,20 @@ class DefaultPlaybackController @Inject constructor(
         // between its decision and this call — is still covered.
         opening = plan
         settings = readSettings()
-        val source = streamFor(target, plan.pickedTrack).getOrElse {
+        val source = streamFor(target, plan).getOrElse {
             opening = null
             return Result.failure(it)
         }
         val stream = source.stream
         playingDownload = source.onDevice
+        // Whether this stand-in is news. A link re-signed behind the viewer's back, or an engine
+        // taking over the same episode, arrives at the same stand-in by the same road, and telling
+        // the viewer a second time would be the app repeating itself.
+        val before = _state.value
+        val alreadyStandingIn = source.insteadOf != null &&
+            before.target?.let { it.animeId == target.animeId && it.episode == target.episode } == true &&
+            before.stream?.translation?.id == stream.translation.id &&
+            before.insteadOf?.id == source.insteadOf.id
         // One read, two users: what the notification says this is, and how many episodes there
         // are to go. Read per episode rather than followed, so a catalogue refresh landing
         // mid-episode cannot move the goalposts of a countdown already under way.
@@ -661,10 +693,14 @@ class DefaultPlaybackController @Inject constructor(
             // A track swap keeps the length it already knows, so the timeline does not flash empty.
             durationMs = if (freshEpisode) 0 else _state.value.durationMs,
             airedEpisodes = anime?.availableEpisodes ?: 0,
+            insteadOf = source.insteadOf,
             isCasting = casting,
         )
         engine.prepare(stream.urls.getValue(quality), headers, target.startPositionMs, describe(target, stream, anime))
         engine.play()
+        if (source.insteadOf != null && !alreadyStandingIn) {
+            _events.trySend(PlaybackEvent.TranslationSubstituted(source.insteadOf, stream.translation, target.episode))
+        }
         // After the resolve, not before it: the voice is what a friend has to be told, and until
         // Kodik has answered nobody knows which one this is.
         if (plan.local) {
@@ -717,7 +753,8 @@ class DefaultPlaybackController @Inject constructor(
      * there is a network is a binder call. Everything after this is main-thread work — the
      * state, the player and its surface all live there.
      */
-    private suspend fun streamFor(target: PlaybackTarget, pickedTrack: Boolean): Result<Source> {
+    private suspend fun streamFor(target: PlaybackTarget, plan: Opening): Result<Source> {
+        val pickedTrack = plan.pickedTrack
         // Read here, on the thread that owns it. A receiver fetches from the CDN itself and
         // cannot reach this phone's cache, so an episode on the device is an answer for the
         // engine on the device and for nothing else: casting always resolves, and offline —
@@ -735,8 +772,8 @@ class DefaultPlaybackController @Inject constructor(
             // direction that costs the most: refusing to ask Kodik means playing nothing at all on
             // a network that works. So the flag never gates the request; it only decides how a
             // failure is worded afterwards.
-            resolve(target.animeId, target.episode, target.translation)
-                .map { Source(it, onDevice = false) }
+            resolve(target.animeId, target.episode, target.translation, substitute = plan.substitutable)
+                .map { Source(it.stream, onDevice = false, insteadOf = it.insteadOf) }
                 .recoverCatching { failure ->
                     val offline = !connectivity.online.first()
                     // One voice on the device beats a red line over an episode that would play.
@@ -765,7 +802,9 @@ class DefaultPlaybackController @Inject constructor(
 
     private suspend fun openNext() {
         val current = _state.value.target ?: return
-        val track = _state.value.stream?.translation ?: current.translation
+        // The voice the viewer has, not the one that stood in for it: a stand-in was for one
+        // episode, and the next is asked for in the chosen voice again — which may well have it.
+        val track = _state.value.insteadOf ?: _state.value.stream?.translation ?: current.translation
         val plan = Opening(EpisodeQueue.next(current).copy(translation = track), freshEpisode = true, advancing = true)
         opening = plan
         // Awaited, not launched: resolving the next episode writes this anime's row itself, and
@@ -965,13 +1004,21 @@ class DefaultPlaybackController @Inject constructor(
 
     private fun currentSample(): Sample? = _state.value.let { sampleAt(it.positionMs, it.durationMs) }
 
-    /** What to write for the episode on screen, or null while there is nothing worth writing. */
+    /**
+     * What to write for the episode on screen, or null while there is nothing worth writing.
+     *
+     * A voice standing in is not written: [WatchProgress] reads a null track as «keep what is
+     * remembered», and what is remembered is the voice the viewer chose, which the resolve
+     * deliberately left in place. Writing the stand-in here would flip the row seconds after
+     * the resolve declined to.
+     */
     private fun sampleAt(positionMs: Long, durationMs: Long): Sample? {
         val current = _state.value
         val target = current.target ?: return null
         if (durationMs <= 0) return null
         val track = current.stream?.translation
-        return Sample(target.animeId, target.episode, positionMs, durationMs, track?.id, track?.season)
+        val trackId = if (current.insteadOf != null) null else track?.id
+        return Sample(target.animeId, target.episode, positionMs, durationMs, trackId, track?.season)
     }
 
     private suspend fun write(sample: Sample) = progress.report(

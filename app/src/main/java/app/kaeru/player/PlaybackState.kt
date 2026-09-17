@@ -3,6 +3,7 @@ package app.kaeru.player
 import app.kaeru.domain.model.EpisodeStream
 import app.kaeru.domain.model.PlaybackTarget
 import app.kaeru.domain.model.Quality
+import app.kaeru.domain.model.Translation
 
 /**
  * Everything a player screen needs to draw itself, and nothing about how it is drawn.
@@ -38,6 +39,15 @@ data class PlaybackState(
     val airedEpisodes: Int = 0,
     val autoplayCountdownSec: Int? = null,
     val error: Throwable? = null,
+    /**
+     * The voice this episode was asked for in, when the one in [stream] is not it: that voice did
+     * not carry the episode and another stood in. Null whenever what plays is what was asked for.
+     *
+     * Kept here rather than derived, because two things have to read it back: the position ticks,
+     * which must not write the stand-in over the voice the viewer chose, and the next episode,
+     * which is asked for in the chosen voice again rather than in whatever stood in last time.
+     */
+    val insteadOf: Translation? = null,
     /**
      * [error] came from reading the copy on this device rather than from the source.
      *
@@ -77,6 +87,14 @@ sealed interface PlaybackEvent {
      * than an error state, and [error] carries the copy.
      */
     data class NextEpisodeUnavailable(val error: Throwable) : PlaybackEvent
+
+    /**
+     * The voice asked for did not carry [episode], and [playing] stood in for it. Said once per
+     * substitution, not once per resolve: a link re-signed behind the viewer's back lands on the
+     * same stand-in and is not news.
+     */
+    data class TranslationSubstituted(val askedFor: Translation, val playing: Translation, val episode: Int) :
+        PlaybackEvent
 }
 
 /**

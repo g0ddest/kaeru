@@ -5,6 +5,7 @@ import app.kaeru.domain.error.AuthCallbackRejected
 import app.kaeru.domain.error.CastLoadFailed
 import app.kaeru.domain.error.DownloadLimitReached
 import app.kaeru.domain.error.EpisodeNotAvailable
+import app.kaeru.domain.error.EpisodeUnavailableReason
 import app.kaeru.domain.error.HttpError
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.error.SourceFormatChanged
@@ -91,8 +92,24 @@ class ErrorMessagesTest {
 
     @Test
     fun `a missing episode reads as one kodik does not have yet`() {
-        assertEquals("Серия ещё не появилась в Kodik", EpisodeNotAvailable(52991, 28).toUserMessage())
-        assertEquals("Серия ещё не появилась в Kodik", EpisodeNotAvailable(52991).toUserMessage())
+        val notOnSource = EpisodeUnavailableReason.TITLE_NOT_ON_SOURCE
+        assertEquals("Серия ещё не появилась в Kodik", EpisodeNotAvailable(52991, 28, notOnSource).toUserMessage())
+        assertEquals("Серия ещё не появилась в Kodik", EpisodeNotAvailable(52991, null, notOnSource).toUserMessage())
+    }
+
+    @Test
+    fun `an episode one dub lacks says so, since another may have it`() {
+        val inTrack = EpisodeUnavailableReason.NOT_IN_TRANSLATION
+        assertEquals("Серии 28 ещё нет в этой озвучке", EpisodeNotAvailable(52991, 28, inTrack).toUserMessage())
+        assertEquals("Этой серии ещё нет в выбранной озвучке", EpisodeNotAvailable(52991, null, inTrack).toUserMessage())
+    }
+
+    @Test
+    fun `an episode no dub has says exactly that, with the number`() {
+        // «Выберите озвучку» would be a dead end here: every dub was asked, and none has it.
+        val nowhere = EpisodeUnavailableReason.NOT_IN_ANY_TRANSLATION
+        assertEquals("Серия 28 пока не вышла ни в одной озвучке", EpisodeNotAvailable(52991, 28, nowhere).toUserMessage())
+        assertEquals("Серия пока не вышла ни в одной озвучке", EpisodeNotAvailable(52991, null, nowhere).toUserMessage())
     }
 
     @Test

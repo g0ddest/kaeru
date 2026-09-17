@@ -3,6 +3,7 @@ package app.kaeru.ui.common.player
 import app.kaeru.domain.connectivity.FakeConnectivity
 import app.kaeru.domain.download.FakeDownloadRepository
 import app.kaeru.domain.error.EpisodeNotAvailable
+import app.kaeru.domain.error.EpisodeUnavailableReason
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
@@ -485,6 +486,96 @@ class PlayerViewModelTest {
     }
 
     @Test
+    fun `an episode no voice has is told apart from every other failure`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+        controller.playback.update {
+            it.copy(error = EpisodeNotAvailable(100, 4, EpisodeUnavailableReason.NOT_IN_ANY_TRANSLATION))
+        }
+        advanceUntilIdle()
+
+        assertEquals("Серия 4 пока не вышла ни в одной озвучке", viewModel.uiState.value.errorMessage)
+        assertEquals(EpisodeUnavailableReason.NOT_IN_ANY_TRANSLATION, viewModel.uiState.value.episodeUnavailable)
+
+        controller.playback.update { it.copy(error = NetworkUnavailable(IOException("boom"))) }
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.episodeUnavailable)
+    }
+
+    @Test
+    fun `the sheet says which voices carry the episode on screen`() = runTest(main.dispatcher) {
+        // Студийная банда counts ten episodes; the twelfth cannot be there.
+        source.translationsResult = Result.success(listOf(studioBanda.copy(episodesCount = 10), anilibria))
+        viewModel.start(100, 12)
+        advanceUntilIdle()
+
+        viewModel.openTranslations()
+        advanceUntilIdle()
+
+        val listed = viewModel.uiState.value.translations
+        assertEquals(listOf(anilibria.id, studioBanda.id), listed.map { it.translation.id })
+        assertEquals(listOf(true, false), listed.map { it.hasEpisode })
+    }
+
+    /**
+     * The television asks for the voices once and keeps the row on screen for the rest of the
+     * session, so a list computed for the episode that was playing then would caption the wrong
+     * episode after autoplay — and refuse a press on a voice that does carry the new one.
+     */
+    @Test
+    fun `the voices follow the episode on screen`() = runTest(main.dispatcher) {
+        // Студийная банда counts four episodes: it has the fourth and not the fifth.
+        source.translationsResult = Result.success(listOf(studioBanda.copy(episodesCount = 4), anilibria))
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+        viewModel.loadTranslations()
+        advanceUntilIdle()
+        assertEquals(listOf(true, true), viewModel.uiState.value.translations.map { it.hasEpisode })
+        val asked = source.translationCalls
+
+        // Autoplay moves on. The catalogue is read once more and no oftener — and the real one
+        // answers that read from the six hours it keeps, without touching the network.
+        controller.playback.update { it.copy(target = PlaybackTarget(100, 5, 0, null)) }
+        advanceUntilIdle()
+
+        val listed = viewModel.uiState.value.translations
+        assertEquals(listOf(anilibria.id, studioBanda.id), listed.map { it.translation.id })
+        assertEquals(listOf(true, false), listed.map { it.hasEpisode })
+        assertEquals(asked + 1, source.translationCalls)
+    }
+
+    @Test
+    fun `a screen that never asked for the voices asks for nothing when the episode moves`() =
+        runTest(main.dispatcher) {
+            viewModel.start(100, 4)
+            advanceUntilIdle()
+
+            controller.playback.update { it.copy(target = PlaybackTarget(100, 5, 0, null)) }
+            advanceUntilIdle()
+
+            assertEquals(0, source.translationCalls)
+            assertTrue(viewModel.uiState.value.translations.isEmpty())
+        }
+
+    @Test
+    fun `a list that fails to come back again leaves the one on screen alone`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+        viewModel.loadTranslations()
+        advanceUntilIdle()
+        val listed = viewModel.uiState.value.translations
+        source.translationsResult = Result.failure(NetworkUnavailable(IOException("down")))
+
+        controller.playback.update { it.copy(target = PlaybackTarget(100, 5, 0, null)) }
+        advanceUntilIdle()
+
+        // Nothing the viewer asked for went wrong, so nothing is said and the row keeps its chips.
+        assertEquals(listed, viewModel.uiState.value.translations)
+        assertNull(viewModel.uiState.value.toast)
+    }
+
+    @Test
     fun `opening the track sheet loads what the source offers, ranked`() = runTest(main.dispatcher) {
         viewModel.start(100, 4)
         advanceUntilIdle()
@@ -605,7 +696,7 @@ class PlayerViewModelTest {
         viewModel.start(100, 12)
         advanceUntilIdle()
 
-        controller.announced.emit(PlaybackEvent.NextEpisodeUnavailable(EpisodeNotAvailable(100, 13)))
+        controller.announced.emit(PlaybackEvent.NextEpisodeUnavailable(EpisodeNotAvailable(100, 13, EpisodeUnavailableReason.TITLE_NOT_ON_SOURCE)))
         advanceUntilIdle()
 
         assertEquals("Серия ещё не появилась в Kodik", viewModel.uiState.value.toast)
@@ -615,6 +706,36 @@ class PlayerViewModelTest {
         advanceUntilIdle()
         assertNull(viewModel.uiState.value.toast)
     }
+
+    @Test
+    fun `a voice standing in for the one asked for is a passing message naming both`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+
+        controller.announced.emit(PlaybackEvent.TranslationSubstituted(askedFor = anilibria, playing = studioBanda, episode = 4))
+        advanceUntilIdle()
+
+        assertEquals("В озвучке AniLibria.TV серии 4 нет — включена Студийная банда", viewModel.uiState.value.toast)
+        assertNull(viewModel.uiState.value.errorMessage)
+
+        viewModel.consumeToast()
+        advanceUntilIdle()
+        assertNull(viewModel.uiState.value.toast)
+    }
+
+    @Test
+    fun `choosing an episode from the remote asks for the voice the viewer has, not the stand-in`() =
+        runTest(main.dispatcher) {
+            viewModel.start(100, 4)
+            advanceUntilIdle()
+            controller.playback.update { it.copy(stream = stream(4, studioBanda), insteadOf = anilibria) }
+            advanceUntilIdle()
+
+            viewModel.playEpisode(5)
+            advanceUntilIdle()
+
+            assertEquals(anilibria, controller.played.last().translation)
+        }
 
     @Test
     fun `the countdown and the next episode offer come straight from the player`() = runTest(main.dispatcher) {
@@ -823,7 +944,7 @@ class PlayerViewModelTest {
     fun `retrying asks the player to resolve the episode again`() = runTest(main.dispatcher) {
         viewModel.start(100, 4)
         advanceUntilIdle()
-        controller.playback.update { it.copy(error = EpisodeNotAvailable(100, 4)) }
+        controller.playback.update { it.copy(error = EpisodeNotAvailable(100, 4, EpisodeUnavailableReason.TITLE_NOT_ON_SOURCE)) }
         advanceUntilIdle()
 
         viewModel.retry()
@@ -874,7 +995,14 @@ class PlayerViewModelTest {
     private inner class FakeEpisodeSource : EpisodeSourceProvider {
         var translationsResult: Result<List<Translation>> = Result.success(listOf(studioBanda, anilibria))
 
-        override suspend fun translations(shikimoriId: Int) = translationsResult
+        /** How often the catalogue was read: a list re-derived for a new episode must not fetch. */
+        var translationCalls = 0
+            private set
+
+        override suspend fun translations(shikimoriId: Int): Result<List<Translation>> {
+            translationCalls += 1
+            return translationsResult
+        }
 
         override suspend fun resolve(shikimoriId: Int, episode: Int, translation: Translation?) =
             Result.success(stream(episode, translation ?: anilibria))

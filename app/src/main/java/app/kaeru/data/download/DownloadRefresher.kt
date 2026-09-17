@@ -74,12 +74,15 @@ class DownloadRefresher @Inject constructor(
 
         val payload = download.payload()
         // persist = false: a background repair must not move the row that says where the viewer is.
+        // substitute = false: the file being re-signed is in one voice, and a stream in another
+        // would be a different file under the same id.
         val stream = resolve(
             animeId = key.animeId,
             episode = key.episode,
             translationOverride = payload?.translation() ?: key.asTranslation(),
             persist = false,
-        ).getOrNull() ?: return RefreshOutcome.EXHAUSTED
+            substitute = false,
+        ).getOrNull()?.stream ?: return RefreshOutcome.EXHAUSTED
 
         // The height is part of the download's identity. A source that no longer offers it has
         // nothing to put behind this id, and quietly swapping in another height would hand the

@@ -31,7 +31,13 @@ class TvStripChipFitsTest {
     private val caption = "осталось 14 мин"
 
     @Test
-    fun `both lines of an episode chip are inside the box that clips them`() {
+    fun `both lines of an episode chip are inside the box that clips them`() = assertFits(label, caption)
+
+    @Test
+    fun `a voice chip saying it lacks the episode fits the same box`() =
+        assertFits("Студийная банда", "нет серии 12", enabled = false)
+
+    private fun assertFits(label: String, caption: String, enabled: Boolean = true) {
         compose.setContent {
             KaeruTvTheme {
                 Row {
@@ -39,6 +45,7 @@ class TvStripChipFitsTest {
                         label = label,
                         onClick = {},
                         caption = caption,
+                        enabled = enabled,
                         modifier = Modifier.testTag("chip"),
                     )
                 }

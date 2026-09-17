@@ -274,7 +274,8 @@ class Media3DownloadRepository @Inject constructor(
             return runCatching {
                 // persist = false: preparing episode 12 must not move the row that says the viewer
                 // is on episode 3 — that row carries their position, and rewriting it loses it.
-                val stream = resolve(animeId, episode, persist = false).getOrThrow()
+                // A voice standing in is fine here: the key carries whichever voice the file is in.
+                val stream = resolve(animeId, episode, persist = false).getOrThrow().stream
                 val chosen = stream.pick(wanted)
                 val key = DownloadKey(animeId, episode, stream.translation.id, chosen)
 

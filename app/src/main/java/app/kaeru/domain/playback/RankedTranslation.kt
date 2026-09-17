@@ -19,4 +19,11 @@ data class RankedTranslation(
      * and two marks on one list say less than one.
      */
     val oftenChosen: Boolean,
+    /**
+     * Whether this track carries the episode the chooser was opened over, as far as anything
+     * already read can say: false when its own page, or its count against the first season, rules
+     * it out; true when one of them vouches for it; null when nothing does, or when no episode was
+     * in question. A null is drawn as an ordinary row — an unknown is not a reason to grey a dub out.
+     */
+    val hasEpisode: Boolean? = null,
 )

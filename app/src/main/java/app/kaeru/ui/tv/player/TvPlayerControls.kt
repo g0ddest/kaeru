@@ -148,6 +148,7 @@ fun TvPlayerPanel(
                 loading = content.loadingTranslations,
                 focus = rungFocus.getValue(TvPanelRung.TRANSLATIONS),
                 onPick = onPickTranslation,
+                episode = content.episode.takeIf { it > 0 },
             )
 
             // The line between the zones, which is also where the episode is.
