@@ -73,7 +73,7 @@ class PlayerScreenSharePromptTest {
                         phase = TogetherPhase.HOSTING,
                         share = ShareRequest("Смотрим «Фрирен», 4 серия", "https://kaeru/r/abc"),
                     ),
-                    onSystemPrompt = { order += "prompt" },
+                    onSystemPrompt = { up -> order += if (up) "prompt" else "answered" },
                     onShareShown = { order += "shared" },
                     enabled = true,
                 ),

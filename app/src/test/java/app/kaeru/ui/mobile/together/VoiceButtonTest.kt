@@ -89,7 +89,7 @@ class VoiceButtonTest {
                 recorder = capture,
                 onClip = { _, _ -> },
                 onDenied = {},
-                onSystemPrompt = { prompts += 1 },
+                onSystemPrompt = { if (it) prompts += 1 },
             )
         }
 
@@ -97,6 +97,35 @@ class VoiceButtonTest {
         compose.waitForIdle()
 
         assertEquals(1, prompts)
+    }
+
+    @Test
+    fun `a permission already granted by the time it is asked for takes the question back down`() {
+        // `RequestPermission` answers out of hand when the permission is already there: no dialog,
+        // no trip out of the app, and so nothing comes back through the activity's `onResume`. A
+        // question raised and never lowered would leave the player unable to fold into a window
+        // for the rest of its life. It happens whenever this button's own idea of the permission
+        // is behind the system's — granted from settings, or by another screen of the app.
+        shadowOf(ApplicationProvider.getApplicationContext<Application>())
+            .denyPermissions(Manifest.permission.RECORD_AUDIO)
+        val capture = FakeVoiceCapture(clip = null)
+        val questions = mutableListOf<Boolean>()
+        compose.setContent {
+            VoiceButton(
+                recorder = capture,
+                onClip = { _, _ -> },
+                onDenied = {},
+                onSystemPrompt = { up -> questions += up },
+            )
+        }
+        compose.waitForIdle()
+        shadowOf(ApplicationProvider.getApplicationContext<Application>())
+            .grantPermissions(Manifest.permission.RECORD_AUDIO)
+
+        compose.onNodeWithContentDescription(TogetherCopy.VOICE).performClick()
+        compose.waitForIdle()
+
+        assertEquals(listOf(true, false), questions)
     }
 
     @Test
@@ -108,7 +137,7 @@ class VoiceButtonTest {
                 recorder = capture,
                 onClip = { _, _ -> },
                 onDenied = {},
-                onSystemPrompt = { prompts += 1 },
+                onSystemPrompt = { if (it) prompts += 1 },
             )
         }
 

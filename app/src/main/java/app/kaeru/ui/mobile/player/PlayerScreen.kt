@@ -191,7 +191,7 @@ fun PlayerScreen(
                 val request = together.state.share ?: return@LaunchedEffect
                 // Said first: the chooser sends this task to the background, and a window folded
                 // over the messenger the host has just picked is not what they asked for.
-                together.onSystemPrompt()
+                together.onSystemPrompt(true)
                 shareInvitation(context, request)
                 together.onShareShown()
             }

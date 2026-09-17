@@ -127,8 +127,8 @@ fun TogetherOverlay(
     onReplay: (Long) -> Unit,
     onLeaveWait: () -> Unit,
     modifier: Modifier = Modifier,
-    /** The microphone permission is about to be asked for, which takes the viewer out of the app. */
-    onSystemPrompt: () -> Unit = {},
+    /** Whether the microphone permission is up: a question of the system's over the player. */
+    onSystemPrompt: (Boolean) -> Unit = {},
     recorder: VoiceCapture = NoVoiceCapture,
 ) {
     Box(modifier.fillMaxSize()) {
@@ -302,7 +302,7 @@ private fun Controls(
     onReaction: (ReactionKind) -> Unit,
     onVoice: (ByteArray, Int) -> Unit,
     onMicDenied: () -> Unit,
-    onSystemPrompt: () -> Unit,
+    onSystemPrompt: (Boolean) -> Unit,
 ) {
     var picking by remember { mutableStateOf(false) }
     var composing by remember { mutableStateOf(false) }

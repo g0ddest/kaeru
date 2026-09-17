@@ -276,7 +276,7 @@ class PlayerActivity : FragmentActivity() {
                             onMessageShown = together::messageShown,
                             onPlayerAttached = together::playerAttached,
                             onAutoHide = together::setAutoHide,
-                            onSystemPrompt = ::systemPromptGoingUp,
+                            onSystemPrompt = ::systemPrompt,
                             enabled = true,
                         ),
                     )
@@ -308,15 +308,15 @@ class PlayerActivity : FragmentActivity() {
     /**
      * In front again, so whatever was over the picture has been answered, dismissed or left.
      *
-     * Every way out of a chooser and of a permission dialog comes back through here, including
-     * the ones that are not an answer — the back button, a tap outside — which is why the flag is
-     * cleared here rather than in a result callback that only some of them reach.
+     * Every way out of a dialog that was actually drawn comes back through here, including the
+     * ones that are not an answer — the back button, a tap outside — which is why the flag is
+     * cleared here as well as in the permission's own result callback, which only an answer
+     * reaches. The share chooser has nothing but this: it is started as a new task and always
+     * pauses this activity, so there is no case where it goes up and this never runs.
      */
     override fun onResume() {
         super.onResume()
-        if (!promptUp) return
-        promptUp = false
-        describeWindow()
+        systemPrompt(up = false)
     }
 
     /** Hands the launch to the view model, remembering that it has now been made. */
@@ -368,14 +368,20 @@ class PlayerActivity : FragmentActivity() {
     }
 
     /**
-     * A chooser or a permission question is about to be put to the viewer.
+     * A chooser or a permission question going up over the picture, or coming back down.
      *
      * The parameters are re-sent from here rather than left to the effect above: on Android 12
      * and later the system reads whatever it was last given at the moment the task switches, and
-     * the chooser starts in the same frame as this.
+     * the chooser starts in the same frame as the flag being raised.
+     *
+     * Told when it comes down as well as when it goes up. A permission the app already holds is
+     * answered by the contract itself, with no dialog and no trip out of the app — so [onResume],
+     * which every other way out comes back through, is never called and would leave the question
+     * standing for the life of the activity with the window quietly disabled behind it.
      */
-    private fun systemPromptGoingUp() {
-        promptUp = true
+    private fun systemPrompt(up: Boolean) {
+        if (promptUp == up) return
+        promptUp = up
         describeWindow()
     }
 
