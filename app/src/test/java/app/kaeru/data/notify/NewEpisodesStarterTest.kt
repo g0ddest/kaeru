@@ -1,5 +1,7 @@
 package app.kaeru.data.notify
 
+import app.kaeru.domain.notify.NewEpisode
+import app.kaeru.domain.notify.NewEpisodeNotifier
 import app.kaeru.domain.notify.NotifiedEpisode
 import app.kaeru.domain.notify.NotifiedEpisodes
 import app.kaeru.domain.repository.AuthRepository
@@ -23,9 +25,10 @@ class NewEpisodesStarterTest {
     private val schedule = FakeSchedule()
     private val settings = FakeSettingsStore()
     private val remembered = FakeNotifiedEpisodes()
+    private val notifier = CountingNotifier()
 
     private fun starter(television: Boolean = false) =
-        NewEpisodesStarter(auth, settings, schedule, remembered, Television { television })
+        NewEpisodesStarter(auth, settings, schedule, remembered, notifier, Television { television })
 
     @Test
     fun `somebody signed in gets the check`() = runTest {
@@ -159,9 +162,36 @@ class NewEpisodesStarterTest {
         assertEquals(listOf(NotifiedEpisode(1, 7)), remembered.rows)
     }
 
+    @Test
+    fun `the channel exists from app start, before there is anything to put in it`() = runTest {
+        val scope = TestScope(StandardTestDispatcher(testScheduler))
+        starter().start(scope)
+        scope.runCurrent()
+
+        assertEquals(1, notifier.prepared)
+    }
+
+    @Test
+    fun `a television is given no channel either`() = runTest {
+        val scope = TestScope(StandardTestDispatcher(testScheduler))
+        starter(television = true).start(scope)
+        scope.runCurrent()
+
+        assertEquals(0, notifier.prepared)
+    }
+
+    private class CountingNotifier : NewEpisodeNotifier {
+        var prepared = 0
+        override fun canPost() = true
+        override fun prepare() { prepared++ }
+        override suspend fun post(news: List<NewEpisode>) = Unit
+        override suspend fun clear(animeId: Int) = Unit
+    }
+
     private class FakeNotifiedEpisodes : NotifiedEpisodes {
         val rows = mutableListOf<NotifiedEpisode>()
-        override suspend fun all(): List<NotifiedEpisode> = rows.toList()
+        override suspend fun forAnime(animeIds: List<Int>): List<NotifiedEpisode> =
+            rows.filter { it.animeId in animeIds }
         override suspend fun record(episodes: List<NotifiedEpisode>, at: Instant) {
             episodes.forEach { if (it !in rows) rows += it }
         }

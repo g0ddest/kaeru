@@ -54,6 +54,8 @@ class NewEpisodeNotifications @Inject constructor(
      */
     override fun canPost(): Boolean = NotificationManagerCompat.from(context).areNotificationsEnabled()
 
+    override fun prepare() = ensureChannel(NotificationManagerCompat.from(context))
+
     override suspend fun post(news: List<NewEpisode>) {
         if (news.isEmpty()) return
         val manager = NotificationManagerCompat.from(context)
@@ -115,9 +117,21 @@ class NewEpisodeNotifications @Inject constructor(
     }
 
     private fun publish(manager: NotificationManagerCompat, episode: NewEpisode, poster: android.graphics.Bitmap?) {
+        val aired = NewEpisodeNotificationText.episode(episode.aired)
         val notification = builder()
             .setContentTitle(episode.title)
-            .setContentText(NewEpisodeNotificationText.episode(episode.episode))
+            .setContentText(aired)
+            // A second line only for somebody who is behind. The button starts the episode they
+            // are actually on, and without this the card would offer the sixth while announcing
+            // the ninth and explain neither.
+            .setStyle(
+                if (episode.episode == episode.aired) {
+                    null
+                } else {
+                    NotificationCompat.BigTextStyle()
+                        .bigText("$aired\n${NewEpisodeNotificationText.watchFrom(episode.episode)}")
+                },
+            )
             .setLargeIcon(poster)
             .setContentIntent(openTitle(episode.animeId))
             .addAction(0, WATCH, watch(episode))
@@ -128,7 +142,7 @@ class NewEpisodeNotifications @Inject constructor(
         publish(manager, notification, episode.animeId)
     }
 
-    private fun line(episode: NewEpisode) = NewEpisodeNotificationText.line(episode.title, episode.episode)
+    private fun line(episode: NewEpisode) = NewEpisodeNotificationText.line(episode.title, episode.aired)
 
     /**
      * The one notification that stands for all of them.
@@ -190,7 +204,8 @@ class NewEpisodeNotifications @Inject constructor(
 
     /**
      * Creates the channel if nothing has yet. Creating one that already exists with the same id is
-     * a no-op, so this only ever does anything once per process.
+     * a no-op, so this only ever does anything once per process — and the app start that calls
+     * [prepare] is normally the once.
      */
     private fun ensureChannel(manager: NotificationManagerCompat) {
         if (channelReady) return

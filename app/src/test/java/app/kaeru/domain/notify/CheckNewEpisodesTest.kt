@@ -73,7 +73,7 @@ class CheckNewEpisodesTest {
         assertEquals(NewEpisodeOutcome.CHECKED, check.run())
 
         assertEquals(1, library.refreshes)
-        assertEquals(listOf(listOf(NewEpisode(1, "Аниме 1", "poster-1", 8))), notifier.posted)
+        assertEquals(listOf(listOf(NewEpisode(1, "Аниме 1", "poster-1", 8, 8))), notifier.posted)
     }
 
     @Test
@@ -109,6 +109,15 @@ class CheckNewEpisodesTest {
     }
 
     @Test
+    fun `the table is asked only about the titles the list actually holds`() = runTest {
+        library.entries.value = listOf(watching(1, aired = 8, watched = 7), watching(2, aired = 3, watched = 3))
+
+        check.run()
+
+        assertEquals(listOf(listOf(1, 2)), remembered.asked)
+    }
+
+    @Test
     fun `an episode found while Android refuses to show anything is not used up`() = runTest {
         notifier.allowed = false
         library.entries.value = listOf(watching(1, aired = 8, watched = 7))
@@ -121,7 +130,7 @@ class CheckNewEpisodesTest {
 
         notifier.allowed = true
         assertEquals(NewEpisodeOutcome.CHECKED, check.run())
-        assertEquals(listOf(listOf(NewEpisode(1, "Аниме 1", "poster-1", 8))), notifier.posted)
+        assertEquals(listOf(listOf(NewEpisode(1, "Аниме 1", "poster-1", 8, 8))), notifier.posted)
     }
 
     @Test
@@ -197,7 +206,12 @@ class CheckNewEpisodesTest {
         var writtenAt: Instant? = null
         var onRecord: (() -> Unit)? = null
 
-        override suspend fun all(): List<NotifiedEpisode> = rows.toList()
+        val asked = mutableListOf<List<Int>>()
+
+        override suspend fun forAnime(animeIds: List<Int>): List<NotifiedEpisode> {
+            asked += animeIds
+            return rows.filter { it.animeId in animeIds }
+        }
 
         override suspend fun record(episodes: List<NotifiedEpisode>, at: Instant) {
             writtenAt = at
@@ -215,6 +229,8 @@ class CheckNewEpisodesTest {
         var allowed = true
 
         override fun canPost(): Boolean = allowed
+
+        override fun prepare() = Unit
 
         override suspend fun post(news: List<NewEpisode>) {
             rowsAtPost = recordedWhenPosting?.invoke().orEmpty()

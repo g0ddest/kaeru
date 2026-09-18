@@ -37,8 +37,11 @@ class NewEpisodeNotificationsTest {
         },
     )
 
-    private fun episode(id: Int, episode: Int, poster: String? = "poster-$id") =
-        NewEpisode(animeId = id, title = "Аниме $id", posterUrl = poster, episode = episode)
+    private fun episode(id: Int, episode: Int, poster: String? = "poster-$id", aired: Int = episode) =
+        NewEpisode(animeId = id, title = "Аниме $id", posterUrl = poster, episode = episode, aired = aired)
+
+    private fun bigTextOf(notification: Notification): String? =
+        notification.extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
 
     private fun posted(): List<Notification> = shadowOf(manager).allNotifications
 
@@ -56,6 +59,45 @@ class NewEpisodeNotificationsTest {
         assertEquals("Аниме 1", titleOf(one))
         assertEquals("Вышла 7 серия", textOf(one))
         assertEquals(NewEpisodeNotifications.CHANNEL_ID, one.channelId)
+    }
+
+    @Test
+    fun `the line names the episode that aired, not the one the viewer is on`() = runTest {
+        notifications.post(listOf(episode(1, episode = 6, aired = 9)))
+
+        assertEquals("Вышла 9 серия", textOf(posted().single()))
+    }
+
+    @Test
+    fun `a viewer behind gets a second line saying where to start`() = runTest {
+        notifications.post(listOf(episode(1, episode = 6, aired = 9)))
+
+        assertEquals("Вышла 9 серия\nсмотреть с 6-й", bigTextOf(posted().single()))
+    }
+
+    @Test
+    fun `a viewer who is up to date is told nothing extra`() = runTest {
+        notifications.post(listOf(episode(1, episode = 9, aired = 9)))
+
+        assertNull(bigTextOf(posted().single()))
+    }
+
+    @Test
+    fun `the summary names what aired too`() = runTest {
+        notifications.post(listOf(episode(1, episode = 6, aired = 9), episode(2, 3)))
+
+        val summary = posted().single { it.flags and Notification.FLAG_GROUP_SUMMARY != 0 }
+        assertEquals(
+            listOf("Аниме 1, 9 серия", "Аниме 2, 3 серия"),
+            summary.extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)?.map { it.toString() },
+        )
+    }
+
+    @Test
+    fun `the channel exists before anything is ever posted`() {
+        notifications.prepare()
+
+        assertNotNull(manager.getNotificationChannel(NewEpisodeNotifications.CHANNEL_ID))
     }
 
     @Test

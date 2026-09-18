@@ -53,6 +53,47 @@ class NotifiedEpisodeDaoTest {
     }
 
     @Test
+    fun `a title keeps its fifty newest rows and loses the rest`() = runTest {
+        val dao = db.notifiedEpisodeDao()
+        dao.recordAll((1..60).map { row(100, it) })
+
+        dao.prune(100, keep = 50)
+
+        assertEquals((11..60).toList(), dao.getForAnime(listOf(100)).map { it.episode }.sorted())
+    }
+
+    @Test
+    fun `pruning one title leaves every other title alone`() = runTest {
+        val dao = db.notifiedEpisodeDao()
+        dao.recordAll((1..60).map { row(100, it) } + (1..60).map { row(200, it) })
+
+        dao.prune(100, keep = 50)
+
+        assertEquals(60, dao.getForAnime(listOf(200)).size)
+    }
+
+    @Test
+    fun `a title with less than the limit loses nothing`() = runTest {
+        val dao = db.notifiedEpisodeDao()
+        dao.recordAll(listOf(row(100, 7), row(100, 8)))
+
+        dao.prune(100, keep = 50)
+
+        assertEquals(2, dao.getForAnime(listOf(100)).size)
+    }
+
+    @Test
+    fun `the check reads only the titles it is about`() = runTest {
+        val dao = db.notifiedEpisodeDao()
+        dao.recordAll(listOf(row(100, 7), row(200, 1), row(300, 4)))
+
+        assertEquals(
+            listOf(100 to 7, 300 to 4),
+            dao.getForAnime(listOf(100, 300)).map { it.animeId to it.episode }.sortedBy { it.first },
+        )
+    }
+
+    @Test
     fun `signing out takes what was said with it`() = runTest {
         db.notifiedEpisodeDao().recordAll(listOf(row(100, 7)))
 

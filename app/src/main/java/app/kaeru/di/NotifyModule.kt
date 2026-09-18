@@ -32,13 +32,17 @@ object NotifyModule {
      * Where a new-episode notification leads. Built here rather than in `data`, which is the one
      * place that knows both the activity and the route, and keeps the data layer from naming a
      * screen — the same arrangement the downloads notification uses.
+     *
+     * The intent itself is the player's own way back to a title, not a second copy of it: which
+     * extra carries a route and which activity reads it are facts with one home, and two of them
+     * would drift the first time either changed. Only the flags are this caller's, because it
+     * starts from no task of this app's at all.
      */
     @Provides
     @Singleton
     fun titleScreenIntent(@ApplicationContext context: Context): TitleScreenIntent = TitleScreenIntent { animeId ->
-        Intent(context, MainActivity::class.java)
+        MainActivity.titleIntent(context, animeId)
             .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            .putExtra(Routes.EXTRA_ROUTE, Routes.details(animeId))
     }
 
     /**

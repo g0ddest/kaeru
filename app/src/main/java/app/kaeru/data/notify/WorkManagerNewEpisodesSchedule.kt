@@ -4,15 +4,13 @@ import android.content.Context
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequest
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.Duration
 import javax.inject.Inject
 import javax.inject.Singleton
-
-/** Four times a day, which is often enough for a weekly episode and cheap enough to forget about. */
-private val PERIOD: Duration = Duration.ofHours(6)
 
 /**
  * The check as WorkManager holds it.
@@ -31,18 +29,35 @@ class WorkManagerNewEpisodesSchedule @Inject constructor(
 ) : NewEpisodesSchedule {
 
     override fun enable() {
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .setRequiresBatteryNotLow(true)
-            .build()
-        val request = PeriodicWorkRequestBuilder<NewEpisodesWorker>(PERIOD)
-            .setConstraints(constraints)
-            .build()
         WorkManager.getInstance(context)
-            .enqueueUniquePeriodicWork(NewEpisodesWorker.NAME, ExistingPeriodicWorkPolicy.KEEP, request)
+            .enqueueUniquePeriodicWork(NewEpisodesWorker.NAME, POLICY, request())
     }
 
     override fun disable() {
         WorkManager.getInstance(context).cancelUniqueWork(NewEpisodesWorker.NAME)
+    }
+
+    companion object {
+        /** Four times a day: often enough for a weekly episode, cheap enough to forget about. */
+        val PERIOD: Duration = Duration.ofHours(6)
+
+        /** See the note above on why this is not `REPLACE`. */
+        val POLICY: ExistingPeriodicWorkPolicy = ExistingPeriodicWorkPolicy.KEEP
+
+        /**
+         * Everything `enable` decides, apart from the one call that needs a device.
+         *
+         * Separate so the five values the work is scheduled with can be asserted rather than
+         * trusted: each of them is a constant that could be wrong with every test still green.
+         */
+        fun request(): PeriodicWorkRequest {
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .setRequiresBatteryNotLow(true)
+                .build()
+            return PeriodicWorkRequestBuilder<NewEpisodesWorker>(PERIOD)
+                .setConstraints(constraints)
+                .build()
+        }
     }
 }

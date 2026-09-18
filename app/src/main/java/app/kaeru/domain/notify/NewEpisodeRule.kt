@@ -34,11 +34,13 @@ data class NewEpisodeCheck(
  * installing shows nothing» — is the case where every title is newly sighted, rather than a flag of
  * its own that a sign-out would have to remember to clear.
  *
- * **Which episode is named.** The first one unwatched, which is the one a viewer would press play
- * on, and not the one that has just aired: somebody three episodes behind is not helped by a card
- * that starts the tenth. A pair is announced once and never again, so falling further behind is
- * quiet — the rows say the sixth has already been offered, and the seventh is not offered until
- * the sixth is out of the way.
+ * **Which episode is named, and which is offered.** Two numbers, because they answer two
+ * questions. The news is what came out — the highest episode available — because a line saying an
+ * episode from a fortnight ago has just aired reads as the app being confused. The offer is the
+ * first one unwatched, which is the one a viewer would press play on: somebody three episodes
+ * behind is not helped by a button that starts the tenth. A pair is announced once and never
+ * again, so falling further behind is quiet — the rows say the sixth has already been offered, and
+ * the seventh is not offered until the sixth is out of the way.
  */
 object NewEpisodeRule {
 
@@ -83,6 +85,7 @@ object NewEpisodeRule {
                 title = entry.anime.title,
                 posterUrl = entry.anime.posterUrl,
                 episode = episode,
+                aired = available,
             )
             if (episode != available) record += NotifiedEpisode(entry.anime.id, episode)
         }

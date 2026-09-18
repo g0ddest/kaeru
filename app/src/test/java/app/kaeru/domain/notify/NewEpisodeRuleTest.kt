@@ -71,7 +71,10 @@ class NewEpisodeRuleTest {
 
         val check = NewEpisodeRule.check(entries, known = seen(1, 7))
 
-        assertEquals(listOf(NewEpisode(animeId = 1, title = "Аниме 1", posterUrl = "poster-1", episode = 8)), check.news)
+        assertEquals(
+            listOf(NewEpisode(animeId = 1, title = "Аниме 1", posterUrl = "poster-1", episode = 8, aired = 8)),
+            check.news,
+        )
         assertEquals(listOf(NotifiedEpisode(1, 8)), check.record)
     }
 
@@ -123,6 +126,27 @@ class NewEpisodeRuleTest {
 
         assertTrue(check.news.isEmpty())
         assertTrue(check.record.isEmpty())
+    }
+
+    @Test
+    fun `a viewer behind is told what aired, and offered the episode they are actually on`() {
+        val behind = entry(anime(1, aired = 9), watched = 5)
+
+        val check = NewEpisodeRule.check(listOf(behind), known = seen(1, 7))
+
+        val news = check.news.single()
+        assertEquals(9, news.aired)
+        assertEquals(6, news.episode)
+    }
+
+    @Test
+    fun `a viewer who is up to date is offered the episode that just aired`() {
+        val entries = listOf(entry(anime(1, aired = 8), watched = 7))
+
+        val news = NewEpisodeRule.check(entries, known = seen(1, 7)).news.single()
+
+        assertEquals(8, news.aired)
+        assertEquals(8, news.episode)
     }
 
     @Test

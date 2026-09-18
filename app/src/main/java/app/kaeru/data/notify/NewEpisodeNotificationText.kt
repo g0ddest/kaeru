@@ -22,6 +22,14 @@ object NewEpisodeNotificationText {
      */
     fun episode(episode: Int): String = "Вышла $episode серия"
 
+    /**
+     * «смотреть с 6-й»: the second line, for a viewer who is not caught up.
+     *
+     * Only there when the two numbers differ. Saying «смотреть с 9-й» under «Вышла 9 серия» would
+     * be the notification explaining itself to somebody who needs no explanation.
+     */
+    fun watchFrom(episode: Int): String = "смотреть с $episode-й"
+
     /** «Тайтл, 7 серия» — one line of the summary, where there is no room for a sentence. */
     fun line(title: String, episode: Int): String = "$title, $episode серия"
 

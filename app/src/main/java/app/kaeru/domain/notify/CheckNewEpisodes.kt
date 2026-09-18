@@ -50,7 +50,8 @@ class CheckNewEpisodes @Inject constructor(
         if (!notifier.canPost()) return NewEpisodeOutcome.BLOCKED
         if (library.refresh().isFailure) return NewEpisodeOutcome.UNREACHABLE
 
-        val check = NewEpisodeRule.check(library.observeLibrary().first(), remembered.all())
+        val entries = library.observeLibrary().first()
+        val check = NewEpisodeRule.check(entries, remembered.forAnime(entries.map { it.anime.id }))
         // The account is read again at each of the two writes rather than trusted from the top of
         // the run. A sign-out landing in between wipes the table and takes the list with it, and
         // either write after that would put the departing account's shows back: rows that silence

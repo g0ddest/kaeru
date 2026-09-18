@@ -13,7 +13,14 @@ data class NotifiedEpisode(val animeId: Int, val episode: Int)
 
 /** What the checker remembers between runs. Durable, or the first night would repeat itself. */
 interface NotifiedEpisodes {
-    suspend fun all(): List<NotifiedEpisode>
+    /**
+     * What is remembered about these titles, in any order.
+     *
+     * Asked about the titles a check is actually looking at rather than about everything, because
+     * the table outlives a title's stay in «Смотрю» and a phone three years old would hand over
+     * thousands of rows to answer a question about forty.
+     */
+    suspend fun forAnime(animeIds: List<Int>): List<NotifiedEpisode>
 
     /** Writing a pair that is already there changes nothing, including the time it was written. */
     suspend fun record(episodes: List<NotifiedEpisode>, at: Instant)

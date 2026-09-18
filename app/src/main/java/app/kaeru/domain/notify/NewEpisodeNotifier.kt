@@ -23,6 +23,16 @@ interface NewEpisodeNotifier {
      */
     fun canPost(): Boolean
 
+    /**
+     * Makes whatever the platform needs before a notification can appear.
+     *
+     * Called when the app starts rather than on the way to the first notification, because the
+     * viewer looks for a thing to mute before it has ever interrupted them: the channel has to be
+     * in the system's own settings on the day the app is installed, not six hours later. Saying it
+     * twice does nothing.
+     */
+    fun prepare()
+
     /** Never called with an empty list: a check with nothing to say says nothing. */
     suspend fun post(news: List<NewEpisode>)
 

@@ -17,6 +17,12 @@ class NewEpisodeNotificationTextTest {
     }
 
     @Test
+    fun `a viewer behind is told where to start, under the line about what aired`() {
+        assertEquals("смотреть с 6-й", NewEpisodeNotificationText.watchFrom(6))
+        assertEquals("смотреть с 11-й", NewEpisodeNotificationText.watchFrom(11))
+    }
+
+    @Test
     fun `the summary counts titles the way Russian counts`() {
         assertEquals("1 тайтл", NewEpisodeNotificationText.titles(1))
         assertEquals("3 тайтла", NewEpisodeNotificationText.titles(3))

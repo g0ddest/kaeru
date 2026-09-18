@@ -1,6 +1,7 @@
 package app.kaeru.data.notify
 
 import android.util.Log
+import app.kaeru.domain.notify.NewEpisodeNotifier
 import app.kaeru.domain.notify.NotifiedEpisodes
 import app.kaeru.domain.repository.AuthRepository
 import app.kaeru.domain.settings.SettingsStore
@@ -36,6 +37,7 @@ class NewEpisodesStarter @Inject constructor(
     private val settings: SettingsStore,
     private val schedule: NewEpisodesSchedule,
     private val remembered: NotifiedEpisodes,
+    private val notifier: NewEpisodeNotifier,
     private val television: Television,
 ) {
     private val started = AtomicBoolean(false)
@@ -48,6 +50,11 @@ class NewEpisodesStarter @Inject constructor(
             schedule.disable()
             return
         }
+        // Before anything is scheduled and long before anything is posted. A viewer who goes
+        // looking for «Новые серии» in the system's notification settings on the day they install
+        // the app has to find it there — a channel that appears only with the first notification
+        // cannot be muted or tuned in advance, and the first one may be days away.
+        notifier.prepare()
         scope.launch {
             // Two conditions and one answer: there has to be a list to check, and the viewer has
             // to want to hear about it. Combined rather than watched separately, or the two
