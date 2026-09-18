@@ -220,5 +220,7 @@ class CheckNewEpisodesTest {
             rowsAtPost = recordedWhenPosting?.invoke().orEmpty()
             posted += news
         }
+
+        override suspend fun clear(animeId: Int) = Unit
     }
 }

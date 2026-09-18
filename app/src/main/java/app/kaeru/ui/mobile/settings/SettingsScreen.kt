@@ -121,8 +121,8 @@ fun SettingsScreen(
     onRetryAccount: () -> Unit,
     onDownloads: () -> Unit,
     onUpdates: () -> Unit,
-    /** The system refused the permission just now, so the switch stayed where it was. */
-    notificationsRefused: Boolean = false,
+    /** Android will not allow notifications, so the switch cannot honestly read «on». */
+    notificationsBlocked: Boolean = false,
 ) {
     var confirming by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
@@ -138,7 +138,7 @@ fun SettingsScreen(
         ) {
             AccountSection(state, onRetryAccount, onSignOutPressed = { confirming = true })
             PlaybackSection(state, onAutoplay, onPipOnLeave, onQuality, onThreshold)
-            NotificationsSection(state.newEpisodes, notificationsRefused, onNewEpisodes)
+            NotificationsSection(state.newEpisodes, notificationsBlocked, onNewEpisodes)
             DownloadsSection(onDownloads)
             DubsSection(state, onStudioUp, onStudioDown, onStudioRemove, onStudioAdd, onStudiosReset)
             KodikSection(state.kodikToken, onKodikToken)
@@ -161,15 +161,16 @@ fun SettingsScreen(
  *
  * The sentence comes first because the switch alone would not say when the app looks or what it
  * would say — this is the one setting here whose effect happens while the app is closed. The line
- * under it appears only after Android has actually refused: a standing warning about a permission
- * nobody has been asked for yet would be the screen worrying on the viewer's behalf.
+ * under it appears whenever the setting wants notifications and Android will not allow them, not
+ * only after a refusal this screen happened to witness: a viewer who revoked the permission in
+ * system settings a month ago must not find a switch still claiming to be on.
  */
 @Composable
-private fun NotificationsSection(enabled: Boolean, refused: Boolean, onNewEpisodes: (Boolean) -> Unit) {
+private fun NotificationsSection(enabled: Boolean, blocked: Boolean, onNewEpisodes: (Boolean) -> Unit) {
     SettingsSection(NOTIFICATIONS) {
         SettingNote(NEW_EPISODES_NOTE)
         SettingSwitchRow(NEW_EPISODES, enabled, onNewEpisodes)
-        if (refused) SettingNote(NEW_EPISODES_BLOCKED)
+        if (blocked) SettingNote(NEW_EPISODES_BLOCKED)
     }
 }
 

@@ -5,7 +5,10 @@ import androidx.lifecycle.viewModelScope
 import app.kaeru.domain.playback.PlaybackNotificationPrompt
 import app.kaeru.domain.settings.SettingsStore
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -26,6 +29,15 @@ class NotificationPromptViewModel @Inject constructor(
     private val settings: SettingsStore,
 ) : ViewModel() {
 
+    /**
+     * Whether a sign-in is still waiting for its question, as the store holds it.
+     *
+     * Eagerly started so the screen has an answer to draw on its first frame rather than a false
+     * that turns true underneath it.
+     */
+    val owed: StateFlow<Boolean> = prompt.notificationQuestionOwed
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     /** Whether the setting still wants notifications; the caller adds the platform's own half. */
     suspend fun wanted(): Boolean = settings.newEpisodeNotifications.first()
 
@@ -34,12 +46,22 @@ class NotificationPromptViewModel @Inject constructor(
     /**
      * Records that the question has been put, and takes the setting down to match a refusal.
      *
-     * Nothing is written on a yes: the setting is already on, which is what put the question.
+     * Nothing is written on a yes beyond clearing the debt: the setting is already on, which is
+     * what put the question.
      */
     fun answered(granted: Boolean) {
         viewModelScope.launch {
             prompt.markNotificationsAsked()
             if (!granted) settings.setNewEpisodeNotifications(false)
+            prompt.setNotificationQuestionOwed(false)
         }
+    }
+
+    /**
+     * The question was not worth putting — already granted, already asked, or a platform with no
+     * such permission. Clearing it anyway, so a debt that can never be paid is not carried forever.
+     */
+    fun dismiss() {
+        viewModelScope.launch { prompt.setNotificationQuestionOwed(false) }
     }
 }

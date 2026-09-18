@@ -4,10 +4,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -55,22 +51,6 @@ fun MobileApp(
     LaunchedEffect(auth.loggedIn, invitation) {
         if (auth.loggedIn == true && invitation != null) togetherViewModel.openPending()
     }
-    // Whether a sign-in actually happened in this session, rather than the app opening on an
-    // account that was already there. It is the difference between a permission dialog that
-    // follows something the viewer just did and one that ambushes a cold start — which is exactly
-    // what the new-episode setting must not do, defaulted on or not.
-    var wasSignedOut by remember { mutableStateOf(false) }
-    var justSignedIn by remember { mutableStateOf(false) }
-    LaunchedEffect(auth.loggedIn) {
-        when (auth.loggedIn) {
-            false -> wasSignedOut = true
-            true -> if (wasSignedOut) {
-                wasSignedOut = false
-                justSignedIn = true
-            }
-            null -> Unit
-        }
-    }
     LaunchedEffect(pairingLink) {
         if (pairingLink != null) {
             pairingViewModel.open(pairingLink)
@@ -91,9 +71,11 @@ fun MobileApp(
         when {
             auth.loggedIn == null -> Box(Modifier.fillMaxSize())
             auth.loggedIn == true -> {
-                // Draws nothing: it is here for as long as there is a question to put, and takes
-                // itself off the moment it is answered or found not to be worth putting.
-                if (justSignedIn) NewEpisodesPermissionPrompt(onDone = { justSignedIn = false })
+                // Draws nothing. Whether the question goes up is a fact the store holds — a
+                // sign-in that has not been followed by it — rather than something this
+                // composition remembers, so turning the phone on its side between the login
+                // screen and here can no longer lose it.
+                NewEpisodesPermissionPrompt()
                 MobileShell(
                     pairing = pairing,
                     onConfirmPairing = pairingViewModel::confirm,

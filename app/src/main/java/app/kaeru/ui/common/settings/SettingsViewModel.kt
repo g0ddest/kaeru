@@ -75,6 +75,16 @@ class SettingsViewModel @Inject constructor(
 
     private val overrides = MutableStateFlow(Overrides())
 
+    /**
+     * Whether Android would currently let this app post anything, as the screen last saw it.
+     *
+     * Not a setting and not something this class can read — the permission belongs to the platform
+     * and is changed in the system's own settings — so the screen reports it on every return and
+     * this only holds the answer. It starts as «yes» so a screen opening on a phone that allows
+     * notifications never flashes a warning before its first report.
+     */
+    private val notificationsAllowed = MutableStateFlow(true)
+
     /** True until the `whoami` in flight comes back, one way or the other. */
     private val asking = MutableStateFlow(true)
 
@@ -99,8 +109,15 @@ class SettingsViewModel @Inject constructor(
         .onStart { emit(AccountState(loaded = false, account = null)) }
 
     val uiState: StateFlow<SettingsUiState> =
-        combine(stored, overrides, accountState, asking) { settings, chosen, account, asking ->
+        combine(stored, overrides, accountState, asking, notificationsAllowed) {
+                settings, chosen, account, asking, allowed ->
             val studios = chosen.studios ?: settings.studios
+            // Two halves of one answer. The switch is «on» only where both agree, and the line
+            // under it appears whenever they do not: a setting that said «on» over a platform
+            // dropping everything is the switch that lies, however it got into that state —
+            // a refusal at the player, a permission revoked in system settings months later, or
+            // an upgrade from a build that never asked.
+            val wantsNewEpisodes = chosen.newEpisodes ?: settings.newEpisodes
             SettingsUiState(
                 // An account nobody has named yet is a skeleton while there is still a question
                 // outstanding, and «нет аккаунта» once there is not.
@@ -108,7 +125,8 @@ class SettingsViewModel @Inject constructor(
                 account = account.account,
                 autoplayNext = chosen.autoplay ?: settings.autoplay,
                 pipOnLeave = chosen.pipOnLeave ?: settings.pipOnLeave,
-                newEpisodes = chosen.newEpisodes ?: settings.newEpisodes,
+                newEpisodes = wantsNewEpisodes && allowed,
+                newEpisodesBlocked = wantsNewEpisodes && !allowed,
                 defaultQuality = if (chosen.qualityChosen) chosen.quality else settings.quality,
                 watchedThreshold = chosen.threshold ?: settings.threshold,
                 studios = TranslationPriorityEditor.shown(studios, TranslationRanker.DEFAULT_STUDIOS),
@@ -153,15 +171,25 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settings.setPipOnLeave(enabled) }
     }
 
+    /** What the screen reports after every return to it, and after the system's own dialog. */
+    fun notificationsAllowed(granted: Boolean) {
+        notificationsAllowed.value = granted
+    }
+
     /**
      * Turning the new-episode check on or off.
      *
      * The screen is what asks for the notification permission before calling this with `true` on
      * Android 13 and later: a setting that says «on» while the system refuses to show anything
      * would be a switch that lies. A refusal simply never reaches here.
+     *
+     * Compared against what the setting wants rather than against what the switch shows. The two
+     * differ exactly while the permission is missing, and a press that agrees with the stored
+     * value is not a change however the row is drawn.
      */
     fun setNewEpisodes(enabled: Boolean) {
-        if (enabled == uiState.value.newEpisodes) return
+        val wanted = uiState.value.newEpisodes || uiState.value.newEpisodesBlocked
+        if (enabled == wanted) return
         overrides.update { it.copy(newEpisodes = enabled) }
         viewModelScope.launch { settings.setNewEpisodeNotifications(enabled) }
     }

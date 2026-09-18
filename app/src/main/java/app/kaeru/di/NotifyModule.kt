@@ -44,12 +44,13 @@ object NotifyModule {
     /**
      * How «Смотреть» starts the episode: the very same intent the home screen's card is built on,
      * so a notification is not a second-class way into playback. It starts a task of its own,
-     * because there may well be no task of this app's running at all.
+     * because there may well be no task of this app's running at all — and it names the title it
+     * came from, so the player can take the card down: an action button never auto-cancels one.
      */
     @Provides
     @Singleton
     fun watchEpisodeIntent(@ApplicationContext context: Context): WatchEpisodeIntent = WatchEpisodeIntent { animeId, episode ->
-        PlayerActivity.intent(context, animeId, episode).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        PlayerActivity.notificationIntent(context, animeId, episode).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
 
     /** Leanback is the platform's own word for «this is a television», and the manifest declares it. */

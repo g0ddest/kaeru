@@ -123,6 +123,47 @@ class NewEpisodeNotificationsTest {
     }
 
     @Test
+    fun `clearing a title takes its notification out of the shade`() = runTest {
+        notifications.post(listOf(episode(1, 7), episode(2, 3)))
+
+        notifications.clear(1)
+
+        assertEquals(listOf("Аниме 2"), posted().mapNotNull(::titleOf))
+    }
+
+    @Test
+    fun `a summary left with one title under it goes too`() = runTest {
+        notifications.post(listOf(episode(1, 7), episode(2, 3)))
+
+        notifications.clear(1)
+
+        assertTrue(posted().none { it.flags and Notification.FLAG_GROUP_SUMMARY != 0 })
+    }
+
+    @Test
+    fun `a summary with titles left counts what is left, not what was`() = runTest {
+        notifications.post(listOf(episode(1, 7), episode(2, 3), episode(3, 5)))
+
+        notifications.clear(1)
+
+        val summary = posted().single { it.flags and Notification.FLAG_GROUP_SUMMARY != 0 }
+        assertEquals("2 тайтла", textOf(summary))
+        assertEquals(
+            listOf("Аниме 2, 3 серия", "Аниме 3, 5 серия"),
+            summary.extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)?.map { it.toString() },
+        )
+    }
+
+    @Test
+    fun `clearing a title nobody announced changes nothing`() = runTest {
+        notifications.post(listOf(episode(1, 7), episode(2, 3)))
+
+        notifications.clear(9)
+
+        assertEquals(3, posted().size)
+    }
+
+    @Test
     fun `the channel the system shows is the one the viewer can turn off`() = runTest {
         notifications.post(listOf(episode(1, 7)))
 

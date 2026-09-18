@@ -25,4 +25,14 @@ interface NewEpisodeNotifier {
 
     /** Never called with an empty list: a check with nothing to say says nothing. */
     suspend fun post(news: List<NewEpisode>)
+
+    /**
+     * Takes back whatever was said about one title, because the viewer has now acted on it.
+     *
+     * Not the same as a tap: pressing a button on a notification leaves it standing, so the card
+     * about an episode that is already playing would sit in the shade until it was swiped away.
+     * A title nothing was ever said about is not an error — this is called from a screen that
+     * cannot know whether the card is still there.
+     */
+    suspend fun clear(animeId: Int)
 }

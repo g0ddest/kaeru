@@ -47,6 +47,7 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
     private val newEpisodeNotificationsKey = booleanPreferencesKey("new_episode_notifications")
     private val defaultQualityKey = intPreferencesKey("default_quality")
     private val notificationsAskedKey = booleanPreferencesKey("notifications_asked")
+    private val notificationQuestionOwedKey = booleanPreferencesKey("notification_question_owed")
     private val accountNicknameKey = stringPreferencesKey("account_nickname")
     private val accountAvatarKey = stringPreferencesKey("account_avatar")
     private val downloadLimitKey = longPreferencesKey("download_limit_bytes")
@@ -224,6 +225,13 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
 
     override suspend fun markNotificationsAsked() {
         dataStore.edit { it[notificationsAskedKey] = true }
+    }
+
+    override val notificationQuestionOwed: Flow<Boolean> =
+        dataStore.data.map { it[notificationQuestionOwedKey] ?: false }
+
+    override suspend fun setNotificationQuestionOwed(value: Boolean) {
+        dataStore.edit { it[notificationQuestionOwedKey] = value }
     }
 
     // --- «Удалять просмотренные»: what is promised and not yet done -----------------------------
