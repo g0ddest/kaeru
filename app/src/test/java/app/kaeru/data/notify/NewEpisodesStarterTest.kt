@@ -2,6 +2,7 @@ package app.kaeru.data.notify
 
 import app.kaeru.domain.repository.AuthRepository
 import app.kaeru.domain.repository.PairingAuthorization
+import app.kaeru.domain.settings.FakeSettingsStore
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,9 +18,10 @@ import org.junit.Test
 class NewEpisodesStarterTest {
     private val auth = FakeAuth()
     private val schedule = FakeSchedule()
+    private val settings = FakeSettingsStore()
 
     private fun starter(television: Boolean = false) =
-        NewEpisodesStarter(auth, schedule, Television { television })
+        NewEpisodesStarter(auth, settings, schedule, Television { television })
 
     @Test
     fun `somebody signed in gets the check`() = runTest {
@@ -56,6 +58,44 @@ class NewEpisodesStarterTest {
     fun `a television is never given one, whoever is signed in`() = runTest {
         val scope = TestScope(StandardTestDispatcher(testScheduler))
         starter(television = true).start(scope)
+        scope.runCurrent()
+
+        assertEquals(listOf("disable"), schedule.calls)
+    }
+
+    @Test
+    fun `turning the setting off takes the check off`() = runTest {
+        val scope = TestScope(StandardTestDispatcher(testScheduler))
+        starter().start(scope)
+        scope.runCurrent()
+
+        settings.newEpisodeNotifications.value = false
+        scope.runCurrent()
+
+        assertEquals(listOf("enable", "disable"), schedule.calls)
+    }
+
+    @Test
+    fun `turning it back on puts the check back`() = runTest {
+        val scope = TestScope(StandardTestDispatcher(testScheduler))
+        settings.newEpisodeNotifications.value = false
+        starter().start(scope)
+        scope.runCurrent()
+
+        settings.newEpisodeNotifications.value = true
+        scope.runCurrent()
+
+        assertEquals(listOf("disable", "enable"), schedule.calls)
+    }
+
+    @Test
+    fun `the setting on its own is not enough while nobody is signed in`() = runTest {
+        val scope = TestScope(StandardTestDispatcher(testScheduler))
+        auth.loggedIn.value = false
+        starter().start(scope)
+        scope.runCurrent()
+
+        settings.newEpisodeNotifications.value = true
         scope.runCurrent()
 
         assertEquals(listOf("disable"), schedule.calls)

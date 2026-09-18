@@ -44,6 +44,7 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
     private val preferredTranslationsKey = stringPreferencesKey("preferred_translations")
     private val autoplayNextKey = booleanPreferencesKey("autoplay_next")
     private val pipOnLeaveKey = booleanPreferencesKey("pip_on_leave")
+    private val newEpisodeNotificationsKey = booleanPreferencesKey("new_episode_notifications")
     private val defaultQualityKey = intPreferencesKey("default_quality")
     private val notificationsAskedKey = booleanPreferencesKey("notifications_asked")
     private val accountNicknameKey = stringPreferencesKey("account_nickname")
@@ -143,6 +144,14 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
 
     override suspend fun setPipOnLeave(enabled: Boolean) {
         dataStore.edit { it[pipOnLeaveKey] = enabled }
+    }
+
+    /** On until somebody says otherwise; turning it off also takes the background check off. */
+    override val newEpisodeNotifications: Flow<Boolean> =
+        dataStore.data.map { it[newEpisodeNotificationsKey] ?: true }
+
+    override suspend fun setNewEpisodeNotifications(enabled: Boolean) {
+        dataStore.edit { it[newEpisodeNotificationsKey] = enabled }
     }
 
     /**

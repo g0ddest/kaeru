@@ -187,6 +187,32 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `new-episode notifications are on until somebody says otherwise`() = runTest(main.dispatcher) {
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.newEpisodes)
+    }
+
+    @Test
+    fun `turning new-episode notifications off is written and shown at once`() = runTest(main.dispatcher) {
+        val store = FakeSettingsStore(echo = false)
+        val vm = viewModel(store)
+        advanceUntilIdle()
+
+        vm.setNewEpisodes(false)
+        advanceUntilIdle()
+
+        assertFalse(vm.uiState.value.newEpisodes)
+        assertEquals(listOf("newEpisodes=false"), store.writes)
+
+        // Saying it again is not a second write.
+        vm.setNewEpisodes(false)
+        advanceUntilIdle()
+        assertEquals(listOf("newEpisodes=false"), store.writes)
+    }
+
+    @Test
     fun `a setting shows its new value before the store says so`() = runTest(main.dispatcher) {
         val store = FakeSettingsStore(quality = Quality.P720, echo = false)
         val vm = viewModel(store)

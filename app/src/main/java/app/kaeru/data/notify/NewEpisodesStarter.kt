@@ -2,8 +2,10 @@ package app.kaeru.data.notify
 
 import android.util.Log
 import app.kaeru.domain.repository.AuthRepository
+import app.kaeru.domain.settings.SettingsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
@@ -16,8 +18,9 @@ private const val TAG = "NewEpisodes"
  * Keeps the six-hourly check on for as long as it should be, and off the rest of the time.
  *
  * Started once from the application, beside the outbox drain, because the answer changes without
- * anybody being on a screen: signing out from settings has to take the work off, and the check has
- * to be there again the moment somebody signs back in.
+ * anybody being on a screen: signing out from settings has to take the work off, turning the
+ * switch off has to take it off too, and the check has to be there again the moment either comes
+ * back.
  *
  * A television gets nothing. Notifications there are a banner over whatever is playing, for an
  * episode nobody is going to start from the remote in their hand — and refusing to schedule the
@@ -27,6 +30,7 @@ private const val TAG = "NewEpisodes"
 @Singleton
 class NewEpisodesStarter @Inject constructor(
     private val auth: AuthRepository,
+    private val settings: SettingsStore,
     private val schedule: NewEpisodesSchedule,
     private val television: Television,
 ) {
@@ -41,12 +45,15 @@ class NewEpisodesStarter @Inject constructor(
             return
         }
         scope.launch {
-            auth.isLoggedIn
+            // Two conditions and one answer: there has to be a list to check, and the viewer has
+            // to want to hear about it. Combined rather than watched separately, or the two
+            // watchers would each undo the other's decision on every change.
+            combine(auth.isLoggedIn, settings.newEpisodeNotifications) { loggedIn, wanted -> loggedIn && wanted }
                 .distinctUntilChanged()
                 // Nothing here is worth taking the process down for. A watch that throws leaves
                 // the schedule exactly as it was, which is the state it was last told to be in.
                 .catch { error -> Log.w(TAG, "Stopped watching whether to check for new episodes", error) }
-                .collect { loggedIn -> if (loggedIn) schedule.enable() else schedule.disable() }
+                .collect { wanted -> if (wanted) schedule.enable() else schedule.disable() }
         }
     }
 }

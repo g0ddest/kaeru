@@ -51,6 +51,7 @@ class SettingsViewModel @Inject constructor(
     private data class Overrides(
         val autoplay: Boolean? = null,
         val pipOnLeave: Boolean? = null,
+        val newEpisodes: Boolean? = null,
         val quality: Quality? = null,
         /** Quality's own null means «Авто», so whether an override exists is a separate fact. */
         val qualityChosen: Boolean = false,
@@ -59,7 +60,7 @@ class SettingsViewModel @Inject constructor(
         val token: String? = null,
     )
 
-    /** The six settings, read together so one recomposition carries all of them. */
+    /** The seven settings, read together so one recomposition carries all of them. */
     private data class Stored(
         val studios: List<String>,
         val autoplay: Boolean,
@@ -67,6 +68,7 @@ class SettingsViewModel @Inject constructor(
         val threshold: Float,
         val token: String?,
         val pipOnLeave: Boolean = true,
+        val newEpisodes: Boolean = true,
     )
 
     private data class AccountState(val loaded: Boolean, val account: Account?)
@@ -79,7 +81,7 @@ class SettingsViewModel @Inject constructor(
     /** The question currently out, so a second press of «Повторить» does not start a second one. */
     private var asked: Job? = null
 
-    // Two steps, because `combine` is typed up to five flows and there are six.
+    // Two steps, because `combine` is typed up to five flows and there are seven.
     private val stored = combine(
         combine(
             settings.preferredTranslations,
@@ -89,7 +91,8 @@ class SettingsViewModel @Inject constructor(
             settings.kodikToken,
         ) { studios, autoplay, quality, threshold, token -> Stored(studios, autoplay, quality, threshold, token) },
         settings.pipOnLeave,
-    ) { playback, pipOnLeave -> playback.copy(pipOnLeave = pipOnLeave) }
+        settings.newEpisodeNotifications,
+    ) { playback, pipOnLeave, newEpisodes -> playback.copy(pipOnLeave = pipOnLeave, newEpisodes = newEpisodes) }
 
     private val accountState = accounts.account
         .map { AccountState(loaded = true, account = it) }
@@ -105,6 +108,7 @@ class SettingsViewModel @Inject constructor(
                 account = account.account,
                 autoplayNext = chosen.autoplay ?: settings.autoplay,
                 pipOnLeave = chosen.pipOnLeave ?: settings.pipOnLeave,
+                newEpisodes = chosen.newEpisodes ?: settings.newEpisodes,
                 defaultQuality = if (chosen.qualityChosen) chosen.quality else settings.quality,
                 watchedThreshold = chosen.threshold ?: settings.threshold,
                 studios = TranslationPriorityEditor.shown(studios, TranslationRanker.DEFAULT_STUDIOS),
@@ -147,6 +151,19 @@ class SettingsViewModel @Inject constructor(
         if (enabled == uiState.value.pipOnLeave) return
         overrides.update { it.copy(pipOnLeave = enabled) }
         viewModelScope.launch { settings.setPipOnLeave(enabled) }
+    }
+
+    /**
+     * Turning the new-episode check on or off.
+     *
+     * The screen is what asks for the notification permission before calling this with `true` on
+     * Android 13 and later: a setting that says «on» while the system refuses to show anything
+     * would be a switch that lies. A refusal simply never reaches here.
+     */
+    fun setNewEpisodes(enabled: Boolean) {
+        if (enabled == uiState.value.newEpisodes) return
+        overrides.update { it.copy(newEpisodes = enabled) }
+        viewModelScope.launch { settings.setNewEpisodeNotifications(enabled) }
     }
 
     fun setDefaultQuality(quality: Quality?) {

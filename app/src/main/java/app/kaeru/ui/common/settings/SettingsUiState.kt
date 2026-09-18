@@ -22,6 +22,8 @@ data class SettingsUiState(
     val autoplayNext: Boolean = true,
     /** Whether leaving the app with an episode playing folds it into a floating window. */
     val pipOnLeave: Boolean = true,
+    /** Whether the app looks in the background for a new episode and says when it finds one. */
+    val newEpisodes: Boolean = true,
     /** null is «Авто»: whatever the source offers best. */
     val defaultQuality: Quality? = null,
     val watchedThreshold: Float = 0.9f,
