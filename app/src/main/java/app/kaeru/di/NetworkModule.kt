@@ -103,8 +103,11 @@ object NetworkModule {
      * `data/shikimori` keeps the Shikimori base URL, the authorization page the viewer opens
      * included: only the token endpoint moved.
      *
-     * An address is required. Without one there is nothing to ask, and [UnconfiguredOAuthApi] says
-     * so on the first call instead of spending a code on a request that cannot be answered.
+     * An address is required, and it has to be one an http client can use. Without either there is
+     * nothing to ask, and [UnconfiguredOAuthApi] says so on the first call instead of spending a
+     * code on a request that cannot be answered — a build with `wss://` copied down from
+     * `TOGETHER_RELAY_URL` would otherwise take Retrofit's `IllegalArgumentException` out through
+     * this `@Provides` and kill the app at the first injection.
      */
     @Provides
     @Singleton
@@ -115,13 +118,15 @@ object NetworkModule {
     ): ShikimoriOAuthApi {
         val base = proxyUrl.trim()
         if (base.isEmpty()) return UnconfiguredOAuthApi
-        return Retrofit.Builder()
-            // Retrofit resolves a relative path only against a base that ends in one.
-            .baseUrl(if (base.endsWith("/")) base else "$base/")
-            .client(client)
-            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-            .build()
-            .create(ShikimoriOAuthApi::class.java)
+        return runCatching {
+            Retrofit.Builder()
+                // Retrofit resolves a relative path only against a base that ends in one.
+                .baseUrl(if (base.endsWith("/")) base else "$base/")
+                .client(client)
+                .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+                .build()
+                .create(ShikimoriOAuthApi::class.java)
+        }.getOrDefault(UnconfiguredOAuthApi)
     }
 
     @Provides

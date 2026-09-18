@@ -87,6 +87,24 @@ class NetworkModuleTest {
     }
 
     @Test
+    fun `a malformed proxy address refuses the exchange instead of killing the graph`() = runTest {
+        // Retrofit's builder throws on an address with no scheme or a scheme it does not speak, and
+        // it throws inside a @Provides — so the app would die at the first injection of the OAuth
+        // API rather than show the message a missing address already has. `local.properties.example`
+        // puts AUTH_PROXY_URL (https://) directly above TOGETHER_RELAY_URL (wss://) on the same
+        // host, which is exactly the copy-paste that lands a wss:// value here.
+        for (garbage in listOf("kaeru-relay.workers.dev", "wss://kaeru-relay.workers.dev", "not a url at all")) {
+            val api = NetworkModule.oauthApi(NetworkModule.plainClient(), NetworkModule.json(), garbage)
+
+            val failure = runCatching {
+                api.token(grantType = "refresh_token", clientId = "cid", refreshToken = "ref")
+            }.exceptionOrNull()
+
+            assertTrue("expected SignInUnavailable for '$garbage', got $failure", failure is SignInUnavailable)
+        }
+    }
+
+    @Test
     fun `full asynchronous API dispatcher can still refresh and complete every call`() {
         MockWebServer().use { server ->
             server.start()
