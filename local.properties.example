@@ -1,7 +1,14 @@
 sdk.dir=/Users/vitaliy/Library/Android/sdk
 SHIKIMORI_CLIENT_ID=
-SHIKIMORI_CLIENT_SECRET=
 KODIK_TOKEN=
+
+# Kaeru's own worker: it holds the Shikimori client secret and exchanges authorization codes for
+# tokens, so the secret is not compiled into the APK. An https:// origin with no path — for example
+# https://kaeru-relay.<account>.workers.dev, the same worker as the relay below. Deployed from
+# infra/relay; see its README, including `wrangler secret put SHIKIMORI_CLIENT_SECRET`.
+# Left empty nobody can sign in: the app says «Вход временно недоступен, попробуйте позже» rather
+# than asking Shikimori for a token it has no secret to earn.
+AUTH_PROXY_URL=
 
 # The watch-together relay, as a wss:// origin with no path — for example
 # wss://kaeru-relay.<account>.workers.dev. Deployed from infra/relay; see its README.

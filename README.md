@@ -30,7 +30,8 @@ Kodik, воспроизведение — Media3 с поддержкой Chromec
 
 ```bash
 cp local.properties.example local.properties
-# заполнить sdk.dir, SHIKIMORI_CLIENT_ID и SHIKIMORI_CLIENT_SECRET
+# заполнить sdk.dir, SHIKIMORI_CLIENT_ID и AUTH_PROXY_URL (client secret живёт в воркере,
+# см. infra/relay/README.md)
 JAVA_HOME="$(/usr/libexec/java_home -v 21)" ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
 

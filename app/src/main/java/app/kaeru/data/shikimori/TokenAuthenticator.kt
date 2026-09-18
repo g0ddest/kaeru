@@ -15,7 +15,6 @@ class TokenAuthenticator(
     private val store: TokenStore,
     private val oauthApi: ShikimoriOAuthApi,
     private val clientId: String,
-    private val clientSecret: String,
     private val clock: Clock,
 ) : Authenticator {
     private val lock = Any()
@@ -41,7 +40,6 @@ class TokenAuthenticator(
             oauthApi.token(
                 grantType = "refresh_token",
                 clientId = clientId,
-                clientSecret = clientSecret,
                 refreshToken = current.refreshToken,
             )
         }.map { AuthTokens(it.accessToken, it.refreshToken, clock.instant().epochSecond + it.expiresIn, current.userId) }

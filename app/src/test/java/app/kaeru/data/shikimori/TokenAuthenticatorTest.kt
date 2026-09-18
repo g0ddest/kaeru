@@ -42,7 +42,7 @@ class TokenAuthenticatorTest {
             .addConverterFactory(shikimoriJson().asConverterFactory("application/json".toMediaType()))
             .build().create(ShikimoriOAuthApi::class.java)
         authenticator = TokenAuthenticator(
-            store, oauth, "cid", "sec", Clock.fixed(Instant.ofEpochSecond(1_000), ZoneOffset.UTC),
+            store, oauth, "cid", Clock.fixed(Instant.ofEpochSecond(1_000), ZoneOffset.UTC),
         )
         client = OkHttpClient.Builder().callTimeout(5, TimeUnit.SECONDS)
             .addInterceptor(AuthInterceptor(store)).authenticator(authenticator).build()
@@ -64,7 +64,7 @@ class TokenAuthenticatorTest {
         assertEquals("/oauth/token", refresh.path)
         assertEquals("POST", refresh.method)
         assertEquals("application/x-www-form-urlencoded", refresh.getHeader("Content-Type"))
-        assertEquals("grant_type=refresh_token&client_id=cid&client_secret=sec&refresh_token=refresh-1", refresh.body.readUtf8())
+        assertEquals("grant_type=refresh_token&client_id=cid&refresh_token=refresh-1", refresh.body.readUtf8())
         assertNull(refresh.getHeader("Authorization"))
         assertEquals("Bearer new", server.takeRequest().getHeader("Authorization"))
         assertEquals(AuthTokens("new", "refresh-2", 87_400), runBlocking { store.get() })

@@ -20,6 +20,16 @@ class StorageFailure(cause: Throwable) : Exception(cause.message, cause)
 /** An OAuth redirect callback did not match an authorization this app started. */
 class AuthCallbackRejected(message: String) : Exception(message)
 
+/**
+ * This build has no address for the token proxy, so there is no way to sign anyone in.
+ *
+ * The client secret an exchange needs lives in Kaeru's worker and no longer in the APK, so a build
+ * assembled without the worker's address has nowhere to send a code — and sending it to Shikimori
+ * regardless would earn an `invalid_client` and burn the code. Separate from [AuthCallbackRejected]
+ * because nothing the viewer does fixes it: the build is missing a setting.
+ */
+class SignInUnavailable : Exception("No auth proxy is configured in this build")
+
 /** Why the source would not serve us. The two read very differently to a user, so they get separate copy. */
 enum class SourceUnavailableReason {
     /** No token could be obtained, so we never got to ask. */

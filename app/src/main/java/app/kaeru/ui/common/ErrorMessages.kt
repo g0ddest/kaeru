@@ -10,6 +10,7 @@ import app.kaeru.domain.error.HttpError
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.error.PairingFailed
 import app.kaeru.domain.error.PairingFailureReason
+import app.kaeru.domain.error.SignInUnavailable
 import app.kaeru.domain.error.SourceFormatChanged
 import app.kaeru.domain.error.SourceUnavailable
 import app.kaeru.domain.error.SourceUnavailableReason
@@ -23,6 +24,7 @@ private const val THROTTLED = "Слишком много запросов, по�
 private const val SHIKIMORI_DOWN = "Shikimori недоступен, попробуйте позже"
 private const val SESSION_CHANGED = "Сессия изменилась, обновите экран"
 private const val CALLBACK_REJECTED = "Не удалось подтвердить вход. Войдите заново"
+private const val SIGN_IN_UNAVAILABLE = "Вход временно недоступен, попробуйте позже"
 private const val SOURCE_NO_KEY = "Kodik недоступен: не удалось получить ключ"
 private const val SOURCE_REJECTED = "Kodik временно недоступен, попробуйте позже"
 private const val SOURCE_OFFLINE = "Нет сети. Скачайте серию заранее"
@@ -66,6 +68,7 @@ fun Throwable.toUserMessage(): String = when {
     this is HttpError && code == 429 -> THROTTLED
     this is HttpError && code in 500..599 -> SHIKIMORI_DOWN
     this is AuthCallbackRejected -> CALLBACK_REJECTED
+    this is SignInUnavailable -> SIGN_IN_UNAVAILABLE
     this is SourceUnavailable && reason == SourceUnavailableReason.NO_KEY -> SOURCE_NO_KEY
     this is SourceUnavailable && reason == SourceUnavailableReason.OFFLINE -> SOURCE_OFFLINE
     this is SourceUnavailable -> SOURCE_REJECTED

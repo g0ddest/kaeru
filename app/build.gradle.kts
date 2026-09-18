@@ -37,8 +37,12 @@ android {
         versionName = "0.3.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SHIKIMORI_CLIENT_ID", secret("SHIKIMORI_CLIENT_ID"))
-        buildConfigField("String", "SHIKIMORI_CLIENT_SECRET", secret("SHIKIMORI_CLIENT_SECRET"))
         buildConfigField("String", "KODIK_TOKEN", secret("KODIK_TOKEN"))
+        // Kaeru's own worker, which holds the Shikimori client secret and exchanges codes for
+        // tokens on the app's behalf: the secret is no longer compiled in here. Empty in a build
+        // assembled without it, and an empty one means nobody can sign in — the app says so
+        // rather than asking Shikimori for a token it has no secret to earn.
+        buildConfigField("String", "AUTH_PROXY_URL", secret("AUTH_PROXY_URL"))
         // Where watch-together sessions meet when the two phones are not on one Wi-Fi. Empty in a
         // build assembled without it, and an empty one is not a broken relay but no relay at all:
         // the app says so and offers the local-network session instead of retrying forever.

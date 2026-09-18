@@ -17,8 +17,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import okhttp3.OkHttpClient
 import app.kaeru.data.shikimori.ShikimoriOAuthApi
+import app.kaeru.data.shikimori.UnconfiguredOAuthApi
 import app.kaeru.data.shikimori.shikimoriJson
 import app.kaeru.domain.error.AuthCallbackRejected
+import app.kaeru.domain.error.SignInUnavailable
 import app.kaeru.domain.model.Account
 import app.kaeru.domain.repository.MOBILE_REDIRECT
 import app.kaeru.domain.repository.OOB_REDIRECT
@@ -75,7 +77,7 @@ class ShikimoriAuthRepositoryTest {
             .client(OkHttpClient.Builder().addInterceptor(AuthInterceptor(store)).build())
             .addConverterFactory(shikimoriJson().asConverterFactory("application/json".toMediaType()))
             .build().create(ShikimoriApi::class.java)
-        repo = ShikimoriAuthRepository(oauth, api, session, prefs, "cid", "sec", clock)
+        repo = ShikimoriAuthRepository(oauth, api, session, prefs, "cid", clock)
     }
 
     @After
@@ -160,14 +162,14 @@ class ShikimoriAuthRepositoryTest {
         enqueueTokens()
         assertTrue(repo.exchangeTypedCode("  typed-code  ").isSuccess)
         assertEquals(
-            "grant_type=authorization_code&client_id=cid&client_secret=sec&code=typed-code&redirect_uri=urn%3Aietf%3Awg%3Aoauth%3A2.0%3Aoob",
+            "grant_type=authorization_code&client_id=cid&code=typed-code&redirect_uri=urn%3Aietf%3Awg%3Aoauth%3A2.0%3Aoob",
             server.takeRequest().body.readUtf8(),
         )
     }
 
     @Test
     fun `authorize url encodes reserved characters in client id and redirect`() {
-        val custom = ShikimoriAuthRepository(oauth, api, session, prefs, "id&scope=other+value", "sec", clock)
+        val custom = ShikimoriAuthRepository(oauth, api, session, prefs, "id&scope=other+value", clock)
         val url = custom.authorizeUrl("kaeru://oauth?value=a&other=b+c").toHttpUrl()
         assertEquals("id&scope=other+value", url.queryParameter("client_id"))
         assertEquals("kaeru://oauth?value=a&other=b+c", url.queryParameter("redirect_uri"))
@@ -191,7 +193,7 @@ class ShikimoriAuthRepositoryTest {
         val request = server.takeRequest()
         assertEquals("/oauth/token", request.path)
         assertEquals("POST", request.method)
-        assertEquals("grant_type=authorization_code&client_id=cid&client_secret=sec&code=abc&redirect_uri=kaeru%3A%2F%2Foauth", request.body.readUtf8())
+        assertEquals("grant_type=authorization_code&client_id=cid&code=abc&redirect_uri=kaeru%3A%2F%2Foauth", request.body.readUtf8())
         val identity = server.takeRequest()
         assertEquals("/api/users/whoami", identity.path)
         assertEquals("Bearer acc", identity.getHeader("Authorization"))
@@ -218,7 +220,7 @@ class ShikimoriAuthRepositoryTest {
                 override suspend fun updateData(transform: suspend (Preferences) -> Preferences) =
                     throw IOException("no space left on device")
             })
-            val repo = ShikimoriAuthRepository(oauth, api, session, unwritable, "cid", "sec", clock)
+            val repo = ShikimoriAuthRepository(oauth, api, session, unwritable, "cid", clock)
             enqueueTokens()
 
             assertTrue(repo.exchangeCode("abc", MOBILE_REDIRECT).isSuccess)
@@ -251,11 +253,23 @@ class ShikimoriAuthRepositoryTest {
     }
 
     @Test
-    fun `exchange code form encodes secrets codes and OOB redirect`() = runTest {
+    fun `exchange code form encodes client id codes and OOB redirect`() = runTest {
         enqueueTokens()
-        val custom = ShikimoriAuthRepository(oauth, api, session, prefs, "c+id", "s&ec", clock)
+        val custom = ShikimoriAuthRepository(oauth, api, session, prefs, "c+id", clock)
         assertTrue(custom.exchangeCode("a+b&c", OOB_REDIRECT).isSuccess)
-        assertEquals("grant_type=authorization_code&client_id=c%2Bid&client_secret=s%26ec&code=a%2Bb%26c&redirect_uri=urn%3Aietf%3Awg%3Aoauth%3A2.0%3Aoob", server.takeRequest().body.readUtf8())
+        assertEquals("grant_type=authorization_code&client_id=c%2Bid&code=a%2Bb%26c&redirect_uri=urn%3Aietf%3Awg%3Aoauth%3A2.0%3Aoob", server.takeRequest().body.readUtf8())
+    }
+
+    @Test
+    fun `without a token proxy the exchange fails and nobody is signed in`() = runTest {
+        val offline = ShikimoriAuthRepository(UnconfiguredOAuthApi, api, session, prefs, "cid", clock)
+
+        val result = offline.exchangeCode("abc", MOBILE_REDIRECT)
+
+        assertTrue(result.exceptionOrNull() is SignInUnavailable)
+        assertEquals(0, server.requestCount)
+        assertNull(store.get())
+        assertEquals(false, offline.isLoggedIn.first())
     }
 
     @Test
@@ -288,7 +302,7 @@ class ShikimoriAuthRepositoryTest {
         enqueueTokens()
         assertTrue(repo.exchangePairedCode("  paired-code  ", MOBILE_REDIRECT).isSuccess)
         assertEquals(
-            "grant_type=authorization_code&client_id=cid&client_secret=sec&code=paired-code&redirect_uri=kaeru%3A%2F%2Foauth",
+            "grant_type=authorization_code&client_id=cid&code=paired-code&redirect_uri=kaeru%3A%2F%2Foauth",
             server.takeRequest().body.readUtf8(),
         )
         assertEquals(42L, store.get()?.userId)

@@ -15,6 +15,7 @@ import app.kaeru.data.shikimori.SHIKIMORI_BASE_URL
 import app.kaeru.data.shikimori.ShikimoriApi
 import app.kaeru.data.shikimori.ShikimoriOAuthApi
 import app.kaeru.data.shikimori.TokenAuthenticator
+import app.kaeru.data.shikimori.UnconfiguredOAuthApi
 import app.kaeru.data.shikimori.UserAgentInterceptor
 import app.kaeru.data.shikimori.shikimoriJson
 import app.kaeru.domain.repository.AuthRepository
@@ -56,8 +57,8 @@ object NetworkModule {
     fun clientId(): String = BuildConfig.SHIKIMORI_CLIENT_ID
 
     @Provides
-    @Named("shikimoriClientSecret")
-    fun clientSecret(): String = BuildConfig.SHIKIMORI_CLIENT_SECRET
+    @Named("authProxyUrl")
+    fun authProxyUrl(): String = BuildConfig.AUTH_PROXY_URL
 
     @Provides
     @Singleton
@@ -94,14 +95,34 @@ object NetworkModule {
         .addInterceptor(logging())
         .build()
 
+    /**
+     * The one call that does not go to Shikimori.
+     *
+     * Kaeru's worker holds the client secret the exchange needs — it used to be compiled into the
+     * APK, where anyone could read it — and adds it on the way through. Everything else in
+     * `data/shikimori` keeps the Shikimori base URL, the authorization page the viewer opens
+     * included: only the token endpoint moved.
+     *
+     * An address is required. Without one there is nothing to ask, and [UnconfiguredOAuthApi] says
+     * so on the first call instead of spending a code on a request that cannot be answered.
+     */
     @Provides
     @Singleton
-    fun oauthApi(@PlainClient client: OkHttpClient, json: Json): ShikimoriOAuthApi = Retrofit.Builder()
-        .baseUrl(SHIKIMORI_BASE_URL)
-        .client(client)
-        .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-        .build()
-        .create(ShikimoriOAuthApi::class.java)
+    fun oauthApi(
+        @PlainClient client: OkHttpClient,
+        json: Json,
+        @Named("authProxyUrl") proxyUrl: String,
+    ): ShikimoriOAuthApi {
+        val base = proxyUrl.trim()
+        if (base.isEmpty()) return UnconfiguredOAuthApi
+        return Retrofit.Builder()
+            // Retrofit resolves a relative path only against a base that ends in one.
+            .baseUrl(if (base.endsWith("/")) base else "$base/")
+            .client(client)
+            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+            .build()
+            .create(ShikimoriOAuthApi::class.java)
+    }
 
     @Provides
     @Singleton
@@ -111,7 +132,6 @@ object NetworkModule {
         store: TokenStore,
         oauthApi: ShikimoriOAuthApi,
         @Named("shikimoriClientId") clientId: String,
-        @Named("shikimoriClientSecret") clientSecret: String,
         clock: Clock,
     ): OkHttpClient = plain.newBuilder()
         // Authenticators block API workers while Retrofit enqueues refresh on the plain client.
@@ -119,7 +139,7 @@ object NetworkModule {
         .dispatcher(Dispatcher())
         .addInterceptor(RateLimitInterceptor())
         .addInterceptor(AuthInterceptor(store))
-        .authenticator(TokenAuthenticator(store, oauthApi, clientId, clientSecret, clock))
+        .authenticator(TokenAuthenticator(store, oauthApi, clientId, clock))
         .build()
 
     @Provides
