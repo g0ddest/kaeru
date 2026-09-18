@@ -24,4 +24,6 @@ class RoomNotifiedEpisodes @Inject constructor(
         if (episodes.isEmpty()) return
         withContext(io) { dao.recordAll(episodes.map { it.toEntity(at) }) }
     }
+
+    override suspend fun forget() = withContext(io) { dao.deleteAll() }
 }

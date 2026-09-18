@@ -1,12 +1,15 @@
 package app.kaeru.data.notify
 
 import android.util.Log
+import app.kaeru.domain.notify.NotifiedEpisodes
 import app.kaeru.domain.repository.AuthRepository
 import app.kaeru.domain.settings.SettingsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
@@ -32,6 +35,7 @@ class NewEpisodesStarter @Inject constructor(
     private val auth: AuthRepository,
     private val settings: SettingsStore,
     private val schedule: NewEpisodesSchedule,
+    private val remembered: NotifiedEpisodes,
     private val television: Television,
 ) {
     private val started = AtomicBoolean(false)
@@ -54,6 +58,26 @@ class NewEpisodesStarter @Inject constructor(
                 // the schedule exactly as it was, which is the state it was last told to be in.
                 .catch { error -> Log.w(TAG, "Stopped watching whether to check for new episodes", error) }
                 .collect { wanted -> if (wanted) schedule.enable() else schedule.disable() }
+        }
+        scope.launch {
+            // Turning the switch back on starts again from nothing.
+            //
+            // Nothing watched while it was off, so every row is a note about a state that may be
+            // a month stale, and the first run after it would find every ongoing title ahead of
+            // where it was last seen and announce all of them at once — the avalanche the silent
+            // first sighting exists to prevent, reached by a different door. Forgetting makes that
+            // run a first sighting again: it writes down what is out and says nothing.
+            //
+            // The setting alone, not the combined answer above: a sign-out already empties the
+            // table, and treating a sign-in as a reason to forget would be the same wipe twice.
+            // `drop(1)` is what makes this an edge rather than a state — the store replays what it
+            // holds to every new watcher, and an app start is not somebody pressing the switch.
+            settings.newEpisodeNotifications
+                .distinctUntilChanged()
+                .drop(1)
+                .filter { wanted -> wanted }
+                .catch { error -> Log.w(TAG, "Stopped watching the new-episode switch", error) }
+                .collect { remembered.forget() }
         }
     }
 }

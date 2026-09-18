@@ -17,4 +17,14 @@ interface NotifiedEpisodes {
 
     /** Writing a pair that is already there changes nothing, including the time it was written. */
     suspend fun record(episodes: List<NotifiedEpisode>, at: Instant)
+
+    /**
+     * Throws the whole memory away, so the next check is a first sighting of everything.
+     *
+     * What turning the switch back on means. Nothing was watching while it was off, so every row
+     * is a note about a state that may be months stale, and believing them would let one evening's
+     * check announce a season's worth of episodes at once. Forgetting instead makes the next run
+     * write down what is out and say nothing, exactly as a fresh install does.
+     */
+    suspend fun forget()
 }

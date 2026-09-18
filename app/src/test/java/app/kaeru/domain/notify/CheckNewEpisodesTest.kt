@@ -108,6 +108,53 @@ class CheckNewEpisodesTest {
         assertEquals(listOf(NotifiedEpisode(1, 8)), remembered.rows)
     }
 
+    @Test
+    fun `an episode found while Android refuses to show anything is not used up`() = runTest {
+        notifier.allowed = false
+        library.entries.value = listOf(watching(1, aired = 8, watched = 7))
+        remembered.rows += NotifiedEpisode(1, 7)
+
+        assertEquals(NewEpisodeOutcome.BLOCKED, check.run())
+
+        assertEquals(listOf(NotifiedEpisode(1, 7)), remembered.rows)
+        assertTrue(notifier.posted.isEmpty())
+
+        notifier.allowed = true
+        assertEquals(NewEpisodeOutcome.CHECKED, check.run())
+        assertEquals(listOf(listOf(NewEpisode(1, "Аниме 1", "poster-1", 8))), notifier.posted)
+    }
+
+    @Test
+    fun `a check that cannot be heard asks Shikimori for nothing`() = runTest {
+        notifier.allowed = false
+
+        assertEquals(NewEpisodeOutcome.BLOCKED, check.run())
+        assertEquals(0, library.refreshes)
+    }
+
+    @Test
+    fun `signing out between the list and the table leaves nothing behind`() = runTest {
+        library.entries.value = listOf(watching(1, aired = 8, watched = 7))
+        remembered.rows += NotifiedEpisode(1, 7)
+        library.onRefresh = { auth.loggedIn.value = false }
+
+        assertEquals(NewEpisodeOutcome.NO_ACCOUNT, check.run())
+
+        assertEquals(listOf(NotifiedEpisode(1, 7)), remembered.rows)
+        assertTrue(notifier.posted.isEmpty())
+    }
+
+    @Test
+    fun `signing out between the table and the shade publishes nothing`() = runTest {
+        library.entries.value = listOf(watching(1, aired = 8, watched = 7))
+        remembered.rows += NotifiedEpisode(1, 7)
+        remembered.onRecord = { auth.loggedIn.value = false }
+
+        assertEquals(NewEpisodeOutcome.NO_ACCOUNT, check.run())
+
+        assertTrue(notifier.posted.isEmpty())
+    }
+
     private class FakeAuth : AuthRepository {
         val loggedIn = MutableStateFlow(true)
         override val isLoggedIn: Flow<Boolean> = loggedIn
@@ -131,8 +178,11 @@ class CheckNewEpisodesTest {
         override fun observeAnimeDetails(id: Int): Flow<Anime?> =
             entries.map { list -> list.firstOrNull { it.anime.id == id }?.anime }
 
+        var onRefresh: (() -> Unit)? = null
+
         override suspend fun refresh(): Result<Unit> {
             refreshes++
+            onRefresh?.invoke()
             return refreshResult
         }
 
@@ -145,19 +195,26 @@ class CheckNewEpisodesTest {
     private class FakeNotifiedEpisodes : NotifiedEpisodes {
         val rows = mutableListOf<NotifiedEpisode>()
         var writtenAt: Instant? = null
+        var onRecord: (() -> Unit)? = null
 
         override suspend fun all(): List<NotifiedEpisode> = rows.toList()
 
         override suspend fun record(episodes: List<NotifiedEpisode>, at: Instant) {
             writtenAt = at
             episodes.forEach { if (it !in rows) rows += it }
+            onRecord?.invoke()
         }
+
+        override suspend fun forget() = rows.clear()
     }
 
     private class RecordingNotifier : NewEpisodeNotifier {
         val posted = mutableListOf<List<NewEpisode>>()
         var recordedWhenPosting: (() -> List<NotifiedEpisode>)? = null
         var rowsAtPost: List<NotifiedEpisode> = emptyList()
+        var allowed = true
+
+        override fun canPost(): Boolean = allowed
 
         override suspend fun post(news: List<NewEpisode>) {
             rowsAtPost = recordedWhenPosting?.invoke().orEmpty()

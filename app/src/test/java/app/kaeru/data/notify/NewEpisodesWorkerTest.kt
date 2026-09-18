@@ -10,9 +10,9 @@ import org.junit.Test
  *
  * The mapping is tested rather than the worker, and on purpose: a `CoroutineWorker` cannot be
  * built without `WorkerParameters`, which is `@RestrictTo`, and the library that can build one is
- * `work-testing` — a dependency this task is not allowed to add for the sake of three assertions.
+ * `work-testing` — a dependency this task is not allowed to add for the sake of four assertions.
  * Everything the worker does besides this mapping is `CheckNewEpisodes`, which has a test of its
- * own that covers the same three cases end to end.
+ * own that covers the same cases end to end.
  */
 class NewEpisodesWorkerTest {
 
@@ -29,5 +29,10 @@ class NewEpisodesWorkerTest {
     @Test
     fun `a check that ran is done, whether or not it had anything to say`() {
         assertEquals(ListenableWorker.Result.success(), resultOf(NewEpisodeOutcome.CHECKED))
+    }
+
+    @Test
+    fun `a platform that would show nothing is not a failure to retry`() {
+        assertEquals(ListenableWorker.Result.success(), resultOf(NewEpisodeOutcome.BLOCKED))
     }
 }

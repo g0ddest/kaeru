@@ -43,10 +43,20 @@ class NewEpisodeNotifications @Inject constructor(
 
     @Volatile private var channelReady = false
 
+    /**
+     * What the check asks before it looks at anything at all.
+     *
+     * One question about the whole app rather than about this channel: below Android 13 there is
+     * no permission to lose, and from 13 on a refusal shows up here as the app having notifications
+     * off. A channel the viewer has muted is a different thing and deliberately not covered — that
+     * is somebody asking for quiet, not for the news to be dropped on the floor.
+     */
+    override fun canPost(): Boolean = NotificationManagerCompat.from(context).areNotificationsEnabled()
+
     override suspend fun post(news: List<NewEpisode>) {
         if (news.isEmpty()) return
         val manager = NotificationManagerCompat.from(context)
-        // Nothing is posted when the viewer has turned notifications off at the system level.
+        // Belt and braces for a permission revoked between the check's own question and this call.
         // `notify` would drop it, but on some builds it throws instead, and a background check is
         // not a reason to take the process down.
         if (!manager.areNotificationsEnabled()) return

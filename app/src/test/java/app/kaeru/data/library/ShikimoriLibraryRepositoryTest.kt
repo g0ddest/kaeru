@@ -106,6 +106,50 @@ class ShikimoriLibraryRepositoryTest {
         api.screenshots[100] = listOf(ScreenshotDto("/s.jpg", "/sp.jpg"))
     }
 
+    /** One ongoing title in «Смотрю», with a detail row to fetch. */
+    private fun seedOngoing(id: Int) {
+        api.animes[id] = api.short(id, "ongoing", episodes = 0, aired = 4)
+        api.details[id] = AnimeDetailsDto(
+            id, "Name $id", "Имя $id", ImageDto("/o.jpg", "/p.jpg"), "7.0", "ongoing", 0, 4, "2026-01-01",
+            description = "desc", nextEpisodeAt = null, studios = emptyList(), screenshots = emptyList(),
+        )
+        api.screenshots[id] = emptyList()
+    }
+
+    @Test
+    fun `one refresh spends at most twenty-five detail fetches, however long the list is`() = scope.runTest {
+        val ids = (100..139).toList()
+        api.rates["watching"] = ids.mapIndexed { i, id -> api.rate(i + 1L, id, "watching", 1) }.toMutableList()
+        ids.forEach(::seedOngoing)
+
+        repo.refresh().getOrThrow()
+
+        assertEquals(25, api.calls.count { it.startsWith("anime:") })
+        assertEquals(25, api.calls.count { it.startsWith("screenshots:") })
+        // What one run costs, all of it: six status pages, one batch of fifty ids and two calls
+        // per capped detail fetch over REST, plus one GraphQL poster query for the list and one
+        // more for each detail fetch. Eighty-three requests for a forty-title list.
+        assertEquals(6 + 1 + 50, api.calls.size)
+        assertEquals(1 + 25, api.graphqlQueries.size)
+    }
+
+    @Test
+    fun `the titles waiting longest for their details are the ones a capped refresh takes`() = scope.runTest {
+        val ids = (100..139).toList()
+        api.rates["watching"] = ids.mapIndexed { i, id -> api.rate(i + 1L, id, "watching", 1) }.toMutableList()
+        ids.forEach(::seedOngoing)
+        repo.refresh().getOrThrow()
+        val firstRound = api.calls.filter { it.startsWith("anime:") }.map { it.removePrefix("anime:").toInt() }
+        val neverFetched = ids - firstRound.toSet()
+        api.calls.clear()
+
+        repositoryAt(now.plusSeconds(7 * 3600)).refresh().getOrThrow()
+
+        val secondRound = api.calls.filter { it.startsWith("anime:") }.map { it.removePrefix("anime:").toInt() }
+        assertEquals(25, secondRound.size)
+        assertTrue(secondRound.containsAll(neverFetched))
+    }
+
     @Test
     fun `posters hidden by REST are replaced from GraphQL`() = scope.runTest {
         api.rates["watching"] = mutableListOf(api.rate(1, 500, "watching", 1))
