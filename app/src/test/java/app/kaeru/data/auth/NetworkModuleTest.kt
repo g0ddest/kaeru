@@ -4,6 +4,8 @@ import android.content.Context
 import app.kaeru.BuildConfig
 import app.kaeru.data.shikimori.ShikimoriOAuthApi
 import app.kaeru.di.NetworkModule
+import app.kaeru.domain.error.SignInUnavailable
+import app.kaeru.domain.repository.MOBILE_REDIRECT
 import okhttp3.Authenticator
 import okhttp3.Call
 import okhttp3.Callback
@@ -50,6 +52,59 @@ class NetworkModuleTest {
     }
 
     @Test
+    fun `the token exchange goes to the proxy and carries no secret`() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            // As it arrives from local.properties: an origin, no trailing slash, no path.
+            val proxy = server.url("/").toString().removeSuffix("/")
+            val api = NetworkModule.oauthApi(NetworkModule.plainClient(), NetworkModule.json(), proxy)
+            server.enqueue(MockResponse().setBody("""{"access_token":"acc","refresh_token":"ref"}"""))
+
+            api.token(grantType = "authorization_code", clientId = "cid", code = "abc", redirectUri = MOBILE_REDIRECT)
+
+            val request = server.takeRequest()
+            assertEquals("/oauth/token", request.path)
+            assertEquals("POST", request.method)
+            assertEquals(
+                "grant_type=authorization_code&client_id=cid&code=abc&redirect_uri=kaeru%3A%2F%2Foauth",
+                request.body.readUtf8(),
+            )
+        }
+    }
+
+    @Test
+    fun `a build with no proxy address refuses the exchange instead of asking Shikimori`() = runTest {
+        // Shikimori would answer `invalid_client`, and the only way past that is the secret this
+        // app no longer has. A build assembled without the proxy cannot sign anyone in, and says so
+        // rather than sending a code somewhere it cannot be redeemed.
+        val api = NetworkModule.oauthApi(NetworkModule.plainClient(), NetworkModule.json(), "   ")
+
+        val failure = runCatching {
+            api.token(grantType = "refresh_token", clientId = "cid", refreshToken = "ref")
+        }.exceptionOrNull()
+
+        assertTrue("expected SignInUnavailable, got $failure", failure is SignInUnavailable)
+    }
+
+    @Test
+    fun `a malformed proxy address refuses the exchange instead of killing the graph`() = runTest {
+        // Retrofit's builder throws on an address with no scheme or a scheme it does not speak, and
+        // it throws inside a @Provides — so the app would die at the first injection of the OAuth
+        // API rather than show the message a missing address already has. `local.properties.example`
+        // puts AUTH_PROXY_URL (https://) directly above TOGETHER_RELAY_URL (wss://) on the same
+        // host, which is exactly the copy-paste that lands a wss:// value here.
+        for (garbage in listOf("kaeru-relay.workers.dev", "wss://kaeru-relay.workers.dev", "not a url at all")) {
+            val api = NetworkModule.oauthApi(NetworkModule.plainClient(), NetworkModule.json(), garbage)
+
+            val failure = runCatching {
+                api.token(grantType = "refresh_token", clientId = "cid", refreshToken = "ref")
+            }.exceptionOrNull()
+
+            assertTrue("expected SignInUnavailable for '$garbage', got $failure", failure is SignInUnavailable)
+        }
+    }
+
+    @Test
     fun `full asynchronous API dispatcher can still refresh and complete every call`() {
         MockWebServer().use { server ->
             server.start()
@@ -58,9 +113,9 @@ class NetworkModuleTest {
                 val url = server.url(chain.request().url.encodedPath)
                 chain.proceed(chain.request().newBuilder().url(url).build())
             }.build()
-            val oauth = NetworkModule.oauthApi(plain, NetworkModule.json())
+            val oauth = NetworkModule.oauthApi(plain, NetworkModule.json(), server.url("/").toString())
             val store = InMemoryTokenStore(AuthTokens("old", "refresh", 0))
-            val authenticated = NetworkModule.shikimoriClient(plain, store, oauth, "cid", "sec", Clock.systemUTC())
+            val authenticated = NetworkModule.shikimoriClient(plain, store, oauth, "cid", Clock.systemUTC())
             val slots = authenticated.dispatcher.maxRequestsPerHost
             val initialCalls = CountDownLatch(slots)
             val refreshes = AtomicInteger()
@@ -119,7 +174,7 @@ class NetworkModuleTest {
             val plain = NetworkModule.plainClient()
             val oauth = Retrofit.Builder().baseUrl(server.url("/")).build().create(ShikimoriOAuthApi::class.java)
             val authenticated = NetworkModule.shikimoriClient(
-                plain, InMemoryTokenStore(AuthTokens("access", "refresh", 0)), oauth, "cid", "sec", Clock.systemUTC(),
+                plain, InMemoryTokenStore(AuthTokens("access", "refresh", 0)), oauth, "cid", Clock.systemUTC(),
             )
             server.enqueue(MockResponse())
             server.enqueue(MockResponse())

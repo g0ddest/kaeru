@@ -8,6 +8,7 @@ import app.kaeru.domain.error.EpisodeNotAvailable
 import app.kaeru.domain.error.EpisodeUnavailableReason
 import app.kaeru.domain.error.HttpError
 import app.kaeru.domain.error.NetworkUnavailable
+import app.kaeru.domain.error.SignInUnavailable
 import app.kaeru.domain.error.SourceFormatChanged
 import app.kaeru.domain.error.SourceUnavailable
 import app.kaeru.domain.error.SourceUnavailableReason
@@ -41,6 +42,11 @@ class ErrorMessagesTest {
     @Test
     fun `account session changes ask for a refresh`() {
         assertEquals("Сессия изменилась, обновите экран", AccountSessionChanged("Account session changed").toUserMessage())
+    }
+
+    @Test
+    fun `a build that cannot reach its token proxy asks the user to come back later`() {
+        assertEquals("Вход временно недоступен, попробуйте позже", SignInUnavailable().toUserMessage())
     }
 
     @Test

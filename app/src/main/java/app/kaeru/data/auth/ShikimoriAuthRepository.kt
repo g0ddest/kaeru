@@ -33,7 +33,6 @@ class ShikimoriAuthRepository @Inject constructor(
     private val session: AccountSession,
     private val prefs: AppPreferences,
     @param:Named("shikimoriClientId") private val clientId: String,
-    @param:Named("shikimoriClientSecret") private val clientSecret: String,
     private val clock: Clock,
 ) : AuthRepository {
     private val random = SecureRandom()
@@ -117,7 +116,6 @@ class ShikimoriAuthRepository @Inject constructor(
                 val tokens = oauthApi.token(
                     grantType = "authorization_code",
                     clientId = clientId,
-                    clientSecret = clientSecret,
                     code = code,
                     redirectUri = redirectUri,
                 )

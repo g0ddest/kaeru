@@ -42,7 +42,7 @@ class TokenAuthenticatorTest {
             .addConverterFactory(shikimoriJson().asConverterFactory("application/json".toMediaType()))
             .build().create(ShikimoriOAuthApi::class.java)
         authenticator = TokenAuthenticator(
-            store, oauth, "cid", "sec", Clock.fixed(Instant.ofEpochSecond(1_000), ZoneOffset.UTC),
+            store, oauth, "cid", Clock.fixed(Instant.ofEpochSecond(1_000), ZoneOffset.UTC),
         )
         client = OkHttpClient.Builder().callTimeout(5, TimeUnit.SECONDS)
             .addInterceptor(AuthInterceptor(store)).authenticator(authenticator).build()
@@ -64,7 +64,7 @@ class TokenAuthenticatorTest {
         assertEquals("/oauth/token", refresh.path)
         assertEquals("POST", refresh.method)
         assertEquals("application/x-www-form-urlencoded", refresh.getHeader("Content-Type"))
-        assertEquals("grant_type=refresh_token&client_id=cid&client_secret=sec&refresh_token=refresh-1", refresh.body.readUtf8())
+        assertEquals("grant_type=refresh_token&client_id=cid&refresh_token=refresh-1", refresh.body.readUtf8())
         assertNull(refresh.getHeader("Authorization"))
         assertEquals("Bearer new", server.takeRequest().getHeader("Authorization"))
         assertEquals(AuthTokens("new", "refresh-2", 87_400), runBlocking { store.get() })
@@ -82,11 +82,89 @@ class TokenAuthenticatorTest {
     @Test
     fun `unauthorized refresh does not recurse`() {
         server.enqueue(MockResponse().setResponseCode(401))
-        server.enqueue(MockResponse().setResponseCode(401))
+        server.enqueue(MockResponse().setResponseCode(401).setBody("""{"error":"invalid_grant"}"""))
         client.newCall(request()).execute().use { assertEquals(401, it.code) }
         assertEquals(2, server.requestCount)
         assertNull(runBlocking { store.get() })
     }
+
+    @Test
+    fun `a refresh token Shikimori rejects ends the session`() {
+        server.enqueue(MockResponse().setResponseCode(401))
+        server.enqueue(MockResponse().setResponseCode(401).setBody("""{"error":"invalid_grant","error_description":"expired"}"""))
+
+        client.newCall(request()).execute().use { assertEquals(401, it.code) }
+
+        assertNull(runBlocking { store.get() })
+    }
+
+    @Test
+    fun `a proxy that rate limits the refresh leaves the session alone`() =
+        assertSessionSurvives(MockResponse().setResponseCode(429).setBody("too many requests"))
+
+    @Test
+    fun `a proxy that cannot reach Shikimori leaves the session alone`() =
+        assertSessionSurvives(MockResponse().setResponseCode(502).setBody("upstream unavailable"))
+
+    @Test
+    fun `a proxy that refuses the request itself leaves the session alone`() =
+        // The worker's own refusals are 400s in plain text: a wrong client id, a body it would not
+        // take, a deploy that has no secret yet. None of them says anything about this session.
+        assertSessionSurvives(MockResponse().setResponseCode(400).setBody("unknown client"))
+
+    @Test
+    fun `a bodyless rejection leaves the session alone`() =
+        assertSessionSurvives(MockResponse().setResponseCode(401))
+
+    @Test
+    fun `an unreachable proxy leaves the session alone`() {
+        val dead = MockWebServer()
+        dead.start()
+        val nowhere = dead.url("/")
+        dead.shutdown()
+
+        assertNull(authenticatorFor(oauthApiAt(nowhere)).authenticate(null, unauthorized()))
+
+        assertEquals(AuthTokens("old", "refresh-1", 0), runBlocking { store.get() })
+    }
+
+    @Test
+    fun `a build with no proxy address leaves the session alone`() {
+        // Nothing the viewer can do fixes a missing AUTH_PROXY_URL, and signing them out does not
+        // help: the next build with an address must find the session still there.
+        assertNull(authenticatorFor(UnconfiguredOAuthApi).authenticate(null, unauthorized()))
+
+        assertEquals(AuthTokens("old", "refresh-1", 0), runBlocking { store.get() })
+    }
+
+    /**
+     * A refresh that fails this way must cost the request and nothing else. A session that is
+     * cleared cannot be retried — the viewer has to sign in again — so anything short of «this
+     * refresh token is no good» leaves the credentials where they are.
+     */
+    private fun assertSessionSurvives(refreshAnswer: MockResponse) {
+        server.enqueue(MockResponse().setResponseCode(401))
+        server.enqueue(refreshAnswer)
+
+        client.newCall(request()).execute().use { assertEquals(401, it.code) }
+
+        assertEquals(AuthTokens("old", "refresh-1", 0), runBlocking { store.get() })
+        assertEquals("the refresh must have been attempted", 2, server.requestCount)
+    }
+
+    private fun oauthApiAt(url: okhttp3.HttpUrl): ShikimoriOAuthApi = Retrofit.Builder()
+        .baseUrl(url)
+        .addConverterFactory(shikimoriJson().asConverterFactory("application/json".toMediaType()))
+        .build().create(ShikimoriOAuthApi::class.java)
+
+    private fun authenticatorFor(api: ShikimoriOAuthApi) = TokenAuthenticator(
+        store, api, "cid", Clock.fixed(Instant.ofEpochSecond(1_000), ZoneOffset.UTC),
+    )
+
+    /** A 401 on an ordinary API call, as the authenticator is handed one. */
+    private fun unauthorized(): Response = Response.Builder()
+        .request(request().newBuilder().header("Authorization", "Bearer old").build())
+        .protocol(Protocol.HTTP_1_1).code(401).message("Unauthorized").build()
 
     @Test
     fun `oauth token endpoint itself is never retried or given a bearer`() {

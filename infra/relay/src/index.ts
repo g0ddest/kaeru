@@ -7,9 +7,14 @@
  * this Worker learns about a session. Nothing is stored and nothing is logged
  * beyond the first four characters of the room id and the kind of event.
  *
+ * It also holds the app's Shikimori client secret. The secret used to be compiled into every
+ * APK, where anyone could read it; it now exists only as a `wrangler secret` on this Worker,
+ * and `POST /oauth/token` is the one route that adds it to a request. See `proxyToken`.
+ *
  * Routes
- *   GET /health     200 "ok"
- *   GET /w/:roomId  WebSocket upgrade into the room's Durable Object
+ *   GET  /health       200 "ok"
+ *   GET  /w/:roomId    WebSocket upgrade into the room's Durable Object
+ *   POST /oauth/token  Shikimori's token endpoint, with the client secret filled in
  *
  * Client to server: binary frames only, at most 64 KiB, forwarded verbatim to the
  * other peer and never echoed back to the sender. Text frames are ignored.
@@ -55,6 +60,61 @@ const CLOSE_IDLE = 4408;
 const CLOSE_ROOM_FULL = 4409;
 const CLOSE_FRAME_TOO_LARGE = 4413;
 
+/** The app's token exchange: the one route that holds a credential. */
+const TOKEN_PATH = "/oauth/token";
+
+/**
+ * Shikimori's own token endpoint — the only address the client secret is ever sent to.
+ *
+ * `shikimori.io`, matching every other call the app makes. `.one` answers this path only through
+ * a DDoS-Guard 308 across to `.io`: the redirect works today, but it doubles the latency of every
+ * sign-in and every refresh and is one challenge page away from breaking both.
+ */
+const SHIKIMORI_TOKEN_URL = "https://shikimori.io/oauth/token";
+
+/** A token request is a few hundred bytes. Anything this size is not one. */
+const MAX_TOKEN_BODY_BYTES = 8 * 1024;
+
+/** What one address may ask of the token route inside [RATE_WINDOW_MS]. */
+const RATE_LIMIT = 30;
+const RATE_WINDOW_MS = 60 * 1000;
+
+/** The bucket every request that arrives without `CF-Connecting-IP` shares. */
+const SHARED_BUCKET = "no-ip";
+
+/** The single storage key a rate bucket writes. */
+const WINDOW_KEY = "window";
+
+/**
+ * The fields each grant may carry, in the order they are forwarded. A request naming anything
+ * else is refused rather than forwarded: `client_secret` included, because that one is this
+ * Worker's to add and a caller's copy of it could only be a guess.
+ */
+const GRANT_FIELDS = new Map<string, readonly string[]>([
+  ["authorization_code", ["grant_type", "client_id", "code", "redirect_uri"]],
+  ["refresh_token", ["grant_type", "client_id", "refresh_token"]],
+]);
+
+/**
+ * The redirect URIs this app uses, and the only two an exchange may name: `MOBILE_REDIRECT` and
+ * `OOB_REDIRECT` in `domain/repository/AuthRepository.kt`. Shikimori bounds `redirect_uri` to the
+ * URIs registered for the client id anyway; holding the same line here means this Worker cannot be
+ * talked into redeeming a code on behalf of a redirect the app would never have asked for.
+ */
+const ALLOWED_REDIRECTS = new Set(["kaeru://oauth", "urn:ietf:wg:oauth:2.0:oob"]);
+
+/** The field whose absence leaves each grant with nothing to exchange. */
+const GRANT_REQUIRED = new Map<string, string>([
+  ["authorization_code", "code"],
+  ["refresh_token", "refresh_token"],
+]);
+
+/** A rate bucket: when the current window opened, and what has been counted into it. */
+interface RateWindow {
+  readonly start: number;
+  readonly count: number;
+}
+
 const PEER_LEFT = JSON.stringify({ type: "peer-left" });
 
 /** What each socket carries across hibernation: enough to write a log line. */
@@ -78,7 +138,7 @@ function log(room: string, event: string, detail?: string): void {
   console.log(detail === undefined ? `room=${room} ${event}` : `room=${room} ${event} ${detail}`);
 }
 
-// Only the handler and the Durable Object class may be exported: workerd refuses to
+// Only the handler and the Durable Object classes may be exported: workerd refuses to
 // start a Worker whose module exports a value that is not a handler or an entrypoint
 // class, so the constants above stay module-private. `wrangler deploy --dry-run` does
 // not catch that — it only bundles — but `wrangler dev` and a real deploy do.
@@ -92,6 +152,8 @@ export default {
       }
       return plain("ok", 200);
     }
+
+    if (url.pathname === TOKEN_PATH) return proxyToken(request, env);
 
     const path = ROOM_PATH_PATTERN.exec(url.pathname);
     if (path === null) return plain("not found", 404);
@@ -107,6 +169,191 @@ export default {
     return env.ROOM.get(env.ROOM.idFromName(roomId)).fetch(request);
   },
 } satisfies ExportedHandler<Env>;
+
+/**
+ * Shikimori's token endpoint with the client secret filled in.
+ *
+ * The app sends the form it would have sent Shikimori, minus the secret it no longer has; this
+ * adds the secret and hands back Shikimori's own status and body untouched, so every error the
+ * app already knows how to read still reaches it verbatim.
+ *
+ * Three things are checked before anything is forwarded: the caller is this app (`client_id`
+ * against the public id in wrangler.toml), the form carries exactly the fields its grant names,
+ * and the address has not spent its quota. Nothing of the request is logged or echoed — a `code`
+ * and a `refresh_token` are as good as a session while they last.
+ */
+async function proxyToken(request: Request, env: Env): Promise<Response> {
+  if (request.method !== "POST") return plain("method not allowed", 405);
+
+  // A Worker deployed before `wrangler secret put` has nothing to add to the form.
+  // `URLSearchParams.set` would stringify the missing value and send Shikimori the literal
+  // "undefined", earning an `invalid_client` that reads exactly like a rejected refresh token.
+  const secret = env.SHIKIMORI_CLIENT_SECRET;
+  if (!secret) {
+    console.log("oauth not configured");
+    return plain("not configured", 503);
+  }
+
+  // Before the body is read, so a flood costs this Worker one storage read apiece.
+  const retryAfter = await rateLimit(request, env);
+  if (retryAfter > 0) {
+    return new Response("too many requests", {
+      status: 429,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+        "retry-after": String(retryAfter),
+      },
+    });
+  }
+
+  // An honest Content-Length is required before a byte is read. Reading a body to find out how
+  // big it is means buffering whatever the caller sends — Cloudflare's platform cap is 100 MB
+  // against a 128 MB Worker — and a chunked body declares nothing at all. OkHttp sets the header
+  // on every FormBody, so the app never meets this.
+  const declared = Number(request.headers.get("content-length"));
+  if (!Number.isInteger(declared) || declared <= 0) return plain("missing content-length", 400);
+  if (declared > MAX_TOKEN_BODY_BYTES) return plain("body too large", 400);
+  // Read as bytes and decoded here: the header above is a claim, this is the fact, and the
+  // runtime warns about `.text()` on a body whose content type is not a text one.
+  const raw = await request.arrayBuffer();
+  if (raw.byteLength > MAX_TOKEN_BODY_BYTES) return plain("body too large", 400);
+
+  const form = new URLSearchParams(new TextDecoder().decode(raw));
+  const refusal = refuseToken(form, env);
+  if (refusal !== null) {
+    console.log(`oauth refused ${refusal}`);
+    return plain(refusal, 400);
+  }
+
+  const grant = form.get("grant_type") ?? "";
+  let status: number;
+  let answer: string;
+  try {
+    const upstream = await fetch(SHIKIMORI_TOKEN_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "user-agent": "Kaeru",
+        accept: "application/json",
+      },
+      body: upstreamForm(form, grant, secret).toString(),
+    });
+    status = upstream.status;
+    answer = await upstream.text();
+  } catch {
+    // Nothing of the failure is repeated: its message carries the request that caused it.
+    console.log("oauth upstream unreachable");
+    return plain("upstream unavailable", 502);
+  }
+
+  // The grant and the status only; the body is a token or the reason there is none.
+  console.log(`oauth ${grant} upstream=${status}`);
+  return new Response(answer.length === 0 ? null : answer, {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+/** The reason to refuse this form, or null when there is none. Never quotes what was sent. */
+function refuseToken(form: URLSearchParams, env: Env): string | null {
+  const fields = GRANT_FIELDS.get(form.get("grant_type") ?? "");
+  if (fields === undefined) return "unsupported grant_type";
+  for (const name of form.keys()) {
+    if (!fields.includes(name)) return "unexpected field";
+  }
+  for (const name of fields) {
+    // Two values for one field is an attempt to have this Worker and Shikimori read it differently.
+    if (form.getAll(name).length > 1) return "repeated field";
+  }
+  if (form.get("client_id") !== env.SHIKIMORI_CLIENT_ID) return "unknown client";
+  const required = GRANT_REQUIRED.get(form.get("grant_type") ?? "") ?? "";
+  if ((form.get(required) ?? "") === "") return `missing ${required}`;
+  if (
+    form.get("grant_type") === "authorization_code" &&
+    !ALLOWED_REDIRECTS.has(form.get("redirect_uri") ?? "")
+  ) {
+    return "unexpected redirect_uri";
+  }
+  return null;
+}
+
+/** The form Shikimori is asked: the grant's own fields, and the secret the app never had. */
+function upstreamForm(form: URLSearchParams, grant: string, secret: string): URLSearchParams {
+  const upstream = new URLSearchParams();
+  for (const name of GRANT_FIELDS.get(grant) ?? []) {
+    const value = form.get(name);
+    if (value !== null) upstream.set(name, value);
+  }
+  upstream.set("client_secret", secret);
+  return upstream;
+}
+
+/**
+ * Seconds the caller must wait, or 0 when this request is within its address's quota.
+ *
+ * Fails open. A Durable Object can be overloaded, or its migration not yet applied, and a limiter
+ * in that state must not take sign-in down with it: the route is still bounded by Cloudflare's own
+ * limits, and letting the exception escape would answer a refresh with a 500.
+ */
+async function rateLimit(request: Request, env: Env): Promise<number> {
+  const ip = request.headers.get("CF-Connecting-IP") ?? SHARED_BUCKET;
+  try {
+    const response = await env.RATE.get(env.RATE.idFromName(ip)).fetch("https://rate.invalid/");
+    const { retryAfter } = (await response.json()) as { retryAfter: number };
+    return retryAfter;
+  } catch {
+    console.log("oauth rate unavailable");
+    return 0;
+  }
+}
+
+/**
+ * One instance per client address, addressed by `idFromName(ip)`.
+ *
+ * A fixed window, not a rolling one: a count and the instant the window opened, both in storage,
+ * compared against the clock on every call. The honest consequence is that a span of sixty seconds
+ * straddling a boundary can carry twice the limit — the tail of one window plus the head of the
+ * next — which for this route is fine, and the simplicity is worth it.
+ *
+ * The window arms an alarm at its own end, and the alarm wipes the bucket. Without that, every
+ * address that ever posted here would be a stored row forever: one instance per address, and an
+ * IPv6 /64 is millions of addresses anyone may rotate through for free.
+ */
+export class RateDO implements DurableObject {
+  readonly #state: DurableObjectState;
+
+  constructor(state: DurableObjectState, _env: Env) {
+    this.#state = state;
+  }
+
+  async fetch(_request: Request): Promise<Response> {
+    const now = Date.now();
+    const stored = await this.#state.storage.get<RateWindow>(WINDOW_KEY);
+    const open = stored !== undefined && now - stored.start < RATE_WINDOW_MS ? stored : null;
+
+    if (open !== null && open.count >= RATE_LIMIT) {
+      // Not written back: hammering a spent bucket must not push its window further out.
+      const retryAfter = Math.max(1, Math.ceil((open.start + RATE_WINDOW_MS - now) / 1000));
+      return Response.json({ retryAfter });
+    }
+
+    const start = open?.start ?? now;
+    await this.#state.storage.put<RateWindow>(WINDOW_KEY, { start, count: (open?.count ?? 0) + 1 });
+    if (open === null) {
+      // A fresh window: the one alarm it needs, at the instant it stops counting. Reopening later
+      // overwrites this alarm rather than adding one, so a busy address still holds exactly one.
+      await this.#state.storage.setAlarm(start + RATE_WINDOW_MS);
+    }
+    return Response.json({ retryAfter: 0 });
+  }
+
+  async alarm(): Promise<void> {
+    // The window has closed and nothing here is worth keeping: the next request from this address
+    // would open a fresh one over it anyway. A bucket that is never asked about again costs
+    // nothing from here on.
+    await this.#state.storage.deleteAll();
+  }
+}
 
 /**
  * One instance per room, addressed by `idFromName(roomId)`.

@@ -55,7 +55,7 @@ class SessionHandoffThreadTest {
     private val api = FakeShikimoriApi()
     private val clock = Clock.systemUTC()
     private val oauth = object : ShikimoriOAuthApi {
-        override suspend fun token(grantType: String, clientId: String, clientSecret: String,
+        override suspend fun token(grantType: String, clientId: String,
             code: String?, redirectUri: String?, refreshToken: String?) = TokenResponseDto("new", refreshToken = "new-r")
     }
 
@@ -100,7 +100,7 @@ class SessionHandoffThreadTest {
             prefs, deliverySession, PosterEnricher(api), RoomRateOutboxRepository(db.rateOutboxDao(), clock),
             OutboxSyncer { Result.success(ReplayOutcome(0, emptySet())) }, ReplayRequest {}, Dispatchers.IO, clock,
         )
-        val auth = ShikimoriAuthRepository(oauth, api, session, prefs, "cid", "secret", clock)
+        val auth = ShikimoriAuthRepository(oauth, api, session, prefs, "cid", clock)
         val delivered = ConcurrentLinkedQueue<List<LibraryEntry>>()
         val first = CountDownLatch(1)
         val bDelivered = CountDownLatch(1)

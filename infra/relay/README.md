@@ -13,6 +13,7 @@ Cloudflare Worker и Durable Object, которые пересылают кад�
 | --- | --- |
 | `GET /health` | `200 ok` |
 | `GET /w/<roomId>` | апгрейд до WebSocket в Durable Object комнаты |
+| `POST /oauth/token` | обмен кода Shikimori на токены, с подстановкой client secret |
 
 `roomId` лежит в пути и должен подходить под `^[A-Za-z0-9_-]{8,16}$`. Всё, что не подходит, получает
 `400`. Запрос без заголовка `Upgrade: websocket` получает `426`, любой метод кроме `GET` — `405`,
@@ -48,9 +49,48 @@ WebSocket:
 приходит в `onClosing(4409, "room full")` и может показать честное «комната занята», а не общую
 ошибку сети.
 
+## Обмен токенов
+
+Client secret Shikimori раньше компилировался в `BuildConfig` и лежал открытой строкой в каждом
+APK. Теперь он живёт только здесь — как `wrangler secret`, — а приложение просит токены у воркера.
+
+`POST /oauth/token` принимает `application/x-www-form-urlencoded` и ровно те поля, которые нужны
+гранту:
+
+| `grant_type` | Поля |
+| --- | --- |
+| `authorization_code` | `client_id`, `code`, `redirect_uri` (`kaeru://oauth` или `urn:ietf:wg:oauth:2.0:oob`) |
+| `refresh_token` | `client_id`, `refresh_token` |
+
+Воркер дописывает `client_secret` и отправляет форму на `https://shikimori.io/oauth/token` с
+`User-Agent: Kaeru` — тот же хост, что и у всех остальных вызовов приложения. Статус и тело
+Shikimori возвращаются приложению дословно, с `content-type: application/json`, так что разбор
+ошибок в приложении не меняется.
+
+`400` с коротким текстом получает всё остальное: чужой `client_id`, незнакомый или отсутствующий
+`grant_type`, пустой `code`/`refresh_token`, `redirect_uri` не из двух названных выше, повтор
+одного поля дважды и любое лишнее поле — включая `client_secret`, который принадлежит воркеру, а не
+звонящему. Тело обязано честно объявить свою длину: `Content-Length` целым числом от 1 до 8192,
+иначе `400` («missing content-length» или «body too large») — воркер не читает тело, чтобы узнать
+его размер. OkHttp проставляет заголовок на любой форме, так что приложения это не касается.
+Метод кроме `POST` — `405`. Воркер без секрета — `503 not configured`, а не «undefined» в запросе к
+Shikimori. Недоступный Shikimori — `502 upstream unavailable` без подробностей.
+
+В лог не попадают ни `code`, ни `refresh_token`, ни секрет, ни тело ответа: только грант и статус
+(`oauth authorization_code upstream=200`) или причина отказа (`oauth refused unknown client`).
+
+Частота — 30 запросов на IP (`CF-Connecting-IP`) в окне 60 секунд, `429` с `Retry-After` сверх
+этого. Счётчик держит `RateDO`: одно окно и один счётчик в хранилище, время сравнивается на каждом
+запросе. Окно фиксированное, не скользящее: на стыке двух окон в одну минуту помещается вдвое
+больше — хвост одного окна плюс голова следующего. Для этого маршрута этого достаточно. Будильник
+на конец окна стирает корзину, чтобы адрес, который заходил однажды, не оставался строкой в
+хранилище навсегда. Запросы без `CF-Connecting-IP` считаются в одну общую корзину. Если сам
+`RateDO` недоступен, запрос пропускается (`oauth rate unavailable` в логе): сломанный ограничитель
+не должен ронять вход.
+
 ## Как это устроено
 
-`src/index.ts` — весь релей: Worker с маршрутами и класс `RoomDO`.
+`src/index.ts` — весь релей: Worker с маршрутами и классы `RoomDO` и `RateDO`.
 
 Сокеты принимаются через WebSocket Hibernation API (`state.acceptWebSocket`, `webSocketMessage`,
 `webSocketClose`, `webSocketError`), поэтому комната, в которой двое молчат, не стоит ничего:
@@ -75,7 +115,7 @@ WebSocket:
 
 ```sh
 npm install        # один раз
-npm test           # 26 тестов в настоящем workerd через Miniflare
+npm test           # 44 теста в настоящем workerd через Miniflare
 npm run typecheck  # tsc --noEmit
 npm run build      # wrangler deploy --dry-run --outdir dist, проверка сборки
 npm run dev        # локальный сервер на http://localhost:8787
@@ -98,22 +138,32 @@ npm run dev        # локальный сервер на http://localhost:8787
 ```sh
 cd infra/relay
 npm install
-npx wrangler login      # откроет браузер
+npx wrangler login                                  # откроет браузер
+npx wrangler secret put SHIKIMORI_CLIENT_SECRET     # вставить секрет, он никуда не пишется
 npx wrangler deploy
 ```
+
+Секрет спрашивается один раз на воркер и хранится у Cloudflare: в репозитории его нет, в
+`wrangler.toml` его нет, в логах его нет. Без него `/oauth/token` будет отдавать ошибки Shikimori
+(`invalid_client`), а вход в приложении перестанет работать — поэтому `secret put` идёт до первой
+выкладки этой версии. `SHIKIMORI_CLIENT_ID` рядом — обычная переменная в `wrangler.toml`: он
+публичный и уезжает в браузер в каждой ссылке авторизации.
 
 `wrangler deploy` напечатает адрес вида `https://kaeru-relay.<account>.workers.dev`. Дальше:
 
 1. Проверить, что живо: `curl https://kaeru-relay.<account>.workers.dev/health` → `ok`.
-2. Положить адрес в `local.properties` в корне репозитория, со схемой `wss`, без слеша на конце:
+2. Положить адрес в `local.properties` в корне репозитория — дважды, потому что схемы разные:
 
    ```properties
    TOGETHER_RELAY_URL=wss://kaeru-relay.<account>.workers.dev
+   AUTH_PROXY_URL=https://kaeru-relay.<account>.workers.dev
    ```
 
 3. Пересобрать приложение. Клиент читает адрес из `BuildConfig.TOGETHER_RELAY_URL` и дописывает
    `/w/<roomId>` сам. Пустое значение означает «сервер не настроен» — совместный просмотр через
-   релей выключен, LAN-транспорт работает по-прежнему.
+   релей выключен, LAN-транспорт работает по-прежнему. `AUTH_PROXY_URL` читается так же и
+   дописывается `oauth/token`; пустое значение означает «войти нельзя» — приложение скажет
+   «Вход временно недоступен, попробуйте позже» и к Shikimori без секрета не пойдёт.
 
 Логи в реальном времени:
 
@@ -140,7 +190,10 @@ npx wrangler tail
 
 ### Ограничение нагрузки
 
-Воркер не проверяет `Origin` и ничего не ограничивает по частоте: адрес релея лежит в APK, так что
+Комнаты воркер не ограничивает по частоте и не проверяет `Origin`: адрес релея лежит в APK, так что
 кто угодно со сборкой может открывать комнаты. Угадать чужую комнату нельзя — 64 бита случайности,
 — а вот выбрать суточную квоту бесплатного тарифа можно. Лечится правилом Cloudflare WAF (Rate
 limiting) на `/w/*`, а не кодом воркера; заводится в панели после выкладки.
+
+У `/oauth/token` ограничение своё и в коде: 30 запросов на IP в минуту (`RateDO`). Этого хватает
+любому живому входу — их два-три за сессию — и не хватает перебору по чужим кодам.
