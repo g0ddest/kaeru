@@ -9,10 +9,12 @@ import app.kaeru.data.notify.NewEpisodesSchedule
 import app.kaeru.data.notify.RoomNotifiedEpisodes
 import app.kaeru.data.notify.Television
 import app.kaeru.data.notify.TitleScreenIntent
+import app.kaeru.data.notify.WatchEpisodeIntent
 import app.kaeru.data.notify.WorkManagerNewEpisodesSchedule
 import app.kaeru.domain.notify.NewEpisodeNotifier
 import app.kaeru.domain.notify.NotifiedEpisodes
 import app.kaeru.ui.mobile.Routes
+import app.kaeru.ui.mobile.player.PlayerActivity
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -37,6 +39,17 @@ object NotifyModule {
         Intent(context, MainActivity::class.java)
             .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             .putExtra(Routes.EXTRA_ROUTE, Routes.details(animeId))
+    }
+
+    /**
+     * How «Смотреть» starts the episode: the very same intent the home screen's card is built on,
+     * so a notification is not a second-class way into playback. It starts a task of its own,
+     * because there may well be no task of this app's running at all.
+     */
+    @Provides
+    @Singleton
+    fun watchEpisodeIntent(@ApplicationContext context: Context): WatchEpisodeIntent = WatchEpisodeIntent { animeId, episode ->
+        PlayerActivity.intent(context, animeId, episode).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
 
     /** Leanback is the platform's own word for «this is a television», and the manifest declares it. */

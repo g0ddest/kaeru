@@ -10,6 +10,9 @@ package app.kaeru.data.notify
  */
 object NewEpisodeNotificationText {
 
+    /** The heading over the group, and the name of the channel as this object knows it. */
+    const val TITLE = "Новые серии"
+
     /**
      * «Вышла 7 серия».
      *
@@ -18,4 +21,29 @@ object NewEpisodeNotificationText {
      * them came out at once.
      */
     fun episode(episode: Int): String = "Вышла $episode серия"
+
+    /** «Тайтл, 7 серия» — one line of the summary, where there is no room for a sentence. */
+    fun line(title: String, episode: Int): String = "$title, $episode серия"
+
+    /**
+     * «3 тайтла»: what the summary over two or more notifications says.
+     *
+     * A count this time, not an ordinal, so it does go plural — and Russian counts three ways,
+     * with `11..14` the exception every naive version gets wrong. The same rule as
+     * `DownloadNotificationText`'s, and repeated here for the same reason: nothing in the data
+     * layer imports the UI layer, where the app's other plural rules live.
+     */
+    fun titles(count: Int): String {
+        val n = kotlin.math.abs(count)
+        val noun = if (n % 100 in 11..14) {
+            "тайтлов"
+        } else {
+            when (n % 10) {
+                1 -> "тайтл"
+                2, 3, 4 -> "тайтла"
+                else -> "тайтлов"
+            }
+        }
+        return "$count $noun"
+    }
 }

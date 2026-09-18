@@ -1,8 +1,10 @@
 package app.kaeru.di
 
 import android.content.Context
+import app.kaeru.data.image.CoilPosterBitmaps
 import app.kaeru.data.image.CoilPosterFetcher
 import app.kaeru.data.image.KaeruImages
+import app.kaeru.data.image.PosterBitmaps
 import app.kaeru.data.image.PosterFetcher
 import coil3.ImageLoader
 import dagger.Module
@@ -31,4 +33,9 @@ object ImageModule {
     @Provides
     @Singleton
     fun posterFetcher(fetcher: CoilPosterFetcher): PosterFetcher = fetcher
+
+    /** The same loader again, for the one caller that needs the picture rather than the file. */
+    @Provides
+    @Singleton
+    fun posterBitmaps(bitmaps: CoilPosterBitmaps): PosterBitmaps = bitmaps
 }
