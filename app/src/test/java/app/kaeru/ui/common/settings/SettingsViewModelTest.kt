@@ -187,6 +187,84 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `the switch reads off while Android refuses, whatever the setting says`() = runTest(main.dispatcher) {
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        vm.notificationsAllowed(false)
+        advanceUntilIdle()
+
+        assertFalse(vm.uiState.value.newEpisodes)
+        assertTrue(vm.uiState.value.newEpisodesBlocked)
+    }
+
+    @Test
+    fun `a permission granted outside the app puts the switch back on with no explanation`() = runTest(main.dispatcher) {
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.notificationsAllowed(false)
+        advanceUntilIdle()
+
+        vm.notificationsAllowed(true)
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.newEpisodes)
+        assertFalse(vm.uiState.value.newEpisodesBlocked)
+    }
+
+    @Test
+    fun `a setting nobody turned on is off rather than blocked`() = runTest(main.dispatcher) {
+        val vm = viewModel(FakeSettingsStore(newEpisodes = false))
+        advanceUntilIdle()
+
+        vm.notificationsAllowed(false)
+        advanceUntilIdle()
+
+        assertFalse(vm.uiState.value.newEpisodes)
+        assertFalse(vm.uiState.value.newEpisodesBlocked)
+    }
+
+    @Test
+    fun `turning it on while the setting already wants it writes nothing`() = runTest(main.dispatcher) {
+        val store = FakeSettingsStore(echo = false)
+        val vm = viewModel(store)
+        advanceUntilIdle()
+        vm.notificationsAllowed(false)
+        advanceUntilIdle()
+
+        vm.setNewEpisodes(true)
+        advanceUntilIdle()
+
+        assertTrue(store.writes.isEmpty())
+    }
+
+    @Test
+    fun `new-episode notifications are on until somebody says otherwise`() = runTest(main.dispatcher) {
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.newEpisodes)
+    }
+
+    @Test
+    fun `turning new-episode notifications off is written and shown at once`() = runTest(main.dispatcher) {
+        val store = FakeSettingsStore(echo = false)
+        val vm = viewModel(store)
+        advanceUntilIdle()
+
+        vm.setNewEpisodes(false)
+        advanceUntilIdle()
+
+        assertFalse(vm.uiState.value.newEpisodes)
+        assertEquals(listOf("newEpisodes=false"), store.writes)
+
+        // Saying it again is not a second write.
+        vm.setNewEpisodes(false)
+        advanceUntilIdle()
+        assertEquals(listOf("newEpisodes=false"), store.writes)
+    }
+
+    @Test
     fun `a setting shows its new value before the store says so`() = runTest(main.dispatcher) {
         val store = FakeSettingsStore(quality = Quality.P720, echo = false)
         val vm = viewModel(store)

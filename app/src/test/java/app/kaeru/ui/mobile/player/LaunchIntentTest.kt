@@ -22,6 +22,28 @@ class LaunchIntentTest {
     private val fromHistory = Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY
     private val ordinary = Intent.FLAG_ACTIVITY_NEW_TASK
 
+    private val context: Context = ApplicationProvider.getApplicationContext()
+
+    @Test
+    fun `a launch from a notification names the title whose card must come down`() {
+        assertEquals(100, notifiedAnimeOf(PlayerActivity.notificationIntent(context, 100, 7)))
+    }
+
+    @Test
+    fun `a launch from a screen names nothing to take down`() {
+        assertNull(notifiedAnimeOf(PlayerActivity.intent(context, 100, 7)))
+        assertNull(notifiedAnimeOf(Intent()))
+        assertNull(notifiedAnimeOf(null))
+    }
+
+    @Test
+    fun `a notification launch is the same launch the screens build`() {
+        val fromNotification = readLaunch(PlayerActivity.notificationIntent(context, 100, 7), explicit = true, seq = 1)
+
+        assertEquals(100, fromNotification.animeId)
+        assertEquals(7, fromNotification.episode)
+    }
+
     @Test
     fun `a fresh launch from a screen is the viewer asking for an episode`() {
         assertTrue(isExplicitLaunch(recreated = false, intentFlags = ordinary))
@@ -65,7 +87,6 @@ class LaunchIntentTest {
 
     @Test
     fun `a launch with a position carries it, and one without carries none`() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
 
         val joining = readLaunch(PlayerActivity.intent(context, 100, 7, startPositionMs = 930_000), explicit = true, seq = 1)
         val ordinary = readLaunch(PlayerActivity.intent(context, 100, 7), explicit = true, seq = 2)
@@ -77,7 +98,6 @@ class LaunchIntentTest {
 
     @Test
     fun `a launch out of recents does not bring the join position along`() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
 
         val back = readLaunch(PlayerActivity.intent(context, 100, 7, startPositionMs = 930_000), explicit = false, seq = 1)
 

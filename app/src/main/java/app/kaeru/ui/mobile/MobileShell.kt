@@ -41,7 +41,6 @@ import app.kaeru.ui.common.library.LibraryViewModel
 import app.kaeru.ui.common.search.SearchViewModel
 import app.kaeru.ui.common.pairing.PairingStage
 import app.kaeru.ui.common.pairing.PairingUiState
-import app.kaeru.ui.common.settings.SettingsViewModel
 import app.kaeru.ui.common.together.JoinTarget
 import app.kaeru.ui.common.update.UpdatesViewModel
 import app.kaeru.ui.common.together.TogetherUiState
@@ -56,7 +55,7 @@ import app.kaeru.ui.mobile.library.LibraryScreen
 import app.kaeru.ui.mobile.pairing.PairingScreen
 import app.kaeru.ui.mobile.player.PlayerActivity
 import app.kaeru.ui.mobile.search.SearchScreen
-import app.kaeru.ui.mobile.settings.SettingsScreen
+import app.kaeru.ui.mobile.settings.SettingsRoute
 import app.kaeru.ui.mobile.together.JoinScreen
 import app.kaeru.ui.mobile.update.UpdatesScreen
 
@@ -186,22 +185,8 @@ fun MobileShell(
                 )
             }
             composable(Routes.SETTINGS) {
-                val vm: SettingsViewModel = hiltViewModel()
-                SettingsScreen(
-                    state = vm.uiState.collectAsStateWithLifecycle().value,
+                SettingsRoute(
                     onBack = { nav.popBackStack() },
-                    onSignOut = vm::signOut,
-                    onAutoplay = vm::setAutoplayNext,
-                    onPipOnLeave = vm::setPipOnLeave,
-                    onQuality = vm::setDefaultQuality,
-                    onThreshold = vm::setWatchedThreshold,
-                    onStudioUp = vm::moveStudioUp,
-                    onStudioDown = vm::moveStudioDown,
-                    onStudioRemove = vm::removeStudio,
-                    onStudioAdd = vm::addStudio,
-                    onStudiosReset = vm::resetStudios,
-                    onKodikToken = vm::setKodikToken,
-                    onRetryAccount = vm::refreshAccount,
                     onDownloads = { nav.navigate(Routes.DOWNLOADS) { launchSingleTop = true } },
                     onUpdates = openUpdates,
                 )

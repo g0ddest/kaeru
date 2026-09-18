@@ -114,6 +114,16 @@ class ShikimoriAuthRepositoryTest {
     }
 
     @Test
+    fun `a sign-in leaves the notification question owed, and it outlives the screen that asks`() = runTest {
+        enqueueTokens()
+        val state = pendingState()
+
+        assertTrue(repo.exchangeRedirectCode("abc", state).isSuccess)
+
+        assertTrue(prefs.notificationQuestionOwed.first())
+    }
+
+    @Test
     fun `callback with a wrong or missing state never reaches the oauth api`() = runTest {
         pendingState()
         assertRejected(repo.exchangeRedirectCode("attacker", "not-the-state"))

@@ -45,6 +45,21 @@ interface SettingsStore {
 
     suspend fun setPipOnLeave(enabled: Boolean)
 
+    /**
+     * Whether the app looks in the background for a new episode of something being watched, and
+     * says so when it finds one.
+     *
+     * On until somebody turns it off: a viewer who follows an ongoing show wants to know it is
+     * out, and that is the whole reason the setting exists. Turning it off takes the background
+     * check off with it — there is nothing to be gained by checking for news nobody will hear.
+     *
+     * A setting of the device's, like the rest of these: whether this phone interrupts its owner
+     * is not a fact about whose list is loaded on it.
+     */
+    val newEpisodeNotifications: Flow<Boolean>
+
+    suspend fun setNewEpisodeNotifications(enabled: Boolean)
+
     /** Quality to start playback at, or null for the best the source offers. */
     val defaultQuality: Flow<Quality?>
 

@@ -36,7 +36,10 @@ import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
+import app.kaeru.di.ApplicationScope
+import app.kaeru.domain.notify.NewEpisodeNotifier
 import app.kaeru.domain.playback.PlaybackNotificationPrompt
+import app.kaeru.domain.settings.SettingsStore
 import app.kaeru.player.CastFramework
 import app.kaeru.player.CastSessionBridge
 import app.kaeru.player.KaeruPlaybackService
@@ -50,6 +53,7 @@ import app.kaeru.domain.together.VoicePlayback
 import app.kaeru.ui.mobile.together.TogetherControls
 import app.kaeru.ui.common.theme.KaeruTheme
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -71,6 +75,25 @@ class PlayerActivity : FragmentActivity() {
 
     /** The one thing this screen remembers between launches: whether the question was put. */
     @Inject lateinit var notificationPrompt: PlaybackNotificationPrompt
+
+    /**
+     * The settings this screen writes exactly once: a refusal of the notification permission takes
+     * «Новые серии» down with it, because the switch on the settings page must not be left saying
+     * «on» over a platform that will show nothing.
+     */
+    @Inject lateinit var settings: SettingsStore
+
+    /**
+     * The new-episode notifications, so pressing «Смотреть» takes its own card out of the shade.
+     *
+     * An action button is not a tap on the body: `setAutoCancel` never fires for one, so without
+     * this the card sits there after the episode has started and the group summary keeps counting
+     * a title the viewer has already dealt with.
+     */
+    @Inject lateinit var newEpisodeNotifications: NewEpisodeNotifier
+
+    /** Outlives this screen, which a viewer can leave the instant the episode starts. */
+    @Inject @ApplicationScope lateinit var appScope: CoroutineScope
 
     /** The microphone and the speaker a shared viewing talks through, named by their interfaces. */
     @Inject lateinit var voiceCapture: VoiceCapture
@@ -150,8 +173,14 @@ class PlayerActivity : FragmentActivity() {
      * The answer changes nothing about playback: it is recorded so the question is put once.
      */
     private val askNotifications =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-            lifecycleScope.launch { notificationPrompt.markNotificationsAsked() }
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            lifecycleScope.launch {
+                notificationPrompt.markNotificationsAsked()
+                // The same answer the settings screen's own prompt records. Asked here about the
+                // playback notification, but there is one permission and one refusal: leaving
+                // «Новые серии» on afterwards would schedule a check nobody could ever hear.
+                if (!granted) settings.setNewEpisodeNotifications(false)
+            }
         }
 
     @OptIn(UnstableApi::class)
@@ -160,6 +189,7 @@ class PlayerActivity : FragmentActivity() {
         enableEdgeToEdge()
         goImmersive()
         launch = read(intent, isExplicitLaunch(recreated = savedInstanceState != null, intentFlags = intent.flags))
+        clearNewEpisodeNotification(intent)
         // Asked before the service is started, so a phone that says yes has the notification
         // from the first episode; nothing waits on the answer.
         askForNotifications()
@@ -291,6 +321,18 @@ class PlayerActivity : FragmentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         launch = read(intent, isExplicitLaunch(recreated = false, intentFlags = intent.flags))
+        clearNewEpisodeNotification(intent)
+    }
+
+    /**
+     * Takes down the card that sent the viewer here, if one did.
+     *
+     * On the application scope rather than this activity's: the cancel outlives a screen the
+     * viewer may leave immediately, and there is nothing on it for the screen to wait for.
+     */
+    private fun clearNewEpisodeNotification(intent: Intent?) {
+        val animeId = notifiedAnimeOf(intent) ?: return
+        appScope.launch { newEpisodeNotifications.clear(animeId) }
     }
 
     /**
@@ -522,6 +564,13 @@ class PlayerActivity : FragmentActivity() {
                 .putExtra(EXTRA_ANIME_ID, animeId)
                 .putExtra(EXTRA_EPISODE, episode)
                 .apply { if (startPositionMs != null) putExtra(EXTRA_POSITION, startPositionMs) }
+
+        /**
+         * The same launch, plus the one fact only a notification knows: which card is standing
+         * behind it and has to come down when the episode starts.
+         */
+        fun notificationIntent(context: Context, animeId: Int, episode: Int): Intent =
+            intent(context, animeId, episode).putExtra(EXTRA_NOTIFIED_ANIME, animeId)
     }
 }
 
@@ -569,6 +618,17 @@ internal fun readLaunch(intent: Intent?, explicit: Boolean, seq: Int) = Launch(
 private const val EXTRA_ANIME_ID = "animeId"
 private const val EXTRA_EPISODE = "episode"
 private const val EXTRA_POSITION = "positionMs"
+private const val EXTRA_NOTIFIED_ANIME = "notifiedAnimeId"
+
+/**
+ * Which title's new-episode card sent this launch, or null when no card did.
+ *
+ * Shikimori numbers anime from one, so the absent value and a real id cannot be confused. The
+ * extra survives being read twice — a rotation replays the same intent — and cancelling a
+ * notification that is already gone costs nothing.
+ */
+internal fun notifiedAnimeOf(intent: Intent?): Int? =
+    intent?.getIntExtra(EXTRA_NOTIFIED_ANIME, 0)?.takeIf { it > 0 }
 
 /**
  * Whether a launch of the player is the viewer asking for an episode, or the same session coming

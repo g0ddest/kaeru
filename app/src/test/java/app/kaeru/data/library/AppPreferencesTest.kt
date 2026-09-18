@@ -60,6 +60,18 @@ class AppPreferencesTest {
         assertNull(prefs.defaultQuality.first())
         assertEquals(0.9f, prefs.watchedThreshold.first(), 0.0001f)
         assertTrue(prefs.pipOnLeave.first())
+        // On by default: a viewer who follows an ongoing show wants to know it is out, and the
+        // switch below the sentence in settings is how they say otherwise.
+        assertTrue(prefs.newEpisodeNotifications.first())
+    }
+
+    @Test
+    fun `the new-episode switch is on until somebody turns it off, and stays off`() = runTest(dispatcher) {
+        prefs.setNewEpisodeNotifications(false)
+        assertEquals(false, prefs.newEpisodeNotifications.first())
+
+        prefs.setNewEpisodeNotifications(true)
+        assertEquals(true, prefs.newEpisodeNotifications.first())
     }
 
     @Test
@@ -116,6 +128,7 @@ class AppPreferencesTest {
         prefs.setAutoplayNext(false)
         prefs.setDefaultQuality(Quality.P480)
         prefs.setPipOnLeave(false)
+        prefs.setNewEpisodeNotifications(false)
 
         prefs.clearAccount()
 
@@ -125,6 +138,7 @@ class AppPreferencesTest {
         assertEquals(false, prefs.autoplayNext.first())
         assertEquals(Quality.P480, prefs.defaultQuality.first())
         assertEquals(false, prefs.pipOnLeave.first())
+        assertEquals(false, prefs.newEpisodeNotifications.first())
     }
 
     @Test

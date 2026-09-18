@@ -3,10 +3,13 @@ package app.kaeru
 import android.app.Activity
 import android.app.Application
 import android.os.Bundle
+import androidx.hilt.work.HiltWorkerFactory
+import androidx.work.Configuration
 import androidx.media3.common.util.UnstableApi
 import app.kaeru.data.download.DownloadEngine
 import app.kaeru.data.image.PosterWarmer
 import app.kaeru.data.library.OfflineSyncStarter
+import app.kaeru.data.notify.NewEpisodesStarter
 import app.kaeru.data.update.UpdateCheckStarter
 import app.kaeru.domain.download.DeferredDownloadRemoval
 import app.kaeru.di.ApplicationScope
@@ -27,7 +30,7 @@ import javax.inject.Inject
  */
 @UnstableApi
 @HiltAndroidApp
-class KaeruApp : Application(), SingletonImageLoader.Factory {
+class KaeruApp : Application(), SingletonImageLoader.Factory, Configuration.Provider {
     @Inject lateinit var offlineSync: OfflineSyncStarter
 
     @Inject lateinit var downloads: DownloadEngine
@@ -42,6 +45,11 @@ class KaeruApp : Application(), SingletonImageLoader.Factory {
     @Inject lateinit var images: ImageLoader
 
     @Inject lateinit var updates: UpdateCheckStarter
+
+    @Inject lateinit var newEpisodes: NewEpisodesStarter
+
+    /** What lets a `@HiltWorker` be built with the rest of the graph behind it. */
+    @Inject lateinit var workerFactory: HiltWorkerFactory
 
     override fun onCreate() {
         super.onCreate()
@@ -61,6 +69,10 @@ class KaeruApp : Application(), SingletonImageLoader.Factory {
         // answer is written down; the home screen shows it whenever it lands, which may well be
         // after the screen is already up.
         updates.start(appScope)
+        // Whether the six-hourly look for a new episode should be on at all. It watches rather
+        // than decides once: signing out has to take the work off, and signing back in has to put
+        // it on again, and neither happens with a screen around to ask.
+        newEpisodes.start(appScope)
         registerActivityLifecycleCallbacks(ForegroundWatch())
     }
 
@@ -93,4 +105,15 @@ class KaeruApp : Application(), SingletonImageLoader.Factory {
      * after injection.
      */
     override fun newImageLoader(context: PlatformContext): ImageLoader = images
+
+    /**
+     * WorkManager built on demand rather than by its own startup provider, which is what the
+     * manifest removes.
+     *
+     * The factory is the whole reason: without it a worker is constructed reflectively with only a
+     * context and its parameters, and this app's one worker needs the library, the database and
+     * the notifier behind it.
+     */
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder().setWorkerFactory(workerFactory).build()
 }

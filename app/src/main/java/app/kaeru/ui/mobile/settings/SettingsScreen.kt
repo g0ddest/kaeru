@@ -64,6 +64,13 @@ private const val QUALITY = "Качество по умолчанию"
 private const val THRESHOLD = "Порог просмотра"
 private const val THRESHOLD_NOTE = "Серия считается просмотренной после этой доли"
 
+private const val NOTIFICATIONS = "Уведомления"
+private const val NEW_EPISODES = "Новые серии"
+private const val NEW_EPISODES_NOTE =
+    "Приложение само проверяет, не вышла ли следующая серия того, что вы смотрите, и говорит об этом"
+private const val NEW_EPISODES_BLOCKED =
+    "Android не разрешил уведомления. Включите их для Kaeru в настройках системы, затем вернитесь сюда"
+
 private const val DUBS = "Озвучки"
 private const val DUBS_NOTE = "Порядок работает, когда у аниме ещё нет запомненной озвучки"
 private const val ADD_STUDIO = "Добавить студию"
@@ -102,6 +109,7 @@ fun SettingsScreen(
     onSignOut: () -> Unit,
     onAutoplay: (Boolean) -> Unit,
     onPipOnLeave: (Boolean) -> Unit,
+    onNewEpisodes: (Boolean) -> Unit,
     onQuality: (Quality?) -> Unit,
     onThreshold: (Float) -> Unit,
     onStudioUp: (Int) -> Unit,
@@ -113,6 +121,8 @@ fun SettingsScreen(
     onRetryAccount: () -> Unit,
     onDownloads: () -> Unit,
     onUpdates: () -> Unit,
+    /** Android will not allow notifications, so the switch cannot honestly read «on». */
+    notificationsBlocked: Boolean = false,
 ) {
     var confirming by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
@@ -128,6 +138,7 @@ fun SettingsScreen(
         ) {
             AccountSection(state, onRetryAccount, onSignOutPressed = { confirming = true })
             PlaybackSection(state, onAutoplay, onPipOnLeave, onQuality, onThreshold)
+            NotificationsSection(state.newEpisodes, notificationsBlocked, onNewEpisodes)
             DownloadsSection(onDownloads)
             DubsSection(state, onStudioUp, onStudioDown, onStudioRemove, onStudioAdd, onStudiosReset)
             KodikSection(state.kodikToken, onKodikToken)
@@ -142,6 +153,24 @@ fun SettingsScreen(
                 onSignOut()
             },
         )
+    }
+}
+
+/**
+ * Whether the app interrupts the viewer when something they watch has a new episode.
+ *
+ * The sentence comes first because the switch alone would not say when the app looks or what it
+ * would say — this is the one setting here whose effect happens while the app is closed. The line
+ * under it appears whenever the setting wants notifications and Android will not allow them, not
+ * only after a refusal this screen happened to witness: a viewer who revoked the permission in
+ * system settings a month ago must not find a switch still claiming to be on.
+ */
+@Composable
+private fun NotificationsSection(enabled: Boolean, blocked: Boolean, onNewEpisodes: (Boolean) -> Unit) {
+    SettingsSection(NOTIFICATIONS) {
+        SettingNote(NEW_EPISODES_NOTE)
+        SettingSwitchRow(NEW_EPISODES, enabled, onNewEpisodes)
+        if (blocked) SettingNote(NEW_EPISODES_BLOCKED)
     }
 }
 

@@ -126,10 +126,16 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.lifecycle.viewmodel.compose)
+    implementation(libs.hilt.work)
+    ksp(libs.hilt.androidx.compiler)
 
     implementation(libs.room.runtime)
     ksp(libs.room.compiler)
     implementation(libs.datastore.preferences)
+    // The six-hourly look for a new episode. The only thing in the app that has to happen while
+    // nobody is holding the phone, which is exactly what WorkManager is and what a coroutine on
+    // the application scope is not: the process is not running at four in the morning.
+    implementation(libs.work.runtime)
 
     implementation(libs.retrofit)
     implementation(libs.retrofit.serialization)

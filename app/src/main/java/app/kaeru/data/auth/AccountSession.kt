@@ -64,6 +64,11 @@ class AccountSession @Inject constructor(
         if (prefs.userId() != id) clearAccount()
         prefs.setUserId(id)
         store.set(candidate)
+        // The one place that knows a sign-in has actually happened, rather than the app having
+        // opened on an account that was already there. The screen that puts the notification
+        // question reads it from here, so the question survives a rotation and a process death
+        // between the login screen and the shell.
+        prefs.setNotificationQuestionOwed(true)
     }
 
     suspend fun logout() = transition {

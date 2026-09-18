@@ -23,6 +23,7 @@ private fun Preview(state: SettingsUiState) = KaeruTheme {
         onSignOut = {},
         onAutoplay = {},
         onPipOnLeave = {},
+        onNewEpisodes = {},
         onQuality = {},
         onThreshold = {},
         onStudioUp = {},

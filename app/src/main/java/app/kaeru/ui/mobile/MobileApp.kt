@@ -14,6 +14,7 @@ import app.kaeru.ui.common.pairing.PairingViewModel
 import app.kaeru.ui.common.together.TogetherViewModel
 import app.kaeru.ui.mobile.auth.LoginScreen
 import app.kaeru.ui.mobile.pairing.PairingScreen
+import app.kaeru.ui.mobile.settings.NewEpisodesPermissionPrompt
 
 /** One OAuth redirect back into the app, exactly as it arrived: neither field is trusted yet. */
 data class OAuthCallback(val code: String?, val state: String?)
@@ -69,21 +70,28 @@ fun MobileApp(
     KaeruTheme {
         when {
             auth.loggedIn == null -> Box(Modifier.fillMaxSize())
-            auth.loggedIn == true -> MobileShell(
-                pairing = pairing,
-                onConfirmPairing = pairingViewModel::confirm,
-                onDismissPairing = pairingViewModel::dismiss,
-                // A notification can ask for a screen. It is handed to the shell rather than acted
-                // on here, because only the shell has a back stack to push it onto — and it is
-                // dropped while signed out, where there is no shell to push anything onto.
-                route = route,
-                onRouteConsumed = onRouteConsumed,
-                together = together,
-                onJoinTogether = togetherViewModel::join,
-                joinTarget = togetherViewModel::joinTarget,
-                onJoinedTogether = togetherViewModel::joinScreenDone,
-                onDismissTogether = togetherViewModel::dismissJoin,
-            )
+            auth.loggedIn == true -> {
+                // Draws nothing. Whether the question goes up is a fact the store holds — a
+                // sign-in that has not been followed by it — rather than something this
+                // composition remembers, so turning the phone on its side between the login
+                // screen and here can no longer lose it.
+                NewEpisodesPermissionPrompt()
+                MobileShell(
+                    pairing = pairing,
+                    onConfirmPairing = pairingViewModel::confirm,
+                    onDismissPairing = pairingViewModel::dismiss,
+                    // A notification can ask for a screen. It is handed to the shell rather than
+                    // acted on here, because only the shell has a back stack to push it onto — and
+                    // it is dropped while signed out, where there is no shell to push it onto.
+                    route = route,
+                    onRouteConsumed = onRouteConsumed,
+                    together = together,
+                    onJoinTogether = togetherViewModel::join,
+                    joinTarget = togetherViewModel::joinTarget,
+                    onJoinedTogether = togetherViewModel::joinScreenDone,
+                    onDismissTogether = togetherViewModel::dismissJoin,
+                )
+            }
             // Signing a television in does not need this phone to be signed in: what crosses the
             // network is a code from the browser's own Shikimori session, so the hand-off works
             // from a phone that has only just been installed and takes precedence over its login.

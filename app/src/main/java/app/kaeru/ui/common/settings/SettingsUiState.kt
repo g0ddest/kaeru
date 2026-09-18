@@ -22,6 +22,20 @@ data class SettingsUiState(
     val autoplayNext: Boolean = true,
     /** Whether leaving the app with an episode playing folds it into a floating window. */
     val pipOnLeave: Boolean = true,
+    /**
+     * Whether the switch reads «on»: the setting and Android's permission, which are two things.
+     *
+     * Only ever true when both agree. A stored «yes» over a platform that would drop everything is
+     * not a feature that is on, it is a control that lies — see [newEpisodesBlocked].
+     */
+    val newEpisodes: Boolean = true,
+    /**
+     * The setting wants notifications and Android will not allow them, so the screen has to say so.
+     *
+     * Never true at the same time as [newEpisodes]: one of them is the switch, the other is the
+     * line explaining why the switch will not go on.
+     */
+    val newEpisodesBlocked: Boolean = false,
     /** null is «Авто»: whatever the source offers best. */
     val defaultQuality: Quality? = null,
     val watchedThreshold: Float = 0.9f,

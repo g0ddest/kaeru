@@ -44,8 +44,10 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
     private val preferredTranslationsKey = stringPreferencesKey("preferred_translations")
     private val autoplayNextKey = booleanPreferencesKey("autoplay_next")
     private val pipOnLeaveKey = booleanPreferencesKey("pip_on_leave")
+    private val newEpisodeNotificationsKey = booleanPreferencesKey("new_episode_notifications")
     private val defaultQualityKey = intPreferencesKey("default_quality")
     private val notificationsAskedKey = booleanPreferencesKey("notifications_asked")
+    private val notificationQuestionOwedKey = booleanPreferencesKey("notification_question_owed")
     private val accountNicknameKey = stringPreferencesKey("account_nickname")
     private val accountAvatarKey = stringPreferencesKey("account_avatar")
     private val downloadLimitKey = longPreferencesKey("download_limit_bytes")
@@ -145,6 +147,14 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
         dataStore.edit { it[pipOnLeaveKey] = enabled }
     }
 
+    /** On until somebody says otherwise; turning it off also takes the background check off. */
+    override val newEpisodeNotifications: Flow<Boolean> =
+        dataStore.data.map { it[newEpisodeNotificationsKey] ?: true }
+
+    override suspend fun setNewEpisodeNotifications(enabled: Boolean) {
+        dataStore.edit { it[newEpisodeNotificationsKey] = enabled }
+    }
+
     /**
      * Quality to start playback at, or null for the best the source offers. Stored as the height,
      * so a rung a future build adds (or drops) degrades to "best available" instead of crashing.
@@ -215,6 +225,13 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
 
     override suspend fun markNotificationsAsked() {
         dataStore.edit { it[notificationsAskedKey] = true }
+    }
+
+    override val notificationQuestionOwed: Flow<Boolean> =
+        dataStore.data.map { it[notificationQuestionOwedKey] ?: false }
+
+    override suspend fun setNotificationQuestionOwed(value: Boolean) {
+        dataStore.edit { it[notificationQuestionOwedKey] = value }
     }
 
     // --- «Удалять просмотренные»: what is promised and not yet done -----------------------------

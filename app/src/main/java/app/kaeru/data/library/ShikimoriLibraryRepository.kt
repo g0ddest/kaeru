@@ -40,8 +40,19 @@ import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.time.Clock
 import java.time.Duration
+import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/**
+ * How many titles one refresh may fetch full details for.
+ *
+ * A ceiling on what a single sync costs, not a rule about which titles matter. The list itself
+ * already carries everything a screen needs to draw a card and everything the new-episode check
+ * reads; details are the description, the screenshots and the airing date, and a title that waits
+ * one more sync for those loses nothing the viewer can see.
+ */
+private const val DETAILS_PER_REFRESH = 25
 
 /** Room is the observable source of truth; network failures are returned without clearing it. */
 @Singleton
@@ -147,8 +158,16 @@ class ShikimoriLibraryRepository @Inject constructor(
             it.status == ListStatus.WATCHING || it.status == ListStatus.REWATCHING
         }.map { it.animeId }.toSet()
         val staleBefore = clock.instant().minus(detailsTtl)
+        // Two requests each, so a list of eighty ongoing titles would be a hundred and sixty calls
+        // on top of the list itself — four times a day from a background job the viewer cannot see,
+        // and enough to make Shikimori start refusing. Capped, oldest first, so every title still
+        // comes round: the ones that have waited longest go first and the rest catch up on the
+        // next run. Never fetched at all sorts ahead of everything, which is what a new title
+        // deserves.
         fresh.filter { it.id in watchingIds && it.status == AnimeStatus.ONGOING }
             .filter { cached[it.id]?.detailsFetchedAt?.isAfter(staleBefore) != true }
+            .sortedBy { cached[it.id]?.detailsFetchedAt ?: Instant.EPOCH }
+            .take(DETAILS_PER_REFRESH)
             .forEach { fetchDetails(it.id) }
         prefs.setLastFullSync(clock.instant())
     }

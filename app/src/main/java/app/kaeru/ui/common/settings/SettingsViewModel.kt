@@ -51,6 +51,7 @@ class SettingsViewModel @Inject constructor(
     private data class Overrides(
         val autoplay: Boolean? = null,
         val pipOnLeave: Boolean? = null,
+        val newEpisodes: Boolean? = null,
         val quality: Quality? = null,
         /** Quality's own null means «Авто», so whether an override exists is a separate fact. */
         val qualityChosen: Boolean = false,
@@ -59,7 +60,7 @@ class SettingsViewModel @Inject constructor(
         val token: String? = null,
     )
 
-    /** The six settings, read together so one recomposition carries all of them. */
+    /** The seven settings, read together so one recomposition carries all of them. */
     private data class Stored(
         val studios: List<String>,
         val autoplay: Boolean,
@@ -67,11 +68,22 @@ class SettingsViewModel @Inject constructor(
         val threshold: Float,
         val token: String?,
         val pipOnLeave: Boolean = true,
+        val newEpisodes: Boolean = true,
     )
 
     private data class AccountState(val loaded: Boolean, val account: Account?)
 
     private val overrides = MutableStateFlow(Overrides())
+
+    /**
+     * Whether Android would currently let this app post anything, as the screen last saw it.
+     *
+     * Not a setting and not something this class can read — the permission belongs to the platform
+     * and is changed in the system's own settings — so the screen reports it on every return and
+     * this only holds the answer. It starts as «yes» so a screen opening on a phone that allows
+     * notifications never flashes a warning before its first report.
+     */
+    private val notificationsAllowed = MutableStateFlow(true)
 
     /** True until the `whoami` in flight comes back, one way or the other. */
     private val asking = MutableStateFlow(true)
@@ -79,7 +91,7 @@ class SettingsViewModel @Inject constructor(
     /** The question currently out, so a second press of «Повторить» does not start a second one. */
     private var asked: Job? = null
 
-    // Two steps, because `combine` is typed up to five flows and there are six.
+    // Two steps, because `combine` is typed up to five flows and there are seven.
     private val stored = combine(
         combine(
             settings.preferredTranslations,
@@ -89,15 +101,23 @@ class SettingsViewModel @Inject constructor(
             settings.kodikToken,
         ) { studios, autoplay, quality, threshold, token -> Stored(studios, autoplay, quality, threshold, token) },
         settings.pipOnLeave,
-    ) { playback, pipOnLeave -> playback.copy(pipOnLeave = pipOnLeave) }
+        settings.newEpisodeNotifications,
+    ) { playback, pipOnLeave, newEpisodes -> playback.copy(pipOnLeave = pipOnLeave, newEpisodes = newEpisodes) }
 
     private val accountState = accounts.account
         .map { AccountState(loaded = true, account = it) }
         .onStart { emit(AccountState(loaded = false, account = null)) }
 
     val uiState: StateFlow<SettingsUiState> =
-        combine(stored, overrides, accountState, asking) { settings, chosen, account, asking ->
+        combine(stored, overrides, accountState, asking, notificationsAllowed) {
+                settings, chosen, account, asking, allowed ->
             val studios = chosen.studios ?: settings.studios
+            // Two halves of one answer. The switch is «on» only where both agree, and the line
+            // under it appears whenever they do not: a setting that said «on» over a platform
+            // dropping everything is the switch that lies, however it got into that state —
+            // a refusal at the player, a permission revoked in system settings months later, or
+            // an upgrade from a build that never asked.
+            val wantsNewEpisodes = chosen.newEpisodes ?: settings.newEpisodes
             SettingsUiState(
                 // An account nobody has named yet is a skeleton while there is still a question
                 // outstanding, and «нет аккаунта» once there is not.
@@ -105,6 +125,8 @@ class SettingsViewModel @Inject constructor(
                 account = account.account,
                 autoplayNext = chosen.autoplay ?: settings.autoplay,
                 pipOnLeave = chosen.pipOnLeave ?: settings.pipOnLeave,
+                newEpisodes = wantsNewEpisodes && allowed,
+                newEpisodesBlocked = wantsNewEpisodes && !allowed,
                 defaultQuality = if (chosen.qualityChosen) chosen.quality else settings.quality,
                 watchedThreshold = chosen.threshold ?: settings.threshold,
                 studios = TranslationPriorityEditor.shown(studios, TranslationRanker.DEFAULT_STUDIOS),
@@ -147,6 +169,29 @@ class SettingsViewModel @Inject constructor(
         if (enabled == uiState.value.pipOnLeave) return
         overrides.update { it.copy(pipOnLeave = enabled) }
         viewModelScope.launch { settings.setPipOnLeave(enabled) }
+    }
+
+    /** What the screen reports after every return to it, and after the system's own dialog. */
+    fun notificationsAllowed(granted: Boolean) {
+        notificationsAllowed.value = granted
+    }
+
+    /**
+     * Turning the new-episode check on or off.
+     *
+     * The screen is what asks for the notification permission before calling this with `true` on
+     * Android 13 and later: a setting that says «on» while the system refuses to show anything
+     * would be a switch that lies. A refusal simply never reaches here.
+     *
+     * Compared against what the setting wants rather than against what the switch shows. The two
+     * differ exactly while the permission is missing, and a press that agrees with the stored
+     * value is not a change however the row is drawn.
+     */
+    fun setNewEpisodes(enabled: Boolean) {
+        val wanted = uiState.value.newEpisodes || uiState.value.newEpisodesBlocked
+        if (enabled == wanted) return
+        overrides.update { it.copy(newEpisodes = enabled) }
+        viewModelScope.launch { settings.setNewEpisodeNotifications(enabled) }
     }
 
     fun setDefaultQuality(quality: Quality?) {
