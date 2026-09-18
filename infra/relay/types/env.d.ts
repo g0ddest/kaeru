@@ -2,6 +2,15 @@
 // `wrangler types`, which emits a 15 000-line copy of the whole runtime typing.
 interface RelayEnv {
   ROOM: DurableObjectNamespace;
+  RATE: DurableObjectNamespace;
+  /** The app's public Shikimori client id, a plain var in wrangler.toml. */
+  SHIKIMORI_CLIENT_ID: string;
+  /**
+   * The client secret, set with `wrangler secret put SHIKIMORI_CLIENT_SECRET` and never written
+   * down in this repository. It leaves the Worker only inside a request to Shikimori's own token
+   * endpoint.
+   */
+  SHIKIMORI_CLIENT_SECRET: string;
 }
 
 declare namespace Cloudflare {

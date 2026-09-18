@@ -11,15 +11,32 @@ compatibility_date = "2026-08-22"
 [observability]
 enabled = true
 
+# The app's Shikimori client id. Public by design — it travels in every authorization URL a
+# viewer's browser opens — and it is here so /oauth/token can refuse a request from anything but
+# this app. Its companion, SHIKIMORI_CLIENT_SECRET, is never in this file: it is set once with
+#   npx wrangler secret put SHIKIMORI_CLIENT_SECRET
+# and lives only in Cloudflare's store from then on.
+[vars]
+SHIKIMORI_CLIENT_ID = "_MQPkUPZ7AUhCQBBnQhdipfXDTQpBmT5JtpRByuFXeg"
+
 # One Durable Object per room, addressed by idFromName(roomId).
 [[durable_objects.bindings]]
 name = "ROOM"
 class_name = "RoomDO"
 
+# One per client address, addressed by idFromName(ip): the token route's rate limit.
+[[durable_objects.bindings]]
+name = "RATE"
+class_name = "RateDO"
+
 # SQLite-backed Durable Objects are the ones available on the free plan.
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RoomDO"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["RateDO"]
 
 # A custom domain is not configured yet; the default workers.dev URL is used first.
 # To move the relay to relay.kaeru.vitaliy.velikodniy.name later, add the zone to
