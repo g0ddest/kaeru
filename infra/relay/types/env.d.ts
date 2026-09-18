@@ -9,8 +9,11 @@ interface RelayEnv {
    * The client secret, set with `wrangler secret put SHIKIMORI_CLIENT_SECRET` and never written
    * down in this repository. It leaves the Worker only inside a request to Shikimori's own token
    * endpoint.
+   *
+   * Optional because a Worker deployed before the secret was put there really does have none, and
+   * the token route has to answer that honestly rather than send Shikimori the word "undefined".
    */
-  SHIKIMORI_CLIENT_SECRET: string;
+  SHIKIMORI_CLIENT_SECRET?: string;
 }
 
 declare namespace Cloudflare {
