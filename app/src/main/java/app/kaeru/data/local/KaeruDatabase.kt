@@ -12,9 +12,9 @@ import java.time.Instant
 @Database(
     entities = [
         AnimeEntity::class, UserRateEntity::class, WatchStateEntity::class, EpisodeProgressEntity::class,
-        RateOutboxEntity::class,
+        RateOutboxEntity::class, NotifiedEpisodeEntity::class,
     ],
-    version = 4,
+    version = 5,
     // Written to `app/schemas` from version 2 on, so the next migration can be checked against
     // the schema it produces rather than only against the rows it preserves.
     exportSchema = true,
@@ -26,6 +26,7 @@ abstract class KaeruDatabase : RoomDatabase() {
     abstract fun watchStateDao(): WatchStateDao
     abstract fun episodeProgressDao(): EpisodeProgressDao
     abstract fun rateOutboxDao(): RateOutboxDao
+    abstract fun notifiedEpisodeDao(): NotifiedEpisodeDao
 
     /**
      * The two rows one progress sample leaves behind, committed together.
@@ -71,6 +72,10 @@ abstract class KaeruDatabase : RoomDatabase() {
         // Queued writes name one account's list and carry that account's rate ids. Replaying them
         // after a switch would write one viewer's marks onto another's list.
         rateOutboxDao().deleteAll()
+        // What has already been said about a new episode is said about one account's list. Left
+        // behind, it would keep the next viewer from ever hearing about the episodes it names —
+        // and clearing it is also what makes the first check after a sign-in a silent one.
+        notifiedEpisodeDao().deleteAll()
     }
 }
 
@@ -131,5 +136,23 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
                 "`kind` TEXT NOT NULL, `value` TEXT NOT NULL, `createdAt` INTEGER NOT NULL)",
         )
         connection.execSQL("CREATE INDEX IF NOT EXISTS `index_rate_outbox_animeId` ON `rate_outbox` (`animeId`)")
+    }
+}
+
+/**
+ * Version 5 gives the new-episode check somewhere to remember what it has already said.
+ *
+ * Nothing existing changes: `notified_episodes` starts empty, which is exactly the state
+ * `NewEpisodeRule` reads as «this title has never been looked at». So the first check after an
+ * upgrade writes down what is out and says nothing, and nobody is greeted by a fortnight of
+ * episodes at once.
+ */
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL(
+            "CREATE TABLE IF NOT EXISTS `notified_episodes` (" +
+                "`animeId` INTEGER NOT NULL, `episode` INTEGER NOT NULL, `notifiedAt` INTEGER NOT NULL, " +
+                "PRIMARY KEY(`animeId`, `episode`))",
+        )
     }
 }

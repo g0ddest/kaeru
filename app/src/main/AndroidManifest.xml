@@ -139,6 +139,23 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!--
+          WorkManager is built on demand from `KaeruApp` rather than by its own startup provider,
+          so the provider is taken out of the merged manifest. Without this the library would
+          initialise itself first, with the default worker factory, and the new-episode worker —
+          which is built by Hilt — would fail to start at all.
+        -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
+
         <activity
             android:name=".TvActivity"
             android:exported="true"
