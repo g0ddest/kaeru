@@ -47,18 +47,44 @@ struct TogetherClock {
 }
 
 enum TogetherSyncAction: Equatable { case none, rate(Float), seek(Int64, notify: Bool) }
+
+/// How often the session speaks, in milliseconds.
+///
+/// These are Android's `TogetherSession` constants and they have to stay the same on both phones:
+/// a device that says where it is once every three seconds cannot be corrected against by one that
+/// expects a report every second, and a side that never pings leaves the other measuring an offset
+/// of zero for the whole evening.
+enum TogetherTiming {
+    /// Where this side is, often enough for the other to measure drift against.
+    static let stateMs: Int64 = 1_000
+    /// How often the gap is looked at. Twice the report interval, so it is never acting blind.
+    static let syncMs: Int64 = 2_000
+    /// One round trip for the clocks, and what keeps a quiet socket from idling out.
+    static let pingMs: Int64 = 5_000
+    /// Past this, the friend's last report is too old to carry forward from.
+    static let staleStateMs: Int64 = 5_000
+    /// How long a friend whose socket went away has to walk back into the room.
+    static let rejoinWindowMs: Int64 = 30_000
+}
+
 enum TogetherSync {
-    static func decide(local: Int64, remote: Int64, bothPlaying: Bool, correcting: Bool, supportsRate: Bool) -> TogetherSyncAction {
+    /// - Parameter offsetMs: how far the friend's clock is from this one, so `remote + offsetMs`
+    ///   is where they are on this device's clock. Without it the two sides chase each other's
+    ///   clock error instead of the drift, which is a steady seek every couple of seconds between
+    ///   phones whose clocks are a second apart.
+    static func decide(local: Int64, remote: Int64, offsetMs: Int64, bothPlaying: Bool, correcting: Bool, supportsRate: Bool) -> TogetherSyncAction {
         let settled: TogetherSyncAction = correcting ? .rate(1) : .none
         guard bothPlaying else { return settled }
-        let gap = abs(local - remote)
+        let target = remote + offsetMs
+        let drift = local - target
+        let gap = abs(drift)
         if gap < 200 { return settled }
         if gap < 500 && !correcting { return .none }
         if gap < 2000 {
-            if !supportsRate { return gap > 1000 ? .seek(remote, notify: false) : settled }
-            return .rate(local > remote ? 0.97 : 1.03)
+            if !supportsRate { return gap > 1000 ? .seek(target, notify: false) : settled }
+            return .rate(drift > 0 ? 0.97 : 1.03)
         }
-        return .seek(remote, notify: gap > 10_000)
+        return .seek(target, notify: gap > 10_000)
     }
 }
 

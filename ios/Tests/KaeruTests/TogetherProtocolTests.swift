@@ -77,13 +77,13 @@ final class TogetherProtocolTests: XCTestCase {
         clock.record(sent: 1000, peerReceived: 1550, peerSent: 1550, received: 1100)
         XCTAssertEqual(clock.offsetMs, 500)
         XCTAssertEqual(clock.project(position: 10_000, sentAt: 2000, playing: true, now: 1600), 10_100)
-        XCTAssertEqual(TogetherSync.decide(local: 10_499, remote: 10_000, bothPlaying: true, correcting: false, supportsRate: true), .none)
-        XCTAssertEqual(TogetherSync.decide(local: 10_500, remote: 10_000, bothPlaying: true, correcting: false, supportsRate: true), .rate(0.97))
-        XCTAssertEqual(TogetherSync.decide(local: 12_000, remote: 10_000, bothPlaying: true, correcting: false, supportsRate: true), .seek(10_000, notify: false))
-        XCTAssertEqual(TogetherSync.decide(local: 20_001, remote: 10_000, bothPlaying: true, correcting: false, supportsRate: true), .seek(10_000, notify: true))
-        XCTAssertEqual(TogetherSync.decide(local: 10_199, remote: 10_000, bothPlaying: true, correcting: true, supportsRate: true), .rate(1))
-        XCTAssertEqual(TogetherSync.decide(local: 11_001, remote: 10_000, bothPlaying: true, correcting: false, supportsRate: false), .seek(10_000, notify: false))
-        XCTAssertEqual(TogetherSync.decide(local: 20_000, remote: 10_000, bothPlaying: false, correcting: false, supportsRate: true), .none)
+        XCTAssertEqual(TogetherSync.decide(local: 10_499, remote: 10_000, offsetMs: 0, bothPlaying: true, correcting: false, supportsRate: true), .none)
+        XCTAssertEqual(TogetherSync.decide(local: 10_500, remote: 10_000, offsetMs: 0, bothPlaying: true, correcting: false, supportsRate: true), .rate(0.97))
+        XCTAssertEqual(TogetherSync.decide(local: 12_000, remote: 10_000, offsetMs: 0, bothPlaying: true, correcting: false, supportsRate: true), .seek(10_000, notify: false))
+        XCTAssertEqual(TogetherSync.decide(local: 20_001, remote: 10_000, offsetMs: 0, bothPlaying: true, correcting: false, supportsRate: true), .seek(10_000, notify: true))
+        XCTAssertEqual(TogetherSync.decide(local: 10_199, remote: 10_000, offsetMs: 0, bothPlaying: true, correcting: true, supportsRate: true), .rate(1))
+        XCTAssertEqual(TogetherSync.decide(local: 11_001, remote: 10_000, offsetMs: 0, bothPlaying: true, correcting: false, supportsRate: false), .seek(10_000, notify: false))
+        XCTAssertEqual(TogetherSync.decide(local: 20_000, remote: 10_000, offsetMs: 0, bothPlaying: false, correcting: false, supportsRate: true), .none)
     }
 
     func testVoiceAssemblyBoundsAndExpiry() throws {

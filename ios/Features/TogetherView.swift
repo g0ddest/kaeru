@@ -54,6 +54,6 @@ struct TogetherView: View {
     }
 
     private var stateTitle: String {
-        switch manager.phase { case .idle: "Не подключено"; case .connecting: "Подключение…"; case .live: "В эфире"; case .ended: "Завершено"; case .failed: "Ошибка" }
+        switch manager.phase { case .idle: "Не подключено"; case .connecting: "Подключение…"; case .live: "В эфире"; case .reconnecting: "Восстанавливаем связь…"; case .ended: "Завершено"; case .failed: "Ошибка" }
     }
 }

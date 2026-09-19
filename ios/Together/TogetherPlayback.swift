@@ -31,7 +31,10 @@ struct TogetherPlaybackSnapshot: Equatable, Sendable {
 enum TogetherLocalAction: Sendable {
     case play(Int64), pause(Int64), seek(Int64), episode(TogetherEpisode)
 }
-enum TogetherTransportEvent: Sendable { case frame(Data), peerLeft }
+/// What a transport has to say. The last two are a relay dialling itself back: `reconnecting` is
+/// said before the waiting starts so a screen can stop claiming the friend is there, `reconnected`
+/// once a socket is up again and everything held back has been written to it.
+enum TogetherTransportEvent: Sendable { case frame(Data), peerLeft, reconnecting, reconnected }
 @MainActor protocol TogetherTransport: AnyObject {
     func connect(_ invitation: TogetherInvitation, asHost: Bool) async throws
     func receive() async throws -> TogetherTransportEvent
