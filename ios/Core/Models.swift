@@ -78,7 +78,7 @@ func continueEpisode(anime: Anime, watched: Int, progress: EpisodeProgress?) -> 
     return min(available, max(watched, progress?.watched == true ? progress!.episode : 0) + 1)
 }
 
-struct PendingRate: Codable, Identifiable {
+struct PendingRate: Codable, Identifiable, Equatable {
     var id: Int { anime.id }
     var anime: Anime
     var status: String
@@ -86,6 +86,13 @@ struct PendingRate: Codable, Identifiable {
     var revision = UUID()
 }
 
+/// What one account's list looks like, as one record.
+///
+/// Three of its six fields are read but never written any more: positions, the episodes they belong
+/// to and the titles behind them each live in a record of their own, so five seconds of playback
+/// costs one small write instead of re-encoding the whole library. They are still decoded, because
+/// a phone that was upgraded rather than installed has all of it in here — see
+/// `AppModel.restoreAccount`, which takes such a snapshot apart once and never writes it whole again.
 struct AccountSnapshot: Codable {
     var library: [LibraryItem] = []
     var pending: [PendingRate] = []
@@ -110,6 +117,14 @@ struct AccountSnapshot: Codable {
         for value in progress.values where episodeHistory["\(value.animeID):\(value.episode)"] == nil {
             episodeHistory["\(value.animeID):\(value.episode)"] = value
         }
+    }
+    /// Only the three fields that are still this record's own. What playback writes every few
+    /// seconds is not among them, which is the whole reason this method is written out by hand.
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(library, forKey: .library)
+        try values.encode(pending, forKey: .pending)
+        try values.encode(translations, forKey: .translations)
     }
 }
 

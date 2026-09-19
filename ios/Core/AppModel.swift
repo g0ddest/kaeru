@@ -133,7 +133,7 @@ import AuthenticationServices
             guard fence == generation, revision == mutationRevision else { return }
             library = rates
             for change in pending { apply(change, rateID: rate(for: change.id)?.id ?? 0) }
-            try persistAccount()
+            try persistLibrary()
             if let notificationService, !Task.isCancelled {
                 await notificationService.process(library: library, progress: Array(episodeHistory.values), account: accountKey)
             }
@@ -223,7 +223,7 @@ import AuthenticationServices
             suppressedMarks[anime.id] = episode
         }
         do {
-            try persistAccount(); mutationRevision += 1
+            try persist(from: previous); mutationRevision += 1
             undoChange = EpisodeUndo(account: accountKey, anime: anime, rate: rate, history: previous.episodeHistory.filter { $0.value.animeID == anime.id }, progress: previous.progress[anime.id])
             if watched { downloadManager?.onWatched(animeID: anime.id, episode: episode) }
             else {
@@ -245,7 +245,7 @@ import AuthenticationServices
         episodeHistory = episodeHistory.filter { $0.value.animeID != undo.anime.id }.merging(undo.history) { _, old in old }
         progress[undo.anime.id] = undo.progress
         do {
-            try persistAccount(); mutationRevision += 1; undoChange = nil; suppressedMarks[undo.anime.id] = nil
+            try persist(from: previous); mutationRevision += 1; undoChange = nil; suppressedMarks[undo.anime.id] = nil
             Task { await flush() }
         } catch { restore(previous); self.error = error.localizedDescription }
     }
@@ -261,14 +261,14 @@ import AuthenticationServices
         guard id > 0 else { return }
         let previous = titleTranslations
         titleTranslations[animeID] = id
-        do { try persistAccount() } catch { titleTranslations = previous; self.error = error.localizedDescription }
+        do { try persistLibrary() } catch { titleTranslations = previous; self.error = error.localizedDescription }
     }
     func queueRate(anime: Anime, status: String, episodes: Int) {
         guard session != nil else { return }
-        let previousPending = pending, previousLibrary = library
+        let previous = snapshot
         stageRate(anime: anime, status: status, episodes: episodes)
-        do { try persistAccount(); mutationRevision += 1 } catch {
-            pending = previousPending; library = previousLibrary
+        do { try persist(from: previous); mutationRevision += 1 } catch {
+            restore(previous)
             self.error = error.localizedDescription; return
         }
         Task { await flush() }
@@ -287,7 +287,7 @@ import AuthenticationServices
         if shouldQueue {
             stageRate(anime: anime, status: watchedStatus(rate(for: anime.id)?.status), episodes: value.episode)
         }
-        do { try persistAccount() }
+        do { try persist(from: previous) }
         catch {
             library = previous.library; pending = previous.pending; progress = previous.progress; recentAnime = previous.recent
             episodeHistory = previous.episodeHistory
@@ -325,7 +325,7 @@ import AuthenticationServices
                 if let index = library.firstIndex(where: { $0.anime.id == change.id }) { library[index].id = saved.id }
                 pending.removeAll { $0.revision == change.revision }
                 mutationRevision += 1
-                try persistAccount()
+                try persistLibrary()
             } catch {
                 // Durable outbox remains available for the next foreground refresh.
                 if fence == generation { self.error = "Прогресс сохранён на устройстве. Синхронизация не удалась: \(error.localizedDescription)" }
@@ -393,8 +393,36 @@ import AuthenticationServices
         pending.removeAll { $0.id == anime.id }; pending.append(change)
         apply(change, rateID: rate(for: anime.id)?.id ?? 0)
     }
-    private func persistAccount() throws {
-        try store.write(snapshot, key: "\(accountKey).snapshot")
+    // MARK: - what is written, and how little of it
+
+    private var snapshotKey: String { "\(accountKey).snapshot" }
+    private var episodePrefix: String { "\(accountKey).episode." }
+    private var animePrefix: String { "\(accountKey).anime." }
+    private func episodeKey(_ id: String) -> String { episodePrefix + id }
+    private func animeKey(_ id: Int) -> String { "\(animePrefix)\(id)" }
+
+    /// The list, the outbox and the remembered dubs. Everything that changes when the viewer does
+    /// something to their list, and nothing that changes while an episode simply plays.
+    private func persistLibrary() throws { try store.write(snapshot, key: snapshotKey) }
+
+    /// Writes what actually moved since `previous`.
+    ///
+    /// A position saved every five seconds touches one record of about a hundred bytes; the library
+    /// record — which holds every title in it — is rewritten only when the library itself changed.
+    /// Before this, a viewer with three hundred titles re-encoded all of them twelve times a minute
+    /// for the whole of an episode.
+    private func persist(from previous: AccountSnapshot) throws {
+        for (id, value) in episodeHistory where previous.episodeHistory[id] != value {
+            try store.write(value, key: episodeKey(id))
+        }
+        let gone = previous.episodeHistory.keys.filter { episodeHistory[$0] == nil }.map(episodeKey)
+        if !gone.isEmpty { try store.remove(gone) }
+        for (id, value) in recentAnime where previous.recent[id] != value {
+            try store.write(value, key: animeKey(id))
+        }
+        if previous.library != library || previous.pending != pending || previous.translations != titleTranslations {
+            try persistLibrary()
+        }
     }
     private var snapshot: AccountSnapshot {
         AccountSnapshot(library: library, pending: pending, progress: progress, recent: recentAnime, episodeHistory: episodeHistory, translations: titleTranslations)
@@ -406,10 +434,39 @@ import AuthenticationServices
     private func restoreAccount() throws {
         undoChange = nil; suppressedMarks = [:]; completionSuggestion = nil
         library = []; pending = []; progress = [:]; recentAnime = [:]; episodeHistory = [:]; titleTranslations = [:]
-        let snapshot = try store.read(AccountSnapshot.self, key: "\(accountKey).snapshot") ?? AccountSnapshot()
-        library = snapshot.library; pending = snapshot.pending; progress = snapshot.progress; recentAnime = snapshot.recent
-        episodeHistory = snapshot.episodeHistory; titleTranslations = snapshot.translations
+        let stored = try store.read(AccountSnapshot.self, key: snapshotKey) ?? AccountSnapshot()
+        library = stored.library; pending = stored.pending; titleTranslations = stored.translations
+        let prefix = episodePrefix, animes = animePrefix
+        episodeHistory = try store.readAll(EpisodeProgress.self, prefix: prefix)
+            .reduce(into: [:]) { $0[String($1.key.dropFirst(prefix.count))] = $1.value }
+        recentAnime = try store.readAll(Anime.self, prefix: animes)
+            .reduce(into: [:]) { result, row in
+                guard let id = Int(row.key.dropFirst(animes.count)) else { return }
+                result[id] = row.value
+            }
+        // A snapshot written before positions had records of their own carries all of them. It is
+        // taken apart once, here, and rewritten without them: from then on this is an empty branch.
+        if !stored.episodeHistory.isEmpty || !stored.recent.isEmpty {
+            let legacy = AccountSnapshot(library: library, pending: pending, progress: [:],
+                                         recent: recentAnime, episodeHistory: episodeHistory,
+                                         translations: titleTranslations)
+            episodeHistory.merge(stored.episodeHistory) { current, _ in current }
+            recentAnime.merge(stored.recent) { current, _ in current }
+            try persist(from: legacy)
+            try persistLibrary()
+        }
+        progress = latestPerTitle()
         mutationRevision += 1
+    }
+
+    /// Where each title was left, which is the most recent of its episodes. Derived rather than
+    /// stored: it was always a second copy of a row the history already held, and a copy that can
+    /// disagree with its original is a copy worth not having.
+    private func latestPerTitle() -> [Int: EpisodeProgress] {
+        episodeHistory.values.reduce(into: [:]) { result, value in
+            if let held = result[value.animeID], held.updatedAt >= value.updatedAt { return }
+            result[value.animeID] = value
+        }
     }
     private func errorMessage(_ error: Error) -> String { error.localizedDescription }
 }

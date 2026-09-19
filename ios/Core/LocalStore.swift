@@ -11,6 +11,12 @@ import Security
 @MainActor protocol LocalStorage {
     func read<T: Decodable>(_ type: T.Type, key: String) throws -> T?
     func write<T: Encodable>(_ value: T, key: String) throws
+    /// Every record whose key begins with `prefix`, by key. What makes a position its own record
+    /// rather than a field of one large one: writing one costs a row, and reading them all back
+    /// still costs a single query.
+    func readAll<T: Decodable>(_ type: T.Type, prefix: String) throws -> [String: T]
+    /// Takes records away. Missing keys are not an error — an episode unmarked twice is one story.
+    func remove(_ keys: [String]) throws
 }
 
 @MainActor final class LocalStore: LocalStorage {
@@ -30,6 +36,21 @@ import Security
         let query = FetchDescriptor<CachedValue>(predicate: #Predicate { $0.key == key })
         if let record = try context.fetch(query).first { record.data = data }
         else { context.insert(CachedValue(key: key, data: data)) }
+        do { try context.save() }
+        catch { context.rollback(); throw error }
+    }
+    func readAll<T: Decodable>(_ type: T.Type, prefix: String) throws -> [String: T] {
+        let query = FetchDescriptor<CachedValue>(predicate: #Predicate { $0.key.starts(with: prefix) })
+        let decoder = JSONDecoder()
+        return try context.fetch(query).reduce(into: [:]) { result, record in
+            result[record.key] = try decoder.decode(type, from: record.data)
+        }
+    }
+    func remove(_ keys: [String]) throws {
+        guard !keys.isEmpty else { return }
+        let wanted = Set(keys)
+        let query = FetchDescriptor<CachedValue>(predicate: #Predicate { wanted.contains($0.key) })
+        for record in try context.fetch(query) { context.delete(record) }
         do { try context.save() }
         catch { context.rollback(); throw error }
     }

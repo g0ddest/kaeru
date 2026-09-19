@@ -12,6 +12,10 @@ private typealias Stream = Kaeru.Stream
         values[key] = data
         if key.hasSuffix(".snapshot") { snapshots.append(try JSONDecoder().decode(AccountSnapshot.self, from: data)) }
     }
+    func readAll<T: Decodable>(_ type: T.Type, prefix: String) throws -> [String: T] {
+        try values.filter { $0.key.hasPrefix(prefix) }.mapValues { try JSONDecoder().decode(type, from: $0) }
+    }
+    func remove(_ keys: [String]) throws { for key in keys { values[key] = nil } }
 }
 
 @MainActor private final class StubService: AnimeService {
@@ -65,11 +69,10 @@ private typealias Stream = Kaeru.Stream
         let model = AppModel(service: StubService(), store: store, configuration: configuration)
         model.saveProgress(EpisodeProgress(animeID: 7, episode: 1, position: 120, duration: 1200), anime: anime, account: model.accountKey)
         model.saveProgress(EpisodeProgress(animeID: 7, episode: 2, position: 30, duration: 1200), anime: anime, account: model.accountKey)
-        let data = try XCTUnwrap(store.values["guest.snapshot"])
-        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        let history = try XCTUnwrap(object["episodeHistory"] as? [String: Any], "Each episode must be retained in the same atomic snapshot")
-        XCTAssertEqual((history["7:1"] as? [String: Any])?["position"] as? Double, 120)
-        XCTAssertEqual((history["7:2"] as? [String: Any])?["position"] as? Double, 30)
+        // One record per episode: the second position must not overwrite the first, which is what
+        // a single «latest position» field would have done.
+        XCTAssertEqual(try store.read(EpisodeProgress.self, key: "guest.episode.7:1")?.position, 120)
+        XCTAssertEqual(try store.read(EpisodeProgress.self, key: "guest.episode.7:2")?.position, 30)
         let restored = AppModel(service: StubService(), store: store, configuration: configuration)
         XCTAssertEqual(restored.progressFor(animeID: 7, episode: 1)?.position, 120)
         XCTAssertEqual(restored.progressFor(animeID: 7, episode: 2)?.position, 30)
@@ -199,8 +202,11 @@ private typealias Stream = Kaeru.Stream
         let store = RecordingStore()
         let model = AppModel(service: service, store: store, configuration: configuration, session: session(), saveSession: { _ in })
         model.saveProgress(EpisodeProgress(animeID: 7, episode: 3, position: 950, duration: 1000), anime: anime, account: model.accountKey)
+        // The position lives in a record of its own now; the outbox entry it raised is the only
+        // reason the list record was touched at all.
         XCTAssertEqual(store.snapshots.count, 1)
-        XCTAssertTrue(store.snapshots.first?.progress[7]?.watched == true)
         XCTAssertEqual(store.snapshots.first?.pending.first?.episodes, 3)
+        let saved = try? store.read(EpisodeProgress.self, key: "user-1.episode.7:3")
+        XCTAssertTrue(saved?.watched == true)
     }
 }
