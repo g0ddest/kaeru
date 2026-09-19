@@ -355,7 +355,7 @@ import AuthenticationServices
             guard fence == generation else { throw AppError.signedOut }
             return result
         } catch {
-            guard fence == generation, error.localizedDescription.contains("401") else { throw error }
+            guard fence == generation, ServiceFailure.of(error)?.status == 401 else { throw error }
             let refreshed = try await refreshedToken()
             guard fence == generation else { throw AppError.signedOut }
             let result = try await operation(refreshed)
@@ -376,7 +376,7 @@ import AuthenticationServices
             var tokens: Tokens
             do { tokens = try await self.service.refresh(session.tokens.refresh_token) }
             catch {
-                if fence == self.generation && error.localizedDescription.contains("invalid_grant") {
+                if fence == self.generation, ServiceFailure.of(error)?.oauthError == "invalid_grant" {
                     self.signOut()
                     if self.session == nil { self.error = "Сессия Shikimori истекла. Войдите снова; ваш прогресс сохранён на устройстве." }
                 }

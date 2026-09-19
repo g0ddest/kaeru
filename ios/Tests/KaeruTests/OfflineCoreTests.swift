@@ -100,19 +100,6 @@ final class OfflineCoreTests: XCTestCase {
         XCTAssertEqual(old.policies.storageLimitBytes, 5 * 1024 * 1024 * 1024)
     }
 
-    func testNotificationPlanIsFutureOnlyDeduplicatedAndBounded() {
-        let now = Date(timeIntervalSince1970: 10_000)
-        let formatter = ISO8601DateFormatter()
-        var future = Anime(id: 1, title: "Next", episodesAired: 2)
-        future.nextEpisodeAt = formatter.string(from: now.addingTimeInterval(60))
-        var past = Anime(id: 2, title: "Past"); past.nextEpisodeAt = formatter.string(from: now.addingTimeInterval(-1))
-        let plan = EpisodeNotificationPlan.make(anime: [past, future, future], now: now, limit: 60)
-        XCTAssertEqual(plan.count, 1)
-        XCTAssertEqual(plan[0].animeID, 1)
-        XCTAssertEqual(plan[0].episode, 3)
-        XCTAssertEqual(plan[0].url.absoluteString, "kaeru://anime/1?episode=3")
-        XCTAssertTrue(EpisodeNotificationPlan.make(anime: [future], now: now, limit: 0).isEmpty)
-    }
 }
 
 final class OfflineReleaseTests: XCTestCase {

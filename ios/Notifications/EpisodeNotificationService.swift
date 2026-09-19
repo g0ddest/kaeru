@@ -99,37 +99,6 @@ import UserNotifications
         }
     }
 
-    /// Optional calendar reminders; release checks above remain the source of availability alerts.
-    /// Pass only titles the user explicitly selected for reminders.
-    func schedule(anime: [Anime]) async {
-        guard isEnabled else { return }
-        let generation = revision
-        await refreshAuthorization()
-        guard generation == revision, isEnabled, canPost else { return }
-        let pending = await center.pendingNotificationRequests()
-        guard generation == revision else { return }
-        let old = pending.filter { $0.identifier.hasPrefix(EpisodeNotificationPlan.prefix) }.map(\.identifier)
-        center.removePendingNotificationRequests(withIdentifiers: old)
-        let otherCount = pending.count - old.count
-        let plan = EpisodeNotificationPlan.make(anime: anime, limit: max(0, 60 - otherCount))
-        state.requestIDs = Array(Set(state.requestIDs.filter { !old.contains($0) } + plan.map(\.id)))
-        guard save() else { return }
-        for reminder in plan {
-            guard generation == revision, isEnabled else { return }
-            let content = UNMutableNotificationContent()
-            content.title = reminder.title
-            content.body = "Серия \(reminder.episode) по расписанию выходит сейчас."
-            content.sound = .default
-            content.userInfo = ["url": reminder.url.absoluteString, "watchURL": reminder.url.absoluteString]
-            content.categoryIdentifier = Self.categoryIdentifier
-            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, reminder.date.timeIntervalSinceNow), repeats: false)
-            do {
-                try await center.add(UNNotificationRequest(identifier: reminder.id, content: content, trigger: trigger))
-                if generation != revision || !isEnabled { center.removePendingNotificationRequests(withIdentifiers: [reminder.id]) }
-            } catch { errorMessage = error.localizedDescription }
-        }
-    }
-
     func clearForPlayback(animeID: Int) {
         let ids = [Self.releasePrefix + String(animeID), EpisodeNotificationPlan.prefix + String(animeID)]
         center.removePendingNotificationRequests(withIdentifiers: ids)

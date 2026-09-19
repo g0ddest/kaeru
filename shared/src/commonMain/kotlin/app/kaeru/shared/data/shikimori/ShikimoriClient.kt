@@ -1,5 +1,6 @@
 package app.kaeru.shared.data.shikimori
 
+import app.kaeru.shared.ApiException
 import app.kaeru.shared.data.network.*
 import app.kaeru.shared.domain.*
 import io.ktor.client.request.*
@@ -136,7 +137,7 @@ internal class ShikimoriClient(
             }.getOrNull()
             // A fixed marker survives the NSError bridge without exposing the body or credentials.
             if (oauthError?.isString == true && oauthError.content == "invalid_grant") {
-                throw Exception("OAuth failed (HTTP ${response.status}): invalid_grant.")
+                throw ApiException(response.status, oauthError = "invalid_grant")
             }
         }
         val parsed = parseObject(response.successfulBody())

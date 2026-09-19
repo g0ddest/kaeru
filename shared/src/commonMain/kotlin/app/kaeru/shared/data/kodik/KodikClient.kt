@@ -1,5 +1,6 @@
 package app.kaeru.shared.data.kodik
 
+import app.kaeru.shared.ApiException
 import app.kaeru.shared.data.network.*
 import app.kaeru.shared.domain.*
 import io.ktor.client.request.*
@@ -102,7 +103,7 @@ internal class KodikClient(private val http: HttpTransport) {
                 rejectToken(token, attempt)
             } else {
                 val answer = try { wireJson.parseToJsonElement(response.successfulBody()).jsonObject }
-                    catch (e: HttpFailure) { throw e }
+                    catch (e: ApiException) { throw e }
                     catch (_: Exception) { throw KodikError.ParserBroken("get-player") }
                 val error = answer.string("error")
                 if (error.contains("токен", true) || error.contains("token", true)) {

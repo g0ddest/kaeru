@@ -189,8 +189,12 @@ private typealias Stream = Kaeru.Stream
         XCTAssertTrue(service.libraryTokens.isEmpty)
     }
     func testRejectedRefreshEndsSessionButProxyConfigurationFailurePreservesIt() async throws {
-        for (message, shouldEnd) in [("OAuth refresh rejected (invalid_grant)", true), ("Request failed (HTTP 400)", false)] {
-            let service = StubService(); service.refreshError = AppError.message(message)
+        // The refresh token, and a proxy that is merely down. Told apart by the OAuth error the
+        // server sent and not by what the sentence around it happens to say.
+        let rejected = ServiceFailure(status: 400, oauthError: "invalid_grant", underlying: AppError.message("Refused"))
+        let unreachable = ServiceFailure(status: 502, oauthError: nil, underlying: AppError.message("Bad gateway"))
+        for (failure, shouldEnd) in [(rejected, true), (unreachable, false)] {
+            let service = StubService(); service.refreshError = failure
             let model = AppModel(service: service, store: try LocalStore(inMemory: true), configuration: configuration, session: session(expired: true), saveSession: { _ in })
             await model.reloadLibrary()
             XCTAssertEqual(model.session == nil, shouldEnd)

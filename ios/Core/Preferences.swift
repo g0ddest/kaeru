@@ -3,7 +3,6 @@ import Foundation
 struct PlaybackPreferences: Codable, Equatable {
     var playbackSpeed = 1.0
     var watchedThreshold = 0.9
-    var autoSkipOpening = false
     var autoSkipEnding = false
     var skipSeconds = 10
     var backgroundPlayback = false

@@ -69,15 +69,6 @@ struct EpisodeProgress: Codable, Equatable {
     var watched: Bool { duration.isFinite && duration > 0 && position.isFinite && position >= duration * 0.9 }
 }
 
-func continueEpisode(anime: Anime, watched: Int, progress: EpisodeProgress?) -> Int {
-    let available = anime.availableEpisodes
-    guard available > 0 else { return 0 }
-    if let progress, !progress.watched, progress.episode > watched {
-        return min(available, max(1, progress.episode))
-    }
-    return min(available, max(watched, progress?.watched == true ? progress!.episode : 0) + 1)
-}
-
 struct PendingRate: Codable, Identifiable, Equatable {
     var id: Int { anime.id }
     var anime: Anime

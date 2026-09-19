@@ -21,6 +21,31 @@ extension AnimeService {
     func configureKodikToken(_ token: String) {}
 }
 
+/// A request the server answered with something other than success, carried as a number.
+///
+/// Whether a token has expired used to be decided by looking for «401» inside a message. The
+/// message comes from the shared Kotlin module across the `NSError` bridge, so rewording one
+/// sentence there — or localising it — would have stopped the token refresh happening at all, and
+/// stopped it quietly: the viewer would simply be signed out at the next request.
+struct ServiceFailure: LocalizedError {
+    let status: Int
+    /// The `error` field of an OAuth failure. `invalid_grant` is the one that means «sign in
+    /// again» rather than «try again».
+    let oauthError: String?
+    let underlying: Error
+    var errorDescription: String? { underlying.localizedDescription }
+
+    /// The status behind an error, whichever side of the bridge it is on: already typed here, or
+    /// still an `NSError` carrying the Kotlin exception that caused it.
+    static func of(_ error: Error) -> Self? {
+        if let typed = error as? Self { return typed }
+        guard let failure = (error as NSError).userInfo["KotlinException"] as? ApiException else { return nil }
+        return Self(status: Int(failure.status), oauthError: failure.oauthError, underlying: error)
+    }
+    /// Everything from the shared module, typed where it can be and passed through where it cannot.
+    static func wrap(_ error: Error) -> Error { of(error) ?? error }
+}
+
 struct AppConfiguration {
     var clientID: String
     var proxyURL: String
@@ -39,7 +64,7 @@ struct AppConfiguration {
     private func decode<T: Decodable>(_ type: T.Type, _ call: (@escaping @Sendable (String?, Error?) -> Void) -> Void) async throws -> T {
         let json: String = try await withCheckedThrowingContinuation { continuation in
             call { result, error in
-                if let error { continuation.resume(throwing: error) }
+                if let error { continuation.resume(throwing: ServiceFailure.wrap(error)) }
                 else if let result { continuation.resume(returning: result) }
                 else { continuation.resume(throwing: AppError.message("Сервер вернул пустой ответ.")) }
             }

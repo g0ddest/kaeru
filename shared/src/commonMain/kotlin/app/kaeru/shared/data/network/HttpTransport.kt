@@ -1,5 +1,6 @@
 package app.kaeru.shared.data.network
 
+import app.kaeru.shared.ApiException
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.*
@@ -10,12 +11,6 @@ import kotlinx.serialization.json.*
 internal expect fun platformHttpClient(): HttpClient
 
 internal val wireJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-
-/** Messages contain neither request URLs nor response bodies (which may contain credentials). */
-internal class HttpFailure(val status: Int) : Exception(
-    if (status == 401) "Authentication failed (HTTP 401); refresh the session and retry once."
-    else "Request failed (HTTP $status)."
-)
 
 internal class HttpTransport(private val original: HttpClient) {
     private val client = original.config {
@@ -30,7 +25,7 @@ internal class HttpTransport(private val original: HttpClient) {
 
     internal data class Response(val status: Int, val body: String, val retryAfter: String?) {
         fun successfulBody(): String {
-            if (status !in 200..299) throw HttpFailure(status)
+            if (status !in 200..299) throw ApiException(status)
             return body
         }
     }
