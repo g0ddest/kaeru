@@ -39,7 +39,10 @@ struct DownloadsView: View {
                                 }
                         }
                     } header: {
-                        Text(group.anime.title).textCase(nil)
+                        HStack(spacing: 10) {
+                            PosterView(anime: group.anime).frame(width: 32)
+                            Text(group.anime.title).font(.kaeruCardTitle).foregroundStyle(Palette.ink).lineLimit(2)
+                        }.textCase(nil).padding(.vertical, 4)
                     }
                 }
             }
@@ -65,7 +68,7 @@ struct DownloadsView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Серия \(entry.episode)").font(.headline)
+                    Text("\(entry.episode) серия").font(.headline)
                     Text("\(entry.quality > 0 ? "\(entry.quality)p" : "Лучшее качество") · Озвучка \(entry.translation)")
                         .font(.caption).foregroundStyle(.secondary)
                 }

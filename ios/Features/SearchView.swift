@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SearchView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var query = ""
     @State private var results: [Anime] = []
     @State private var recent: [String] = []
@@ -19,7 +20,7 @@ struct SearchView: View {
                     ContentUnavailableView("Найдите свою историю", systemImage: "magnifyingglass", description: Text("Введите хотя бы два символа названия на русском или английском."))
                     if !recent.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("Недавние запросы").font(.headline)
+                            Text("Недавние запросы").font(.kaeruShelf(sizeClass != .regular)).foregroundStyle(Palette.ink)
                             ForEach(recent, id: \.self) { value in
                                 Button { query = value } label: { Label(value, systemImage: "clock.arrow.circlepath").frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 7) }
                             }
@@ -32,17 +33,21 @@ struct SearchView: View {
                             VStack(alignment: .leading, spacing: 10) {
                                 NavigationLink(value: anime) { AnimeCard(anime: anime) }.buttonStyle(.plain).accessibilityIdentifier("anime-\(anime.id)")
                                 if model.rate(for: anime.id) != nil {
-                                    Label("В списке", systemImage: "checkmark").font(.caption).foregroundStyle(.secondary)
+                                    Label("В списке", systemImage: "checkmark").font(.caption).foregroundStyle(Palette.inkSoft)
                                 } else if model.session != nil {
                                     Button("В планы", systemImage: "plus") { model.queueRate(anime: anime, status: "planned", episodes: 0) }
-                                        .font(.subheadline).buttonStyle(.bordered).accessibilityLabel("Добавить \(anime.title) в планы")
+                                        .font(.subheadline).buttonStyle(.bordered).tint(Palette.accent)
+                                        .accessibilityLabel("Добавить \(anime.title) в планы")
                                 }
                             }
                         }
                     }
                 }
-            }.padding().frame(maxWidth: 1200).frame(maxWidth: .infinity)
+            }
+            .padding(.horizontal, Metrics.gutter(sizeClass)).padding(.vertical, 16)
+            .frame(maxWidth: Metrics.contentWidth).frame(maxWidth: .infinity)
         }
+        .background(Palette.canvas)
         .searchable(text: $query, prompt: "Название аниме")
         .searchSuggestions {
             ForEach(recent, id: \.self) { value in Label(value, systemImage: "clock.arrow.circlepath").searchCompletion(value) }
