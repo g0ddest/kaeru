@@ -240,6 +240,10 @@ enum PlaybackLocalAction {
                                   quality: selectedQuality, position: position, autoplay: intent.wantsPlayback)
         }
     }
+    /// A fifth of the volume while somebody talks over the episode, and all of it back after.
+    /// The same figure as Android's `ExoPlaybackEngine.DUCKED_VOLUME`, and set explicitly because
+    /// the system ducks other apps rather than this one against itself.
+    func setDucked(_ on: Bool) { player.volume = on ? 0.2 : 1 }
     func setSynchronizationControlled(_ value: Bool) { synchronizationControlled = value }
     func applySynchronization(position: Double, isPlaying: Bool, speed: Double? = nil) {
         if let speed { setSpeed(speed, remember: false, notify: false) }

@@ -35,7 +35,7 @@ import Foundation
     func togetherPause() { playback?.setPlaying(false, notify: false) }
     func togetherSeek(toMilliseconds position: Int64) { playback?.seek(to: Double(max(0, position)) / 1000, notify: false) }
     func togetherSetRate(_ factor: Float) { playback?.player.rate = factor }
-    func togetherDuck(_ on: Bool) { }
+    func togetherDuck(_ on: Bool) { playback?.setDucked(on) }
     func togetherOpen(_ episode: TogetherEpisode) async throws {
         guard let playback else { throw TogetherError.playbackUnavailable }
         playback.selectEpisode(episode.episode, position: Double(episode.positionMs) / 1000, play: false, notify: false)

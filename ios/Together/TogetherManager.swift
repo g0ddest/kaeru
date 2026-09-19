@@ -170,6 +170,29 @@ enum TogetherPhase: Equatable {
         sendMessage(.init(t: .chat, seq: 1, name: displayName, text: value))
     }
     func sendReaction(_ reaction: TogetherReaction) { sendMessage(.init(t: .reaction, seq: 1, name: displayName, kind: reaction)) }
+    /// A clip on its way out, cut into the pieces the protocol carries — the same cut as Android's
+    /// `TogetherSession.sendVoice`, so the far side reassembles it without knowing which phone
+    /// recorded it. A ceiling on the whole clip and not only on each frame: past this is a caller
+    /// with a bug rather than somebody with a lot to say, and it is better dropped here than cut
+    /// into frames and sent.
+    func send(voice clip: RecordedClip) {
+        guard !clip.data.isEmpty, clip.data.count <= Self.maximumVoiceBytes else { return }
+        let cut = Self.voiceChunkBytes
+        let total = (clip.data.count + cut - 1) / cut
+        guard (1...8).contains(total) else { return }
+        for index in 0..<total {
+            let slice = clip.data[(index * cut)..<min((index + 1) * cut, clip.data.count)]
+            sendMessage(.init(t: .voice, seq: 1, chunk: index, total: total,
+                              bytes: Data(slice).togetherBase64, durationMs: clip.durationMs))
+        }
+        conversation.clip(TogetherClip(data: clip.data, durationMs: clip.durationMs),
+                          mine: true, author: TogetherCopy.you)
+    }
+    /// Turns the picture down while somebody is talking over it, and back up after. Explicit
+    /// rather than left to the system: a phone will not duck an app against itself.
+    func duck(_ on: Bool) { playback?.togetherDuck(on) }
+    static let voiceChunkBytes = 32_768
+    static let maximumVoiceBytes = 262_144
 
     private func connect(_ invitation: TogetherInvitation, asHost: Bool) async throws {
         receiveTask?.cancel(); receiveTask = nil; transport?.close()

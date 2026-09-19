@@ -32,6 +32,10 @@ private enum OnVideo {
 struct TogetherOverlay: View {
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Bindable var manager: TogetherManager
+    /// The speaker for arriving clips. Held here rather than in the button, because a clip that
+    /// arrives plays itself and nobody has to have pressed anything.
+    @State private var speaker = VoicePlayer()
+    @State private var microphoneOpen = false
 
     private var conversation: TogetherConversation { manager.conversation }
 
@@ -57,8 +61,8 @@ struct TogetherOverlay: View {
             if manager.phase == .live || manager.phase == .reconnecting {
                 VStack(alignment: .leading, spacing: 8) {
                     Spacer(minLength: 0)
-                    Stack(items: conversation.stack) { conversation.historyOpen = true }
-                    Controls(manager: manager)
+                    Stack(items: conversation.stack, replay: conversation.replay) { conversation.historyOpen = true }
+                    Controls(manager: manager, microphoneOpen: $microphoneOpen)
                 }
                 .frame(maxWidth: OnVideo.columnWidth, alignment: .leading)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
@@ -71,6 +75,20 @@ struct TogetherOverlay: View {
         // A screen reader cannot be made to race a seven-second fade: WCAG 2.2.1. The corner then
         // empties only when the session does, and the history is still the other way to all of it.
         .onChange(of: voiceOver, initial: true) { _, on in conversation.autoHide = !on }
+        // A clip arriving goes straight through the speaker; one this viewer recorded does not,
+        // because they have just heard themselves say it.
+        .onChange(of: conversation.playing?.id) { _, _ in
+            guard let clip = conversation.playing?.clip else { speaker.stop(); return }
+            let played = speaker.play(clip.data) { conversation.clipPlayed() }
+            // Android records Ogg/Opus, which no Apple decoder reads. The clip arrived whole and
+            // is refused here rather than swallowed, because silence would read as a bug.
+            if !played { conversation.message = TogetherError.unsupportedVoice.errorDescription }
+        }
+        // The episode is turned down from the first frame of a hold to whatever ends it, and for
+        // as long as a clip is coming out of the speaker. When the two overlap it stays down
+        // until the last of them ends, which is what the `||` is.
+        .onChange(of: microphoneOpen || conversation.playing != nil) { _, quiet in manager.duck(quiet) }
+        .onDisappear { speaker.stop(); manager.duck(false) }
         .sheet(isPresented: Binding(get: { conversation.historyOpen },
                                     set: { conversation.historyOpen = $0 })) {
             TogetherHistorySheet(conversation: conversation)
@@ -127,12 +145,13 @@ private struct Wait: View {
 /// The corner: at most three things, newest at the bottom, each fading out on its own clock.
 private struct Stack: View {
     let items: [TogetherSaid]
+    var replay: (Int64) -> Void
     var open: () -> Void
     var body: some View {
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(items) { item in
-                    Bubble(item: item)
+                    Bubble(item: item) { replay(item.id) }
                         // Driven by the item's own flag rather than by its presence in the list: a
                         // line removed from a list has nothing left to animate, which is why it is
                         // marked on its way out and taken away a fade later.
@@ -150,13 +169,17 @@ private struct Stack: View {
 /// One thing somebody said: a line, or a clip with the length of it and a way to hear it again.
 private struct Bubble: View {
     let item: TogetherSaid
+    var replay: () -> Void
     var body: some View {
         HStack(spacing: 8) {
             Text(item.author).font(.footnote.weight(.medium))
                 .foregroundStyle(item.mine ? OnVideo.muted : Palette.accent).lineLimit(1)
             if let clip = item.clip {
-                Label(TogetherCopy.clipLength(clip.durationMs), systemImage: "play.fill")
-                    .font(.footnote).foregroundStyle(OnVideo.ink).monospacedDigit()
+                Button(action: replay) {
+                    Label(TogetherCopy.clipLength(clip.durationMs), systemImage: "play.fill")
+                        .font(.footnote).foregroundStyle(OnVideo.ink).monospacedDigit()
+                }
+                .buttonStyle(.plain).accessibilityLabel(TogetherCopy.replay)
             } else {
                 Text(item.text ?? "").font(.subheadline).foregroundStyle(OnVideo.ink).lineLimit(2)
             }
@@ -174,6 +197,7 @@ private struct Bubble: View {
 /// is why those are in front of the field rather than behind it.
 private struct Controls: View {
     @Bindable var manager: TogetherManager
+    @Binding var microphoneOpen: Bool
     @State private var picking = false
     @State private var composing = false
     @State private var draft = ""
@@ -201,6 +225,9 @@ private struct Controls: View {
             ScrollView(.horizontal) {
                 HStack(spacing: 8) {
                     disc("😀", label: TogetherCopy.reactions) { picking.toggle(); pickerRevision += 1 }
+                    VoiceButton(send: { manager.send(voice: $0) },
+                                denied: { manager.conversation.message = TogetherCopy.micDenied },
+                                openChanged: { microphoneOpen = $0 })
                     if picking {
                         ForEach(TogetherReaction.allCases, id: \.self) { reaction in
                             disc(reaction.symbol, label: TogetherCopy.reactionName(reaction)) {

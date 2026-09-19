@@ -78,3 +78,62 @@ import XCTest
         await manager.leave()
     }
 }
+
+/// A clip leaving one phone and arriving on another, through the same codec both of them use.
+@MainActor final class TogetherVoiceWireTests: XCTestCase {
+    private func settle() async { for _ in 0..<30 { await Task.yield() } }
+
+    /// Half a minute of speech is about ninety kilobytes, which is three frames of the protocol's
+    /// thirty-two. Cut here exactly as `TogetherSession.sendVoice` cuts it, so the far side
+    /// reassembles without knowing which phone recorded it.
+    func testAClipIsCutIntoFramesTheOtherSideReassembles() async throws {
+        let transport = TogetherManagerTests.Transport()
+        let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Host",
+                                      transportFactory: { _, _ in transport })
+        await manager.create(); await settle()
+        let link = try XCTUnwrap(manager.invitation)
+        let spoken = Data((0..<90_000).map { UInt8($0 % 251) })
+        manager.send(voice: RecordedClip(data: spoken, durationMs: 29_500))
+        await settle()
+
+        var assembly = TogetherVoiceAssembly()
+        var clip: TogetherVoiceClip?
+        var frames = 0
+        for frame in transport.outgoing {
+            let message = try TogetherCodec.decode(frame, invitation: link, from: .host)
+            guard message.t == .voice else { continue }
+            frames += 1
+            if let finished = try assembly.append(message, now: 0) { clip = finished }
+        }
+        XCTAssertEqual(frames, 3)
+        XCTAssertEqual(clip?.data, spoken)
+        XCTAssertEqual(clip?.durationMs, 29_500)
+    }
+
+    /// The corner shows what this viewer said as they say it, rather than waiting for an echo the
+    /// network may never bring back.
+    func testMyOwnClipIsInTheCornerStraightAwayAndDoesNotPlayItselfBack() async throws {
+        let transport = TogetherManagerTests.Transport()
+        let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Host",
+                                      transportFactory: { _, _ in transport })
+        await manager.create(); await settle()
+        manager.send(voice: RecordedClip(data: Data([1, 2, 3, 4]), durationMs: 900))
+        XCTAssertEqual(manager.conversation.history.last?.clip?.durationMs, 900)
+        XCTAssertTrue(manager.conversation.history.last?.mine == true)
+        XCTAssertNil(manager.conversation.playing)
+    }
+
+    /// A caller with a bug rather than somebody with a lot to say: dropped before it is cut.
+    func testNothingIsSentForAnEmptyOrImpossibleClip() async throws {
+        let transport = TogetherManagerTests.Transport()
+        let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Host",
+                                      transportFactory: { _, _ in transport })
+        await manager.create(); await settle()
+        let before = transport.outgoing.count
+        manager.send(voice: RecordedClip(data: Data(), durationMs: 1_000))
+        manager.send(voice: RecordedClip(data: Data(count: 300_000), durationMs: 1_000))
+        await settle()
+        XCTAssertEqual(transport.outgoing.count, before)
+        XCTAssertTrue(manager.conversation.history.isEmpty)
+    }
+}
