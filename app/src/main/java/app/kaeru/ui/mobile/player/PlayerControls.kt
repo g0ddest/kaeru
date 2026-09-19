@@ -5,10 +5,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -89,50 +91,82 @@ fun PlayerTopBar(
     onLeaveTogether: (() -> Unit)? = null,
     canInvite: Boolean = true,
 ) {
-    Row(modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        DiscButton(Icons.AutoMirrored.Filled.ArrowBack, "Назад", onBack)
-        Column(Modifier.weight(1f).padding(start = 8.dp, end = 12.dp)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleMedium,
-                color = OnVideo,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            // The episode alone: the dub is the chip at the other end of this same row, and a
-            // row that names it twice reads as two different facts about the same thing.
-            val subtitle = episode.takeIf { it > 0 }?.let { "$it серия" }
-            if (subtitle != null) {
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = OnVideoMuted,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+    // The chips carry the current choice, so the viewer can read their settings without opening
+    // anything. Where they go depends on how much row there is: see [CHIPS_FIT].
+    val chips: @Composable RowScope.() -> Unit = {
+        translationTitle?.let {
+            Chip(text = it, onClick = onTranslations, modifier = Modifier.weight(1f, fill = false))
         }
-        if (onWatchTogether != null && (togetherPeer != null || canInvite)) {
-            TogetherButton(togetherPeer, onWatchTogether, onLeaveTogether, canInvite)
-            Spacer(Modifier.width(4.dp))
-        }
-        if (onDownload != null && onRemoveDownload != null) {
-            DownloadButton(download, onDownload, onRemoveDownload)
-            Spacer(Modifier.width(4.dp))
-        }
-        onEnterPictureInPicture?.let {
-            DiscButton(Icons.Default.PictureInPictureAlt, "В окно", it)
-            Spacer(Modifier.width(4.dp))
-        }
-        CastButton(Modifier.padding(end = 4.dp))
-        // The chips carry the current choice, so the viewer can read their settings without opening anything.
-        translationTitle?.let { Chip(text = it, onClick = onTranslations) }
         qualityLabel?.let {
             Spacer(Modifier.width(8.dp))
             Chip(text = it, onClick = onQualities)
         }
     }
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        // Upright this row is a back arrow, up to four discs and two chips, and every one of them
+        // is measured before the name of the episode is — so on a 360dp phone the name was handed
+        // nothing at all and drawn at nothing, with «1080p» squeezed to 30dp of the 66 it needs.
+        // Under [CHIPS_FIT] the chips take a line of their own, which is the line the name and the
+        // episode number were sharing with them.
+        val stacked = maxWidth < CHIPS_FIT
+        Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                DiscButton(Icons.AutoMirrored.Filled.ArrowBack, "Назад", onBack)
+                Column(Modifier.weight(1f).padding(start = 8.dp, end = 12.dp)) {
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = OnVideo,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    // The episode alone: the dub is the chip at the other end of this same row, and
+                    // a row that names it twice reads as two different facts about the same thing.
+                    val subtitle = episode.takeIf { it > 0 }?.let { "$it серия" }
+                    if (subtitle != null) {
+                        Text(
+                            subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = OnVideoMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                if (onWatchTogether != null && (togetherPeer != null || canInvite)) {
+                    TogetherButton(togetherPeer, onWatchTogether, onLeaveTogether, canInvite)
+                    Spacer(Modifier.width(4.dp))
+                }
+                if (onDownload != null && onRemoveDownload != null) {
+                    DownloadButton(download, onDownload, onRemoveDownload)
+                    Spacer(Modifier.width(4.dp))
+                }
+                onEnterPictureInPicture?.let {
+                    DiscButton(Icons.Default.PictureInPictureAlt, "В окно", it)
+                    Spacer(Modifier.width(4.dp))
+                }
+                CastButton(Modifier.padding(end = 4.dp))
+                if (!stacked) chips()
+            }
+            if (stacked) {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 56.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    chips()
+                }
+            }
+        }
+    }
 }
+
+/**
+ * The width a top bar needs before the chips may share the name's line.
+ *
+ * The same figure the remote control decides its own shape at, and for the same reason: under it
+ * there is one column of controls and no room beside them.
+ */
+private val CHIPS_FIT = 600.dp
 
 @Composable
 fun PlayerCenterControl(isBuffering: Boolean, isPlaying: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) {
@@ -194,10 +228,12 @@ fun PlayerBottomBar(
             TextButton(onClick = onSkipIntro) { Text("+85 с", color = OnVideo) }
             Spacer(Modifier.weight(1f))
             if (showNext) {
-                TextButton(onClick = onNext) {
+                // Weighted and on one line: upright at 130% type the label wrapped in the middle
+                // of a word — «Следующ / ая серия» — against the right-hand edge of the phone.
+                TextButton(onClick = onNext, modifier = Modifier.weight(1f, fill = false)) {
                     Icon(Icons.Default.SkipNext, contentDescription = null, tint = OnVideo)
                     Spacer(Modifier.width(6.dp))
-                    Text("Следующая серия", color = OnVideo)
+                    Text("Следующая серия", color = OnVideo, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
@@ -306,16 +342,22 @@ fun LastEpisodeCard(waiting: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun Chip(text: String, onClick: () -> Unit) {
+private fun Chip(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     TextButton(
         onClick = onClick,
         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-        modifier = Modifier
+        modifier = modifier
             .defaultMinSize(minHeight = KaeruTokens.MinTouchTarget)
             .clip(RoundedCornerShape(10.dp))
             .background(Disc),
     ) {
-        Text(text, color = OnVideo, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+        Text(
+            text,
+            color = OnVideo,
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
