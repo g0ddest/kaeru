@@ -5,6 +5,8 @@ struct PlaybackRoute: Identifiable { let id = UUID(); var anime: Anime; var epis
 struct DetailView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @ScaledMetric(relativeTo: .largeTitle) private var headerFloor = 280.0
     let initial: Anime
     @State private var details: Anime?
     @State private var route: PlaybackRoute?
@@ -22,31 +24,28 @@ struct DetailView: View {
     private var playableEpisodes: Int { max(anime.availableEpisodes, rate?.episodes ?? 0) }
     private var totalEpisodes: Int { max(anime.episodes, playableEpisodes) }
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top, spacing: 32) {
-                        PosterView(anime: anime).frame(width: 230)
-                        summary.frame(minWidth: 300, maxWidth: .infinity, alignment: .leading)
-                    }
-                    VStack(alignment: .leading, spacing: 24) {
-                        PosterView(anime: anime).frame(width: 180).frame(maxWidth: .infinity)
-                        summary
-                    }
-                }
-                if loading { ProgressView("Обновляем информацию…").font(.footnote) }
-                if let failure { CatalogRetry(message: failure) { revision += 1 } }
-                episodeSection
-                if !anime.plainDescription.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Об аниме").font(.title2.bold())
-                        Text(anime.plainDescription).foregroundStyle(.secondary)
-                            .lineLimit(descriptionExpanded ? nil : 4).textSelection(.enabled)
-                        Button(descriptionExpanded ? "Свернуть" : "Читать полностью") { descriptionExpanded.toggle() }
-                            .font(.subheadline.weight(.semibold))
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 26) {
+                    header(height: max(proxy.size.height * 0.38, headerFloor))
+                    summary.padding(.horizontal, Metrics.gutter(sizeClass))
+                    if loading { ProgressView("Обновляем информацию…").font(.footnote).padding(.horizontal, Metrics.gutter(sizeClass)) }
+                    if let failure { CatalogRetry(message: failure) { revision += 1 }.padding(.horizontal, Metrics.gutter(sizeClass)) }
+                    episodeSection.padding(.horizontal, Metrics.gutter(sizeClass))
+                    if !anime.plainDescription.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Об аниме").font(.kaeruShelf(sizeClass != .regular)).foregroundStyle(Palette.ink)
+                            Text(anime.plainDescription).foregroundStyle(Palette.inkSoft)
+                                .lineLimit(descriptionExpanded ? nil : 4).textSelection(.enabled)
+                            Button(descriptionExpanded ? "Свернуть" : "Читать полностью") { descriptionExpanded.toggle() }
+                                .font(.subheadline.weight(.semibold)).tint(Palette.accent)
+                        }.padding(.horizontal, Metrics.gutter(sizeClass))
                     }
                 }
-            }.padding(20).frame(maxWidth: 1050).frame(maxWidth: .infinity)
+                .padding(.bottom, 32)
+                .frame(maxWidth: Metrics.contentWidth).frame(maxWidth: .infinity)
+            }
+            .background(Palette.canvas)
         }
         .navigationTitle(anime.title).navigationBarTitleDisplayMode(.inline)
         .task(id: "\(initial.id)-\(revision)") { await loadDetails() }
@@ -67,33 +66,61 @@ struct DetailView: View {
         }
         .modifier(CompletionSuggestionPresentation(enabled: route == nil))
     }
+    /// The title, its artwork, and the one thing you came here to press.
+    private func header(height: CGFloat) -> some View {
+        // No Spacer here: inside a scroll view one grows to the whole proposed height and the
+        // artwork swallows the screen. The frame below does the same job and stops where told.
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(anime.title).font(.kaeruHero(sizeClass != .regular)).foregroundStyle(.white)
+                    .lineLimit(3).minimumScaleFactor(0.7).fixedSize(horizontal: false, vertical: true)
+                if !anime.originalTitle.isEmpty {
+                    Text(anime.originalTitle).font(.subheadline).foregroundStyle(.white.opacity(0.75)).lineLimit(2)
+                }
+                Text(facts).font(.footnote).foregroundStyle(.white.opacity(0.85))
+                    .lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                if target.canPlay {
+                    Button { play(target.episode) } label: {
+                        Label(playLabel, systemImage: "play.fill")
+                            .font(.headline).lineLimit(1).minimumScaleFactor(0.8)
+                            .padding(.horizontal, 22).padding(.vertical, 12)
+                            .background(.white, in: Capsule()).foregroundStyle(.black)
+                    }
+                    .buttonStyle(.plain).accessibilityIdentifier("play-anime").padding(.top, 4)
+                } else {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label(waitingLabel, systemImage: "calendar")
+                        if let date = anime.nextAirDate { Text(date, format: .dateTime.day().month().hour().minute()) }
+                    }
+                    .font(.subheadline).foregroundStyle(.white.opacity(0.9)).padding(.top, 4)
+                }
+            }
+            .frame(maxWidth: 560, alignment: .leading)
+            .padding(.horizontal, Metrics.gutter(sizeClass))
+            .padding(.bottom, 24)
+        }
+        .frame(maxWidth: .infinity, minHeight: height, alignment: .bottomLeading)
+        .background { Backdrop(anime: anime) }
+    }
+    /// One line of what this title is, in the order a viewer asks: year, length, rating, kind,
+    /// studio.
+    private var facts: String {
+        var parts = [airingStatus, anime.subtitle]
+        if anime.status == "ongoing" { parts.append("вышло \(anime.episodesAired)") }
+        if let kind = anime.kind, !kind.isEmpty { parts.append(kindTitle(kind)) }
+        if let studios = anime.studios, !studios.isEmpty { parts.append(studios.joined(separator: ", ")) }
+        return parts.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
     private var summary: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text(anime.title).font(.largeTitle.bold()).fixedSize(horizontal: false, vertical: true)
-            if !anime.originalTitle.isEmpty { Text(anime.originalTitle).font(.title3).foregroundStyle(.secondary) }
-            Text(anime.subtitle).font(.subheadline).foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: 6) {
-                Text(airingStatus).font(.subheadline.weight(.medium))
-                if anime.status == "ongoing" { Text("Вышло серий: \(anime.episodesAired)").font(.subheadline).foregroundStyle(.secondary) }
-                if let kind = anime.kind, !kind.isEmpty { Text(kindTitle(kind)).font(.subheadline).foregroundStyle(.secondary) }
-                if let studios = anime.studios, !studios.isEmpty { Text(studios.joined(separator: ", ")).font(.subheadline).foregroundStyle(.secondary) }
-            }
-            if target.canPlay {
-                Button { play(target.episode) } label: {
-                    Label(playLabel, systemImage: "play.fill").frame(maxWidth: .infinity).padding(.vertical, 5)
-                }.buttonStyle(.borderedProminent).controlSize(.large).accessibilityIdentifier("play-anime")
-            } else {
-                Label(waitingLabel, systemImage: "calendar").foregroundStyle(.secondary)
-                if let date = anime.nextAirDate { Text(date, format: .dateTime.day().month().hour().minute()).foregroundStyle(.secondary) }
-            }
+        VStack(alignment: .leading, spacing: 14) {
             Button { translationsOpen = true } label: {
                 Label(model.titleTranslations[anime.id] == nil ? "Выбрать озвучку" : "Изменить озвучку", systemImage: "waveform")
-            }.buttonStyle(.bordered).accessibilityIdentifier("detail-translations")
+            }.buttonStyle(.bordered).tint(Palette.inkSoft).accessibilityIdentifier("detail-translations")
             if model.session != nil {
-                LibraryStatusMenu(anime: anime).buttonStyle(.bordered).controlSize(.large)
+                LibraryStatusMenu(anime: anime).buttonStyle(.bordered).tint(Palette.inkSoft).controlSize(.large)
                 if let rate {
                     Stepper("Просмотрено: \(rate.episodes)", value: Binding(get: { model.rate(for: anime.id)?.episodes ?? 0 }, set: { model.setEpisodes(anime: anime, count: $0) }), in: 0...max(totalEpisodes, rate.episodes))
-                        .font(.subheadline).accessibilityIdentifier("watched-episodes")
+                        .font(.subheadline).foregroundStyle(Palette.ink).accessibilityIdentifier("watched-episodes")
                 }
             }
         }
@@ -101,8 +128,8 @@ struct DetailView: View {
     @ViewBuilder private var episodeSection: some View {
         if totalEpisodes > 0 {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Серии").font(.title2.bold())
-                Text("Просмотрено \(rate?.episodes ?? 0) из \(totalEpisodes)").font(.subheadline).foregroundStyle(.secondary)
+                Text("Серии").font(.kaeruShelf(sizeClass != .regular)).foregroundStyle(Palette.ink)
+                Text("Просмотрено \(rate?.episodes ?? 0) из \(totalEpisodes)").font(.subheadline).foregroundStyle(Palette.inkSoft)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: typeSize.isAccessibilitySize ? 200 : 125), spacing: 12)], spacing: 12) {
                     ForEach(1...min(visibleEpisodes, totalEpisodes), id: \.self) { episode in episodeTile(episode) }
                 }
@@ -120,17 +147,24 @@ struct DetailView: View {
         let progress = model.progressFor(animeID: anime.id, episode: episode)
         return Button { play(episode) } label: {
             VStack(alignment: .leading, spacing: 9) {
-                Label("Серия \(episode)", systemImage: watched ? "checkmark.circle.fill" : available ? "play.circle" : "clock")
+                Label("\(episode) серия", systemImage: watched ? "checkmark.circle.fill" : available ? "play.circle" : "clock")
                     .font(.subheadline.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading)
-                if !available { Text("Не вышла").font(.caption).foregroundStyle(.secondary) }
-                else if watched { Text("Просмотрено").font(.caption).foregroundStyle(.secondary) }
+                if !available { Text("Не вышла").font(.caption).foregroundStyle(Palette.inkSoft) }
+                else if watched { Text("Просмотрено").font(.caption).foregroundStyle(Palette.inkSoft) }
                 else if let progress, progress.duration > 0, progress.position > 0 {
-                    ProgressView(value: min(1, max(0, progress.position / progress.duration)))
-                    Text(CatalogPresentation.timestamp(progress.position)).font(.caption).monospacedDigit()
+                    ProgressTrack(value: progress.position / progress.duration, track: Palette.hairline)
+                    Text(CatalogPresentation.timestamp(progress.position)).font(.caption).monospacedDigit().foregroundStyle(Palette.inkSoft)
                 }
-            }.padding(.vertical, 8).frame(maxHeight: .infinity, alignment: .top)
+            }
+            .padding(12).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Palette.surface, in: RoundedRectangle(cornerRadius: Metrics.tileRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: Metrics.tileRadius, style: .continuous)
+                    .strokeBorder(watched ? Palette.accent.opacity(0.55) : Palette.hairline, lineWidth: Metrics.hairline)
+            }
+            .foregroundStyle(available ? Palette.ink : Palette.inkSoft)
         }
-        .buttonStyle(.bordered).disabled(!available)
+        .buttonStyle(.plain).disabled(!available)
         .accessibilityIdentifier("episode-\(episode)")
         .contextMenu {
             if available {

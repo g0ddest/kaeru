@@ -68,6 +68,8 @@ app.build_phases.unshift(phase)
         'INFOPLIST_FILE' => 'Info.plist',
         'CODE_SIGN_ENTITLEMENTS' => target == app ? 'Kaeru.entitlements' : nil,
         'ASSETCATALOG_COMPILER_APPICON_NAME' => 'AppIcon',
+        # Kaeru's amber, so the system chrome agrees with the palette instead of staying blue.
+        'ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME' => 'AccentColor',
         'INFOPLIST_KEY_CFBundleDisplayName' => 'Kaeru',
         'INFOPLIST_KEY_UILaunchScreen_Generation' => 'YES',
         'INFOPLIST_KEY_UIApplicationSceneManifest_Generation' => 'YES',
