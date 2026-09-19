@@ -104,6 +104,15 @@ sealed interface PlaybackEvent {
      */
     data class TranslationSubstituted(val askedFor: Translation, val playing: Translation, val episode: Int) :
         PlaybackEvent
+
+    /**
+     * The ending of the last aired episode stepped aside by itself and there is nothing after it.
+     *
+     * Said rather than acted on, because what happens next is a screen's business: playback has
+     * nowhere left to go, and a viewer who has just finished a show belongs on its card rather
+     * than on a frozen last frame.
+     */
+    data object NothingLeftToPlay : PlaybackEvent
 }
 
 /**

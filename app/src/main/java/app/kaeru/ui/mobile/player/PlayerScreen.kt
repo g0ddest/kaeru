@@ -200,6 +200,10 @@ fun PlayerScreen(
                 shareInvitation(context, request)
                 together.onShareShown()
             }
+            // The ending of the last episode stepped aside by itself and nothing follows it. The
+            // card of the show is where a viewer who has just run out of it belongs, and
+            // «К списку серий» is already the way there.
+            LaunchedEffect(state.leaving) { if (state.leaving) onBackToEpisodes() }
             // Text that disappears on a timer is exactly what WCAG 2.2.1 will not have, so with a
             // screen reader running the corner keeps what it is given until it is dismissed.
             val talkback = touchExploration()

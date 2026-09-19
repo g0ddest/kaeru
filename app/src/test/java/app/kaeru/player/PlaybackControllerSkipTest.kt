@@ -280,4 +280,156 @@ class PlaybackControllerSkipTest {
 
         assertEquals(1_462_000L, controller.state.value.positionMs)
     }
+
+    // --- «Пропускать эндинг» --------------------------------------------------------------------
+
+    /**
+     * A threshold high enough that the ending's ten seconds are behind the viewer before the
+     * episode would be counted watched on its own. Without it every one of these tests would be
+     * asserting what the ordinary threshold already did minutes earlier.
+     */
+    private fun lateThreshold() {
+        prefs.watchedThreshold.value = 0.99f
+    }
+
+    @Test
+    fun `with the setting off the ending plays out`() = runTest(dispatcher) {
+        skipMarks.answer = SkipMarks(opening, ending)
+        start()
+        advanceUntilIdle()
+
+        engine.moveTo(1_475_000)
+        advanceUntilIdle()
+
+        assertEquals(4, controller.state.value.target?.episode)
+    }
+
+    @Test
+    fun `with the setting on the next episode starts ten seconds into the ending`() =
+        runTest(dispatcher) {
+            prefs.skipEnding.value = true
+            skipMarks.answer = SkipMarks(opening, ending)
+            start()
+            advanceUntilIdle()
+
+            engine.moveTo(1_469_000)
+            advanceUntilIdle()
+            assertEquals(4, controller.state.value.target?.episode)
+
+            engine.moveTo(1_470_000)
+            advanceUntilIdle()
+
+            assertEquals(5, controller.state.value.target?.episode)
+        }
+
+    @Test
+    fun `an ending that skips itself counts the episode as watched`() = runTest(dispatcher) {
+        prefs.skipEnding.value = true
+        lateThreshold()
+        skipMarks.answer = SkipMarks(opening, ending)
+        start()
+        advanceUntilIdle()
+
+        engine.moveTo(1_470_000)
+        advanceUntilIdle()
+
+        assertEquals(listOf(100 to 4), library.episodeWrites)
+    }
+
+    @Test
+    fun `pressing the ending's button counts the episode as watched too`() = runTest(dispatcher) {
+        lateThreshold()
+        skipMarks.answer = SkipMarks(opening, ending)
+        start()
+        advanceUntilIdle()
+        engine.moveTo(1_462_000)
+        advanceUntilIdle()
+
+        controller.playNext()
+        advanceUntilIdle()
+
+        assertEquals(listOf(100 to 4), library.episodeWrites)
+        assertEquals(5, controller.state.value.target?.episode)
+    }
+
+    @Test
+    fun `moving on from the middle of an episode counts nothing`() = runTest(dispatcher) {
+        lateThreshold()
+        skipMarks.answer = SkipMarks(opening, ending)
+        start()
+        advanceUntilIdle()
+        engine.moveTo(600_000)
+        advanceUntilIdle()
+
+        controller.playNext()
+        advanceUntilIdle()
+
+        assertTrue(library.episodeWrites.isEmpty())
+    }
+
+    @Test
+    fun `with no episode after it the player is told there is nothing left`() = runTest(dispatcher) {
+        prefs.skipEnding.value = true
+        lateThreshold()
+        skipMarks.answer = SkipMarks(opening, ending)
+        val announced = mutableListOf<PlaybackEvent>()
+        val collecting = launch { controller.events.toList(announced) }
+
+        start(episode = 12)
+        advanceUntilIdle()
+        engine.moveTo(1_470_000)
+        advanceUntilIdle()
+
+        assertTrue(announced.any { it is PlaybackEvent.NothingLeftToPlay })
+        assertEquals(12, controller.state.value.target?.episode)
+        assertEquals(listOf(100 to 12), library.episodeWrites)
+        collecting.cancel()
+    }
+
+    @Test
+    fun `an ending skips itself once, not on every position after it`() = runTest(dispatcher) {
+        prefs.skipEnding.value = true
+        skipMarks.answer = SkipMarks(opening, ending)
+        val announced = mutableListOf<PlaybackEvent>()
+        val collecting = launch { controller.events.toList(announced) }
+
+        start(episode = 12)
+        advanceUntilIdle()
+        engine.moveTo(1_470_000)
+        advanceUntilIdle()
+        engine.moveTo(1_480_000)
+        advanceUntilIdle()
+        engine.moveTo(1_490_000)
+        advanceUntilIdle()
+
+        assertEquals(1, announced.count { it is PlaybackEvent.NothingLeftToPlay })
+        collecting.cancel()
+    }
+
+    @Test
+    fun `an ending the sieve threw away never skips itself`() = runTest(dispatcher) {
+        prefs.skipEnding.value = true
+        skipMarks.answer = SkipMarks(ending = SkipInterval(5_000, 95_000))
+        start()
+        advanceUntilIdle()
+
+        engine.moveTo(20_000)
+        advanceUntilIdle()
+
+        assertEquals(4, controller.state.value.target?.episode)
+    }
+
+    @Test
+    fun `turning the setting on mid-episode does not move the goalposts of the one playing`() =
+        runTest(dispatcher) {
+            skipMarks.answer = SkipMarks(opening, ending)
+            start()
+            advanceUntilIdle()
+
+            prefs.skipEnding.value = true
+            engine.moveTo(1_475_000)
+            advanceUntilIdle()
+
+            assertEquals(4, controller.state.value.target?.episode)
+        }
 }

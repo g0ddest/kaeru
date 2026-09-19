@@ -73,6 +73,12 @@ data class PlayerUiState(
     /** The finale was counted as watched and the show is waiting to be closed. */
     val completedPrompt: Boolean = false,
     /**
+     * There is nothing left to play: the ending of the last aired episode stepped aside by itself
+     * and no episode follows it. The screen leaves for the title, which is where a viewer who has
+     * just run out of a show belongs — a frozen last frame is not an answer.
+     */
+    val leaving: Boolean = false,
+    /**
      * There is no network. What is on the device still plays; everything that needs Kodik —
      * another voice, another episode, a rung that was not downloaded — does not.
      */

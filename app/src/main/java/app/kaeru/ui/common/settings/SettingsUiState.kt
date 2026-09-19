@@ -20,6 +20,11 @@ data class SettingsUiState(
     val accountLoading: Boolean = true,
     val account: Account? = null,
     val autoplayNext: Boolean = true,
+    /**
+     * Whether an ending steps aside by itself ten seconds after it begins. Off by default: the
+     * button is offered either way, and this is the stronger wish — never see an ending again.
+     */
+    val skipEnding: Boolean = false,
     /** Whether leaving the app with an episode playing folds it into a floating window. */
     val pipOnLeave: Boolean = true,
     /**

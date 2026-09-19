@@ -271,17 +271,19 @@ class SettingsViewModelTest {
         advanceUntilIdle()
 
         vm.setAutoplayNext(false)
+        vm.setSkipEnding(true)
         vm.setDefaultQuality(null)
         vm.setWatchedThreshold(0.8f)
         vm.setKodikToken("typed-by-hand")
         advanceUntilIdle()
 
         assertFalse(vm.uiState.value.autoplayNext)
+        assertTrue(vm.uiState.value.skipEnding)
         assertNull(vm.uiState.value.defaultQuality)
         assertEquals(0.8f, vm.uiState.value.watchedThreshold, 0.0001f)
         assertEquals("typed-by-hand", vm.uiState.value.kodikToken)
         assertEquals(
-            listOf("autoplay=false", "quality=null", "threshold=0.8", "token=typed-by-hand"),
+            listOf("autoplay=false", "skipEnding=true", "quality=null", "threshold=0.8", "token=typed-by-hand"),
             store.writes,
         )
     }
@@ -355,6 +357,7 @@ class SettingsViewModelTest {
         advanceUntilIdle()
 
         vm.setAutoplayNext(true)
+        vm.setSkipEnding(false)
         vm.setDefaultQuality(Quality.P480)
         vm.setWatchedThreshold(0.9f)
         vm.setKodikToken("  t  ")

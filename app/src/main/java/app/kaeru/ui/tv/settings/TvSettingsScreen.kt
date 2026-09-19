@@ -63,6 +63,7 @@ private const val RETRY = "Повторить"
 
 private const val PLAYBACK = "Воспроизведение"
 private const val AUTOPLAY = "Следующая серия автоматически"
+private const val SKIP_ENDING = "Пропускать эндинг"
 private const val QUALITY = "Качество по умолчанию"
 private const val THRESHOLD = "Порог просмотра"
 private const val THRESHOLD_NOTE = "Серия считается просмотренной после этой доли"
@@ -116,6 +117,7 @@ fun TvSettingsScreen(
     state: SettingsUiState,
     onSignOut: () -> Unit,
     onAutoplay: (Boolean) -> Unit,
+    onSkipEnding: (Boolean) -> Unit,
     onQuality: (Quality?) -> Unit,
     onThreshold: (Float) -> Unit,
     onStudioUp: (Int) -> Unit,
@@ -167,6 +169,7 @@ fun TvSettingsScreen(
                     .onFocusChanged { if (it.isFocused) claimed = true },
             )
         }
+        row("skip-ending") { SettingSwitchRow(SKIP_ENDING, state.skipEnding, onSkipEnding) }
         // A label and the chips it names are one item: they are read together, and splitting them
         // would let the list stop with the question off the top of the panel and the answers on it.
         row("quality") {
@@ -300,6 +303,7 @@ private fun TvSettingsPreviewAt(index: Int) = KaeruTvTheme {
         state = previewState,
         onSignOut = {},
         onAutoplay = {},
+        onSkipEnding = {},
         onQuality = {},
         onThreshold = {},
         onStudioUp = {},

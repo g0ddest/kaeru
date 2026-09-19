@@ -215,6 +215,10 @@ fun TvPlayerScreen(
         }
     }
 
+    // The ending of the last episode stepped aside by itself and nothing follows it. Leaving for
+    // the title is the same move «К списку серий» makes, and it is the one that saves the position.
+    LaunchedEffect(state.leaving) { if (state.leaving) onBackToEpisodes() }
+
     // A television that sleeps through an episode is a television with a broken remote.
     val view = LocalView.current
     LaunchedEffect(state.isPlaying) { view.keepScreenOn = state.isPlaying }

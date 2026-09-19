@@ -290,6 +290,7 @@ class DefaultPlaybackController @Inject constructor(
         val threshold: Float = 0.9f,
         val autoplay: Boolean = true,
         val quality: Quality? = null,
+        val skipEnding: Boolean = false,
     )
 
     private val _state = MutableStateFlow(PlaybackState())
@@ -334,6 +335,9 @@ class DefaultPlaybackController @Inject constructor(
 
     /** Whether the one question per episode has been asked; an answer of «none» still counts. */
     private var marksAsked = false
+
+    /** This episode's ending has already been stepped over, by a press or by itself. */
+    private var endingSkipped = false
 
     /** Whether the sound is wanted down right now, so an engine taking over can be told. */
     private var ducked = false
@@ -669,6 +673,7 @@ class DefaultPlaybackController @Inject constructor(
         markedEpisode = false
         marks = SkipMarks.NONE
         marksAsked = false
+        endingSkipped = false
         playingDownload = false
         reResolved = false
         autoplayCancelled = false
@@ -715,6 +720,7 @@ class DefaultPlaybackController @Inject constructor(
             // voice or of rung is not: the same episode keeps what was already answered for it.
             marks = SkipMarks.NONE
             marksAsked = false
+            endingSkipped = false
         }
         lastReportedMs = target.startPositionMs
         wasPlaying = false
@@ -836,6 +842,11 @@ class DefaultPlaybackController @Inject constructor(
 
     private suspend fun openNext() {
         val current = _state.value.target ?: return
+        // Moving on from inside the ending *is* finishing the episode, whether the viewer pressed
+        // «Следующая серия» or the setting did it for them. Said here rather than at each caller
+        // so every road to the next episode — the button, the automatic skip, the remote's own
+        // next key — counts the one being left in the same way.
+        countWatchedIfLeavingTheEnding()
         // The voice the viewer has, not the one that stood in for it: a stand-in was for one
         // episode, and the next is asked for in the chosen voice again — which may well have it.
         val track = _state.value.insteadOf ?: _state.value.stream?.translation ?: current.translation
@@ -884,6 +895,7 @@ class DefaultPlaybackController @Inject constructor(
         threshold = prefs.watchedThreshold.first(),
         autoplay = prefs.autoplayNext.first(),
         quality = prefs.defaultQuality.first(),
+        skipEnding = prefs.skipEnding.first(),
     )
 
     private fun onEngineState(engineState: EngineState, force: Boolean = false) {
@@ -919,6 +931,7 @@ class DefaultPlaybackController @Inject constructor(
             askForMarks(target, duration)
             reportIfDue(position, duration, paused = wasPlaying && !engineState.isPlaying)
             markIfWatched(position, duration)
+            skipEndingIfDue(position, duration)
         }
         wasPlaying = engineState.isPlaying
         if (lengthKnown && countdown != null && countdown <= 0) advanceToNext()
@@ -999,6 +1012,47 @@ class DefaultPlaybackController @Inject constructor(
             // into a ninety-second opening still has most of its ten seconds to be useful in.
             _state.update { it.copy(skip = SkipRules.offer(marks, it.positionMs, it.durationMs)) }
         }
+    }
+
+    /**
+     * Counts the episode as watched when what is being stepped over is its ending.
+     *
+     * Through the same path a natural finish takes — the threshold, the suppression, the
+     * once-per-episode guard all still apply — by standing the position at the end of the
+     * episode, which is where the viewer is going. An episode left from anywhere else is not
+     * touched: pressing «Следующая серия» three minutes in is not finishing anything.
+     */
+    private fun countWatchedIfLeavingTheEnding() {
+        val current = _state.value
+        if (current.durationMs <= 0) return
+        if (!SkipRules.endingSkipDue(marks, current.positionMs, current.durationMs) &&
+            current.skip?.kind != SkipKind.ENDING
+        ) {
+            return
+        }
+        endingSkipped = true
+        markIfWatched(current.durationMs, current.durationMs)
+    }
+
+    /**
+     * «Пропускать эндинг»: ten seconds into the ending, step over the rest of it.
+     *
+     * The next episode where there is one, and out of the player where there is not — an episode
+     * that ends a show should not leave the viewer watching credits they asked never to see. Once
+     * per episode, because a position past the ten-second mark keeps arriving four times a second.
+     */
+    private fun skipEndingIfDue(positionMs: Long, durationMs: Long) {
+        if (!settings.skipEnding || endingSkipped || switching) return
+        if (!SkipRules.endingSkipDue(marks, positionMs, durationMs)) return
+        endingSkipped = true
+        if (_state.value.hasNextEpisode) {
+            transition { openNext() }
+            return
+        }
+        // Nothing follows it, so the episode is finished here rather than by the next one
+        // starting, and the screen is told there is nowhere left to go.
+        markIfWatched(durationMs, durationMs)
+        _events.trySend(PlaybackEvent.NothingLeftToPlay)
     }
 
     private fun reportIfDue(positionMs: Long, durationMs: Long, paused: Boolean) {

@@ -385,6 +385,7 @@ class TvRenderBudgetTest {
                 ),
                 onSignOut = {},
                 onAutoplay = {},
+                onSkipEnding = {},
                 onQuality = {},
                 onThreshold = {},
                 onStudioUp = {},

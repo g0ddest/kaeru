@@ -90,6 +90,8 @@ class PlayerViewModel @Inject constructor(
         val sheet: PlayerSheet? = null,
         val completedPrompt: Boolean = false,
         val toast: String? = null,
+        /** Playback has run out and the screen has not left yet. */
+        val leaving: Boolean = false,
     )
 
     /** The anime, and the season as the remote control lists it. Read together, shown together. */
@@ -217,6 +219,7 @@ class PlayerViewModel @Inject constructor(
             isCasting = playback.isCasting,
             receiverName = around.receiverName,
             completedPrompt = screen.completedPrompt,
+            leaving = screen.leaving,
             offline = around.offline,
             download = playback.target
                 ?.takeIf { it.animeId == around.animeId }
@@ -236,6 +239,9 @@ class PlayerViewModel @Inject constructor(
                         screen.update { it.copy(toast = event.error.toUserMessage()) }
                     is PlaybackEvent.TranslationSubstituted ->
                         screen.update { it.copy(toast = substitutedCopy(event)) }
+                    // Nowhere left to go. Where the viewer goes instead is the screen's call, and
+                    // both of them answer it the same way «К списку серий» does.
+                    PlaybackEvent.NothingLeftToPlay -> screen.update { it.copy(leaving = true) }
                 }
             }
         }
@@ -304,6 +310,8 @@ class PlayerViewModel @Inject constructor(
         // Said every time, including on the path that starts nothing: it is how playback left on
         // a receiver learns that somebody is looking at it again.
         controller.attachScreen()
+        // A screen coming in is a screen that has not left, whatever the last playback ran out of.
+        if (screen.value.leaving) screen.update { it.copy(leaving = false) }
         val loaded = controller.state.value.target
         val live = loaded != null && loaded.animeId == animeId
         // Attach rather than start: either this is the very episode asked for, or it is not a

@@ -59,6 +59,7 @@ private const val RETRY = "Повторить"
 
 private const val PLAYBACK = "Воспроизведение"
 private const val AUTOPLAY = "Следующая серия автоматически"
+private const val SKIP_ENDING = "Пропускать эндинг"
 private const val PIP_ON_LEAVE = "Сворачивать в окно при выходе из приложения"
 private const val QUALITY = "Качество по умолчанию"
 private const val THRESHOLD = "Порог просмотра"
@@ -108,6 +109,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onSignOut: () -> Unit,
     onAutoplay: (Boolean) -> Unit,
+    onSkipEnding: (Boolean) -> Unit,
     onPipOnLeave: (Boolean) -> Unit,
     onNewEpisodes: (Boolean) -> Unit,
     onQuality: (Quality?) -> Unit,
@@ -137,7 +139,7 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space8),
         ) {
             AccountSection(state, onRetryAccount, onSignOutPressed = { confirming = true })
-            PlaybackSection(state, onAutoplay, onPipOnLeave, onQuality, onThreshold)
+            PlaybackSection(state, onAutoplay, onSkipEnding, onPipOnLeave, onQuality, onThreshold)
             NotificationsSection(state.newEpisodes, notificationsBlocked, onNewEpisodes)
             DownloadsSection(onDownloads)
             DubsSection(state, onStudioUp, onStudioDown, onStudioRemove, onStudioAdd, onStudiosReset)
@@ -207,12 +209,17 @@ private fun AccountSection(state: SettingsUiState, onRetry: () -> Unit, onSignOu
 private fun PlaybackSection(
     state: SettingsUiState,
     onAutoplay: (Boolean) -> Unit,
+    onSkipEnding: (Boolean) -> Unit,
     onPipOnLeave: (Boolean) -> Unit,
     onQuality: (Quality?) -> Unit,
     onThreshold: (Float) -> Unit,
 ) {
     SettingsSection(PLAYBACK) {
         SettingSwitchRow(AUTOPLAY, state.autoplayNext, onAutoplay)
+        // No switch beside it for the opening: that button appears for ten seconds and then
+        // leaves on its own, and a setting for turning off something that turns itself off is a
+        // setting nobody needs to find.
+        SettingSwitchRow(SKIP_ENDING, state.skipEnding, onSkipEnding)
         // Phone only: the television has no floating window, and its own screen does not offer this.
         SettingSwitchRow(PIP_ON_LEAVE, state.pipOnLeave, onPipOnLeave)
         SettingLabel(QUALITY)
