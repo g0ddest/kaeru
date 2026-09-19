@@ -4,15 +4,29 @@ import GoogleCast
 /// Google owns discovery, permissions education, device selection and the connected-device dialog.
 struct CastButton: UIViewRepresentable {
     let manager: CastManager
-    func makeUIView(context: Context) -> GCKUICastButton {
+    /// The Cast button is handed over inside a plain container. On its own it is a `UIButton` that
+    /// SwiftUI's toolbar tries to host as a view controller, and the cast that follows aborts the
+    /// app the moment the player opens.
+    func makeUIView(context: Context) -> UIView {
         manager.start()
-        let button = GCKUICastButton(frame: CGRect(x: 0, y: 0, width: 44, height: 44))
+        let container = CastButtonContainer(frame: CGRect(x: 0, y: 0, width: 44, height: 44))
+        let button = GCKUICastButton(frame: container.bounds)
+        button.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         button.tintColor = .label
         button.accessibilityLabel = "Chromecast"
         button.accessibilityHint = "Выбрать телевизор или управлять трансляцией"
-        return button
+        container.addSubview(button)
+        return container
     }
-    func updateUIView(_ button: GCKUICastButton, context: Context) { button.tintColor = .label }
+    func updateUIView(_ view: UIView, context: Context) {
+        (view.subviews.first as? GCKUICastButton)?.tintColor = .label
+    }
+}
+
+/// A container with a size of its own: a bare `UIView` has no intrinsic one, and a toolbar hands
+/// such a view zero width — the Cast button disappears rather than being placed.
+private final class CastButtonContainer: UIView {
+    override var intrinsicContentSize: CGSize { CGSize(width: 44, height: 44) }
 }
 
 /// Present in a sheet or the remote player area; episode policy remains with the parent player.
