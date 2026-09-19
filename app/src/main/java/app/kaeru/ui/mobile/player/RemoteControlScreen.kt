@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,10 +21,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Forward10
@@ -48,11 +47,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isFinite
 import app.kaeru.player.EpisodeQueue
 import app.kaeru.ui.common.Poster
 import app.kaeru.ui.common.player.PlayerUiState
@@ -141,20 +142,15 @@ fun RemoteControlScreen(
                 RemotePoster(state, short)
                 Column(Modifier.weight(1f).padding(start = KaeruTokens.Space6)) {
                     if (beside) {
-                        // The text scrolls only where it has to, and only ever the text: the
-                        // timeline and the discs are not weighted, so the column measures them
-                        // first and hands what is left to the block above them. On a landscape
-                        // phone that is enough for the name and the chips, and a failure — the one
-                        // row that is there only sometimes — is what a viewer scrolls for.
                         if (short) {
-                            RemoteFacts(
-                                state = state,
-                                short = true,
-                                onOpenTranslations = onOpenTranslations,
-                                onOpenQualities = onOpenQualities,
-                                onRetry = onRetry,
-                                modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
-                            )
+                            // Nothing here scrolls and nothing here is cut. The name and the chips
+                            // share one line, which is the row the timecodes paid for; whatever is
+                            // left of the column after the timeline and the discs have been
+                            // measured goes to a failure, and the message says as much of itself
+                            // as that room holds. A block that scrolls would put the fold back,
+                            // and a fold is a control sliced through the middle.
+                            CompactFacts(state, onOpenTranslations, onOpenQualities)
+                            RoomForAFailure(state, onRetry)
                         } else {
                             RemoteFacts(state, false, onOpenTranslations, onOpenQualities, onRetry)
                             Spacer(Modifier.weight(1f))
@@ -270,27 +266,66 @@ private fun RemoteFacts(
         // Short of room the episode number joins the chips instead of taking a line of its own:
         // it is three words long and the row it joins has most of a landscape phone to spare.
         if (!short) EpisodeLine(state)
-        // And a failure goes above the chips rather than under them, because on a short screen
-        // this block is the part that scrolls: whichever row is last is the one a viewer has to
-        // find, and «попробуйте ещё раз» is not something to make anybody look for.
-        if (short) {
-            ErrorRow(state, onRetry, maxLines = 2)
-            ChipRow(state, withEpisode = true, onOpenTranslations, onOpenQualities)
-        } else {
-            ChipRow(state, withEpisode = false, onOpenTranslations, onOpenQualities)
-            ErrorRow(state, onRetry)
-        }
+        ChipRow(state, withEpisode = short, onOpenTranslations, onOpenQualities)
+        ErrorRow(state, onRetry)
+    }
+}
+
+/**
+ * The name and the chips on one line, which is what a short screen has room for.
+ *
+ * Stacked they are two rows of a block that has about a hundred device-independent pixels, and a
+ * failure needs one of them. The name is the half that gives way — it is on the poster beside it
+ * and on the screen this one was opened from, and it is the only thing here that is not something
+ * to press or something that just changed.
+ */
+@Composable
+private fun CompactFacts(
+    state: PlayerUiState,
+    onOpenTranslations: () -> Unit,
+    onOpenQualities: () -> Unit,
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        RemoteTitle(state, maxLines = 1, modifier = Modifier.weight(1f))
+        ChipRow(
+            state = state,
+            withEpisode = true,
+            onOpenTranslations = onOpenTranslations,
+            onOpenQualities = onOpenQualities,
+            modifier = Modifier.padding(start = KaeruTokens.Space2),
+        )
+    }
+}
+
+/**
+ * Whatever the column has left after the controls have been measured, given to a failure.
+ *
+ * The room is weighted, so the timeline and the discs are never the ones that go short; the
+ * message inside it says as many lines as the room holds and ellipsises the rest. With nothing
+ * wrong it is empty space, and empty space at the top of the column is what puts the discs down
+ * where a thumb is.
+ */
+@Composable
+private fun ColumnScope.RoomForAFailure(state: PlayerUiState, onRetry: () -> Unit) {
+    if (state.errorMessage == null) {
+        Spacer(Modifier.weight(1f))
+    } else {
+        // Half the usual gap: the row below is a 48dp button in about fifty of them, and four
+        // device-independent pixels are the difference between «Повторить» being drawn and being
+        // drawn with its descenders shaved off.
+        ErrorRow(state, onRetry, modifier = Modifier.weight(1f), gap = KaeruTokens.Space1)
     }
 }
 
 @Composable
-private fun RemoteTitle(state: PlayerUiState, maxLines: Int) {
+private fun RemoteTitle(state: PlayerUiState, maxLines: Int, modifier: Modifier = Modifier) {
     Text(
         state.title,
         style = MaterialTheme.typography.headlineSmall,
         color = KaeruText,
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
+        modifier = modifier,
     )
 }
 
@@ -311,9 +346,10 @@ private fun ChipRow(
     withEpisode: Boolean,
     onOpenTranslations: () -> Unit,
     onOpenQualities: () -> Unit,
+    modifier: Modifier = Modifier.padding(top = KaeruTokens.Space2),
 ) {
     Row(
-        Modifier.padding(top = KaeruTokens.Space2),
+        modifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space2),
     ) {
@@ -337,22 +373,39 @@ private fun ChipRow(
  * both need the rest of this screen to stay reachable.
  */
 @Composable
-private fun ErrorRow(state: PlayerUiState, onRetry: () -> Unit, maxLines: Int = Int.MAX_VALUE) {
+private fun ErrorRow(
+    state: PlayerUiState,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+    gap: Dp = KaeruTokens.Space2,
+) {
     val message = state.errorMessage ?: return
     Row(
-        Modifier.padding(top = KaeruTokens.Space2),
+        modifier.padding(top = gap),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space2),
     ) {
-        Text(
-            message,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.error,
-            maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        TextButton(onClick = onRetry) { Text("Повторить", color = KaeruAccent) }
+        // As many lines as there are, rather than a number picked in advance. A `Text` given
+        // fewer pixels than its `maxLines` need does not shorten itself — it draws the top of the
+        // paragraph and lets the rest be clipped — so the count comes from the room the row was
+        // actually given. Where the room is unbounded, which is every upright screen, it is the
+        // whole message.
+        BoxWithConstraints(Modifier.weight(1f)) {
+            val line = with(LocalDensity.current) { MaterialTheme.typography.bodyMedium.lineHeight.toDp() }
+            val fits = if (maxHeight.isFinite && line > 0.dp) {
+                (maxHeight / line).toInt().coerceAtLeast(1)
+            } else {
+                Int.MAX_VALUE
+            }
+            Text(
+                message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+                maxLines = fits,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        TextButton(onClick = onRetry) { Text("Повторить", color = KaeruAccent, maxLines = 1) }
     }
 }
 
@@ -368,7 +421,7 @@ private fun Controls(
     onNext: () -> Unit,
     onCancelAutoplay: () -> Unit,
 ) {
-    Timeline(state, onSeekTo)
+    Timeline(state, short, onSeekTo)
     Transport(state, short, nextBeside, onTogglePlayPause, onSeekBy, onNext, onCancelAutoplay)
 }
 
@@ -461,28 +514,56 @@ private val TILE_SIZE = 56.dp
 /** Smaller on a short screen, and no smaller than a finger: the floor a tile may come down to. */
 private val TILE_SIZE_SHORT = 44.dp
 
+/**
+ * Where the episode is, and how much of it there is.
+ *
+ * On a short screen the two timecodes stand at the ends of the bar rather than on a line of their
+ * own above it. The bar is already 48dp of touch target with a 4dp track drawn down the middle of
+ * it, so there is room either side of the track for a label without either one touching the other
+ * — and the line it saves is the 19dp that decides whether the chips and a failure both fit above
+ * the discs. That line was the difference: at the fourth step of the font-size slider the block
+ * above the discs overflowed by 13dp and the fold cut a pressable chip in half, which is the
+ * photograph this screen arrived as, one slider step along.
+ */
 @Composable
-private fun Timeline(state: PlayerUiState, onSeekTo: (Long) -> Unit) {
+private fun Timeline(state: PlayerUiState, short: Boolean, onSeekTo: (Long) -> Unit) {
     var scrubbing by remember { mutableStateOf<Float?>(null) }
     val shown = scrubbing?.roundToLong() ?: state.positionMs
     val durationSafe = maxOf(state.durationMs, 1L)
-    Row(Modifier.fillMaxWidth().padding(horizontal = KaeruTokens.SeekInset)) {
-        Text(formatTime(shown), style = MaterialTheme.typography.labelMedium, color = KaeruText)
-        Spacer(Modifier.weight(1f))
-        Text(formatTime(state.durationMs), style = MaterialTheme.typography.labelMedium, color = KaeruSecondary)
+    val bar: @Composable (Modifier) -> Unit = { modifier ->
+        KaeruSeekBar(
+            progress = shown.coerceIn(0, maxOf(state.durationMs, 0)).toFloat() / durationSafe.toFloat(),
+            onScrub = { fraction -> scrubbing = fraction.coerceIn(0f, 1f) * durationSafe },
+            onScrubEnd = {
+                scrubbing?.let { onSeekTo(it.roundToLong()) }
+                scrubbing = null
+            },
+            modifier = modifier,
+            enabled = state.durationMs > 0,
+            // A receiver buffers on its own side and tells us nothing about it, so there is nothing
+            // honest to draw ahead of the position while casting.
+            buffered = 0f,
+        )
     }
-    KaeruSeekBar(
-        progress = shown.coerceIn(0, maxOf(state.durationMs, 0)).toFloat() / durationSafe.toFloat(),
-        onScrub = { fraction -> scrubbing = fraction.coerceIn(0f, 1f) * durationSafe },
-        onScrubEnd = {
-            scrubbing?.let { onSeekTo(it.roundToLong()) }
-            scrubbing = null
-        },
-        enabled = state.durationMs > 0,
-        // A receiver buffers on its own side and tells us nothing about it, so there is nothing
-        // honest to draw ahead of the position while casting.
-        buffered = 0f,
-    )
+    if (short) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(formatTime(shown), style = MaterialTheme.typography.labelMedium, color = KaeruText, maxLines = 1)
+            bar(Modifier.weight(1f))
+            Text(
+                formatTime(state.durationMs),
+                style = MaterialTheme.typography.labelMedium,
+                color = KaeruSecondary,
+                maxLines = 1,
+            )
+        }
+    } else {
+        Row(Modifier.fillMaxWidth().padding(horizontal = KaeruTokens.SeekInset)) {
+            Text(formatTime(shown), style = MaterialTheme.typography.labelMedium, color = KaeruText)
+            Spacer(Modifier.weight(1f))
+            Text(formatTime(state.durationMs), style = MaterialTheme.typography.labelMedium, color = KaeruSecondary)
+        }
+        bar(Modifier)
+    }
 }
 
 @Composable
@@ -499,7 +580,9 @@ private fun Transport(
     val glyph = if (short) MAIN_GLYPH_SHORT else MAIN_GLYPH
     Column(
         Modifier.fillMaxWidth().padding(
-            top = KaeruTokens.Space1,
+            // The bar above keeps 48dp of touch target around a 4dp track, so short of room the
+            // discs can sit straight under it without touching anything.
+            top = if (short) 0.dp else KaeruTokens.Space1,
             bottom = if (short) 0.dp else KaeruTokens.Space3,
         ),
     ) {
