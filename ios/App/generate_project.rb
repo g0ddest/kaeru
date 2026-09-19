@@ -66,6 +66,7 @@ app.build_phases.unshift(phase)
       config.build_settings.merge!({
         'DEVELOPMENT_TEAM' => ENV['DEVELOPMENT_TEAM'] || properties['DEVELOPMENT_TEAM'] || 'TXY49DW96F',
         'INFOPLIST_FILE' => 'Info.plist',
+        'CODE_SIGN_ENTITLEMENTS' => target == app ? 'Kaeru.entitlements' : nil,
         'ASSETCATALOG_COMPILER_APPICON_NAME' => 'AppIcon',
         'INFOPLIST_KEY_CFBundleDisplayName' => 'Kaeru',
         'INFOPLIST_KEY_UILaunchScreen_Generation' => 'YES',
