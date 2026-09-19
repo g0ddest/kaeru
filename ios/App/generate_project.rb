@@ -15,12 +15,26 @@ group = project.new_group('Kaeru', '..')
 # Only public OAuth configuration belongs in the application. Never copy the secret.
 properties_path = ARGV.first || File.join(root, '..', 'local.properties')
 properties = File.exist?(properties_path) ? File.readlines(properties_path).filter_map { |line| line.strip.split('=', 2) if line.include?('=') && !line.start_with?('#') }.to_h : {}
-configuration = %w[SHIKIMORI_CLIENT_ID AUTH_PROXY_URL].to_h { |key| [key, ENV[key] || properties[key] || ''] }
+configuration = %w[SHIKIMORI_CLIENT_ID AUTH_PROXY_URL TOGETHER_RELAY_URL].to_h { |key| [key, ENV[key] || properties[key] || ''] }
 Xcodeproj::Plist.write_to_path(configuration, File.join(__dir__, 'Configuration.plist'))
 app.resources_build_phase.add_file_reference(group.new_file('App/Configuration.plist'))
 app.resources_build_phase.add_file_reference(group.new_file('App/Assets.xcassets'))
+cast_framework = group.new_file('Dependencies/GoogleCastSDK-ios-4.8.6_static_xcframework/GoogleCast.xcframework')
+cast_framework.last_known_file_type = 'wrapper.xcframework'
+app.frameworks_build_phase.add_file_reference(cast_framework)
+gtm_package = project.new(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
+gtm_package.repositoryURL = 'https://github.com/google/gtm-session-fetcher.git'
+gtm_package.requirement = {
+  'kind' => 'upToNextMajorVersion',
+  'minimumVersion' => '3.5.0'
+}
+project.root_object.package_references << gtm_package
+gtm_product = project.new(Xcodeproj::Project::Object::XCSwiftPackageProductDependency)
+gtm_product.package = gtm_package
+gtm_product.product_name = 'GTMSessionFetcherCore'
+app.package_product_dependencies << gtm_product
 Dir[File.join(root, '**', '*.swift')].sort.each do |file|
-  next if file.include?('/build/')
+  next if file.match?(%r{/(build[^/]*|Dependencies)/})
   reference = group.new_file(file.delete_prefix(root + '/'))
   target = file.include?('/UITests/') ? ui_tests : (file.include?('/Tests/') ? tests : app)
   target.add_file_references([reference])
@@ -47,7 +61,10 @@ app.build_phases.unshift(phase)
       'SWIFT_EMIT_LOC_STRINGS' => 'YES'
     })
     if target == app
+      config.build_settings['FRAMEWORK_SEARCH_PATHS'] = ['$(inherited)', '$(SRCROOT)/../../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)', '$(SRCROOT)/../Dependencies/GoogleCastSDK-ios-4.8.6_static_xcframework/GoogleCast.xcframework']
+      config.build_settings['OTHER_LDFLAGS'] = ['$(inherited)', '-ObjC', '-lc++', '-framework', 'KaeruShared', '-framework', 'GoogleCast']
       config.build_settings.merge!({
+        'DEVELOPMENT_TEAM' => ENV['DEVELOPMENT_TEAM'] || properties['DEVELOPMENT_TEAM'] || 'TXY49DW96F',
         'INFOPLIST_FILE' => 'Info.plist',
         'ASSETCATALOG_COMPILER_APPICON_NAME' => 'AppIcon',
         'INFOPLIST_KEY_CFBundleDisplayName' => 'Kaeru',

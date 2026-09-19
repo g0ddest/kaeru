@@ -1,0 +1,488 @@
+import AVKit
+import Observation
+
+struct PlaybackSnapshot: Equatable {
+    var animeID: Int
+    var episode: Int
+    var translation: Int
+    var position: Double
+    var duration: Double
+    var isPlaying: Bool
+    var speed: Double
+    var ready: Bool
+}
+enum PlaybackLocalAction {
+    case playing(Bool), seek(Double), speed(Double), episode(Int)
+}
+
+@MainActor @Observable final class PlaybackModel {
+    let player = AVPlayer()
+    let anime: Anime
+    private let model: AppModel
+    private let account: String
+    private(set) var episode: Int
+    private(set) var translation = 0
+    private(set) var quality = 0
+    private(set) var selectedQuality = 0
+    private(set) var translations: [Translation] = []
+    private(set) var qualities: [Int] = []
+    private(set) var loading = true
+    private(set) var isLocal = false
+    private(set) var position = 0.0
+    private(set) var duration = 0.0
+    private(set) var isPlaying = false
+    private(set) var pictureInPicture = false
+    private(set) var finished = false
+    private(set) var nextEpisode = NextEpisodeState()
+    private(set) var skipOffer: SkipOffer?
+    private(set) var error: String?
+    // Future Together integration consumes snapshots and only local actions. Applying a remote
+    // snapshot does not echo back through onLocalAction; guests can disable automatic decisions.
+    var onLocalAction: ((PlaybackLocalAction) -> Void)?
+    private(set) var synchronizationControlled = false
+    var snapshot: PlaybackSnapshot {
+        PlaybackSnapshot(animeID: anime.id, episode: episode, translation: translation,
+                         position: position, duration: duration, isPlaying: isPlaying,
+                         speed: speed, ready: !loading && player.currentItem?.status == .readyToPlay)
+    }
+    private(set) var speed: Double
+    var autoNext: Bool { model.autoNext }
+    var autoSkipEnding: Bool { model.preferences.autoSkipEnding }
+    var backgroundPlayback: Bool { model.preferences.backgroundPlayback }
+    var pipOnLeave: Bool { model.preferences.pipOnLeave }
+    var skipSeconds: Int { model.preferences.skipSeconds }
+    var castManager: CastManager { model.cast }
+    var hasNext: Bool { episode > 0 && episode < episodeCount }
+    var episodeCount: Int {
+        // A missing episode in this dub may be served by another eligible dub. The user's
+        // remembered preference is retained so it can become available again next episode.
+        let known = anime.availableEpisodes
+        let offered = translations.map(\.episodes).max() ?? 0
+        return known > 0 ? (offered > 0 ? min(known, offered) : known) : 0
+    }
+    private var stream: Stream?
+    private var request = UUID()
+    private var itemObservation: NSKeyValueObservation?
+    private var statusObservation: NSKeyValueObservation?
+    private var timer: Any?
+    private var observations: [NSObjectProtocol] = []
+    private var loadTask: Task<Void, Never>?
+    private var timeoutTask: Task<Void, Never>?
+    private var marksTask: Task<Void, Never>?
+    private var installedEpisode: Int?
+    private var readyItem: AVPlayerItem?
+    private var restoring = false
+    private var seeking = false
+    private var seekRevision = UUID()
+    private var retried = false
+    private var closed = false
+    private var started = false
+    private var beganLibraryPlayback = false
+    private var requestedPosition = 0.0
+    private var lastSavedPosition = -1.0
+    private var sceneActive = true
+    private var intent = PlaybackIntent()
+    private var policy = PlaybackPolicy()
+    private var marks = SkipMarks()
+    private var marksAsked = false
+    private var completedEpisode: Int?
+    private var interruptionPaused = false
+    private var mediaControls: PlaybackMediaControls?
+    private var togetherAdapter: PlaybackTogetherAdapter?
+
+    init(anime: Anime, episode: Int, model: AppModel) {
+        self.anime = anime; self.episode = episode; self.model = model; account = model.accountKey
+        selectedQuality = model.preferredQuality
+        speed = model.preferences.playbackSpeed
+        player.allowsExternalPlayback = false
+        player.defaultRate = Float(model.preferences.playbackSpeed)
+        player.audiovisualBackgroundPlaybackPolicy = model.preferences.backgroundPlayback ? .continuesIfPossible : .automatic
+        timer = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.25, preferredTimescale: 600), queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.tick() }
+        }
+        statusObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
+            let status = player.timeControlStatus
+            Task { @MainActor in self?.statusChanged(status) }
+        }
+        observe(.AVPlayerItemDidPlayToEndTime) { playback, notification in
+            guard let item = notification.object as? AVPlayerItem, playback.player.currentItem === item else { return }
+            playback.tick(ended: true); playback.save()
+        }
+        observe(.AVPlayerItemTimeJumped) { playback, notification in
+            guard let item = notification.object as? AVPlayerItem, playback.player.currentItem === item, !playback.restoring else { return }
+            playback.policy.didSeek(to: playback.safePosition)
+            if !playback.seeking { playback.onLocalAction?(.seek(playback.safePosition)) }
+        }
+        observe(AVAudioSession.interruptionNotification) { playback, notification in
+            playback.handleInterruption(notification)
+        }
+        observe(AVAudioSession.routeChangeNotification) { playback, notification in
+            guard let reason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+                  reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue else { return }
+            playback.setPlaying(false)
+        }
+    }
+
+    func start() async {
+        guard !started, !closed else { return }; started = true
+        do {
+            try activateAudio()
+            mediaControls = PlaybackMediaControls(playback: self)
+            let target = model.continueTarget(for: anime)
+            let start = target.episode == episode && target.rewatch ? 0 : resumePosition(for: episode)
+            await resolve(position: start, play: true)
+            togetherAdapter = PlaybackTogetherAdapter(playback: self, manager: model.together)
+        } catch { fail(error.localizedDescription) }
+    }
+    private func activateAudio() throws {
+        try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+        try AVAudioSession.sharedInstance().setActive(true)
+    }
+    private func resumePosition(for episode: Int) -> Double {
+        guard let progress = model.progressFor(animeID: anime.id, episode: episode) else { return 0 }
+        return PlaybackPolicy.resume(position: progress.position, duration: progress.duration, threshold: model.preferences.watchedThreshold)
+    }
+    func selectEpisode(_ value: Int, position: Double? = nil, play: Bool = true, notify: Bool = true) {
+        guard !closed, value > 0, value <= episodeCount, value != episode else { return }
+        save(); policy.resetEpisode(); completedEpisode = nil
+        episode = value; retried = false; finished = false
+        if notify { onLocalAction?(.episode(value)) }
+        beginResolve(position: position ?? resumePosition(for: value), play: play)
+    }
+    func selectTranslation(_ value: Int) {
+        guard !loading, let choice = translations.first(where: { $0.id == value }), choice.episodes == 0 || choice.episodes >= episode else { return }
+        save(); retried = false
+        beginResolve(position: safePosition, play: intent.wantsPlayback, explicitTranslation: value)
+    }
+    func selectQuality(_ value: Int, remember: Bool = true) {
+        guard !loading, !isLocal, let stream, value == 0 || qualities.contains(value) else { return }
+        save(); let position = safePosition
+        selectedQuality = value
+        if remember { model.preferredQuality = value; model.savePreferences() }
+        let fence = beginTransition(position: position, play: intent.wantsPlayback)
+        install(stream, position: position, fence: fence)
+    }
+    func setSpeed(_ value: Double, remember: Bool = true, notify: Bool = true) {
+        guard value.isFinite else { return }
+        let speed = min(2, max(0.5, value))
+        if remember { model.preferences.playbackSpeed = speed; model.savePreferences() }
+        self.speed = speed
+        player.defaultRate = Float(speed)
+        if player.rate > 0 { player.rate = Float(speed) }
+        if notify { onLocalAction?(.speed(speed)) }
+        updateMediaControls()
+    }
+    func setAutoNext(_ value: Bool) { model.autoNext = value; model.savePreferences(); tick() }
+    func setAutoSkipEnding(_ value: Bool) { model.preferences.autoSkipEnding = value; model.savePreferences() }
+    func setBackgroundPlayback(_ value: Bool) {
+        model.preferences.backgroundPlayback = value; model.savePreferences()
+        player.audiovisualBackgroundPlaybackPolicy = value ? .continuesIfPossible : .automatic
+        if !sceneActive { suspend() }
+    }
+    func setPiPOnLeave(_ value: Bool) { model.preferences.pipOnLeave = value; model.savePreferences() }
+    func setPlaying(_ value: Bool, notify: Bool = true) {
+        guard !closed else { return }
+        intent.userSetPlaying(value)
+        if value {
+            do { try activateAudio() } catch { self.error = error.localizedDescription; return }
+            if intent.shouldPlay, !loading, !restoring, !interruptionPaused { player.play() }
+        } else { player.pause(); save() }
+        if notify { onLocalAction?(.playing(value)) }
+        updateMediaControls()
+    }
+    func seek(to value: Double, notify: Bool = true) {
+        guard !closed, !loading, value.isFinite else { return }
+        let target = PlaybackPolicy.clampSeek(value, duration: duration)
+        completedEpisode = nil; finished = false
+        policy.didSeek(to: target); seeking = true
+        let revision = UUID(), fence = request
+        seekRevision = revision
+        player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] success in
+            Task { @MainActor in
+                guard let self, self.request == fence, self.seekRevision == revision, !self.closed else { return }
+                self.seeking = false
+                if success { self.position = target; self.tick(); self.save() }
+            }
+        }
+        if notify { onLocalAction?(.seek(target)) }
+    }
+    func seek(by seconds: Double) { seek(to: safePosition + seconds) }
+    func skipCurrent() {
+        guard let offer = marks.offer(position: safePosition, duration: duration) else { return }
+        switch offer.kind {
+        case .opening: seek(to: offer.interval.end)
+        case .ending: if hasNext { finishEnding() }
+        }
+    }
+    func nextNow() {
+        guard hasNext else { return }
+        if let ending = marks.accepted(duration: duration).ending, ending.contains(safePosition) { completeCurrentEpisode() }
+        selectEpisode(episode + 1, position: 0)
+    }
+    func cancelAutoplay() { policy.cancelAutoplay(); tick() }
+    func retry() { retried = false; beginResolve(position: requestedPosition, play: intent.wantsPlayback) }
+    func downloadCurrent() {
+        guard !isLocal, translation > 0 else { return }
+        model.downloads.enqueue(anime: anime, episodes: [episode], translation: translation, quality: selectedQuality)
+    }
+    func castCurrent() {
+        guard translation > 0, !loading else { return }
+        let position = safePosition
+        model.cast.localPlayback = { [weak self] in
+            guard let self else { return nil }
+            return CastHandoff(selection: CastSelection(anime: self.anime, episode: self.episode,
+                                                       translation: self.translation, quality: self.selectedQuality),
+                               position: self.safePosition, shouldPlay: self.intent.wantsPlayback)
+        }
+        model.cast.onPauseLocal = { [weak self] in self?.setPlaying(false, notify: false) }
+        Task {
+            await model.cast.load(anime: anime, episode: episode, translation: translation,
+                                  quality: selectedQuality, position: position, autoplay: intent.wantsPlayback)
+        }
+    }
+    func setSynchronizationControlled(_ value: Bool) { synchronizationControlled = value }
+    func applySynchronization(position: Double, isPlaying: Bool, speed: Double? = nil) {
+        if let speed { setSpeed(speed, remember: false, notify: false) }
+        seek(to: position, notify: false); setPlaying(isPlaying, notify: false)
+    }
+    func suspend() {
+        sceneActive = false; save()
+        intent.suspend(backgroundAllowed: backgroundPlayback, pictureInPicture: pictureInPicture)
+        // With automatic PiP enabled, AVFoundation must be allowed to complete its handoff.
+        // Its .automatic policy pauses video when no PiP starts and background audio is off.
+        if !intent.shouldPlay, !pipOnLeave { player.pause() }
+    }
+    func becameActive() {
+        sceneActive = true
+        let wasSuspended = intent.suspended
+        intent.activate()
+        if wasSuspended, intent.shouldPlay, !loading, !interruptionPaused { player.play() }
+    }
+    func setPictureInPicture(_ active: Bool) {
+        pictureInPicture = active
+        if !sceneActive {
+            intent.suspend(backgroundAllowed: backgroundPlayback, pictureInPicture: active)
+            if intent.shouldPlay, !loading, !interruptionPaused { player.play() }
+            else if !intent.shouldPlay { player.pause() }
+        }
+    }
+    func close() {
+        guard !closed else { return }
+        save(); closed = true; request = UUID()
+        loadTask?.cancel(); timeoutTask?.cancel(); marksTask?.cancel()
+        player.pause(); itemObservation = nil; statusObservation = nil
+        if let timer { player.removeTimeObserver(timer); self.timer = nil }
+        observations.forEach { NotificationCenter.default.removeObserver($0) }; observations = []
+        mediaControls?.close(); mediaControls = nil
+        togetherAdapter?.close(); togetherAdapter = nil
+        player.replaceCurrentItem(with: nil)
+        model.downloads.endPlayback()
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    private var safePosition: Double {
+        guard installedEpisode == episode, !restoring else { return requestedPosition }
+        let current = player.currentTime().seconds
+        return current.isFinite && current >= 0 ? current : position
+    }
+    private func statusChanged(_ status: AVPlayer.TimeControlStatus) {
+        guard !closed, player.timeControlStatus == status else { return }
+        isPlaying = status == .playing
+        if !restoring, !loading, !seeking, !intent.suspended, !interruptionPaused, player.currentItem?.status == .readyToPlay {
+            // A pause at EOF is engine state, not cancellation of an automatic next episode.
+            let atEnd = duration > 0 && safePosition >= duration - 0.1
+            if status == .playing || (status == .paused && !atEnd) {
+                let playing = status == .playing
+                if playing != intent.wantsPlayback { intent.userSetPlaying(playing); onLocalAction?(.playing(playing)) }
+            }
+        }
+        if isPlaying, !beganLibraryPlayback, account == model.accountKey {
+            beganLibraryPlayback = true; model.beginPlayback(anime: anime)
+        }
+        if status == .paused { save() }
+        updateMediaControls()
+    }
+    private func tick(ended: Bool = false) {
+        guard !closed, !restoring, !loading, !seeking, installedEpisode == episode, let item = player.currentItem, item.status == .readyToPlay else { return }
+        let current = player.currentTime().seconds, length = item.duration.seconds
+        guard current.isFinite, current >= 0 else { return }
+        position = current
+        if length.isFinite, length > 0 { duration = length }
+        isPlaying = player.timeControlStatus == .playing
+        guard duration > 0 else { return }
+        if !marksAsked { askForMarks() }
+        skipOffer = marks.offer(position: position, duration: duration)
+        if skipOffer?.kind == .ending && !hasNext { skipOffer = nil }
+        nextEpisode = policy.next(position: position, duration: duration, hasNext: hasNext,
+                                  autoNext: autoNext && !synchronizationControlled, ended: ended)
+        if nextEpisode.countdown != nil, skipOffer?.kind == .ending { skipOffer = nil }
+        if abs(position - lastSavedPosition) >= 5 || ended { save() }
+        updateMediaControls()
+        if !synchronizationControlled,
+           policy.automaticSkip(marks: marks, position: position, duration: duration, playing: isPlaying,
+                                ending: autoSkipEnding && episodeCount > 0) == .finishEnding {
+            finishEnding(); return
+        }
+        if nextEpisode.advance { nextNow() }
+    }
+    private func completeCurrentEpisode() { completedEpisode = episode; save() }
+    private func finishEnding() {
+        completeCurrentEpisode()
+        if hasNext { selectEpisode(episode + 1, position: 0) }
+        else { finished = true; setPlaying(false) }
+    }
+    private func save() {
+        guard !closed, !restoring, !seeking, let installedEpisode, let item = player.currentItem else { return }
+        let current = player.currentTime().seconds, length = item.duration.seconds
+        guard current.isFinite, current >= 0, length.isFinite, length > 0 else { return }
+        lastSavedPosition = current
+        model.saveProgress(EpisodeProgress(animeID: anime.id, episode: installedEpisode,
+                           position: completedEpisode == installedEpisode ? length : current, duration: length), anime: anime, account: account)
+    }
+    private func beginResolve(position: Double, play: Bool, explicitTranslation: Int? = nil) {
+        loadTask?.cancel()
+        // Fence and freeze synchronously before a deferred task can save the old item as a new one.
+        let fence = beginTransition(position: position, play: play)
+        loadTask = Task { await resolve(position: position, play: play, explicitTranslation: explicitTranslation, fence: fence) }
+    }
+    @discardableResult private func beginTransition(position: Double, play: Bool) -> UUID {
+        request = UUID(); loading = true; restoring = true; seeking = false
+        error = nil; requestedPosition = max(0, position); self.position = requestedPosition; duration = 0
+        intent.userSetPlaying(play); player.pause()
+        timeoutTask?.cancel(); marksTask?.cancel(); itemObservation = nil; readyItem = nil
+        player.replaceCurrentItem(with: nil)
+        marksAsked = false; marks = SkipMarks(); skipOffer = nil; nextEpisode = NextEpisodeState()
+        policy.didSeek(to: requestedPosition); lastSavedPosition = -1
+        return request
+    }
+    private func resolve(position: Double, play: Bool, explicitTranslation: Int? = nil, fence suppliedFence: UUID? = nil) async {
+        let fence = suppliedFence ?? beginTransition(position: position, play: play)
+        guard isCurrent(fence) else { return }
+        model.downloads.beginPlayback(animeID: anime.id, episode: episode)
+        // Deliberately precedes ALL network work, including the translation catalogue.
+        let downloaded = model.downloads.entries.filter {
+            $0.anime.id == anime.id && $0.episode == episode && $0.state == .completed
+        }
+        let downloadedTracks = downloaded.map { row in
+            translations.first(where: { $0.id == row.translation }) ?? Translation(id: row.translation, title: "", episodes: episode)
+        }
+        let preferredLocal = explicitTranslation ?? model.preferredTranslation(for: anime.id, available: downloadedTracks, episode: episode)
+        let candidates = explicitTranslation.map { id in [id] } ?? ([preferredLocal] + downloaded.map(\.translation))
+        for candidate in candidates where candidate > 0 {
+            guard let local = model.downloads.localAsset(animeID: anime.id, episode: episode, translation: candidate),
+                  let entry = downloaded.first(where: { row in
+                      guard let path = row.relativePath else { return false }
+                      return URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(path).standardizedFileURL == local.standardizedFileURL
+                  }) else { continue }
+            isLocal = true; stream = nil; qualities = []; quality = entry.quality; translation = entry.translation
+            if explicitTranslation == entry.translation { model.rememberTranslation(entry.translation, for: anime.id) }
+            install(url: local, headers: [:], position: position, fence: fence)
+            return
+        }
+        isLocal = false
+        do {
+            if translations.isEmpty {
+                let available = try await model.service.translations(anime.id)
+                guard isCurrent(fence) else { return }
+                translations = available
+            }
+            let selected = explicitTranslation ?? model.preferredTranslation(for: anime.id, available: translations, episode: episode)
+            guard selected > 0 else { throw AppError.message("Для этой серии нет доступной озвучки.") }
+            let result = try await model.service.resolve(anime.id, translation: selected, episode: episode)
+            guard isCurrent(fence) else { return }
+            guard result.episode == episode else { throw AppError.message("Источник вернул другую серию.") }
+            stream = result; translation = result.translation.id
+            qualities = result.urls.map(\.quality).filter { $0 > 0 }.sorted(by: >)
+            if let explicitTranslation, result.translation.id == explicitTranslation { model.rememberTranslation(explicitTranslation, for: anime.id) }
+            install(result, position: position, fence: fence)
+        } catch {
+            guard isCurrent(fence) else { return }
+            fail(error.localizedDescription)
+        }
+    }
+    private func isCurrent(_ fence: UUID) -> Bool { fence == request && !closed && !Task.isCancelled && account == model.accountKey }
+    private func install(_ stream: Stream, position: Double, fence: UUID) {
+        guard let chosen = PlaybackPolicy.quality(preferred: selectedQuality, available: stream.urls.map(\.quality)),
+              let selected = stream.urls.first(where: { $0.quality == chosen }),
+              let url = URL(string: selected.url), ["https", "http"].contains(url.scheme) else {
+            fail("Для этой серии нет доступного видео."); return
+        }
+        quality = chosen
+        install(url: url, headers: stream.headers, position: position, fence: fence)
+    }
+    private func install(url: URL, headers: [String: String], position: Double, fence: UUID) {
+        // Existing app's measured header propagation covers HLS manifests and segments.
+        let asset = AVURLAsset(url: url, options: headers.isEmpty ? nil : ["AVURLAssetHTTPHeaderFieldsKey": headers])
+        let item = AVPlayerItem(asset: asset)
+        installedEpisode = episode
+        itemObservation = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
+            Task { @MainActor in await self?.itemChanged(item, position: position, fence: fence) }
+        }
+        player.replaceCurrentItem(with: item)
+        timeoutTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(30)) } catch { return }
+            guard let self, self.isCurrent(fence), self.loading else { return }
+            self.request = UUID(); self.player.currentItem?.cancelPendingSeeks()
+            self.fail("Видео не ответило вовремя. Попробуйте ещё раз.")
+        }
+    }
+    private func itemChanged(_ item: AVPlayerItem, position: Double, fence: UUID) async {
+        guard isCurrent(fence), player.currentItem === item else { return }
+        switch item.status {
+        case .readyToPlay:
+            guard readyItem !== item else { return }; readyItem = item
+            let length = item.duration.seconds
+            let target = PlaybackPolicy.clampSeek(position, duration: length.isFinite ? max(0, length - 0.1) : length)
+            let success = await player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+            guard isCurrent(fence), player.currentItem === item else { return }
+            timeoutTask?.cancel(); restoring = false; loading = false
+            if !success { fail("Не удалось восстановить позицию видео."); return }
+            self.position = target; requestedPosition = target
+            if intent.shouldPlay, !interruptionPaused { player.play() }
+            tick()
+        case .failed:
+            timeoutTask?.cancel()
+            if !isLocal, !retried {
+                retried = true
+                beginResolve(position: safePosition, play: intent.wantsPlayback)
+            } else {
+                fail(isLocal ? "Не удалось открыть скачанную серию. Проверьте файл в загрузках." : (item.error?.localizedDescription ?? "Не удалось воспроизвести видео."))
+            }
+        default: break
+        }
+    }
+    private func askForMarks() {
+        marksAsked = true
+        let fence = request, episode = episode, duration = duration
+        marksTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let marks = try await AniSkipClient.shared.marks(animeID: self.anime.id, episode: episode, duration: duration)
+                guard self.isCurrent(fence) else { return }
+                self.marks = marks.accepted(duration: duration)
+            } catch { /* Optional metadata; cancellation and offline playback need no error UI. */ }
+        }
+    }
+    private func fail(_ message: String) {
+        loading = false; restoring = false; timeoutTask?.cancel()
+        error = message; player.pause(); policy.cancelAutoplay()
+    }
+    private func observe(_ name: Notification.Name, handler: @escaping @MainActor (PlaybackModel, Notification) -> Void) {
+        observations.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
+            Task { @MainActor in guard let self, !self.closed else { return }; handler(self, notification) }
+        })
+    }
+    private func handleInterruption(_ notification: Notification) {
+        guard let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+        if type == .began { interruptionPaused = true; save(); player.pause() }
+        else {
+            interruptionPaused = false
+            let options = (notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt).map(AVAudioSession.InterruptionOptions.init(rawValue:)) ?? []
+            if options.contains(.shouldResume), intent.shouldPlay, !loading {
+                do { try activateAudio(); player.play() } catch { self.error = error.localizedDescription }
+            }
+        }
+    }
+    private func updateMediaControls() { mediaControls?.update(snapshot: snapshot, title: anime.title, skipSeconds: skipSeconds, hasNext: hasNext) }
+}

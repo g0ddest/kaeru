@@ -12,15 +12,23 @@ import KaeruShared
     func setRate(_ pending: PendingRate, userID: Int64, rateID: Int64, token: String) async throws -> LibraryItem
     func translations(_ id: Int) async throws -> [Translation]
     func resolve(_ id: Int, translation: Int, episode: Int) async throws -> Stream
+    func seasonal(year: Int, season: String) async throws -> [Anime]
+    func configureKodikToken(_ token: String)
+}
+
+extension AnimeService {
+    func seasonal(year: Int, season: String) async throws -> [Anime] { try await discover() }
+    func configureKodikToken(_ token: String) {}
 }
 
 struct AppConfiguration {
     var clientID: String
     var proxyURL: String
+    var togetherRelayURL: String = ""
     static var bundled: Self {
         let url = Bundle.main.url(forResource: "Configuration", withExtension: "plist")
         let values = url.flatMap { NSDictionary(contentsOf: $0) } ?? [:]
-        return Self(clientID: values["SHIKIMORI_CLIENT_ID"] as? String ?? "", proxyURL: values["AUTH_PROXY_URL"] as? String ?? "")
+        return Self(clientID: values["SHIKIMORI_CLIENT_ID"] as? String ?? "", proxyURL: values["AUTH_PROXY_URL"] as? String ?? "", togetherRelayURL: values["TOGETHER_RELAY_URL"] as? String ?? "")
     }
     var canSignIn: Bool { !clientID.isEmpty && URL(string: proxyURL)?.scheme == "https" }
 }
@@ -40,6 +48,8 @@ struct AppConfiguration {
         return try JSONDecoder().decode(type, from: Data(json.utf8))
     }
     func discover() async throws -> [Anime] { try await decode([Anime].self) { api.discover(completionHandler: $0) } }
+    func seasonal(year: Int, season: String) async throws -> [Anime] { try await decode([Anime].self) { api.seasonal(year: Int32(year), season: season, completionHandler: $0) } }
+    func configureKodikToken(_ token: String) { api.configureKodikToken(token: token) }
     func search(_ query: String) async throws -> [Anime] { try await decode([Anime].self) { api.search(query: query, completionHandler: $0) } }
     func details(_ id: Int) async throws -> Anime { try await decode(Anime.self) { api.details(animeId: Int32(id), completionHandler: $0) } }
     func library(_ userID: Int64, token: String) async throws -> [LibraryItem] { try await decode([LibraryItem].self) { api.library(userId: userID, accessToken: token, completionHandler: $0) } }

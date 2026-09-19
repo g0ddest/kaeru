@@ -1,12 +1,19 @@
 package app.kaeru.shared
 
 import app.kaeru.shared.data.shikimori.ShikimoriRateLimiter
+import app.kaeru.shared.data.network.wireJson
+import app.kaeru.shared.domain.Anime
+import app.kaeru.shared.domain.LibraryItem
+import app.kaeru.shared.domain.Translation
+import kotlinx.serialization.encodeToString
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.http.content.OutgoingContent
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.*
 import kotlinx.serialization.json.*
 import kotlin.test.*
@@ -45,18 +52,79 @@ class NativeApiTest {
         } finally { api.close() }
     }
 
-    @Test fun discoverLoadsPopularOngoingAndReleasedAndDeduplicates() = runTest {
+    @Test fun discoverLoadsOnlyPopularOngoing() = runTest {
         val statuses = mutableListOf<String>()
         val api = api { request ->
             statuses += request.url.parameters["status"]!!
             assertEquals("popularity", request.url.parameters["order"])
             assertEquals("true", request.url.parameters["censored"])
+            assertEquals("20", request.url.parameters["limit"])
+            assertNull(request.url.parameters["season"])
+            assertNull(request.url.parameters["page"])
             respond(if (statuses.size == 1) """[{"id":1},{"id":2}]""" else """[{"id":2},{"id":3}]""", headers = headers)
         }
         try {
-            assertEquals(listOf(1, 2, 3), api.discover().array().map { it.jsonObject["id"]!!.jsonPrimitive.int })
-            assertEquals(listOf("ongoing", "released"), statuses)
+            assertEquals(listOf(1, 2), api.discover().array().map { it.jsonObject["id"]!!.jsonPrimitive.int })
+            assertEquals(listOf("ongoing"), statuses)
         } finally { api.close() }
+    }
+
+    @Test fun seasonalUsesAndroidFiltersAndReturnsEnrichedCards() = runTest {
+        val requests = mutableListOf<String>()
+        val api = NativeApi("client", "", HttpClient(MockEngine { request ->
+            requests += request.url.encodedPath
+            if (request.url.encodedPath == "/api/graphql") {
+                respond("""{"data":{"animes":[{"id":"42","poster":{"mainUrl":"https://cdn.example/42.jpg"}}]}}""", headers = headers)
+            } else {
+                assertEquals("/api/animes", request.url.encodedPath)
+                assertEquals(setOf("season", "order", "censored", "limit"), request.url.parameters.names())
+                assertEquals("autumn_2026", request.url.parameters["season"])
+                assertEquals("popularity", request.url.parameters["order"])
+                assertEquals("true", request.url.parameters["censored"])
+                assertEquals("20", request.url.parameters["limit"])
+                assertNull(request.headers[HttpHeaders.Authorization])
+                respond("""[{"id":42,"kind":"tv"}]""", headers = headers)
+            }
+        }), ShikimoriRateLimiter(nowMillis = { testScheduler.currentTime }))
+        try {
+            val card = api.seasonal(2026, "autumn").array().single().jsonObject
+            assertEquals(42, card["id"]!!.jsonPrimitive.int)
+            assertEquals("tv", card["kind"]?.jsonPrimitive?.content)
+            assertEquals("https://cdn.example/42.jpg", card["poster"]!!.jsonPrimitive.content)
+            assertEquals(listOf("/api/animes", "/api/graphql"), requests)
+        } finally { api.close() }
+    }
+
+    @Test fun seasonalRejectsInvalidInputsBeforeNetwork() = runTest {
+        val api = api { error("Invalid season must not contact network") }
+        try {
+            for ((year, season) in listOf(0 to "winter", -1 to "spring", 2026 to "", 2026 to "fall", 2026 to "winter,summer")) {
+                assertFailsWith<IllegalArgumentException> { api.seasonal(year, season) }
+            }
+        } finally { api.close() }
+    }
+
+    @Test fun seasonalSharesRateLimiterAndCancellationDoesNotBlockLaterRequests() = runTest {
+        val sent = mutableListOf<Long>()
+        val api = api {
+            sent += testScheduler.currentTime
+            respond("[]", headers = headers)
+        }
+        try {
+            repeat(5) { api.discover() }
+            val waiting = async { api.seasonal(2026, "winter") }
+            runCurrent()
+            assertEquals(5, sent.size)
+            waiting.cancelAndJoin()
+            assertEquals("[]", api.seasonal(2026, "spring"))
+            assertEquals(listOf(0L, 0L, 0L, 0L, 0L, 1000L), sent)
+        } finally { api.close() }
+    }
+
+    @Test fun seasonalNetworkCancellationPropagates() = runTest {
+        val api = api { throw CancellationException("cancelled") }
+        try { assertFailsWith<CancellationException> { api.seasonal(2026, "summer") } }
+        finally { api.close() }
     }
 
     @Test fun detailsAndAccountNormalizeUpstreamFields() = runTest {
@@ -80,6 +148,59 @@ class NativeApiTest {
             val account = api.account("secret").obj()
             assertEquals(5000000000L, account["id"]!!.jsonPrimitive.long)
             assertEquals("https://shikimori.io/avatar.jpg", account["avatar"]!!.jsonPrimitive.content)
+        } finally { api.close() }
+    }
+
+    @Test fun optionalMetadataDecodesLegacyAndExplicitNullWirePayloads() {
+        for (metadata in listOf("", ",\"kind\":null,\"studios\":null")) {
+            val anime = wireJson.decodeFromString<Anime>("""{"id":42$metadata}""")
+            assertNull(anime.kind)
+            assertNull(anime.studios)
+            assertFalse(wireJson.encodeToString(anime).obj().containsKey("kind"))
+            assertFalse(wireJson.encodeToString(anime).obj().containsKey("studios"))
+        }
+        for (metadata in listOf("", ",\"updatedAt\":null")) {
+            val item = wireJson.decodeFromString<LibraryItem>("""{"id":1,"anime":{"id":42},"status":"watching","episodes":0$metadata}""")
+            assertNull(item.updatedAt)
+            assertFalse(wireJson.encodeToString(item).obj().containsKey("updatedAt"))
+        }
+        for (metadata in listOf("", ",\"kind\":null")) {
+            val translation = wireJson.decodeFromString<Translation>("""{"id":1,"title":"Track"$metadata}""")
+            assertNull(translation.kind)
+            assertEquals(setOf("id", "title", "episodes"), wireJson.encodeToString(translation).obj().keys)
+        }
+    }
+
+    @Test fun detailsExposeOptionalKindAndStudioNames() = runTest {
+        val api = api {
+            respond("""{"id":42,"kind":"tv","studios":[{"id":1,"name":"Madhouse"},{"id":2,"name":"Bones"}]}""", headers = headers)
+        }
+        try {
+            val anime = api.details(42).obj()
+            assertEquals("tv", anime["kind"]?.jsonPrimitive?.content)
+            assertEquals(listOf("Madhouse", "Bones"), anime["studios"]?.jsonArray?.map { it.jsonPrimitive.content })
+        } finally { api.close() }
+    }
+
+    @Test fun libraryPreservesUpdatedAtForEmbeddedAndHydratedCards() = runTest {
+        val api = api { request ->
+            val body = when {
+                request.url.encodedPath == "/api/animes" -> """[{"id":43,"kind":"movie"}]"""
+                request.url.parameters["status"] == "watching" -> """[
+                    {"id":1,"target_id":42,"status":"watching","episodes":2,"updated_at":"2026-09-19T12:34:56Z","target":{"id":42}},
+                    {"id":2,"target_id":43,"status":"watching","episodes":1,"updated_at":"2026-09-18T12:34:56Z"},
+                    {"id":3,"target_id":42,"status":"watching","episodes":0,"updated_at":null}
+                ]"""
+                else -> "[]"
+            }
+            respond(body, headers = headers)
+        }
+        try {
+            val items = api.library(1, "access").array().map { it.jsonObject }
+            assertEquals("2026-09-19T12:34:56Z", items[0]["updatedAt"]?.jsonPrimitive?.content)
+            assertEquals("2026-09-18T12:34:56Z", items[1]["updatedAt"]?.jsonPrimitive?.content)
+            assertEquals("movie", items[1]["anime"]!!.jsonObject["kind"]?.jsonPrimitive?.content)
+            assertNull(items[2]["updatedAt"]?.jsonPrimitive?.contentOrNull)
         } finally { api.close() }
     }
 
@@ -248,7 +369,7 @@ class NativeApiTest {
                     assertEquals(42, payload["target_id"]!!.jsonPrimitive.int)
                     assertEquals("Anime", payload["target_type"]!!.jsonPrimitive.content)
                 } else assertEquals("/api/v2/user_rates/6000000000", request.url.encodedPath)
-                respond("""{"id":6000000000,"target_id":42,"status":"watching","episodes":3}""", headers = headers)
+                respond("""{"id":6000000000,"target_id":42,"status":"watching","episodes":3,"updated_at":"2026-09-19T12:34:56Z"}""", headers = headers)
             }
         }
         try {
@@ -256,6 +377,7 @@ class NativeApiTest {
                 val item = api.setRate(42, 5000000000, id, "watching", 3, "access").obj()
                 assertEquals(6000000000, item["id"]!!.jsonPrimitive.long)
                 assertEquals("Title", item["anime"]!!.jsonObject["title"]!!.jsonPrimitive.content)
+                assertEquals("2026-09-19T12:34:56Z", item["updatedAt"]?.jsonPrimitive?.content)
             }
             assertEquals(listOf(HttpMethod.Post, HttpMethod.Patch), writes)
         } finally { api.close() }

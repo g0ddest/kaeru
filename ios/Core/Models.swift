@@ -12,6 +12,8 @@ struct Anime: Codable, Identifiable, Hashable {
     var score = ""
     var year = ""
     var nextEpisodeAt = ""
+    var kind: String? = nil
+    var studios: [String]? = nil
     var availableEpisodes: Int { status == "released" ? max(episodes, episodesAired) : episodesAired }
     var nextAirDate: Date? { ISO8601DateFormatter().date(from: nextEpisodeAt) }
     var subtitle: String { [year, episodes > 0 ? "\(episodes) эп." : nil, score.isEmpty ? nil : "★ \(score)"].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ") }
@@ -27,6 +29,7 @@ struct LibraryItem: Codable, Identifiable, Hashable {
     var anime: Anime
     var status: String
     var episodes: Int
+    var updatedAt: String? = nil
 }
 
 enum WatchStatus: String, CaseIterable, Identifiable {
@@ -44,7 +47,7 @@ enum WatchStatus: String, CaseIterable, Identifiable {
     }
 }
 
-struct Translation: Codable, Identifiable, Hashable { var id: Int; var title: String; var episodes: Int }
+struct Translation: Codable, Identifiable, Hashable { var id: Int; var title: String; var episodes: Int; var kind: String? = nil }
 struct StreamURL: Codable, Hashable { var quality: Int; var url: String }
 struct Stream: Codable { var urls: [StreamURL]; var headers: [String: String]; var translation: Translation; var episode: Int }
 struct Account: Codable, Equatable { var id: Int64; var nickname: String; var avatar: String }
@@ -88,6 +91,26 @@ struct AccountSnapshot: Codable {
     var pending: [PendingRate] = []
     var progress: [Int: EpisodeProgress] = [:]
     var recent: [Int: Anime] = [:]
+    var episodeHistory: [String: EpisodeProgress] = [:]
+    var translations: [Int: Int] = [:]
+
+    init(library: [LibraryItem] = [], pending: [PendingRate] = [], progress: [Int: EpisodeProgress] = [:], recent: [Int: Anime] = [:], episodeHistory: [String: EpisodeProgress] = [:], translations: [Int: Int] = [:]) {
+        self.library = library; self.pending = pending; self.progress = progress; self.recent = recent
+        self.episodeHistory = episodeHistory; self.translations = translations
+    }
+    private enum CodingKeys: String, CodingKey { case library, pending, progress, recent, episodeHistory, translations }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        library = try values.decodeIfPresent([LibraryItem].self, forKey: .library) ?? []
+        pending = try values.decodeIfPresent([PendingRate].self, forKey: .pending) ?? []
+        progress = try values.decodeIfPresent([Int: EpisodeProgress].self, forKey: .progress) ?? [:]
+        recent = try values.decodeIfPresent([Int: Anime].self, forKey: .recent) ?? [:]
+        episodeHistory = try values.decodeIfPresent([String: EpisodeProgress].self, forKey: .episodeHistory) ?? [:]
+        translations = try values.decodeIfPresent([Int: Int].self, forKey: .translations) ?? [:]
+        for value in progress.values where episodeHistory["\(value.animeID):\(value.episode)"] == nil {
+            episodeHistory["\(value.animeID):\(value.episode)"] = value
+        }
+    }
 }
 
 enum AppError: LocalizedError {

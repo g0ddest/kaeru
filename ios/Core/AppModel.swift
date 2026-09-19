@@ -6,17 +6,60 @@ import AuthenticationServices
     let service: any AnimeService
     let store: any LocalStorage
     let configuration: AppConfiguration
+    @ObservationIgnored private var downloadManager: DownloadManager?
+    @ObservationIgnored private var notificationService: EpisodeNotificationService?
+    @ObservationIgnored private var castManager: CastManager?
+    @ObservationIgnored private var togetherManager: TogetherManager?
+    var notifications: EpisodeNotificationService {
+        if let notificationService { return notificationService }
+        let value = EpisodeNotificationService()
+        value.setAccount(session == nil ? nil : accountKey)
+        notificationService = value
+        return value
+    }
+    var downloads: DownloadManager {
+        if let downloadManager { return downloadManager }
+        let manager = DownloadManager(service: service)
+        manager.onConnectivityRestored = { [weak self] in Task { await self?.flush() } }
+        downloadManager = manager
+        return manager
+    }
+    var cast: CastManager {
+        if let castManager { return castManager }
+        let manager = CastManager(service: service)
+        manager.onProgress = { [weak self] progress, anime in
+            guard let self else { return }
+            self.saveProgress(progress, anime: anime, account: self.accountKey)
+        }
+        castManager = manager
+        return manager
+    }
+    var together: TogetherManager {
+        if let togetherManager { return togetherManager }
+        let name = session?.account.nickname.isEmpty == false ? session!.account.nickname : "Kaeru"
+        let manager = TogetherManager(relayURL: configuration.togetherRelayURL, displayName: name)
+        togetherManager = manager
+        return manager
+    }
     private(set) var session: Session?
     private(set) var catalog: [Anime] = []
     private(set) var library: [LibraryItem] = []
     private(set) var progress: [Int: EpisodeProgress] = [:]
     private(set) var recentAnime: [Int: Anime] = [:]
     private(set) var pending: [PendingRate] = []
+    private(set) var episodeHistory: [String: EpisodeProgress] = [:]
+    private(set) var titleTranslations: [Int: Int] = [:]
+    var preferences = PlaybackPreferences()
+    var kodikToken = ""
+    var completionSuggestion: Anime?
+    private var suppressedMarks: [Int: Int] = [:]
+    private var undoChange: EpisodeUndo?
+    var canUndoEpisodeChange: Bool { undoChange?.account == accountKey }
     var error: String?
     var loading = false
     var signingIn = false
     var syncing = false
-    var preferredQuality = 720
+    var preferredQuality = 0
     var autoNext = true
     var preferredTranslation = 0
     private var generation = UUID()
@@ -42,7 +85,11 @@ import AuthenticationServices
         self.service = service; self.store = store; self.configuration = configuration; self.session = session; self.saveSession = saveSession
         do {
             catalog = try store.read([Anime].self, key: "catalog") ?? []
-            preferredQuality = try store.read(Int.self, key: "quality") ?? 720
+            preferredQuality = try store.read(Int.self, key: "quality") ?? 0
+            preferences = try store.read(PlaybackPreferences.self, key: "playbackPreferences") ?? PlaybackPreferences()
+            preferences.normalize()
+            kodikToken = try store.read(String.self, key: "kodikToken") ?? ""
+            service.configureKodikToken(kodikToken)
             preferredTranslation = try store.read(Int.self, key: "translation") ?? 0
             autoNext = try store.read(Bool.self, key: "autoNext") ?? true
             try restoreAccount()
@@ -50,6 +97,10 @@ import AuthenticationServices
     }
     func start() async {
         guard !loaded else { return }; loaded = true
+        _ = downloads
+        await notifications.refreshAuthorization()
+        await notifications.registerActions()
+        EpisodeBackgroundRefresh.schedule(enabled: session != nil && notifications.isEnabled)
         await reload()
     }
     func reload() async {
@@ -71,6 +122,9 @@ import AuthenticationServices
             library = rates
             for change in pending { apply(change, rateID: rate(for: change.id)?.id ?? 0) }
             try persistAccount()
+            if let notificationService, !Task.isCancelled {
+                await notificationService.process(library: library, progress: Array(episodeHistory.values), account: accountKey)
+            }
         } catch is CancellationError {} catch { if fence == generation { self.error = error.localizedDescription } }
     }
     func signIn() async {
@@ -89,6 +143,8 @@ import AuthenticationServices
             try saveSession(newSession)
             session = newSession; generation = UUID(); syncing = false
             try restoreAccount()
+            notificationService?.setAccount(accountKey)
+            EpisodeBackgroundRefresh.schedule(enabled: notifications.isEnabled)
             await reloadLibrary(); await flush()
         } catch let failure as ASWebAuthenticationSessionError where failure.code == .canceledLogin {} catch {
             if fence == generation { self.error = errorMessage(error) }
@@ -100,9 +156,83 @@ import AuthenticationServices
             generation = UUID(); refreshTask?.cancel(); refreshTask = nil
             refreshID = UUID(); syncing = false
             session = nil; try restoreAccount()
+            notificationService?.setAccount(nil)
+            EpisodeBackgroundRefresh.schedule(enabled: false)
         } catch { self.error = error.localizedDescription }
     }
     func rate(for id: Int) -> LibraryItem? { library.first { $0.anime.id == id } }
+    func progressFor(animeID: Int, episode: Int) -> EpisodeProgress? { episodeHistory["\(animeID):\(episode)"] }
+    func continueTarget(for anime: Anime) -> ContinueTarget {
+        ContinueTarget.resolve(anime: anime, counted: rate(for: anime.id)?.episodes ?? 0, rewatching: rate(for: anime.id)?.status == "rewatching", progress: Array(episodeHistory.values), threshold: preferences.watchedThreshold)
+    }
+    func beginPlayback(anime: Anime) {
+        notificationService?.clearForPlayback(animeID: anime.id)
+        suppressedMarks[anime.id] = nil
+        if session != nil, rate(for: anime.id) == nil { queueRate(anime: anime, status: "watching", episodes: 0) }
+    }
+    func setNotificationsEnabled(_ enabled: Bool) async {
+        if enabled, !(await notifications.requestAuthorization()) { return }
+        guard await notifications.setEnabled(enabled) else { return }
+        EpisodeBackgroundRefresh.schedule(enabled: enabled && session != nil)
+        if enabled { await reloadLibrary() }
+    }
+    func markEpisode(anime: Anime, episode: Int, watched: Bool) {
+        guard session != nil, episode > 0, episode <= max(anime.availableEpisodes, rate(for: anime.id)?.episodes ?? 0) else { return }
+        let previous = snapshot
+        let rate = rate(for: anime.id)
+        let previousSuppressed = suppressedMarks
+        if watched {
+            guard episode > (rate?.episodes ?? 0) else { return }
+            stageRate(anime: anime, status: watchedStatus(rate?.status), episodes: episode)
+            suppressedMarks[anime.id] = nil
+        } else {
+            guard let rate, rate.episodes >= episode else { return }
+            stageRate(anime: anime, status: rate.status, episodes: episode - 1)
+            episodeHistory = episodeHistory.filter { $0.value.animeID != anime.id || $0.value.episode < episode }
+            progress[anime.id] = episodeHistory.values.filter { $0.animeID == anime.id }.max { $0.updatedAt < $1.updatedAt }
+            suppressedMarks[anime.id] = episode
+        }
+        do {
+            try persistAccount(); mutationRevision += 1
+            undoChange = EpisodeUndo(account: accountKey, anime: anime, rate: rate, history: previous.episodeHistory.filter { $0.value.animeID == anime.id }, progress: previous.progress[anime.id])
+            if watched { downloadManager?.onWatched(animeID: anime.id, episode: episode) }
+            else {
+                for number in episode...max(episode, rate?.episodes ?? episode) { downloadManager?.unmarkWatched(animeID: anime.id, episode: number) }
+            }
+            if watched && anime.episodes > 0 && episode >= anime.episodes { completionSuggestion = anime }
+            Task { await flush() }
+        } catch { restore(previous); suppressedMarks = previousSuppressed; self.error = error.localizedDescription }
+    }
+    func setEpisodes(anime: Anime, count: Int) {
+        guard let rate = rate(for: anime.id) else { return }
+        if count < rate.episodes { markEpisode(anime: anime, episode: max(0, count) + 1, watched: false) }
+        else { queueRate(anime: anime, status: rate.status, episodes: count) }
+    }
+    func undoEpisodeChange() {
+        guard let undo = undoChange, undo.account == accountKey else { return }
+        let previous = snapshot
+        stageRate(anime: undo.anime, status: undo.rate?.status ?? "watching", episodes: undo.rate?.episodes ?? 0)
+        episodeHistory = episodeHistory.filter { $0.value.animeID != undo.anime.id }.merging(undo.history) { _, old in old }
+        progress[undo.anime.id] = undo.progress
+        do {
+            try persistAccount(); mutationRevision += 1; undoChange = nil; suppressedMarks[undo.anime.id] = nil
+            Task { await flush() }
+        } catch { restore(previous); self.error = error.localizedDescription }
+    }
+    private func watchedStatus(_ status: String?) -> String {
+        guard let status, !["planned", "on_hold"].contains(status) else { return "watching" }
+        return status
+    }
+    func preferredTranslation(for animeID: Int, available: [Translation], episode: Int) -> Int {
+        let usage = titleTranslations.values.reduce(into: [Int: Int]()) { $0[$1, default: 0] += 1 }
+        return TranslationPreference.pick(available, episode: episode, remembered: titleTranslations[animeID], studios: preferences.studios, usage: usage)
+    }
+    func rememberTranslation(_ id: Int, for animeID: Int) {
+        guard id > 0 else { return }
+        let previous = titleTranslations
+        titleTranslations[animeID] = id
+        do { try persistAccount() } catch { titleTranslations = previous; self.error = error.localizedDescription }
+    }
     func queueRate(anime: Anime, status: String, episodes: Int) {
         guard session != nil else { return }
         let previousPending = pending, previousLibrary = library
@@ -115,23 +245,37 @@ import AuthenticationServices
     }
     func saveProgress(_ value: EpisodeProgress, anime: Anime, account: String) {
         // Closing a player from a previous session must never change the new account.
-        guard account == accountKey, value.position.isFinite, value.duration.isFinite else { return }
-        let previous = AccountSnapshot(library: library, pending: pending, progress: progress, recent: recentAnime)
+        guard account == accountKey, value.animeID == anime.id, value.episode > 0,
+              value.position.isFinite, value.duration.isFinite, value.position >= 0, value.duration >= 0 else { return }
+        guard !(suppressedMarks[anime.id].map { value.episode >= $0 } ?? false) else { return }
+        let previous = snapshot
         progress[anime.id] = value; recentAnime[anime.id] = anime
-        let shouldQueue = value.watched && session != nil && value.episode > (rate(for: anime.id)?.episodes ?? 0)
+        episodeHistory["\(anime.id):\(value.episode)"] = value
+        let watched = value.duration > 0 && value.position >= value.duration * preferences.watchedThreshold
+        let suppressed = suppressedMarks[anime.id].map { value.episode >= $0 } ?? false
+        let shouldQueue = watched && !suppressed && session != nil && value.episode > (rate(for: anime.id)?.episodes ?? 0)
         if shouldQueue {
-            let complete = anime.episodes > 0 && value.episode >= anime.episodes
-            stageRate(anime: anime, status: complete ? "completed" : "watching", episodes: value.episode)
+            stageRate(anime: anime, status: watchedStatus(rate(for: anime.id)?.status), episodes: value.episode)
         }
         do { try persistAccount() }
         catch {
             library = previous.library; pending = previous.pending; progress = previous.progress; recentAnime = previous.recent
+            episodeHistory = previous.episodeHistory
             self.error = error.localizedDescription; return
         }
-        if shouldQueue { mutationRevision += 1; Task { await flush() } }
+        if shouldQueue {
+            mutationRevision += 1
+            downloadManager?.onWatched(animeID: anime.id, episode: value.episode)
+            if anime.episodes > 0 && value.episode >= anime.episodes { completionSuggestion = anime }
+            Task { await flush() }
+        }
     }
     func savePreferences() {
+        preferences.normalize()
         do {
+            try store.write(preferences, key: "playbackPreferences")
+            try store.write(kodikToken, key: "kodikToken")
+            service.configureKodikToken(kodikToken)
             try store.write(preferredQuality, key: "quality")
             try store.write(preferredTranslation, key: "translation")
             try store.write(autoNext, key: "autoNext")
@@ -220,13 +364,30 @@ import AuthenticationServices
         apply(change, rateID: rate(for: anime.id)?.id ?? 0)
     }
     private func persistAccount() throws {
-        try store.write(AccountSnapshot(library: library, pending: pending, progress: progress, recent: recentAnime), key: "\(accountKey).snapshot")
+        try store.write(snapshot, key: "\(accountKey).snapshot")
+    }
+    private var snapshot: AccountSnapshot {
+        AccountSnapshot(library: library, pending: pending, progress: progress, recent: recentAnime, episodeHistory: episodeHistory, translations: titleTranslations)
+    }
+    private func restore(_ snapshot: AccountSnapshot) {
+        library = snapshot.library; pending = snapshot.pending; progress = snapshot.progress; recentAnime = snapshot.recent
+        episodeHistory = snapshot.episodeHistory; titleTranslations = snapshot.translations
     }
     private func restoreAccount() throws {
-        library = []; pending = []; progress = [:]; recentAnime = [:]
+        undoChange = nil; suppressedMarks = [:]; completionSuggestion = nil
+        library = []; pending = []; progress = [:]; recentAnime = [:]; episodeHistory = [:]; titleTranslations = [:]
         let snapshot = try store.read(AccountSnapshot.self, key: "\(accountKey).snapshot") ?? AccountSnapshot()
         library = snapshot.library; pending = snapshot.pending; progress = snapshot.progress; recentAnime = snapshot.recent
+        episodeHistory = snapshot.episodeHistory; titleTranslations = snapshot.translations
         mutationRevision += 1
     }
     private func errorMessage(_ error: Error) -> String { error.localizedDescription }
+}
+
+private struct EpisodeUndo {
+    var account: String
+    var anime: Anime
+    var rate: LibraryItem?
+    var history: [String: EpisodeProgress]
+    var progress: EpisodeProgress?
 }

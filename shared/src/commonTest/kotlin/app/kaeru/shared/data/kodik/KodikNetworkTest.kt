@@ -5,6 +5,10 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.*
 import io.ktor.http.*
 import io.ktor.http.content.OutgoingContent
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.*
 import kotlin.test.*
@@ -55,6 +59,7 @@ class KodikNetworkTest {
                 val stream = api.resolve(52991, 3560, 2).obj()
                 assertEquals(2, stream["episode"]!!.jsonPrimitive.int)
                 assertEquals(3560, stream["translation"]!!.jsonObject["id"]!!.jsonPrimitive.int)
+                assertEquals("voice", stream["translation"]!!.jsonObject["kind"]?.jsonPrimitive?.content)
                 assertEquals(setOf(360, 480, 720), stream["urls"]!!.jsonArray.map { it.jsonObject["quality"]!!.jsonPrimitive.int }.toSet())
                 assertEquals("https://kodikplayer.com", stream["headers"]!!.jsonObject["Origin"]!!.jsonPrimitive.content)
             }
@@ -91,6 +96,7 @@ class KodikNetworkTest {
         try {
             val tracks = Json.parseToJsonElement(api.translations(42)).jsonArray
             assertEquals("AnimeVost", tracks.single().jsonObject["title"]!!.jsonPrimitive.content)
+            assertEquals("voice", tracks.single().jsonObject["kind"]?.jsonPrimitive?.content)
             assertEquals(1, tracks.single().jsonObject["episodes"]!!.jsonPrimitive.int)
             assertEquals(923, tracks.single().jsonObject["id"]!!.jsonPrimitive.int)
             val stream = api.resolve(42, 0, 4).obj()
@@ -124,6 +130,20 @@ class KodikNetworkTest {
         }
     }
 
+    @Test fun translationsExposeVoiceAndSubtitlesKinds() = runTest {
+        val api = NativeApi("client", "", HttpClient(MockEngine { request ->
+            when (request.url.host) {
+                "kodik-add.com" -> respond(fixture("add-players.js"))
+                "kodik-api.com" -> respond("""{"found":true,"link":"/serial/53973/hash/720p"}""", headers = jsonHeaders)
+                else -> respond(fixture("player.html"))
+            }
+        }))
+        try {
+            val tracks = Json.parseToJsonElement(api.translations(42)).jsonArray.map { it.jsonObject }
+            assertEquals(setOf("voice", "subtitles"), tracks.mapNotNull { it["kind"]?.jsonPrimitive?.content }.toSet())
+        } finally { api.close() }
+    }
+
     @Test fun repeatedTokenRejectionStopsAfterOneRetry() = runTest {
         var calls = 0
         val api = NativeApi("client", "", HttpClient(MockEngine { request ->
@@ -133,6 +153,144 @@ class KodikNetworkTest {
         try {
             assertFailsWith<KodikError.NoToken> { api.translations(42) }
             assertEquals(2, calls)
+        } finally { api.close() }
+    }
+
+    @Test fun configuredTokenOverridesCachedPublicKeyAndBlankResetFetchesFreshKey() = runTest {
+        var scripts = 0
+        val sent = mutableListOf<String>()
+        val api = NativeApi("client", "", HttpClient(MockEngine { request ->
+            when (request.url.host) {
+                "kodik-add.com" -> { scripts++; respond("var token=\"public$scripts\";") }
+                "kodik-api.com" -> {
+                    sent += (request.body as OutgoingContent.ByteArrayContent).bytes().decodeToString().parseUrlEncodedParameters()["token"]!!
+                    respond("""{"found":true,"link":"/video/990011/hash/720p"}""", headers = jsonHeaders)
+                }
+                else -> respond(fixture("movie-single-track.html"))
+            }
+        }))
+        try {
+            api.translations(42)
+            api.configureKodikToken("  private-first  ")
+            api.translations(42)
+            api.configureKodikToken("private-second")
+            api.translations(42)
+            api.configureKodikToken(" ")
+            api.translations(42)
+            api.translations(42)
+            api.configureKodikToken("")
+            api.translations(42)
+            assertEquals(listOf("public1", "private-first", "private-second", "public2", "public2", "public3"), sent)
+            assertEquals(3, scripts)
+        } finally { api.close() }
+    }
+
+    @Test fun rejectedConfiguredTokenNeverFallsBackToPublicOrLeaksSecrets() = runTest {
+        for (status in listOf(HttpStatusCode.Unauthorized, HttpStatusCode.OK)) {
+            var calls = 0
+            val api = NativeApi("client", "", HttpClient(MockEngine { request ->
+                assertEquals("kodik-api.com", request.url.host)
+                calls++
+                respond("""{"error":"invalid token private-key"}""", status, jsonHeaders)
+            }))
+            try {
+                api.configureKodikToken("private-key")
+                val error = assertFailsWith<KodikError.NoToken> { api.translations(42) }
+                assertFalse(error.toString().contains("private-key"))
+                assertNull(error.cause)
+                assertEquals(1, calls)
+            } finally { api.close() }
+        }
+    }
+
+    @Test fun configurationDuringPublicFetchDiscardsStaleResultIncludingReset() = runTest {
+        for (reset in listOf(false, true)) {
+            val started = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            var scripts = 0
+            val sent = mutableListOf<String>()
+            val api = NativeApi("client", "", HttpClient(MockEngine { request ->
+                when (request.url.host) {
+                    "kodik-add.com" -> {
+                        scripts++
+                        if (scripts == 1) { started.complete(Unit); release.await() }
+                        respond("var token=\"public$scripts\";")
+                    }
+                    "kodik-api.com" -> {
+                        sent += (request.body as OutgoingContent.ByteArrayContent).bytes().decodeToString().parseUrlEncodedParameters()["token"]!!
+                        respond("""{"found":true,"link":"/video/990011/hash/720p"}""", headers = jsonHeaders)
+                    }
+                    else -> respond(fixture("movie-single-track.html"))
+                }
+            }))
+            try {
+                val pending = async { api.translations(42) }
+                started.await()
+                api.configureKodikToken("private-key")
+                if (reset) api.configureKodikToken("")
+                release.complete(Unit)
+                pending.await()
+                api.translations(42)
+                assertEquals(if (reset) listOf("public2", "public2") else listOf("private-key", "private-key"), sent)
+                assertEquals(if (reset) 2 else 1, scripts)
+            } finally { release.complete(Unit); api.close() }
+        }
+    }
+
+    @Test fun lateTokenRejectionDoesNotInvalidateNewConfiguration() = runTest {
+        for (configured in listOf(false, true)) {
+            val started = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val sent = mutableListOf<String>()
+            var scripts = 0
+            val api = NativeApi("client", "", HttpClient(MockEngine { request ->
+                when (request.url.host) {
+                    "kodik-add.com" -> { scripts++; respond("var token=\"publickey\";") }
+                    "kodik-api.com" -> {
+                        sent += (request.body as OutgoingContent.ByteArrayContent).bytes().decodeToString().parseUrlEncodedParameters()["token"]!!
+                        if (sent.size == 1) {
+                            started.complete(Unit)
+                            release.await()
+                            respond("rejected", HttpStatusCode.Unauthorized)
+                        } else respond("""{"found":true,"link":"/video/990011/hash/720p"}""", headers = jsonHeaders)
+                    }
+                    else -> respond(fixture("movie-single-track.html"))
+                }
+            }))
+            try {
+                if (configured) api.configureKodikToken("old-private")
+                val pending = async { api.translations(42) }
+                started.await()
+                api.configureKodikToken("new-private")
+                api.translations(42)
+                release.complete(Unit)
+                pending.await()
+                assertEquals(listOf(if (configured) "old-private" else "publickey", "new-private", "new-private"), sent)
+                assertEquals(if (configured) 0 else 1, scripts)
+            } finally { release.complete(Unit); api.close() }
+        }
+    }
+
+    @Test fun cancellationDuringPublicFetchReleasesTokenLock() = runTest {
+        val started = CompletableDeferred<Unit>()
+        var scripts = 0
+        val api = NativeApi("client", "", HttpClient(MockEngine { request ->
+            when (request.url.host) {
+                "kodik-add.com" -> {
+                    scripts++
+                    if (scripts == 1) { started.complete(Unit); awaitCancellation() }
+                    respond("var token=\"publickey\";")
+                }
+                "kodik-api.com" -> respond("""{"found":true,"link":"/video/990011/hash/720p"}""", headers = jsonHeaders)
+                else -> respond(fixture("movie-single-track.html"))
+            }
+        }))
+        try {
+            val pending = async { api.translations(42) }
+            started.await()
+            pending.cancelAndJoin()
+            assertEquals(1, Json.parseToJsonElement(api.translations(42)).jsonArray.size)
+            assertEquals(2, scripts)
         } finally { api.close() }
     }
 

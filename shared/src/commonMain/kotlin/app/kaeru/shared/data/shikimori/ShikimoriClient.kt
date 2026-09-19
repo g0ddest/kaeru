@@ -38,12 +38,18 @@ internal class ShikimoriClient(
         parameter("search", query); parameter("limit", 30)
     }).map(::anime).withRealPosters()
 
-    suspend fun discover(): List<Anime> = listOf("ongoing", "released").flatMap { status ->
+    suspend fun discover(): List<Anime> = catalogue { parameter("status", "ongoing") }
+
+    suspend fun seasonal(year: Int, season: String): List<Anime> {
+        require(year > 0 && season in listOf("winter", "spring", "summer", "autumn")) { "Invalid anime season." }
+        return catalogue { parameter("season", "${season}_$year") }
+    }
+
+    private suspend fun catalogue(filters: HttpRequestBuilder.() -> Unit): List<Anime> =
         array(request("api/animes") {
-            parameter("status", status); parameter("order", "popularity")
-            parameter("limit", 20); parameter("censored", "true")
-        }).map(::anime)
-    }.distinctBy { it.id }.withRealPosters()
+            parameter("order", "popularity"); parameter("limit", 20); parameter("censored", "true")
+            filters()
+        }).map(::anime).distinctBy { it.id }.withRealPosters()
 
     suspend fun details(animeId: Int): Anime {
         require(animeId > 0) { "Anime id must be positive." }
@@ -198,6 +204,10 @@ internal class ShikimoriClient(
             episodesAired = dto.int("episodes_aired").coerceAtLeast(0),
             status = dto.string("status"), score = dto.string("score"),
             year = dto.string("aired_on").take(4), nextEpisodeAt = dto.string("next_episode_at"),
+            kind = dto.string("kind").takeIf { it.isNotBlank() },
+            studios = (dto["studios"] as? JsonArray)?.mapNotNull {
+                (it as? JsonObject)?.string("name")?.takeIf { name -> name.isNotBlank() }
+            },
         )
     }
 
@@ -209,6 +219,9 @@ internal class ShikimoriClient(
 
     private fun rate(dto: JsonObject, card: Anime): LibraryItem {
         check(dto.long("id") > 0) { "Invalid library rate response." }
-        return LibraryItem(dto.long("id"), card, dto.string("status"), dto.int("episodes").coerceAtLeast(0))
+        return LibraryItem(
+            dto.long("id"), card, dto.string("status"), dto.int("episodes").coerceAtLeast(0),
+            updatedAt = dto.string("updated_at").takeIf { it.isNotBlank() },
+        )
     }
 }

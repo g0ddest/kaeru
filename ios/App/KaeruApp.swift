@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct KaeruApp: App {
+    @UIApplicationDelegateAdaptor(KaeruAppDelegate.self) private var appDelegate
     @State private var model: AppModel?
     @State private var startupError: String?
     var body: some Scene {
@@ -17,9 +18,7 @@ struct KaeruApp: App {
     }
     @MainActor private func initialize() {
         do {
-            let store = try LocalStore()
-            let configuration = AppConfiguration.bundled
-            model = AppModel(service: SharedService(configuration: configuration), store: store, configuration: configuration, session: try KeychainSession.read())
+            model = try ApplicationRuntime.shared.loadModel()
         } catch { startupError = error.localizedDescription }
     }
 }

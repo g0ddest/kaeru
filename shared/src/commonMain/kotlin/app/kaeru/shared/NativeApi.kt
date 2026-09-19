@@ -7,7 +7,7 @@ import io.ktor.client.HttpClient
 import kotlinx.serialization.encodeToString
 
 /**
- * Swift boundary for the online core. JSON schemas are stable and non-null.
+ * Swift boundary for the online core. JSON schemas keep non-null core fields and nullable optional metadata.
  * Swift owns account generations, one 401 refresh/retry, Keychain and persistent outbox storage.
  * Keep one instance for the app lifetime, then close its owned clients when disposing it.
  */
@@ -28,6 +28,12 @@ class NativeApi internal constructor(
 
     @Throws(Exception::class)
     suspend fun discover(): String = wireJson.encodeToString(shikimori.discover())
+
+    @Throws(Exception::class)
+    suspend fun seasonal(year: Int, season: String): String = wireJson.encodeToString(shikimori.seasonal(year, season))
+
+    /** A trimmed, nonblank token overrides automatic lookup; blank resets it and clears its cache. */
+    fun configureKodikToken(token: String) = kodik.configureToken(token)
 
     @Throws(Exception::class)
     suspend fun details(animeId: Int): String = wireJson.encodeToString(shikimori.details(animeId))

@@ -52,7 +52,8 @@ class PosterEnrichmentTest {
                 assertEquals("{ animes(ids: \"1,2,3\", limit: 50) { id poster { mainUrl originalUrl } } }", request.query())
                 respond("""{"data":{"animes":[{"id":"3","poster":{"mainUrl":"/uploads/3.webp"}}]}}""", headers = headers)
             } else {
-                val ids = if (request.url.parameters["status"] == "ongoing") listOf(1, 2) else listOf(2, 3)
+                assertEquals("ongoing", request.url.parameters["status"])
+                val ids = listOf(1, 2, 2, 3)
                 respond(ids.joinToString(",", "[", "]", transform = ::card), headers = headers)
             }
         }

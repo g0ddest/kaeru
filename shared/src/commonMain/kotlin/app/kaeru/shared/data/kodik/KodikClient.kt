@@ -9,11 +9,27 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.*
 import kotlin.time.TimeSource
+import kotlin.time.TimeMark
+import kotlin.concurrent.atomics.AtomicReference
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
+@OptIn(ExperimentalAtomicApi::class)
 internal class KodikClient(private val http: HttpTransport) {
     private val tokenLock = Mutex()
-    private var publicToken: String? = null
-    private var tokenAt: kotlin.time.TimeMark? = null
+    // Immutable snapshots allow the non-suspending Swift setter to invalidate an in-flight fetch.
+    // This is deliberately not a data class: its string representation must never include keys.
+    private class TokenState(
+        val configured: String? = null,
+        val automatic: String? = null,
+        val at: TimeMark? = null,
+    ) {
+        val value: String get() = configured ?: checkNotNull(automatic)
+    }
+    private val tokens = AtomicReference(TokenState())
+
+    fun configureToken(token: String) {
+        tokens.store(TokenState(configured = token.trim().takeIf { it.isNotEmpty() }))
+    }
 
     suspend fun translations(animeId: Int): List<Translation> = catalogue(animeId).translations.map { it.toDomain() }
 
@@ -73,47 +89,57 @@ internal class KodikClient(private val http: HttpTransport) {
 
     private suspend fun getPlayer(animeId: Int): JsonObject {
         repeat(2) { attempt ->
-            val token = token(force = attempt == 1)
+            val token = token()
             val response = http.request("https://kodik-api.com/get-player") {
                 browserHeaders("$PLAYER_HOST/")
                 method = HttpMethod.Post
                 setBody(FormDataContent(Parameters.build {
-                    append("token", token); append("shikimoriID", animeId.toString())
+                    append("token", token.value); append("shikimoriID", animeId.toString())
                     append("types", "anime,anime-serial")
                 }))
             }
             if (response.status == 401) {
-                invalidateToken(token)
-                if (attempt == 1) throw KodikError.NoToken()
+                rejectToken(token, attempt)
             } else {
                 val answer = try { wireJson.parseToJsonElement(response.successfulBody()).jsonObject }
                     catch (e: HttpFailure) { throw e }
                     catch (_: Exception) { throw KodikError.ParserBroken("get-player") }
                 val error = answer.string("error")
                 if (error.contains("токен", true) || error.contains("token", true)) {
-                    invalidateToken(token)
-                    if (attempt == 1) throw KodikError.NoToken()
+                    rejectToken(token, attempt)
                 } else return answer
             }
         }
         throw KodikError.NoToken()
     }
 
-    private suspend fun token(force: Boolean): String = tokenLock.withLock {
-        val age = tokenAt?.elapsedNow()?.inWholeMilliseconds
-        if (!force && publicToken != null && age != null && age in 0 until 86_400_000) return@withLock publicToken!!
-        publicToken = null
-        tokenAt = null
-        val response = http.request("https://kodik-add.com/add-players.min.js?v=2") { browserHeaders("$PLAYER_HOST/") }
-        if (response.status !in 200..299) throw KodikError.NoToken()
-        val fresh = KodikHtmlParser.extractPublicToken(response.body) ?: throw KodikError.NoToken()
-        publicToken = fresh
-        tokenAt = TimeSource.Monotonic.markNow()
-        fresh
+    private suspend fun token(): TokenState {
+        tokens.load().takeIf { it.configured != null }?.let { return it }
+        return tokenLock.withLock {
+            var selected: TokenState? = null
+            while (selected == null) {
+                val state = tokens.load()
+                val age = state.at?.elapsedNow()?.inWholeMilliseconds
+                if (state.configured != null || (state.automatic != null && age != null && age in 0 until 86_400_000)) {
+                    selected = state
+                    continue
+                }
+                val response = http.request("https://kodik-add.com/add-players.min.js?v=2") { browserHeaders("$PLAYER_HOST/") }
+                // A reset or override takes precedence over an older response, even a failed one.
+                if (tokens.load() !== state) continue
+                if (response.status !in 200..299) throw KodikError.NoToken()
+                val fresh = KodikHtmlParser.extractPublicToken(response.body) ?: throw KodikError.NoToken()
+                val updated = TokenState(automatic = fresh, at = TimeSource.Monotonic.markNow())
+                if (tokens.compareAndSet(state, updated)) selected = updated
+            }
+            selected
+        }
     }
 
-    private suspend fun invalidateToken(rejected: String) = tokenLock.withLock {
-        if (publicToken == rejected) { publicToken = null; tokenAt = null }
+    private fun rejectToken(rejected: TokenState, attempt: Int) {
+        // A late rejection cannot clear a newer configuration/cache snapshot.
+        if (rejected.configured == null) tokens.compareAndSet(rejected, TokenState())
+        if (attempt == 1 || (rejected.configured != null && tokens.load() === rejected)) throw KodikError.NoToken()
     }
 
     private suspend fun loadPage(url: String, referer: String): KodikPlayerPage {
@@ -146,7 +172,13 @@ internal class KodikClient(private val http: HttpTransport) {
         header(HttpHeaders.Referrer, referer)
     }
 
-    private fun KodikTranslationOption.toDomain() = Translation(id, title, episodesCount ?: 0)
+    private fun KodikTranslationOption.toDomain() = Translation(
+        id, title, episodesCount ?: 0,
+        kind = when (type) {
+            TranslationType.VOICE -> "voice"
+            TranslationType.SUBTITLES -> "subtitles"
+        },
+    )
 
     private companion object {
         const val PLAYER_HOST = "https://kodikplayer.com"
