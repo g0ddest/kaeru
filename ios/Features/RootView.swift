@@ -1,10 +1,41 @@
 import SwiftUI
 
 enum AppSection: String, CaseIterable, Identifiable {
-    case home, library, search
+    case home, search, library, downloads, recent, television, together, more
     var id: Self { self }
-    var title: String { switch self { case .home: "Главная"; case .library: "Мой список"; case .search: "Поиск" } }
-    var icon: String { switch self { case .home: "play.rectangle.fill"; case .library: "rectangle.stack.fill"; case .search: "magnifyingglass" } }
+    var title: String {
+        switch self {
+        case .home: "Главная"
+        case .search: "Поиск"
+        case .library: "Мой список"
+        case .downloads: "Загрузки"
+        case .recent: "Недавно добавленные"
+        case .television: "Телевизор"
+        case .together: "Совместный просмотр"
+        case .more: "Ещё"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .home: "play.house"
+        case .search: "magnifyingglass"
+        case .library: "rectangle.stack"
+        case .downloads: "arrow.down.circle"
+        case .recent: "clock"
+        case .television: "tv"
+        case .together: "person.2.wave.2"
+        case .more: "ellipsis.circle"
+        }
+    }
+    /// What the phone carries along the bottom.
+    static let tabs: [AppSection] = [.home, .search, .library, .downloads, .more]
+    /// How the sidebar groups the same app: the two places you go first, then your own shelves,
+    /// then the screens that involve another device.
+    static let groups: [(String?, [AppSection])] = [
+        (nil, [.home, .search]),
+        ("Библиотека", [.library, .downloads, .recent]),
+        ("Устройства", [.television, .together])
+    ]
 }
 
 struct RootView: View {
@@ -14,8 +45,8 @@ struct RootView: View {
     @State private var selection: AppSection = .home
     @State private var settings = false
     /// One navigation path per section, so a deep link can put a title on screen without taking
-    /// the other two tabs apart.
-    @State private var paths: [AppSection: [Anime]] = [:]
+    /// the other sections apart.
+    @State private var paths: [AppSection: NavigationPath] = [:]
     @State private var deepLinkRoute: PlaybackRoute?
     @State private var pairingOpen = false
     @State private var togetherOpen = false
@@ -25,18 +56,15 @@ struct RootView: View {
         Group {
             if sizeClass == .regular {
                 NavigationSplitView {
-                    List(AppSection.allCases, selection: Binding<AppSection?>(get: { selection }, set: { if let value = $0 { selection = value } })) { section in
-                        Label(section.title, systemImage: section.icon).tag(section)
-                    }
-                    .navigationTitle("Kaeru")
-                    .toolbar { ToolbarItem(placement: .bottomBar) { settingsButton } }
+                    sidebar
                 } detail: { stack(selection) }
             } else {
                 TabView(selection: $selection) {
-                    ForEach(AppSection.allCases) { section in
+                    ForEach(AppSection.tabs) { section in
                         stack(section).tabItem { Label(section.title, systemImage: section.icon) }.tag(section)
                     }
                 }
+                .tint(Palette.accent)
             }
         }
         // The viewer's choice, and by default the system's. What stood here forced dark on every
@@ -66,6 +94,47 @@ struct RootView: View {
         .task { openPending() }
         .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await model.flush() } } }
     }
+
+    /// The sidebar: groups with their own headings, and the viewer pinned to the bottom of it.
+    private var sidebar: some View {
+        List(selection: Binding<AppSection?>(get: { selection }, set: { if let value = $0 { selection = value } })) {
+            ForEach(Array(AppSection.groups.enumerated()), id: \.offset) { _, group in
+                Section {
+                    ForEach(group.1) { section in
+                        Label(section.title, systemImage: section.icon).tag(section)
+                    }
+                } header: {
+                    if let title = group.0 { Text(title).font(.footnote.weight(.semibold)).foregroundStyle(Palette.inkSoft) }
+                }
+            }
+        }
+        .listStyle(.sidebar)
+        .tint(Palette.accent)
+        .navigationTitle("Kaeru")
+        .safeAreaInset(edge: .bottom, spacing: 0) { viewerRow }
+    }
+
+    private var viewerRow: some View {
+        Button { settings = true } label: {
+            HStack(spacing: 10) {
+                AsyncImage(url: URL(string: model.session?.account.avatar ?? "")) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    Image(systemName: "person.crop.circle.fill").resizable().foregroundStyle(Palette.inkSoft)
+                }
+                .frame(width: 30, height: 30).clipShape(Circle())
+                Text(model.session?.account.nickname ?? "Гость")
+                    .font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink).lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 18).padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Аккаунт и настройки")
+        .background(.bar)
+    }
+
     private var scheme: ColorScheme? {
         switch AppAppearance(stored: model.preferences.appearance) {
         case .system: nil
@@ -73,24 +142,28 @@ struct RootView: View {
         case .dark: .dark
         }
     }
-    private var settingsButton: some View {
-        Button { settings = true } label: { Image(systemName: "person.crop.circle") }.accessibilityLabel("Аккаунт и настройки")
-    }
-    private func path(_ section: AppSection) -> Binding<[Anime]> {
-        Binding(get: { paths[section] ?? [] }, set: { paths[section] = $0 })
+    private func path(_ section: AppSection) -> Binding<NavigationPath> {
+        Binding(get: { paths[section] ?? NavigationPath() }, set: { paths[section] = $0 })
     }
     private func stack(_ section: AppSection) -> some View {
         NavigationStack(path: path(section)) {
             Group {
                 switch section {
                 case .home: HomeView()
-                case .library: LibraryView(onSearch: { selection = .search })
                 case .search: SearchView()
+                case .library: LibraryView(onSearch: { selection = .search })
+                case .recent: LibraryView(mode: .recent, onSearch: { selection = .search })
+                case .downloads: DownloadsView(manager: model.downloads) { entry in
+                    deepLinkRoute = PlaybackRoute(anime: entry.anime, episode: entry.episode)
+                }
+                case .television: DevicePairingView(embedded: true)
+                case .together: TogetherView(manager: model.together, embedded: true)
+                case .more: MoreView(openSettings: { settings = true })
                 }
             }
             .navigationTitle(section.title)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { settingsButton } }
             .navigationDestination(for: Anime.self) { DetailView(initial: $0) }
+            .navigationDestination(for: ShelfRoute.self) { ShelfScreen(route: $0) }
         }
     }
 
@@ -126,7 +199,7 @@ struct RootView: View {
     private func openTitle(id: Int, episode: Int?) async {
         guard let anime = await model.anime(id: id) else { return }
         selection = .home
-        paths[.home] = [anime]
+        paths[.home] = NavigationPath([anime])
         guard let episode else { return }
         // A link can name an episode the title no longer has; the player is given one it can open.
         let playable = max(anime.availableEpisodes, model.rate(for: id)?.episodes ?? 0)

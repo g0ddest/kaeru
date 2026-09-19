@@ -4,7 +4,7 @@ final class NavigationTests: XCTestCase {
     @MainActor func testNativeBrowseSearchDetailPlayerAndSettings() throws {
         let app = XCUIApplication()
         app.launch()
-        XCTAssertTrue(app.staticTexts["Популярное"].waitForExistence(timeout: 30), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["Популярно сейчас"].waitForExistence(timeout: 30), app.debugDescription)
         capture("home", app)
         let search = app.buttons["Поиск"].firstMatch
         if search.exists { search.tap() } else { app.staticTexts["Поиск"].firstMatch.tap() }
@@ -36,6 +36,8 @@ final class NavigationTests: XCTestCase {
         app.buttons["Готово"].firstMatch.tap()
         XCTAssertTrue(play.waitForExistence(timeout: 10))
         app.navigationBars.buttons.firstMatch.tap()
+        // Настройки живут в «Ещё»: на телефоне пять вкладок, и учётная запись — первая строка там.
+        app.buttons["Ещё"].firstMatch.tap()
         let settings = app.buttons["Аккаунт и настройки"].firstMatch
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
         settings.tap()

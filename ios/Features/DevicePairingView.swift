@@ -7,6 +7,8 @@ import SwiftUI
 /// phone's own — see `PairingCoordinator` for why that is the only code that can work.
 struct DevicePairingView: View {
     @Environment(AppModel.self) private var model
+    /// Pushed inside a stack rather than raised as a sheet: nothing to dismiss, so no «Готово».
+    var embedded = false
     @Environment(\.dismiss) private var dismiss
     @State private var typed = ""
     @State private var scanning = false
@@ -19,7 +21,7 @@ struct DevicePairingView: View {
         }
         .navigationTitle("Телевизор")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } }
+        .toolbar { if !embedded { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } } }
         .sheet(isPresented: $scanning) {
             QRScannerView { code in
                 scanning = false

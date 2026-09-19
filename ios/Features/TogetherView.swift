@@ -2,6 +2,8 @@ import SwiftUI
 
 struct TogetherView: View {
     @Bindable var manager: TogetherManager
+    /// Pushed inside a stack rather than raised as a sheet: nothing to dismiss, so no «Готово».
+    var embedded = false
     @Environment(\.dismiss) private var dismiss
     @State private var invitation = ""
     @State private var message = ""
@@ -52,7 +54,7 @@ struct TogetherView: View {
         }
         .navigationTitle("Watch Together")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } }
+        .toolbar { if !embedded { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } } }
     }
 
     private func join() {
