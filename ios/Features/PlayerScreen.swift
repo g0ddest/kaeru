@@ -18,7 +18,19 @@ struct PlayerScreen: View {
         NavigationStack {
             ZStack {
                 Color.black.ignoresSafeArea()
-                NativePlayer(playback: playback) { zone in seekFeedback(zone) }
+                NativePlayer(playback: playback, onDoubleTap: { zone in seekFeedback(zone) }) {
+                    // Inside AVKit's content overlay rather than stacked over it, so all of this
+                    // goes full screen with the picture instead of vanishing behind AVKit's own
+                    // window the moment somebody expands the video. Only what it draws answers a
+                    // touch; the space between its chips belongs to AVKit's own controls.
+                    ZStack {
+                        TogetherOverlay(manager: model.together)
+                        if !playback.loading, playback.error == nil {
+                            offers.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                        }
+                        seekHint
+                    }
+                }
                 if playback.loading {
                     ProgressView("Открываем серию…")
                         .padding(20).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
@@ -31,10 +43,6 @@ struct PlayerScreen: View {
                     }.background(.black.opacity(0.8))
                 }
             }
-            .overlay(alignment: .bottomTrailing) {
-                if !playback.loading, playback.error == nil { offers }
-            }
-            .overlay { seekHint }
             // Verbatim throughout: an episode number is an ordinal, and a `Text` built from a
             // literal formats an `Int` argument in the device's locale — which turned the
             // 1118th episode of a long-running show into «Серия 1.118».
@@ -46,12 +54,14 @@ struct PlayerScreen: View {
                 }
                 ToolbarItem(placement: .primaryAction) { options }
                 ToolbarItem(placement: .topBarLeading) { CastButton(manager: playback.castManager) }
+                ToolbarItem(placement: .principal) { TogetherChip(manager: model.together, invitation: invitation) }
             }
             .toolbarBackground(.visible, for: .navigationBar)
         }
         .preferredColorScheme(.dark)
         .task { await playback.start() }
         .onAppear { model.playerAppeared() }
+
         .onDisappear {
             model.playerDisappeared()
             if !playback.pictureInPicture { playback.close() }
@@ -109,12 +119,18 @@ struct PlayerScreen: View {
             .transition(.opacity)
         }
     }
+    /// «Смотрим «…», 7 серию. Открой в Kaeru: …», or nothing while there is no room to share.
+    private var invitation: String? {
+        guard let link = model.together.invitation?.shareURL else { return nil }
+        return TogetherCopy.shareText(title: playback.anime.title, episode: playback.episode,
+                                      link: link.absoluteString)
+    }
     private func seekFeedback(_ zone: PlayerTapZone) {
         withAnimation(.easeOut(duration: 0.12)) { seekHinted = zone }
         hintRevision += 1
         let revision = hintRevision
         Task {
-            try? await Task.sleep(for: .milliseconds(700))
+            try? await Task.sleep(for: .milliseconds(900))
             guard revision == hintRevision else { return }
             withAnimation(.easeIn(duration: 0.2)) { seekHinted = nil }
         }
@@ -194,6 +210,15 @@ struct PlayerScreen: View {
                         .disabled(playback.translation <= 0)
                 }
                 if playback.hasNext { Button("Следующая серия") { playback.nextNow() } }
+            }
+            // Offered here because this is the screen somebody is on when they decide to watch
+            // with a friend. Once there is a room, the chip in the bar carries it.
+            if model.together.phase == .idle || model.together.phase == .ended || model.together.phase == .failed {
+                Section {
+                    Button(TogetherCopy.watchTogether, systemImage: "person.2") {
+                        Task { await model.together.create() }
+                    }
+                }
             }
         } label: { Image(systemName: "ellipsis.circle") }
         .accessibilityLabel("Настройки воспроизведения")

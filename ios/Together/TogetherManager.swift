@@ -15,6 +15,8 @@ enum TogetherPhase: Equatable {
     private(set) var peerName: String?
     private(set) var error: TogetherError?
     private(set) var messages: [TogetherMessage] = []
+    /// What is on screen over the video, and everything about it that ends by itself.
+    let conversation = TogetherConversation()
 
     let displayName: String
     private let relayURL: String
@@ -36,7 +38,14 @@ enum TogetherPhase: Equatable {
     /// Whether a rate correction other than normal speed is in force right now.
     @ObservationIgnored private var correcting = false
     @ObservationIgnored private var heartbeat: Task<Void, Never>?
+    /// Ten times a second, which is what takes the lines out of the corner. Separate from the
+    /// session's own beat: the conversation's clocks are tenths of a second and the room's are
+    /// whole ones, and running the room ten times as often to keep up would be a waste of a radio.
+    @ObservationIgnored private var sweeper: Task<Void, Never>?
     @ObservationIgnored private var beats: Int64 = 0
+    /// A clip arriving in pieces. One at a time: two people talking at once is two people nobody
+    /// can follow, and the protocol sends a clip's chunks back to back.
+    @ObservationIgnored private var voice = TogetherVoiceAssembly()
     /// Set when the friend's socket went away; the room is over if nobody walks back in by then.
     @ObservationIgnored private var rejoinBy: Int64?
 
@@ -46,6 +55,26 @@ enum TogetherPhase: Equatable {
     var roundTripMs: Int64 { clock.rttMs }
 
     private struct PeerReport { let positionMs: Int64; let playing: Bool; let sentAt: Int64; let at: Int64 }
+
+    /// The one place the phase moves, so the overlay can never be drawing a session that has
+    /// already ended. Everything the screen shows about waiting follows from here.
+    private func enter(_ value: TogetherPhase) {
+        phase = value
+        conversation.phaseChanged(value, peerPresent: peerName != nil, error: error)
+        if value == .idle || value == .ended { stopSweeping() }
+        else { startSweeping() }
+    }
+    private func startSweeping() {
+        guard sweeper == nil else { return }
+        sweeper = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(100))
+                guard !Task.isCancelled, let self else { return }
+                self.conversation.sweep()
+            }
+        }
+    }
+    private func stopSweeping() { sweeper?.cancel(); sweeper = nil }
 
     var onOpenPlayback: ((TogetherEpisode) -> Void)?
 
@@ -103,9 +132,32 @@ enum TogetherPhase: Equatable {
         }
         generation = UUID()
         heartbeat?.cancel(); heartbeat = nil
-        transport?.close(); transport = nil; playback?.togetherSetRate(1)
+        transport?.close(); transport = nil; playback?.togetherSetRate(1); playback?.togetherDuck(false)
         correcting = false; report = nil; rejoinBy = nil
-        phase = .ended; error = nil; peerName = nil
+        error = nil; peerName = nil
+        conversation.message = TogetherCopy.leftSession
+        enter(.ended)
+    }
+
+    /// Said out loud by this viewer, and on screen here rather than waited for as an echo from the
+    /// network: a message that appears only once the network has confirmed it is a message that
+    /// does not appear when the network is the thing that is wrong.
+    func send(chat text: String) {
+        let value = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(TogetherCopy.maxChars))
+        guard !value.isEmpty else { return }
+        sendChat(value)
+        conversation.chat(value, mine: true, author: TogetherCopy.you)
+    }
+    func send(reaction: TogetherReaction) {
+        sendReaction(reaction)
+        conversation.fly(reaction, mine: true)
+    }
+
+    /// «Смотреть дальше» keeps the room; «Смотреть одному» ends it. Which of the two a wait offers
+    /// is decided once, in `TogetherConversation`, and never by the screen.
+    func leaveWait() {
+        guard conversation.leaveWait() == .watchAlone else { return }
+        Task { [weak self] in await self?.leave() }
     }
 
     func sendPlay() { sendAction(.play(position: currentPosition)) }
@@ -124,11 +176,11 @@ enum TogetherPhase: Equatable {
         let value = transportFactory(invitation, asHost)
         self.invitation = invitation; self.transport = value; self.side = asHost ? .host : .guest
         self.ordering = TogetherOrdering(isHost: asHost); self.clock = TogetherClock()
-        phase = .connecting; error = nil; generation = UUID()
+        error = nil; peerName = nil; conversation.forget(); enter(.connecting); generation = UUID()
         self.report = nil; self.correcting = false; self.beats = 0; self.rejoinBy = nil
         try await value.connect(invitation, asHost: asHost)
         let fence = generation
-        phase = .live
+        enter(.live)
         receiveTask = Task { [weak self] in await self?.receiveLoop(fence: fence, invitation: invitation, transport: value) }
         await sendHello(invitation: invitation)
         // Before the first beat, so the clocks have a sample to work from while the greeting is
@@ -198,12 +250,18 @@ enum TogetherPhase: Equatable {
         case .rate(let factor):
             playback.togetherSetRate(factor)
             correcting = factor != 1
-        case .seek(let position, _):
+        case .seek(let position, let notify):
             // Normal speed first: a rate correction left running across a jump is one the viewer
             // would carry into an episode it was never about.
             if correcting { playback.togetherSetRate(1); correcting = false }
             playback.togetherSeek(toMilliseconds: position)
+            // Ten seconds or more apart is a jump the viewer can see, and a jump they did not ask
+            // for needs a reason on screen. «Догоняет» has no clock: it ends when the gap does.
+            if notify { conversation.notice(.catchingUp, peerName: peerName) }
         }
+        // The same two seconds the policy uses as the line between pulling with playback speed and
+        // jumping: under it the gap is being closed silently and there is nothing left to say.
+        if abs(here.positionMs - (there + clock.offsetMs)) < 2_000 { conversation.caughtUp() }
     }
 
     private func sendHello(invitation: TogetherInvitation) async {
@@ -224,7 +282,7 @@ enum TogetherPhase: Equatable {
                 switch event {
                 case .frame(let frame): await receive(frame, invitation: invitation, transport: transport, fence: fence)
                 case .peerLeft: peerLeft()
-                case .reconnecting: if phase == .live { phase = .reconnecting }
+                case .reconnecting: if phase == .live { enter(.reconnecting) }
                 case .reconnected: await reconnected(invitation: invitation)
                 }
             }
@@ -245,7 +303,10 @@ enum TogetherPhase: Equatable {
         if message.t == .hello {
             // Somebody is in the room — either for the first time or walking back into the seat
             // the half-minute window was holding for them.
-            peerName = message.name; rejoinBy = nil; phase = .live
+            let already = peerName != nil
+            peerName = message.name; rejoinBy = nil
+            enter(.live)
+            if !already { conversation.notice(.joined, peerName: peerName) }
         }
         apply(message)
     }
@@ -261,7 +322,8 @@ enum TogetherPhase: Equatable {
         report = nil
         if correcting { playback?.togetherSetRate(1); correcting = false }
         rejoinBy = now() + TogetherTiming.rejoinWindowMs
-        phase = .reconnecting
+        conversation.notice(.left, peerName: peerName)
+        enter(.reconnecting)
     }
 
     /// This phone's own socket is back. The greeting goes out again because a friend whose room
@@ -269,7 +331,7 @@ enum TogetherPhase: Equatable {
     /// because the path may well be a different one now and the old offset was measured on the
     /// old one.
     private func reconnected(invitation: TogetherInvitation) async {
-        if phase == .reconnecting && rejoinBy == nil { phase = .live }
+        if phase == .reconnecting && rejoinBy == nil { enter(.live) }
         await sendHello(invitation: invitation)
         sendPing()
     }
@@ -293,6 +355,22 @@ enum TogetherPhase: Equatable {
             // been carried forward to the moment of judging.
             guard let positionMs = message.positionMs, let playing = message.playing, let sentAt = message.sentAt else { return }
             report = PeerReport(positionMs: positionMs, playing: playing, sentAt: sentAt, at: now())
+            return
+        // What was said belongs to the room rather than to whatever is on screen: a guest still on
+        // its join screen has a conversation to keep too, and the corner of the player picks it up
+        // the moment one opens.
+        case .chat:
+            guard let text = message.text else { return }
+            conversation.chat(text, mine: false, author: TogetherCopy.name(peerName))
+            return
+        case .reaction:
+            guard let kind = message.kind else { return }
+            conversation.fly(kind, mine: false)
+            return
+        case .voice:
+            guard let clip = try? voice.append(message, now: now()) else { return }
+            conversation.clip(TogetherClip(data: clip.data, durationMs: clip.durationMs),
+                              mine: false, author: TogetherCopy.name(peerName))
             return
         default: break
         }
@@ -326,16 +404,20 @@ enum TogetherPhase: Equatable {
         case .play:
             if let positionMs = message.positionMs { playback.togetherSeek(toMilliseconds: positionMs) }
             playback.togetherPlay()
+            conversation.notice(.played, peerName: peerName, positionMs: message.positionMs ?? 0)
         case .pause:
             if let positionMs = message.positionMs { playback.togetherSeek(toMilliseconds: positionMs) }
             playback.togetherPause()
+            conversation.notice(.paused, peerName: peerName, positionMs: message.positionMs ?? 0)
         case .seek:
             if let positionMs = message.positionMs { playback.togetherSeek(toMilliseconds: positionMs) }
+            conversation.notice(.seeked, peerName: peerName, positionMs: message.positionMs ?? 0)
         case .episode:
             guard let episode = message.episode else { return }
             let item = TogetherEpisode(animeID: message.animeId ?? playback.togetherSnapshot.animeID ?? 0,
                                        episode: episode, translationID: message.translationId, positionMs: message.positionMs ?? 0)
             onOpenPlayback?(item)
+            conversation.notice(.episode, peerName: peerName, episode: episode)
             Task { try? await playback.togetherOpen(item) }
         case .state, .ping, .pong, .chat, .reaction, .voice, .bye: break
         }
@@ -365,10 +447,12 @@ enum TogetherPhase: Equatable {
         try? await transport.send(frame)
     }
     private func fail(_ value: TogetherError) {
-        error = value; phase = .failed
+        error = value
         receiveTask?.cancel(); heartbeat?.cancel(); heartbeat = nil
         transport?.close(); transport = nil
         if correcting { playback?.togetherSetRate(1); correcting = false }
+        playback?.togetherDuck(false)
         report = nil; rejoinBy = nil
+        enter(.failed)
     }
 }
