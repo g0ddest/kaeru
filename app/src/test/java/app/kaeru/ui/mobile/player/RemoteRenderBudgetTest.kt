@@ -283,14 +283,16 @@ private const val PEER = "Смотрим с Аней"
  * laid out over one another, so the discs were drawn into «Серии» and cut.
  */
 internal fun Phone.theStripStandsClear() {
-    val heading = saying(EPISODES)
+    // The heading is there wherever there is room for one: half a phone wide and half a phone
+    // tall at once there is not, and the strip is a row of numbered squares with nothing over it.
+    val heading = nodes.firstOrNull { it.words() == EPISODES }
     val row = strip()
-    val top = minOf(heading.topDp(), row.topDp())
+    val top = heading?.let { minOf(it.topDp(), row.topDp()) } ?: row.topDp()
     // The strip itself, what it carries, and the containers it sits inside: a `Column` that
     // holds the strip legitimately reaches to the bottom of the strip.
     val theStripsOwn = generateSequence<SemanticsNode>(row) { it.parent }.map { it.id }.toSet()
     drawn
-        .filter { it.id != heading.id && it.id !in theStripsOwn && !it.isUnder(row) }
+        .filter { it.id != heading?.id && it.id !in theStripsOwn && !it.isUnder(row) }
         .filterNot { it.isScrolledOutOfView() }
         .forEach { node ->
             assertTrue(
