@@ -20,6 +20,7 @@ import app.kaeru.domain.model.WatchState
 import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.playback.RankedTranslation
 import app.kaeru.domain.playback.ResolveEpisodeStream
+import app.kaeru.domain.playback.SkipKind
 import app.kaeru.domain.repository.EpisodeProgressRepository
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.repository.WatchStateRepository
@@ -201,6 +202,13 @@ class PlayerViewModel @Inject constructor(
             moreEpisodesComing = anime != null && anime.status != AnimeStatus.RELEASED,
             episodes = shown.episodes,
             autoplayCountdownSec = playback.autoplayCountdownSec,
+            // Two rules, both of them about what the viewer can see rather than about the marks.
+            // «Следующая серия» has to lead somewhere, and it must not stand beside the countdown
+            // that offers the very same move — the shortcut and the deadline are one decision.
+            skip = playback.skip?.kind?.takeIf {
+                it == SkipKind.OPENING ||
+                    (playback.hasNextEpisode && playback.autoplayCountdownSec == null)
+            },
             errorMessage = playback.error?.toUserMessage(),
             episodeUnavailable = (playback.error as? EpisodeNotAvailable)?.reason,
             // Straight through from the controller, which is the only layer that knows whether the
@@ -378,6 +386,25 @@ class PlayerViewModel @Inject constructor(
 
     /** Past the opening, roughly: one of the two buttons a viewer reaches for without looking. */
     fun skipIntro() = controller.seekBy(EpisodeQueue.SKIP_INTRO_MS)
+
+    /**
+     * The one button the marks put on screen, whichever of the two it is at this moment.
+     *
+     * One entry point rather than two, because it is one control: the screens draw whatever
+     * [PlayerUiState.skip] names and press this, and what it means is decided here against what
+     * playback is actually offering.
+     *
+     * The ending is the plain move to the next episode — the same call «Следующая серия» has
+     * always made — and counting the episode as watched on the way is the controller's, which is
+     * the only layer that knows the episode is in its ending rather than in its middle.
+     */
+    fun skip() {
+        when (controller.state.value.skip?.kind) {
+            SkipKind.OPENING -> controller.skipOpening()
+            SkipKind.ENDING -> playNext()
+            null -> Unit
+        }
+    }
 
     fun playNext() {
         viewModelScope.launch { controller.playNext() }

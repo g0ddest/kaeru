@@ -51,6 +51,7 @@ class PlayerScreenSharePromptTest {
                 onSeekTo = {},
                 onSeekBy = {},
                 onSkipIntro = {},
+                onSkip = {},
                 onNext = {},
                 onCancelAutoplay = {},
                 onOpenTranslations = {},

@@ -4,6 +4,7 @@ import app.kaeru.domain.download.EpisodeDownload
 import app.kaeru.domain.error.EpisodeUnavailableReason
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.playback.RankedTranslation
+import app.kaeru.domain.playback.SkipKind
 import app.kaeru.ui.common.details.EpisodeCell
 import java.time.Instant
 
@@ -50,6 +51,14 @@ data class PlayerUiState(
     /** The season, for the remote control's list: which episodes exist, and what is behind the viewer. */
     val episodes: List<EpisodeCell> = emptyList(),
     val autoplayCountdownSec: Int? = null,
+    /**
+     * The button on offer over the picture right now, and null the rest of the time.
+     *
+     * Already decided rather than merely reported: the ending is offered only where there is a
+     * next episode for it to lead to and only while the end-of-episode countdown is not up —
+     * one decision deserves one control on screen. The opening is offered whenever it is there.
+     */
+    val skip: SkipKind? = null,
     val errorMessage: String? = null,
     /**
      * Why the episode could not be had, when that is what [errorMessage] is about; null for every

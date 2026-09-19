@@ -131,6 +131,7 @@ private fun RemoteControlPreview() = KaeruTheme {
             onTogglePlayPause = {},
             onSeekTo = {},
             onSeekBy = {},
+            onSkip = {},
             onNext = {},
             onCancelAutoplay = {},
             onOpenTranslations = {},

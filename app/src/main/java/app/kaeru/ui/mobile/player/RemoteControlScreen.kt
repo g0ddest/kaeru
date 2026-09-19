@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -57,7 +58,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isFinite
 import app.kaeru.player.EpisodeQueue
 import app.kaeru.ui.common.Poster
+import app.kaeru.domain.playback.SkipKind
 import app.kaeru.ui.common.player.PlayerUiState
+import app.kaeru.ui.common.player.skipLabel
 import app.kaeru.ui.common.player.CastButton
 import app.kaeru.ui.common.design.KaeruSeekBar
 import app.kaeru.ui.common.design.KaeruTokens
@@ -126,6 +129,8 @@ fun RemoteControlScreen(
     onTogglePlayPause: () -> Unit,
     onSeekTo: (Long) -> Unit,
     onSeekBy: (Long) -> Unit,
+    /** The one button the marks put on screen; it stands where «Следующая серия» does. */
+    onSkip: () -> Unit,
     onNext: () -> Unit,
     onCancelAutoplay: () -> Unit,
     onOpenTranslations: () -> Unit,
@@ -175,7 +180,7 @@ fun RemoteControlScreen(
                             Column(Modifier.weight(1f)) {
                                 CompactFacts(state, true, onOpenTranslations, onOpenQualities)
                                 RoomForAFailure(state, onRetry)
-                                Controls(state, true, nextBeside, false, onSeekTo, onTogglePlayPause, onSeekBy, onNext, onCancelAutoplay)
+                                Controls(state, true, nextBeside, false, onSeekTo, onTogglePlayPause, onSeekBy, onSkip, onNext, onCancelAutoplay)
                             }
                         }
                     }
@@ -202,7 +207,7 @@ fun RemoteControlScreen(
                         RoomForAFailure(state, onRetry)
                     }
                     Column(Modifier.fillMaxWidth().padding(horizontal = KaeruTokens.Space6)) {
-                        Controls(state, true, nextBeside, true, onSeekTo, onTogglePlayPause, onSeekBy, onNext, onCancelAutoplay)
+                        Controls(state, true, nextBeside, true, onSeekTo, onTogglePlayPause, onSeekBy, onSkip, onNext, onCancelAutoplay)
                     }
                 }
 
@@ -212,7 +217,7 @@ fun RemoteControlScreen(
                         Column(Modifier.weight(1f).padding(start = KaeruTokens.Space6)) {
                             RemoteFacts(state, false, onOpenTranslations, onOpenQualities, onRetry)
                             Spacer(Modifier.weight(1f))
-                            Controls(state, false, nextBeside, false, onSeekTo, onTogglePlayPause, onSeekBy, onNext, onCancelAutoplay)
+                            Controls(state, false, nextBeside, false, onSeekTo, onTogglePlayPause, onSeekBy, onSkip, onNext, onCancelAutoplay)
                         }
                     }
                 }
@@ -232,7 +237,7 @@ fun RemoteControlScreen(
                         // The one gap the column beside the poster cannot afford and this one can:
                         // upright, the last line of a failure would otherwise sit on top of «10:00».
                         Spacer(Modifier.height(KaeruTokens.Space2))
-                        Controls(state, false, nextBeside, false, onSeekTo, onTogglePlayPause, onSeekBy, onNext, onCancelAutoplay)
+                        Controls(state, false, nextBeside, false, onSeekTo, onTogglePlayPause, onSeekBy, onSkip, onNext, onCancelAutoplay)
                     }
                 }
             }
@@ -534,11 +539,12 @@ private fun Controls(
     onSeekTo: (Long) -> Unit,
     onTogglePlayPause: () -> Unit,
     onSeekBy: (Long) -> Unit,
+    onSkip: () -> Unit,
     onNext: () -> Unit,
     onCancelAutoplay: () -> Unit,
 ) {
     Timeline(state, short, onSeekTo)
-    Transport(state, short, nextBeside, narrow, onTogglePlayPause, onSeekBy, onNext, onCancelAutoplay)
+    Transport(state, short, nextBeside, narrow, onTogglePlayPause, onSeekBy, onSkip, onNext, onCancelAutoplay)
 }
 
 /**
@@ -695,6 +701,7 @@ private fun Transport(
     narrow: Boolean,
     onTogglePlayPause: () -> Unit,
     onSeekBy: (Long) -> Unit,
+    onSkip: () -> Unit,
     onNext: () -> Unit,
     onCancelAutoplay: () -> Unit,
 ) {
@@ -739,38 +746,56 @@ private fun Transport(
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    NextEpisode(state, narrow, onNext, onCancelAutoplay)
+                    EndOfLine(state, narrow, onSkip, onNext, onCancelAutoplay)
                 }
             }
         }
         // A 312dp row cannot hold three discs and a sentence, and the sentence is the part that
         // has somewhere else to go: upright it takes the line under them rather than being
         // measured down to nothing on the end of theirs.
-        if (!nextBeside && state.nextEpisodeAvailable) {
+        // The skip button lives in this same place, so the line exists for it too.
+        if (!nextBeside && (state.nextEpisodeAvailable || state.skip == SkipKind.OPENING)) {
             Row(
                 Modifier.fillMaxWidth().padding(top = KaeruTokens.Space1),
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                NextEpisode(state, false, onNext, onCancelAutoplay)
+                EndOfLine(state, false, onSkip, onNext, onCancelAutoplay)
             }
         }
     }
 }
 
 /**
- * What happens when this episode runs out.
+ * The end of the transport line: whatever is worth offering about moving on.
  *
- * The countdown takes over the button rather than floating over it: this screen has nothing to
- * float above, and one decision deserves one place to make it.
+ * Three things share it, never two at once. The opening skip, for the ten seconds it stands —
+ * this screen has nothing to float a pill over, so the offer takes the place of the one it would
+ * have covered. «Следующая серия», which is also the ending's button, because stepping over an
+ * ending is starting the next episode and there is no second way to say it. And the countdown,
+ * which takes the button over rather than floating above it: one decision, one place to make it.
  */
 @Composable
-private fun RowScope.NextEpisode(
+private fun RowScope.EndOfLine(
     state: PlayerUiState,
     narrow: Boolean,
+    onSkip: () -> Unit,
     onNext: () -> Unit,
     onCancelAutoplay: () -> Unit,
 ) {
+    if (state.skip == SkipKind.OPENING) {
+        val label = skipLabel(SkipKind.OPENING)
+        if (narrow) {
+            IconButton(onClick = onSkip) {
+                Icon(Icons.Default.FastForward, contentDescription = label, tint = KaeruAccent)
+            }
+        } else {
+            TextButton(onClick = onSkip, modifier = Modifier.weight(1f, fill = false)) {
+                Text(label, color = KaeruAccent, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        return
+    }
     if (!state.nextEpisodeAvailable) return
     val countdown = state.autoplayCountdownSec
     if (narrow) {

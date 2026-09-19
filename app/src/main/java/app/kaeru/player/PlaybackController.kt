@@ -20,6 +20,10 @@ import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.SuppressedMarks
 import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.playback.ResolveEpisodeStream
+import app.kaeru.domain.playback.SkipKind
+import app.kaeru.domain.playback.SkipMarks
+import app.kaeru.domain.playback.SkipMarksSource
+import app.kaeru.domain.playback.SkipRules
 import app.kaeru.domain.playback.WatchProgress
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.together.LocalAction
@@ -103,6 +107,14 @@ interface PlaybackController {
     fun seekTo(positionMs: Long, origin: ActionOrigin = ActionOrigin.LOCAL)
 
     fun seekBy(deltaMs: Long)
+
+    /**
+     * Steps over the opening the player is offering to step over, if it is offering one.
+     *
+     * A seek and nothing else, so a friend watching along is told the same thing they would be
+     * told about a scrub — there is no «skip» in the protocol and there does not need to be.
+     */
+    fun skipOpening()
 
     /**
      * Plays slightly slow or slightly fast. `1.0` is normal speed.
@@ -196,6 +208,7 @@ class DefaultPlaybackController @Inject constructor(
     private val headers: StreamHeaders,
     private val downloads: DownloadRepository,
     private val connectivity: Connectivity,
+    private val skipMarks: SkipMarksSource,
     @param:PlaybackScope private val scope: CoroutineScope,
     @param:IoDispatcher private val io: CoroutineDispatcher,
 ) : PlaybackController {
@@ -316,6 +329,12 @@ class DefaultPlaybackController @Inject constructor(
 
     private var markedEpisode = false
 
+    /** This episode's opening and ending, already sieved, or nothing known about them yet. */
+    private var marks = SkipMarks.NONE
+
+    /** Whether the one question per episode has been asked; an answer of «none» still counts. */
+    private var marksAsked = false
+
     /** Whether the sound is wanted down right now, so an engine taking over can be told. */
     private var ducked = false
 
@@ -387,7 +406,10 @@ class DefaultPlaybackController @Inject constructor(
 
     override fun seekTo(positionMs: Long, origin: ActionOrigin) {
         val clamped = EpisodeQueue.clampSeek(positionMs, _state.value.durationMs)
-        _state.update { it.copy(positionMs = clamped) }
+        // The offer moves with the position rather than waiting for the next report: pressing the
+        // button has to take it off the screen at once, and a scrub into the opening is the same
+        // arithmetic answered the same way.
+        _state.update { it.copy(positionMs = clamped, skip = SkipRules.offer(marks, clamped, it.durationMs)) }
         engine.seekTo(clamped)
         announce(origin) { LocalAction.Seek(clamped) }
     }
@@ -405,6 +427,12 @@ class DefaultPlaybackController @Inject constructor(
     }
 
     override fun seekBy(deltaMs: Long) = seekTo(_state.value.positionMs + deltaMs)
+
+    override fun skipOpening() {
+        val offer = _state.value.skip ?: return
+        if (offer.kind != SkipKind.OPENING) return
+        seekTo(offer.interval.endMs)
+    }
 
     override suspend fun changeTranslation(translation: Translation) {
         transition {
@@ -639,6 +667,8 @@ class DefaultPlaybackController @Inject constructor(
         opening = null
         _state.value = PlaybackState(isCasting = casting)
         markedEpisode = false
+        marks = SkipMarks.NONE
+        marksAsked = false
         playingDownload = false
         reResolved = false
         autoplayCancelled = false
@@ -681,6 +711,10 @@ class DefaultPlaybackController @Inject constructor(
             markedEpisode = false
             reResolved = false
             autoplayCancelled = false
+            // Another episode is another file, and its marks are another question. A swap of
+            // voice or of rung is not: the same episode keeps what was already answered for it.
+            marks = SkipMarks.NONE
+            marksAsked = false
         }
         lastReportedMs = target.startPositionMs
         wasPlaying = false
@@ -879,8 +913,10 @@ class DefaultPlaybackController @Inject constructor(
             nextEpisodeDue =
                 if (lengthKnown) EpisodeQueue.nextEpisodeDue(position, duration, ended) else current.nextEpisodeDue,
             autoplayCountdownSec = countdown,
+            skip = if (lengthKnown) SkipRules.offer(marks, position, duration) else current.skip,
         )
         if (lengthKnown) {
+            askForMarks(target, duration)
             reportIfDue(position, duration, paused = wasPlaying && !engineState.isPlaying)
             markIfWatched(position, duration)
         }
@@ -939,6 +975,30 @@ class DefaultPlaybackController @Inject constructor(
     private fun advanceToNext() {
         if (switching) return
         transition { openNext() }
+    }
+
+    /**
+     * Asks once, as soon as there is a length to ask with.
+     *
+     * Here rather than at the resolve because the length is the question: AniSkip keeps intervals
+     * against the file they were marked for, and until the engine has read the manifest nobody
+     * knows which file is playing. Never awaited and never retried — an episode plays exactly the
+     * same without an answer, and a source that is down must not be asked four times a second.
+     */
+    private fun askForMarks(target: PlaybackTarget, durationMs: Long) {
+        if (marksAsked) return
+        marksAsked = true
+        scope.launch {
+            val found = withContext(io) { skipMarks.marks(target.animeId, target.episode, durationMs) }
+            // The episode can move on inside a request. Marks belong to the episode they were
+            // asked about, and to no other.
+            val live = _state.value.target ?: return@launch
+            if (live.animeId != target.animeId || live.episode != target.episode) return@launch
+            marks = SkipRules.accept(found, durationMs)
+            // Shown at once rather than on the next report: an answer that lands four seconds
+            // into a ninety-second opening still has most of its ten seconds to be useful in.
+            _state.update { it.copy(skip = SkipRules.offer(marks, it.positionMs, it.durationMs)) }
+        }
     }
 
     private fun reportIfDue(positionMs: Long, durationMs: Long, paused: Boolean) {

@@ -10,6 +10,7 @@ import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.PlaybackTarget
 import app.kaeru.domain.model.UserRate
+import app.kaeru.domain.playback.FakeSkipMarks
 import app.kaeru.domain.playback.FakePlaybackPreferences
 import app.kaeru.domain.playback.FakePlaybackSampleRepository
 import app.kaeru.domain.playback.FakeWatchStateRepository
@@ -91,6 +92,7 @@ class TogetherPlaybackPortTest {
             downloads = downloads,
             connectivity = FakeConnectivity(),
             addToList = AddStartedTitleToList(library),
+            skipMarks = FakeSkipMarks(),
             scope = scope,
             io = dispatcher,
         )

@@ -4,6 +4,7 @@ import app.kaeru.domain.model.EpisodeStream
 import app.kaeru.domain.model.PlaybackTarget
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
+import app.kaeru.domain.playback.SkipOffer
 
 /**
  * Everything a player screen needs to draw itself, and nothing about how it is drawn.
@@ -38,6 +39,14 @@ data class PlaybackState(
      */
     val airedEpisodes: Int = 0,
     val autoplayCountdownSec: Int? = null,
+    /**
+     * What the player is offering to step over right now — the opening, or the ending — and for
+     * how long is not a question anybody has to ask: the offer is here while it stands and gone
+     * when it does not, because it lives on played seconds like everything else in this state.
+     *
+     * Null for the whole of an episode nobody has marked, which is most of them.
+     */
+    val skip: SkipOffer? = null,
     val error: Throwable? = null,
     /**
      * The voice this episode was asked for in, when the one in [stream] is not it: that voice did
