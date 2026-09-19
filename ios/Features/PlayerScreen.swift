@@ -4,7 +4,11 @@ struct PlayerScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @State private var playback: PlaybackModel
+    /// Held so this screen can say it is on screen: a deep link that arrives now must not open a
+    /// second player over this one.
+    private let model: AppModel
     init(anime: Anime, episode: Int, model: AppModel) {
+        self.model = model
         _playback = State(initialValue: PlaybackModel(anime: anime, episode: episode, model: model))
     }
     var body: some View {
@@ -40,7 +44,11 @@ struct PlayerScreen: View {
         }
         .preferredColorScheme(.dark)
         .task { await playback.start() }
-        .onDisappear { if !playback.pictureInPicture { playback.close() } }
+        .onAppear { model.playerAppeared() }
+        .onDisappear {
+            model.playerDisappeared()
+            if !playback.pictureInPicture { playback.close() }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { playback.becameActive() }
             // Inactive includes Control Center and the PiP transition. Pausing there interrupts
