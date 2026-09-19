@@ -16,4 +16,14 @@ ios/
   Player/
   Services/
   DesignSystem/
+
+shared/
+  commonMain/
+    domain/
+    data/kodik/
+    data/shikimori/
+    data/auth/
+    data/playback/
+  androidMain/
+  iosMain/
 ```
