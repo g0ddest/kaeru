@@ -95,7 +95,7 @@ struct SettingsView: View {
                         Label("Watch Together", systemImage: "person.2.wave.2")
                     }
                     if model.together.phase == .live, let peer = model.together.peerName {
-                        Text("Подключён: (peer)").font(.footnote).foregroundStyle(.secondary)
+                        Text("Подключён: \(peer)").font(.footnote).foregroundStyle(.secondary)
                     }
                 }
                 Section {

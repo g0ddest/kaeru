@@ -5,6 +5,7 @@ struct TogetherView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var invitation = ""
     @State private var message = ""
+    @State private var linkError: String?
 
     var body: some View {
         Form {
@@ -23,11 +24,12 @@ struct TogetherView: View {
                         .disabled(manager.phase == .connecting)
                     TextField("Ссылка приглашения", text: $invitation, axis: .vertical)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
-                    Button("Войти в комнату", systemImage: "arrow.right.circle") {
-                        guard let url = URL(string: invitation) else { return }
-                        do { let parsed = try TogetherInvitation.parse(url); Task { await manager.join(parsed) } }
-                        catch { }
-                    }.disabled(invitation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || manager.phase == .connecting)
+                    Button("Войти в комнату", systemImage: "arrow.right.circle") { join() }
+                        .disabled(invitation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || manager.phase == .connecting)
+                    // A swallowed error here was a button that did nothing at all: the one thing
+                    // that can be wrong with a pasted invitation is the invitation, and saying so
+                    // is the difference between a typo and a broken app.
+                    if let linkError { Text(linkError).font(.footnote).foregroundStyle(.red) }
                 }
             }
             if manager.phase == .live {
@@ -51,6 +53,20 @@ struct TogetherView: View {
         .navigationTitle("Watch Together")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } }
+    }
+
+    private func join() {
+        let typed = invitation.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            guard let url = URL(string: typed) else { throw TogetherError.invalidInvitation }
+            let parsed = try TogetherInvitation.parse(url)
+            linkError = nil
+            Task { await manager.join(parsed) }
+        } catch let error as TogetherError {
+            linkError = error.errorDescription
+        } catch {
+            linkError = TogetherError.invalidInvitation.errorDescription
+        }
     }
 
     private var stateTitle: String {

@@ -44,14 +44,47 @@ import UserNotifications
     }
 }
 
+/// Work that can be cancelled before it exists.
+///
+/// `BGTaskScheduler` expires a task from whatever thread it likes, so the flag and the task are
+/// read and written under one lock; a task handed over after expiry is cancelled at once rather
+/// than being allowed to start.
+final class ExpiringWork: @unchecked Sendable {
+    private let lock = NSLock()
+    private var work: Task<Void, Never>?
+    private var expired = false
+
+    func begin(_ value: Task<Void, Never>) {
+        lock.lock()
+        let already = expired
+        work = value
+        lock.unlock()
+        if already { value.cancel() }
+    }
+
+    func expire() {
+        lock.lock()
+        expired = true
+        let value = work
+        lock.unlock()
+        value?.cancel()
+    }
+}
+
 @MainActor enum EpisodeBackgroundRefresh {
     static let identifier = "app.kaeru.ios.new-episodes"
 
     static func register() {
         BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { task in
+            guard let task = task as? BGAppRefreshTask else { task.setTaskCompleted(success: false); return }
+            // Installed before there is anything to cancel. The system may expire a refresh the
+            // moment it hands it over — on a phone with little battery it routinely does — and a
+            // handler assigned after the work has started leaves a window in which expiry does
+            // nothing at all and the process is killed mid-write instead.
+            let refresh = ExpiringWork()
+            task.expirationHandler = { refresh.expire() }
             Task { @MainActor in
-                guard let task = task as? BGAppRefreshTask else { task.setTaskCompleted(success: false); return }
-                let operation = Task { @MainActor in
+                refresh.begin(Task { @MainActor in
                     do {
                         let model = try ApplicationRuntime.shared.loadModel()
                         await model.notifications.refreshAuthorization()
@@ -63,8 +96,7 @@ import UserNotifications
                         await model.reloadLibrary()
                         task.setTaskCompleted(success: !Task.isCancelled && model.error == nil)
                     } catch { task.setTaskCompleted(success: false) }
-                }
-                task.expirationHandler = { operation.cancel() }
+                })
             }
         }
     }

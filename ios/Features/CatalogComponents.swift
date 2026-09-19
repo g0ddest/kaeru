@@ -15,7 +15,9 @@ struct PosterView: View {
 
 struct AnimeCard: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
-    @Environment(\.isFocused) private var isFocused
+    /// `@Environment(\.isFocused)` reads the value a parent handed down, so a card applying
+    /// `.focusable()` to its own body was reading its ancestor's focus and never its own.
+    @FocusState private var isFocused: Bool
     var anime: Anime
     var caption: String? = nil
     var progress: Double? = nil
@@ -35,8 +37,9 @@ struct AnimeCard: View {
         }
         .contentShape(Rectangle())
         .focusable(sizeClass == .regular)
+        .focused($isFocused)
         .scaleEffect(isFocused && sizeClass == .regular ? 1.06 : 1)
-        .shadow(color: isFocused && sizeClass == .regular ? .white.opacity(0.24) : .clear, radius: 18)
+        .shadow(color: isFocused && sizeClass == .regular ? .primary.opacity(0.28) : .clear, radius: 18)
         .animation(.easeOut(duration: 0.16), value: isFocused)
         .accessibilityElement(children: .combine)
     }
