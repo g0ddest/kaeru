@@ -1197,4 +1197,60 @@ class PlayerViewModelTest {
 
             assertEquals(SkipKind.OPENING, viewModel.uiState.value.skip)
         }
+
+    @Test
+    fun `an ending that steps aside waits for the question about closing the show off`() =
+        runTest(main.dispatcher) {
+            viewModel.start(100, 12)
+            advanceUntilIdle()
+            controller.announced.emit(PlaybackEvent.SuggestCompleted(100))
+            advanceUntilIdle()
+
+            // The mark is raised a minute before the ending's ten seconds are up, so the question
+            // is already on screen when the ending decides there is nothing left to play.
+            controller.announced.emit(PlaybackEvent.NothingLeftToPlay)
+            advanceUntilIdle()
+
+            assertTrue(viewModel.uiState.value.completedPrompt)
+            assertFalse(viewModel.uiState.value.leaving)
+        }
+
+    @Test
+    fun `and leaves the moment it is answered`() = runTest(main.dispatcher) {
+        viewModel.start(100, 12)
+        advanceUntilIdle()
+        controller.announced.emit(PlaybackEvent.SuggestCompleted(100))
+        controller.announced.emit(PlaybackEvent.NothingLeftToPlay)
+        advanceUntilIdle()
+
+        viewModel.dismissCompleted()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.leaving)
+    }
+
+    @Test
+    fun `yes to the question leaves as well`() = runTest(main.dispatcher) {
+        viewModel.start(100, 12)
+        advanceUntilIdle()
+        controller.announced.emit(PlaybackEvent.SuggestCompleted(100))
+        controller.announced.emit(PlaybackEvent.NothingLeftToPlay)
+        advanceUntilIdle()
+
+        viewModel.confirmCompleted()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.leaving)
+    }
+
+    @Test
+    fun `with nothing to answer it leaves at once`() = runTest(main.dispatcher) {
+        viewModel.start(100, 12)
+        advanceUntilIdle()
+
+        controller.announced.emit(PlaybackEvent.NothingLeftToPlay)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.leaving)
+    }
 }

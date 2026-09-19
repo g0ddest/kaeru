@@ -92,6 +92,21 @@ object SkipRules {
         return positionMs >= ending.startMs + BUTTON_WINDOW_MS && positionMs < ending.endMs
     }
 
+    /**
+     * Whether [positionMs] is anywhere inside the ending.
+     *
+     * What tells playing into the ending from jumping into it: the position before this one was
+     * already in the ending when the episode walked there, and was somewhere else entirely when
+     * the viewer dragged the bar.
+     */
+    fun insideEnding(marks: SkipMarks, positionMs: Long, durationMs: Long): Boolean {
+        val ending = ending(marks.ending, durationMs) ?: return false
+        return positionMs >= ending.startMs && positionMs < ending.endMs
+    }
+
+    /** How much playing it takes after a seek before a position is the episode's own again. */
+    const val SEEK_SETTLE_MS = 1_000L
+
     private fun inWindow(interval: SkipInterval, positionMs: Long): Boolean =
         positionMs >= interval.startMs && positionMs < interval.startMs + BUTTON_WINDOW_MS
 

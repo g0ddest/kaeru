@@ -219,7 +219,12 @@ class PlayerViewModel @Inject constructor(
             isCasting = playback.isCasting,
             receiverName = around.receiverName,
             completedPrompt = screen.completedPrompt,
-            leaving = screen.leaving,
+            // An ending that steps aside by itself must not take a question off the screen with
+            // it. «Перевести в завершённые?» is raised a minute before the ending's ten seconds
+            // are up — it is the one flow that exists for closing a finished show off — and the
+            // screens leave the player the moment this turns true. So the departure waits for
+            // whatever is being asked, and happens as soon as it is answered.
+            leaving = screen.leaving && !screen.completedPrompt && screen.sheet == null,
             offline = around.offline,
             download = playback.target
                 ?.takeIf { it.animeId == around.animeId }

@@ -1,6 +1,7 @@
 package app.kaeru.player
 
 import app.kaeru.domain.connectivity.FakeConnectivity
+import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.download.DeferredDownloadRemoval
 import app.kaeru.domain.download.FakeDeferredRemovals
 import app.kaeru.domain.download.FakeDownloadRepository
@@ -34,10 +35,12 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -108,6 +111,19 @@ class PlaybackControllerSkipTest {
     private suspend fun start(episode: Int = 4, durationMs: Long = episodeMs) {
         controller.play(PlaybackTarget(100, episode, 0, translation = null))
         engine.ready(durationMs)
+    }
+
+    /**
+     * Playback arriving somewhere the way playback arrives: one report after another.
+     *
+     * The automatic skip asks where the viewer came from, so a test that jumps straight to a
+     * position is testing a drag of the bar rather than an episode running into its ending.
+     */
+    private fun TestScope.walkInto(positionMs: Long, step: Long = 1_000) {
+        engine.moveTo(positionMs - step)
+        advanceUntilIdle()
+        engine.moveTo(positionMs)
+        advanceUntilIdle()
     }
 
     @Test
@@ -298,8 +314,7 @@ class PlaybackControllerSkipTest {
         start()
         advanceUntilIdle()
 
-        engine.moveTo(1_475_000)
-        advanceUntilIdle()
+        walkInto(1_475_000)
 
         assertEquals(4, controller.state.value.target?.episode)
     }
@@ -330,8 +345,7 @@ class PlaybackControllerSkipTest {
         start()
         advanceUntilIdle()
 
-        engine.moveTo(1_470_000)
-        advanceUntilIdle()
+        walkInto(1_470_000)
 
         assertEquals(listOf(100 to 4), library.episodeWrites)
     }
@@ -377,12 +391,14 @@ class PlaybackControllerSkipTest {
 
         start(episode = 12)
         advanceUntilIdle()
-        engine.moveTo(1_470_000)
-        advanceUntilIdle()
+        walkInto(1_470_000)
 
         assertTrue(announced.any { it is PlaybackEvent.NothingLeftToPlay })
         assertEquals(12, controller.state.value.target?.episode)
         assertEquals(listOf(100 to 12), library.episodeWrites)
+        // The credits stop with the decision rather than with the navigation that follows it:
+        // a floating window outlives the screen, and would sit there playing what was skipped.
+        assertFalse(controller.state.value.isPlaying)
         collecting.cancel()
     }
 
@@ -395,8 +411,7 @@ class PlaybackControllerSkipTest {
 
         start(episode = 12)
         advanceUntilIdle()
-        engine.moveTo(1_470_000)
-        advanceUntilIdle()
+        walkInto(1_470_000)
         engine.moveTo(1_480_000)
         advanceUntilIdle()
         engine.moveTo(1_490_000)
@@ -427,9 +442,91 @@ class PlaybackControllerSkipTest {
             advanceUntilIdle()
 
             prefs.skipEnding.value = true
-            engine.moveTo(1_475_000)
-            advanceUntilIdle()
+            walkInto(1_475_000)
 
             assertEquals(4, controller.state.value.target?.episode)
         }
+
+    @Test
+    fun `an ending on a show this device has no count for simply plays out`() = runTest(dispatcher) {
+        prefs.skipEnding.value = true
+        lateThreshold()
+        skipMarks.answer = SkipMarks(opening, ending)
+        val announced = mutableListOf<PlaybackEvent>()
+        val collecting = launch { controller.events.toList(announced) }
+
+        // Nothing in the catalogue for this title, so «that was the last one» and «we do not know
+        // how many there are» look exactly alike — and ejecting the viewer is not the answer to
+        // either of them.
+        controller.play(PlaybackTarget(200, 5, 0, translation = null))
+        engine.ready(episodeMs)
+        advanceUntilIdle()
+        walkInto(1_470_000)
+
+        assertEquals(0, controller.state.value.airedEpisodes)
+        assertTrue(announced.none { it is PlaybackEvent.NothingLeftToPlay })
+        assertEquals(5, controller.state.value.target?.episode)
+        assertTrue(controller.state.value.isPlaying)
+        collecting.cancel()
+    }
+
+    @Test
+    fun `dragging into the ending is not walking into it`() = runTest(dispatcher) {
+        prefs.skipEnding.value = true
+        skipMarks.answer = SkipMarks(opening, ending)
+        start()
+        advanceUntilIdle()
+        engine.moveTo(600_000)
+        advanceUntilIdle()
+
+        // The bar dragged into the last minute to see how it ends. The engine reports the new
+        // position at once, and again a quarter of a second later.
+        controller.seekTo(1_500_000)
+        engine.moveTo(1_500_000)
+        advanceUntilIdle()
+        engine.moveTo(1_500_250)
+        advanceUntilIdle()
+
+        assertEquals(4, controller.state.value.target?.episode)
+    }
+
+    // --- another voice is another file ------------------------------------------------------------
+
+    @Test
+    fun `changing the voice asks again, with the length of the file that is now playing`() =
+        runTest(dispatcher) {
+            skipMarks.answer = SkipMarks(opening, ending)
+            start()
+            advanceUntilIdle()
+            engine.moveTo(4_000)
+            advanceUntilIdle()
+            assertEquals(SkipKind.OPENING, controller.state.value.skip?.kind)
+
+            // Another dub, three minutes shorter: the old opening would land in the middle of a
+            // scene, so the old answer is not an answer to this question at all.
+            skipMarks.answer = SkipMarks.NONE
+            controller.changeTranslation(source.studioBanda)
+            engine.ready(1_446_000)
+            advanceUntilIdle()
+
+            assertEquals(listOf("100/4@1560000", "100/4@1446000"), skipMarks.asked)
+            assertNull(controller.state.value.skip)
+        }
+
+    @Test
+    fun `the same file resolved again is not another question`() = runTest(dispatcher) {
+        skipMarks.answer = SkipMarks(opening, ending)
+        start()
+        advanceUntilIdle()
+        engine.moveTo(320_000)
+        advanceUntilIdle()
+
+        // An expired link, re-signed behind the viewer's back. Same voice, same rung, same file.
+        engine.fail(NetworkUnavailable(java.io.IOException("403")))
+        advanceUntilIdle()
+        engine.ready(episodeMs)
+        advanceUntilIdle()
+
+        assertEquals(listOf("100/4@1560000"), skipMarks.asked)
+    }
 }
