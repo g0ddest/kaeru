@@ -10,6 +10,7 @@ import AuthenticationServices
     @ObservationIgnored private var notificationService: EpisodeNotificationService?
     @ObservationIgnored private var castManager: CastManager?
     @ObservationIgnored private var togetherManager: TogetherManager?
+    @ObservationIgnored private var pairingCoordinator: PairingCoordinator?
     var notifications: EpisodeNotificationService {
         if let notificationService { return notificationService }
         let value = EpisodeNotificationService()
@@ -33,6 +34,17 @@ import AuthenticationServices
         }
         castManager = manager
         return manager
+    }
+    /// Signing a television in, held here rather than in the screen so a `kaeru://pair` deep link
+    /// and «Подключить Android TV» in Settings are the same hand-off rather than two.
+    var pairing: PairingCoordinator {
+        if let pairingCoordinator { return pairingCoordinator }
+        let value = PairingCoordinator(authorize: { [weak self] in
+            guard let self else { throw CancellationError() }
+            return try await self.televisionAuthorization()
+        })
+        pairingCoordinator = value
+        return value
     }
     var together: TogetherManager {
         if let togetherManager { return togetherManager }
@@ -160,6 +172,24 @@ import AuthenticationServices
             EpisodeBackgroundRefresh.schedule(enabled: false)
         } catch { self.error = error.localizedDescription }
     }
+    /// One authorization code for a television, obtained by this phone and never exchanged here.
+    /// The account this app is signed into — if any — is not involved: the code buys the
+    /// television its own session, for whichever account the person signs in with.
+    func televisionAuthorization() async throws -> String {
+        guard configuration.canSignIn else { throw AppError.missingConfiguration }
+        return try await authentication.authorizeForTelevision(clientID: configuration.clientID)
+    }
+    /// The title behind a deep link: whatever is already known, otherwise one fetch. Nil when the
+    /// catalogue has nothing under that id, which is the honest answer to a link from anywhere.
+    func anime(id: Int) async -> Anime? {
+        if let known = recentAnime[id] ?? rate(for: id)?.anime ?? catalog.first(where: { $0.id == id }) { return known }
+        return try? await service.details(id)
+    }
+    /// How many full-screen players are on screen. A link that arrives over one must not open a
+    /// second; the counter is kept here because the player is presented from several screens.
+    private(set) var playersOpen = 0
+    func playerAppeared() { playersOpen += 1 }
+    func playerDisappeared() { playersOpen = max(0, playersOpen - 1) }
     func rate(for id: Int) -> LibraryItem? { library.first { $0.anime.id == id } }
     func progressFor(animeID: Int, episode: Int) -> EpisodeProgress? { episodeHistory["\(animeID):\(episode)"] }
     func continueTarget(for anime: Anime) -> ContinueTarget {

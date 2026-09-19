@@ -4,7 +4,15 @@ import UIKit
 @MainActor final class Authentication: NSObject, ASWebAuthenticationPresentationContextProviding {
     private var browser: ASWebAuthenticationSession?
     private var attempt = OAuthAttempt()
-    func signIn(clientID: String) async throws -> String {
+    /// One authorization, for a code this device exchanges for its own session.
+    func signIn(clientID: String) async throws -> String { try await authorize(clientID: clientID) }
+
+    /// One authorization, for a code that goes straight to a television and is never exchanged
+    /// here. Identical on the wire — Shikimori checks that the token request repeats the redirect
+    /// of the authorization it belongs to, and that authorization happened on this phone.
+    func authorizeForTelevision(clientID: String) async throws -> String { try await authorize(clientID: clientID) }
+
+    private func authorize(clientID: String) async throws -> String {
         guard browser == nil else { throw AppError.message("Вход уже открыт.") }
         let state = UUID().uuidString + UUID().uuidString
         attempt.begin(state: state)
