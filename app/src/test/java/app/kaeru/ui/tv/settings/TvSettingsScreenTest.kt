@@ -87,6 +87,16 @@ class TvSettingsScreenTest {
     }
 
     @Test
+    fun `the ending switch says what it does after the last episode`() {
+        // The most surprising thing the setting does is close the player, and a viewer who turned
+        // it on to save ninety seconds an episode would read that as a crash.
+        show()
+
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText(SKIP_ENDING_NOTE))
+        compose.onNodeWithText(SKIP_ENDING_NOTE).assertIsDisplayed()
+    }
+
+    @Test
     fun `every studio in the list has a row of its own`() {
         show()
 

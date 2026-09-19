@@ -60,6 +60,13 @@ private const val RETRY = "Повторить"
 private const val PLAYBACK = "Воспроизведение"
 private const val AUTOPLAY = "Следующая серия автоматически"
 private const val SKIP_ENDING = "Пропускать эндинг"
+
+/**
+ * Said under the switch, because closing the player is the surprising half of what it does: a
+ * viewer who turned this on to save ninety seconds an episode would read the first one as a crash.
+ */
+private const val SKIP_ENDING_NOTE =
+    "Через 10 секунд начнётся следующая серия. После последней плеер закроется и вернёт на карточку"
 private const val PIP_ON_LEAVE = "Сворачивать в окно при выходе из приложения"
 private const val QUALITY = "Качество по умолчанию"
 private const val THRESHOLD = "Порог просмотра"
@@ -220,6 +227,7 @@ private fun PlaybackSection(
         // leaves on its own, and a setting for turning off something that turns itself off is a
         // setting nobody needs to find.
         SettingSwitchRow(SKIP_ENDING, state.skipEnding, onSkipEnding)
+        SettingNote(SKIP_ENDING_NOTE)
         // Phone only: the television has no floating window, and its own screen does not offer this.
         SettingSwitchRow(PIP_ON_LEAVE, state.pipOnLeave, onPipOnLeave)
         SettingLabel(QUALITY)

@@ -64,6 +64,13 @@ private const val RETRY = "Повторить"
 private const val PLAYBACK = "Воспроизведение"
 private const val AUTOPLAY = "Следующая серия автоматически"
 private const val SKIP_ENDING = "Пропускать эндинг"
+
+/**
+ * Said where the switch is, because the ejection is the surprising half of what it does: a viewer
+ * who turned this on to save ninety seconds an episode would read the first one as a crash.
+ */
+internal const val SKIP_ENDING_NOTE =
+    "Через 10 секунд начнётся следующая серия. После последней плеер закроется и вернёт на карточку"
 private const val QUALITY = "Качество по умолчанию"
 private const val THRESHOLD = "Порог просмотра"
 private const val THRESHOLD_NOTE = "Серия считается просмотренной после этой доли"
@@ -169,7 +176,14 @@ fun TvSettingsScreen(
                     .onFocusChanged { if (it.isFocused) claimed = true },
             )
         }
-        row("skip-ending") { SettingSwitchRow(SKIP_ENDING, state.skipEnding, onSkipEnding) }
+        // The switch and the sentence under it are one item, for the same reason a label and its
+        // chips are: read apart, the row stops with the promise off the panel.
+        row("skip-ending") {
+            Column(verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space2)) {
+                SettingSwitchRow(SKIP_ENDING, state.skipEnding, onSkipEnding)
+                SettingNote(SKIP_ENDING_NOTE)
+            }
+        }
         // A label and the chips it names are one item: they are read together, and splitting them
         // would let the list stop with the question off the top of the panel and the answers on it.
         row("quality") {
