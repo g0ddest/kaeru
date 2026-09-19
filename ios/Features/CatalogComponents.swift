@@ -1,55 +1,267 @@
 import SwiftUI
 
-struct PosterView: View {
+/// Artwork in the shape the shelf asked for. A title has one picture — its poster — so a 16:9 card
+/// crops that poster through its middle rather than stretching it into a shape it never had.
+struct Artwork: View {
+    enum Shape { case poster, still
+        var ratio: CGFloat { self == .poster ? 2.0 / 3 : 16.0 / 9 }
+        var radius: CGFloat { self == .poster ? Metrics.posterRadius : Metrics.cardRadius }
+    }
     var anime: Anime
+    var shape: Shape = .poster
     var body: some View {
-        Color.clear.aspectRatio(2.0 / 3, contentMode: .fit).overlay {
-            AsyncImage(url: URL(string: anime.poster)) { image in image.resizable().scaledToFill() } placeholder: {
-                Rectangle().fill(.quaternary).overlay { Image(systemName: "film").font(.largeTitle).foregroundStyle(.secondary) }
+        Color.clear.aspectRatio(shape.ratio, contentMode: .fit).overlay {
+            AsyncImage(url: URL(string: anime.poster)) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                Rectangle().fill(Palette.elevated)
+                    .overlay { Image(systemName: "film").font(.title).foregroundStyle(Palette.inkSoft) }
             }
         }
-        .clipped().clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipped()
+        .kaeruCard(radius: shape.radius)
         .accessibilityHidden(true)
     }
 }
 
-struct AnimeCard: View {
+struct PosterView: View {
+    var anime: Anime
+    var body: some View { Artwork(anime: anime, shape: .poster) }
+}
+
+/// Full-width artwork for a hero: the poster blurred out to the edges so nothing is ever stretched,
+/// the poster itself sharp where there is room for it, and the side the type sits on darkened.
+/// White type on this holds in both appearances — it is a picture, not a surface of the page.
+struct Backdrop: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
-    /// `@Environment(\.isFocused)` reads the value a parent handed down, so a card applying
-    /// `.focusable()` to its own body was reading its ancestor's focus and never its own.
-    @FocusState private var isFocused: Bool
+    let anime: Anime
+    var body: some View {
+        // Drawn inside a clear view of the offered size: a fill-scaled image is bigger than what it
+        // was offered, and a stack that measures itself by it hands the caller a backdrop taller
+        // than the frame it was asked for.
+        Color.clear.overlay { layers }.clipped().accessibilityHidden(true)
+    }
+    private var layers: some View {
+        ZStack {
+            Palette.elevated
+            AsyncImage(url: URL(string: anime.poster)) { image in
+                image.resizable().scaledToFill().blur(radius: 34, opaque: true).opacity(0.7)
+            } placeholder: { Color.clear }
+            HStack {
+                Spacer(minLength: 0)
+                AsyncImage(url: URL(string: anime.poster)) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: { Color.clear }
+                .frame(width: sizeClass == .regular ? 520 : 250)
+                // Dissolved into the blur on its leading side; a hard edge down the middle of a
+                // hero reads as a mistake.
+                .mask {
+                    LinearGradient(stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: .black, location: 0.35)
+                    ], startPoint: .leading, endPoint: .trailing)
+                }
+            }
+            LinearGradient(stops: [
+                .init(color: .black.opacity(0.78), location: 0),
+                .init(color: .black.opacity(0.4), location: 0.5),
+                .init(color: .black.opacity(0.05), location: 1)
+            ], startPoint: .leading, endPoint: .trailing)
+            Palette.scrim(0.9)
+        }
+    }
+}
+
+/// A poster card: the picture, then the name under it. Used wherever a shelf is about titles rather
+/// than about an episode waiting to be played.
+struct AnimeCard: View {
     var anime: Anime
     var caption: String? = nil
     var progress: Double? = nil
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 7) {
             PosterView(anime: anime)
                 .overlay(alignment: .bottom) {
-                    if sizeClass == .regular {
-                        LinearGradient(colors: [.clear, .black.opacity(0.65)], startPoint: .center, endPoint: .bottom)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                    if let progress {
+                        ProgressTrack(value: progress)
+                            .padding(.horizontal, 8).padding(.bottom, 8)
                     }
                 }
-            if let progress { ProgressView(value: min(1, max(0, progress))).accessibilityLabel("Прогресс просмотра") }
-            Text(anime.title).font(sizeClass == .regular ? .headline : .subheadline.weight(.semibold))
-                .foregroundStyle(.primary).lineLimit(2, reservesSpace: true)
-            Text(caption ?? anime.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(anime.title).font(.kaeruCardTitle).foregroundStyle(Palette.ink)
+                    .lineLimit(2).multilineTextAlignment(.leading)
+                Text(caption ?? anime.subtitle).font(.kaeruCardCaption).foregroundStyle(Palette.inkSoft).lineLimit(1)
+            }
         }
         .contentShape(Rectangle())
-        .focusable(sizeClass == .regular)
-        .focused($isFocused)
-        .scaleEffect(isFocused && sizeClass == .regular ? 1.06 : 1)
-        .shadow(color: isFocused && sizeClass == .regular ? .primary.opacity(0.28) : .clear, radius: 18)
-        .animation(.easeOut(duration: 0.16), value: isFocused)
         .accessibilityElement(children: .combine)
     }
 }
 
-struct CatalogGrid<Content: View>: View {
+/// The landscape card of a shelf about episodes: what you were watching, and how much of it is
+/// left. Tapping it plays; the ellipsis carries everything else.
+struct EpisodeCard: View {
+    @Environment(AppModel.self) private var model
     @Environment(\.dynamicTypeSize) private var typeSize
-    @ViewBuilder var content: Content
+    var anime: Anime
+    var target: ContinueTarget
+    var progress: EpisodeProgress?
+    var play: () -> Void
+    private var fraction: Double? {
+        guard target.position > 0, let progress, progress.duration > 0 else { return nil }
+        return min(1, max(0, target.position / progress.duration))
+    }
+    private var caption: String {
+        guard target.position > 0, let progress, progress.duration > target.position else {
+            return "\(target.episode) серия"
+        }
+        return "\(target.episode) серия · осталось \(Int(ceil((progress.duration - target.position) / 60))) мин"
+    }
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: typeSize.isAccessibilitySize ? 220 : 140), spacing: 20)], alignment: .leading, spacing: 26) { content }
+        VStack(alignment: .leading, spacing: 8) {
+            Button(action: play) {
+                Artwork(anime: anime, shape: .still)
+                    .overlay(alignment: .bottom) { Palette.scrim().clipShape(RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous)) }
+                    .overlay(alignment: .bottomLeading) {
+                        HStack(spacing: 7) {
+                            Image(systemName: "play.fill").font(.caption2)
+                            Text(caption).font(.kaeruCardCaption).monospacedDigit().lineLimit(1).minimumScaleFactor(0.55)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12).padding(.bottom, fraction == nil ? 10 : 14)
+                        .padding(.trailing, 40)
+                    }
+                    .overlay(alignment: .bottom) {
+                        if let fraction { ProgressTrack(value: fraction).padding(.horizontal, 10).padding(.bottom, 8) }
+                    }
+            }
+            .buttonStyle(.plain)
+            .overlay(alignment: .topTrailing) { menu }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(anime.title). \(caption)")
+            .accessibilityHint(target.position > 0 ? "Продолжить просмотр" : "Смотреть")
+            .accessibilityAddTraits(.isButton)
+            NavigationLink(value: anime) {
+                Text(anime.title).font(.kaeruCardTitle).foregroundStyle(Palette.ink)
+                    .lineLimit(typeSize.isAccessibilitySize ? 3 : 2)
+                    .multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
+            }.buttonStyle(.plain)
+        }
+    }
+    private var menu: some View {
+        Menu {
+            EpisodeCardActions(anime: anime, episode: target.episode)
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.footnote.weight(.bold)).foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .background(.black.opacity(0.45), in: Circle())
+        }
+        .padding(8)
+        .accessibilityLabel("Ещё: \(anime.title)")
+    }
+}
+
+/// What the ellipsis on an episode card offers. Nothing here decides anything new — it spends the
+/// choices the app already stores.
+struct EpisodeCardActions: View {
+    @Environment(AppModel.self) private var model
+    let anime: Anime
+    let episode: Int
+    private var watched: Bool { episode <= (model.rate(for: anime.id)?.episodes ?? 0) }
+    var body: some View {
+        NavigationLink(value: anime) { Label("Открыть аниме", systemImage: "info.circle") }
+        if model.session != nil {
+            if watched {
+                Button("Отметить непросмотренной", systemImage: "arrow.uturn.backward") {
+                    model.markEpisode(anime: anime, episode: episode, watched: false)
+                }
+            } else {
+                Button("Отметить просмотренной", systemImage: "checkmark") {
+                    model.markEpisode(anime: anime, episode: episode, watched: true)
+                }
+            }
+        }
+        // Offered only where the озвучка is already settled: picking one is the title screen's job,
+        // and a download cannot start without it.
+        if let translation = model.titleTranslations[anime.id] {
+            Button("Скачать серию", systemImage: "arrow.down.circle") {
+                model.downloads.enqueue(anime: anime, episodes: [episode], translation: translation, quality: model.preferredQuality)
+            }
+        }
+    }
+}
+
+/// The one progress indicator in the app: a hairline track with an amber fill, thin enough to read
+/// as part of the artwork.
+struct ProgressTrack: View {
+    var value: Double
+    /// The unfilled part. White by default because the track almost always lies over artwork; a
+    /// track on a page surface passes the hairline colour instead.
+    var track: Color = .white.opacity(0.28)
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule().fill(track)
+                Capsule().fill(Palette.accent).frame(width: proxy.size.width * min(1, max(0.02, value)))
+            }
+        }
+        .frame(height: 3)
+        .accessibilityElement()
+        .accessibilityLabel("Прогресс просмотра")
+        .accessibilityValue(value.formatted(.percent.precision(.fractionLength(0))))
+    }
+}
+
+/// A shelf opened in full. The chevron next to a heading leads here, and the same cards are laid
+/// out as a grid instead of a row.
+struct ShelfRoute: Hashable, Identifiable {
+    var title: String
+    var anime: [Anime]
+    /// True for the shelves about an episode waiting to be played, which use landscape cards.
+    var episodes: Bool = false
+    var id: String { title }
+}
+
+/// A shelf heading: large, condensed, and a chevron that means the rest of it is a tap away.
+struct ShelfHeader: View {
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    let title: String
+    var route: ShelfRoute?
+    var body: some View {
+        Group {
+            if let route {
+                NavigationLink(value: route) {
+                    HStack(spacing: 4) {
+                        label
+                        Image(systemName: "chevron.right").font(.footnote.weight(.bold)).foregroundStyle(Palette.inkSoft)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(title). Показать всё")
+            } else { label }
+        }
+        .padding(.horizontal, Metrics.gutter(sizeClass))
+    }
+    private var label: some View {
+        Text(title).font(.kaeruShelf(sizeClass != .regular)).foregroundStyle(Palette.ink)
+            .lineLimit(2).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+struct CatalogGrid<Content: View>: View {
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.dynamicTypeSize) private var typeSize
+    /// A grid of 16:9 cards fits fewer across than a grid of posters.
+    var still = false
+    @ViewBuilder var content: Content
+    private var minimum: CGFloat {
+        let base = still ? Metrics.stillWidth(sizeClass) * 0.82 : Metrics.gridPosterWidth(sizeClass)
+        return typeSize.isAccessibilitySize ? base * 1.35 : base
+    }
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: minimum), spacing: Metrics.cardSpacing(sizeClass))],
+                  alignment: .leading, spacing: Metrics.cardSpacing(sizeClass) + 10) { content }
     }
 }
 
@@ -58,8 +270,8 @@ struct CatalogRetry: View {
     let retry: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary)
-            Button("Повторить", action: retry).buttonStyle(.bordered)
+            Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(Palette.inkSoft)
+            Button("Повторить", action: retry).buttonStyle(.bordered).tint(Palette.accent)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
