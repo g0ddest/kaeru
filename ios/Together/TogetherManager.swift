@@ -22,6 +22,8 @@ enum TogetherPhase: Equatable {
     @ObservationIgnored private var receiveTask: Task<Void, Never>?
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var side: TogetherSide = .guest
+    /// A greeting that arrived before a player did, replayed the moment one attaches.
+    @ObservationIgnored private var pendingGreeting: TogetherMessage?
     private var ordering = TogetherOrdering(isHost: false)
     private var clock = TogetherClock()
 
@@ -40,6 +42,10 @@ enum TogetherPhase: Equatable {
 
     func attach(_ playback: any TogetherPlayback) {
         self.playback = playback
+        if let greeting = pendingGreeting {
+            pendingGreeting = nil
+            apply(greeting)
+        }
         guard phase == .live, let invitation else { return }
         Task { [weak self] in await self?.sendHello(invitation: invitation) }
     }
@@ -141,9 +147,24 @@ enum TogetherPhase: Equatable {
     }
 
     private func apply(_ message: TogetherMessage) {
-        guard let playback else { return }
+        guard let playback else {
+            // The join screen asks what the friend is watching before any player exists — that is
+            // the whole content of the screen the viewer decides on. Tell the screen now and keep
+            // the greeting, so attaching a player a moment later lands on the right episode.
+            if side == .guest, message.t == .hello, let animeID = message.animeId, let episode = message.episode {
+                let item = TogetherEpisode(animeID: animeID, episode: episode,
+                                           translationID: message.translationId, positionMs: message.positionMs ?? 0)
+                pendingGreeting = message
+                onOpenPlayback?(item)
+            }
+            return
+        }
         switch message.t {
         case .hello:
+            // Only the side that joined follows the other. A host that adopted its guest's hello
+            // would abandon the episode it invited them to — and the first hello of a guest that
+            // has not opened anything yet names episode zero.
+            guard side == .guest else { return }
             guard let animeID = message.animeId, let episode = message.episode, let playing = message.playing else { return }
             let item = TogetherEpisode(animeID: animeID, episode: episode, translationID: message.translationId, positionMs: message.positionMs ?? 0)
             if playback.togetherSnapshot.animeID != animeID || playback.togetherSnapshot.episode != episode {
