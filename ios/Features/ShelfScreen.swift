@@ -9,6 +9,11 @@ struct ShelfScreen: View {
     var body: some View {
         ScrollView {
             CatalogGrid(still: route.episodes) {
+                // «Скачано» carries its own episodes: two of one title are two cards there, so the
+                // rows are keyed on the episode rather than on the show.
+                ForEach(route.downloads) { item in
+                    DownloadedCard(item: item) { play(item) }
+                }
                 ForEach(route.anime) { anime in
                     if route.episodes {
                         let target = model.continueTarget(for: anime)
@@ -29,6 +34,10 @@ struct ShelfScreen: View {
         .navigationTitle(route.title)
         .navigationBarTitleDisplayMode(.inline)
         .fullScreenCover(item: $playing) { PlayerScreen(anime: $0.anime, episode: $0.episode, model: model) }
+    }
+    private func play(_ item: DownloadedShelf.Item) {
+        model.beginPlayback(anime: item.anime)
+        playing = PlaybackRoute(anime: item.anime, episode: item.episode)
     }
     private func play(_ anime: Anime) {
         let target = model.continueTarget(for: anime)

@@ -8,6 +8,10 @@ import Observation
     private(set) var entries: [DownloadEntry] = []
     private(set) var policies = DownloadPolicies()
     private(set) var isConnected = false
+    /// Whether the monitor has said anything yet. Until it has, the phone is neither online nor
+    /// off: a screen that read `isConnected` straight from launch would show «Нет сети» for a
+    /// frame on every cold start.
+    private(set) var connectivityKnown = false
     private(set) var isOnWiFi = false
     private(set) var isReady = false
     private(set) var errorMessage: String?
@@ -205,7 +209,7 @@ import Observation
 
     private func connectivityChanged(connected: Bool, wifi: Bool) {
         let restored = connected && !isConnected
-        isConnected = connected; isOnWiFi = wifi
+        isConnected = connected; isOnWiFi = wifi; connectivityKnown = true
         if restored { onConnectivityRestored?() }
         pump()
     }

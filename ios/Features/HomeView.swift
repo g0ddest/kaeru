@@ -35,6 +35,17 @@ struct HomeView: View {
             return date > now && date < horizon
         }.sorted { ($0.nextAirDate ?? .distantFuture) < ($1.nextAirDate ?? .distantFuture) }
     }
+    /// What is on the device: the one shelf that works with nothing else available, and the reason
+    /// the strip above it says what can still be done rather than only what cannot.
+    private var downloaded: [DownloadedShelf.Item] {
+        DownloadedShelf.build(entries: model.downloads.entries,
+                              counted: { model.rate(for: $0)?.episodes ?? 0 },
+                              progress: { model.progressFor(animeID: $0, episode: $1) },
+                              threshold: model.preferences.watchedThreshold)
+    }
+    /// The phone has said it has no network. Not «has not said yet»: `isConnected` is false until
+    /// the monitor first speaks, and a strip drawn on that would flash on every cold start.
+    private var offline: Bool { model.downloads.connectivityKnown && !model.downloads.isConnected }
     private var planned: [Anime] {
         let inProgress = Set(continuing.map(\.id))
         return model.library.filter { $0.status == "planned" && !inProgress.contains($0.anime.id) }
@@ -54,15 +65,25 @@ struct HomeView: View {
                     if !hero.isEmpty {
                         HeroCarousel(titles: hero, height: max(proxy.size.height * Metrics.heroFraction(sizeClass), heroFloor)) { play($0) }
                     }
+                    // First, and above «Новые серии» on purpose: with no network it is the only
+                    // shelf here that can be acted on, and with one it is what the viewer
+                    // deliberately put on the device. The hero is never a download — «Скачано» is
+                    // about where an episode is, not about what somebody was in the middle of.
+                    downloadedShelf
                     episodeShelf("Новые серии", fresh)
                     episodeShelf("Продолжить просмотр", continuing)
                     episodeShelf("Дальше по списку", next)
                     upcomingShelf
                     posterShelf("В планах", planned)
-                    posterShelf("Популярно сейчас", model.catalog.filter { $0.status == "ongoing" })
-                    seasonSection
-                    if model.loading && model.catalog.isEmpty {
-                        ProgressView("Загружаем каталог…").frame(maxWidth: .infinity).padding(.top, 40)
+                    // The catalogue is the half of this screen that needs a network. Offline it is
+                    // left out rather than shown failing: a «Повторить» that cannot work is worse
+                    // than a shelf that is not there.
+                    if !offline {
+                        posterShelf("Популярно сейчас", model.catalog.filter { $0.status == "ongoing" })
+                        seasonSection
+                        if model.loading && model.catalog.isEmpty {
+                            ProgressView("Загружаем каталог…").frame(maxWidth: .infinity).padding(.top, 40)
+                        }
                     }
                     if model.session == nil { invitation }
                 }
@@ -70,7 +91,8 @@ struct HomeView: View {
                 .frame(maxWidth: Metrics.contentWidth).frame(maxWidth: .infinity)
             }
             .background(Palette.canvas)
-            .ignoresSafeArea(edges: hero.isEmpty ? [] : .top)
+            .safeAreaInset(edge: .top, spacing: 0) { if offline { OfflineStrip() } }
+            .ignoresSafeArea(edges: hero.isEmpty || offline ? [] : .top)
             // The artwork runs under the navigation bar rather than below it; the bar keeps its
             // buttons — on iPad the sidebar toggle lives there — but loses its background and its
             // title, which the hero says better.
@@ -79,7 +101,7 @@ struct HomeView: View {
             .toolbarBackground(hero.isEmpty ? .visible : .hidden, for: .navigationBar)
         }
         .refreshable { await model.reload(); revision += 1 }
-        .task(id: "\(season.id)-\(revision)") { await loadSeason() }
+        .task(id: "\(season.id)-\(revision)-\(offline)") { if !offline { await loadSeason() } }
         .fullScreenCover(item: $route) { PlayerScreen(anime: $0.anime, episode: $0.episode, model: model) }
     }
     private var invitation: some View {
@@ -139,6 +161,20 @@ struct HomeView: View {
             }
         }
     }
+    @ViewBuilder private var downloadedShelf: some View {
+        let items = downloaded
+        if !items.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                ShelfHeader(title: "Скачано", route: ShelfRoute(title: "Скачано", anime: [], episodes: true, downloads: items))
+                row {
+                    ForEach(items) { item in
+                        DownloadedCard(item: item) { play(item) }
+                            .frame(width: Metrics.stillWidth(sizeClass))
+                    }
+                }
+            }
+        }
+    }
     @ViewBuilder private func episodeShelf(_ title: String, _ anime: [Anime]) -> some View {
         if !anime.isEmpty {
             VStack(alignment: .leading, spacing: 14) {
@@ -180,6 +216,12 @@ struct HomeView: View {
         }
         .scrollIndicators(.hidden)
         .scrollTargetBehavior(.viewAligned)
+    }
+    /// A downloaded episode opens at itself rather than at wherever the title got to: the card
+    /// named one episode, and it is the one on the device.
+    private func play(_ item: DownloadedShelf.Item) {
+        model.beginPlayback(anime: item.anime)
+        route = PlaybackRoute(anime: item.anime, episode: item.episode)
     }
     private func play(_ anime: Anime) {
         let target = model.continueTarget(for: anime)

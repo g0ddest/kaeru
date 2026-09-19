@@ -162,6 +162,23 @@ struct EpisodeCard: View {
     }
 }
 
+/// A card of «Скачано»: one episode that is on the device.
+///
+/// The same landscape card as «Продолжить просмотр», because it answers the same two questions —
+/// which episode, and how much of it is left — about the one episode it names rather than about
+/// wherever the title as a whole got to.
+struct DownloadedCard: View {
+    @Environment(AppModel.self) private var model
+    let item: DownloadedShelf.Item
+    var play: () -> Void
+    var body: some View {
+        let progress = model.progressFor(animeID: item.anime.id, episode: item.episode)
+        EpisodeCard(anime: item.anime,
+                    target: ContinueTarget(episode: item.episode, position: progress?.position ?? 0, canPlay: true),
+                    progress: progress, play: play)
+    }
+}
+
 /// What the ellipsis on an episode card offers. Nothing here decides anything new — it spends the
 /// choices the app already stores.
 struct EpisodeCardActions: View {
@@ -169,6 +186,9 @@ struct EpisodeCardActions: View {
     let anime: Anime
     let episode: Int
     private var watched: Bool { episode <= (model.rate(for: anime.id)?.episodes ?? 0) }
+    private var downloaded: Bool {
+        model.downloads.entries.contains { $0.anime.id == anime.id && $0.episode == episode && $0.state == .completed }
+    }
     var body: some View {
         NavigationLink(value: anime) { Label("Открыть аниме", systemImage: "info.circle") }
         if model.session != nil {
@@ -182,9 +202,13 @@ struct EpisodeCardActions: View {
                 }
             }
         }
-        // Offered only where the озвучка is already settled: picking one is the title screen's job,
-        // and a download cannot start without it.
-        if let translation = model.titleTranslations[anime.id] {
+        // Nothing to offer about an episode that is already here; saying so is the point of the
+        // line, because this card looks exactly like the ones that are not.
+        if downloaded {
+            Label("Скачанная серия", systemImage: "checkmark.circle")
+        } else if let translation = model.titleTranslations[anime.id] {
+            // Offered only where the озвучка is already settled: picking one is the title screen's
+            // job, and a download cannot start without it.
             Button("Скачать серию", systemImage: "arrow.down.circle") {
                 model.downloads.enqueue(anime: anime, episodes: [episode], translation: translation, quality: model.preferredQuality)
             }
@@ -220,7 +244,31 @@ struct ShelfRoute: Hashable, Identifiable {
     var anime: [Anime]
     /// True for the shelves about an episode waiting to be played, which use landscape cards.
     var episodes: Bool = false
+    /// «Скачано» is the one shelf whose cards are about episodes rather than about titles: two
+    /// episodes of one show are two cards there, so its rows carry their own episode numbers
+    /// rather than being asked where the viewer got to.
+    var downloads: [DownloadedShelf.Item] = []
     var id: String { title }
+}
+
+/// One line saying the phone is offline.
+///
+/// Deliberately the quietest thing it could be — surface colour, secondary text, no icon, no way to
+/// dismiss it. Being offline is a condition rather than a failure: the downloads go on playing,
+/// which is the whole point of them, so it is stated once at the top of the screen and never again.
+/// The same sentence as Android's `OfflineStrip`.
+struct OfflineStrip: View {
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    var body: some View {
+        Text("Нет сети — доступны скачанные серии")
+            .font(.subheadline).foregroundStyle(Palette.inkSoft)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Metrics.gutter(sizeClass)).padding(.vertical, 12)
+            // Carried up behind the status bar, so the line and the clock above it read as one
+            // band rather than as a stripe floating under a gap.
+            .background { Palette.surface.ignoresSafeArea(edges: .top) }
+            .accessibilityAddTraits(.isStaticText)
+    }
 }
 
 /// A shelf heading: large, condensed, and a chevron that means the rest of it is a tap away.
