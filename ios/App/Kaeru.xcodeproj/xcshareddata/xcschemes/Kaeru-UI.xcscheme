@@ -14,7 +14,7 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "AAC5C85413581E76612F0E63"
+               BlueprintIdentifier = "A33B354ADC2BA9D8FBF97C49"
                BuildableName = "Kaeru.app"
                BlueprintName = "Kaeru"
                ReferencedContainer = "container:Kaeru.xcodeproj">
@@ -30,7 +30,7 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "AAC5C85413581E76612F0E63"
+            BlueprintIdentifier = "A33B354ADC2BA9D8FBF97C49"
             BuildableName = "Kaeru.app"
             BlueprintName = "Kaeru"
             ReferencedContainer = "container:Kaeru.xcodeproj">
@@ -41,7 +41,7 @@
             skipped = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "8DE60654A9B855A503D2096D"
+               BlueprintIdentifier = "4A6CB209E38160BBC64756EE"
                BuildableName = "KaeruUITests.xctest"
                BlueprintName = "KaeruUITests"
                ReferencedContainer = "container:Kaeru.xcodeproj">
@@ -63,7 +63,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "AAC5C85413581E76612F0E63"
+            BlueprintIdentifier = "A33B354ADC2BA9D8FBF97C49"
             BuildableName = "Kaeru.app"
             BlueprintName = "Kaeru"
             ReferencedContainer = "container:Kaeru.xcodeproj">
@@ -80,7 +80,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "AAC5C85413581E76612F0E63"
+            BlueprintIdentifier = "A33B354ADC2BA9D8FBF97C49"
             BuildableName = "Kaeru.app"
             BlueprintName = "Kaeru"
             ReferencedContainer = "container:Kaeru.xcodeproj">
