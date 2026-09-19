@@ -68,7 +68,7 @@ struct DownloadsView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("\(entry.episode) серия").font(.headline)
+                    Text(verbatim: "\(entry.episode) серия").font(.headline)
                     Text("\(entry.quality > 0 ? "\(entry.quality)p" : "Лучшее качество") · Озвучка \(entry.translation)")
                         .font(.caption).foregroundStyle(.secondary)
                 }

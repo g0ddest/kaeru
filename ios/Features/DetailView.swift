@@ -129,7 +129,7 @@ struct DetailView: View {
         if totalEpisodes > 0 {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Серии").font(.kaeruShelf(sizeClass != .regular)).foregroundStyle(Palette.ink)
-                Text("Просмотрено \(rate?.episodes ?? 0) из \(totalEpisodes)").font(.subheadline).foregroundStyle(Palette.inkSoft)
+                Text(verbatim: "Просмотрено \(rate?.episodes ?? 0) из \(totalEpisodes)").font(.subheadline).foregroundStyle(Palette.inkSoft)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: typeSize.isAccessibilitySize ? 200 : 125), spacing: 12)], spacing: 12) {
                     ForEach(1...min(visibleEpisodes, totalEpisodes), id: \.self) { episode in episodeTile(episode) }
                 }

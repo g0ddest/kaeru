@@ -7,6 +7,9 @@ struct PlayerScreen: View {
     /// Held so this screen can say it is on screen: a deep link that arrives now must not open a
     /// second player over this one.
     private let model: AppModel
+    /// Which way the last double tap went, while its label is still up.
+    @State private var seekHinted: PlayerTapZone?
+    @State private var hintRevision = 0
     init(anime: Anime, episode: Int, model: AppModel) {
         self.model = model
         _playback = State(initialValue: PlaybackModel(anime: anime, episode: episode, model: model))
@@ -15,7 +18,7 @@ struct PlayerScreen: View {
         NavigationStack {
             ZStack {
                 Color.black.ignoresSafeArea()
-                NativePlayer(playback: playback)
+                NativePlayer(playback: playback) { zone in seekFeedback(zone) }
                 if playback.loading {
                     ProgressView("Открываем серию…")
                         .padding(20).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
@@ -28,10 +31,14 @@ struct PlayerScreen: View {
                     }.background(.black.opacity(0.8))
                 }
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if !playback.loading, playback.error == nil { playbackActions }
+            .overlay(alignment: .bottomTrailing) {
+                if !playback.loading, playback.error == nil { offers }
             }
-            .navigationTitle("Серия \(playback.episode)")
+            .overlay { seekHint }
+            // Verbatim throughout: an episode number is an ordinal, and a `Text` built from a
+            // literal formats an `Int` argument in the device's locale — which turned the
+            // 1118th episode of a long-running show into «Серия 1.118».
+            .navigationTitle(Text(verbatim: "Серия \(playback.episode)"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -56,29 +63,65 @@ struct PlayerScreen: View {
             else if phase == .background { playback.suspend() }
         }
     }
-    private var playbackActions: some View {
-        VStack(spacing: 12) {
-            if playback.finished { Text("Серия просмотрена").font(.headline) }
+    /// What the native controls cannot say: that the episode is nearly over and the next one is
+    /// about to start, and that the ending can be skipped.
+    ///
+    /// Offers, rather than a control panel. The panel that used to sit here was a second row of
+    /// transport controls stacked under AVKit's own, which in full-screen landscape meant two of
+    /// everything on one picture. Seeking is a double tap near an edge now, as on Android, and
+    /// lives in the menu for anybody who would rather press a button.
+    @ViewBuilder private var offers: some View {
+        VStack(alignment: .trailing, spacing: 12) {
+            if playback.finished && !playback.nextEpisode.offered {
+                Text("Серия просмотрена").font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .background(.black.opacity(0.62), in: Capsule())
+            }
             if playback.nextEpisode.offered {
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 16) { nextEpisodeLabel; nextEpisodeButtons }
                     VStack(alignment: .leading, spacing: 12) { nextEpisodeLabel; nextEpisodeButtons }
                 }
-                .padding(14).frame(maxWidth: 560, alignment: .leading)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                .padding(14).frame(maxWidth: 420, alignment: .leading)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) { seekButtons; skipButton }
-                VStack(spacing: 12) { seekButtons; skipButton }
-            }
+            skipButton
         }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 16).padding(.vertical, 12)
-        .background(.ultraThinMaterial)
+        .padding(.horizontal, 20)
+        // Clear of AVKit's transport bar, which owns the bottom of the picture.
+        .padding(.bottom, 104)
+        .animation(.easeInOut(duration: 0.2), value: playback.nextEpisode.offered)
+    }
+    /// «−10 с» / «+10 с» where the finger landed, for as long as it takes to read.
+    @ViewBuilder private var seekHint: some View {
+        if let hint = seekHinted {
+            HStack {
+                if hint == .forward { Spacer(minLength: 0) }
+                Label(hint == .back ? "−\(playback.skipSeconds) с" : "+\(playback.skipSeconds) с",
+                      systemImage: hint == .back ? "gobackward" : "goforward")
+                    .font(.headline).monospacedDigit().foregroundStyle(.white)
+                    .padding(.horizontal, 18).padding(.vertical, 12)
+                    .background(.black.opacity(0.55), in: Capsule())
+                if hint == .back { Spacer(minLength: 0) }
+            }
+            .padding(.horizontal, 36)
+            .allowsHitTesting(false)
+            .transition(.opacity)
+        }
+    }
+    private func seekFeedback(_ zone: PlayerTapZone) {
+        withAnimation(.easeOut(duration: 0.12)) { seekHinted = zone }
+        hintRevision += 1
+        let revision = hintRevision
+        Task {
+            try? await Task.sleep(for: .milliseconds(700))
+            guard revision == hintRevision else { return }
+            withAnimation(.easeIn(duration: 0.2)) { seekHinted = nil }
+        }
     }
     private var nextEpisodeLabel: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Серия \(playback.episode + 1)").font(.headline)
+            Text(verbatim: "Серия \(playback.episode + 1)").font(.headline)
             if let countdown = playback.nextEpisode.countdown {
                 Text("Начнётся через \(countdown) с").font(.subheadline).monospacedDigit()
             } else { Text("Следующая серия").font(.subheadline).foregroundStyle(.secondary) }
@@ -92,24 +135,11 @@ struct PlayerScreen: View {
             }
         }.controlSize(.large)
     }
-    private var seekButtons: some View {
-        HStack(spacing: 12) {
-            Button { playback.seek(by: -Double(playback.skipSeconds)) } label: {
-                Label("−\(playback.skipSeconds) с", systemImage: "gobackward")
-            }.accessibilityLabel("Назад на \(playback.skipSeconds) секунд")
-                .keyboardShortcut(.leftArrow, modifiers: [])
-            Button { playback.seek(by: Double(playback.skipSeconds)) } label: {
-                Label("+\(playback.skipSeconds) с", systemImage: "goforward")
-            }.accessibilityLabel("Вперёд на \(playback.skipSeconds) секунд")
-                .keyboardShortcut(.rightArrow, modifiers: [])
-            Button("+85 с") { playback.seek(by: 85) }
-                .accessibilityLabel("Вперёд на 85 секунд")
-        }.buttonStyle(.bordered).controlSize(.large)
-    }
     @ViewBuilder private var skipButton: some View {
         if let offer = playback.skipOffer {
             Button(offer.kind == .opening ? "Пропустить опенинг" : "Следующая серия") { playback.skipCurrent() }
                 .buttonStyle(.borderedProminent).controlSize(.large)
+                .tint(.white).foregroundStyle(.black)
         }
     }
     private var options: some View {
@@ -137,6 +167,17 @@ struct PlayerScreen: View {
                         Button { playback.setSpeed(value) } label: { menuLabel("\(value.formatted())×", selected: value == playback.speed) }
                     }
                 }
+            }
+            Section("Перемотка") {
+                Button { playback.seek(by: -Double(playback.skipSeconds)) } label: {
+                    Label("Назад на \(playback.skipSeconds) с", systemImage: "gobackward")
+                }.keyboardShortcut(.leftArrow, modifiers: [])
+                Button { playback.seek(by: Double(playback.skipSeconds)) } label: {
+                    Label("Вперёд на \(playback.skipSeconds) с", systemImage: "goforward")
+                }.keyboardShortcut(.rightArrow, modifiers: [])
+                // About the length of an opening, for anybody who would rather press once than
+                // drag a timeline they cannot see the frames of.
+                Button { playback.seek(by: 85) } label: { Label("Вперёд на 85 с", systemImage: "forward.end.alt") }
             }
             Section {
                 Toggle("Следующая серия автоматически", isOn: Binding(get: { playback.autoNext }, set: playback.setAutoNext))

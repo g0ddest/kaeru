@@ -143,7 +143,7 @@ struct HomeView: View {
                                 PosterView(anime: anime).frame(width: 46)
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(anime.title).font(.kaeruCardTitle).foregroundStyle(Palette.ink).lineLimit(2)
-                                    Text("\(anime.episodesAired + 1) серия").font(.kaeruCardCaption).foregroundStyle(Palette.inkSoft)
+                                    Text(verbatim: "\(anime.episodesAired + 1) серия").font(.kaeruCardCaption).foregroundStyle(Palette.inkSoft)
                                     if let date = anime.nextAirDate {
                                         Text(date, format: .dateTime.weekday().day().month().hour().minute())
                                             .font(.caption).foregroundStyle(Palette.inkSoft)

@@ -392,7 +392,7 @@ struct TranslationChooser: View {
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(translation.title).foregroundStyle(.primary)
                                     if let kind = translation.kind { Text(kind == "subtitles" ? "Субтитры" : "Озвучка").font(.caption).foregroundStyle(.secondary) }
-                                    if translation.episodes > 0 { Text("\(translation.episodes) серий").font(.caption).foregroundStyle(.secondary) }
+                                    if translation.episodes > 0 { Text(verbatim: "\(translation.episodes) серий").font(.caption).foregroundStyle(.secondary) }
                                 }
                                 Spacer()
                                 if model.titleTranslations[anime.id] == translation.id { Image(systemName: "checkmark").accessibilityLabel("Выбрано") }
