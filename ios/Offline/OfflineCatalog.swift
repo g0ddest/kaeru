@@ -156,6 +156,24 @@ enum OfflineRules {
         }
     }
 
+    /// Which pending rows get the transfer slots, in the order they should be started.
+    ///
+    /// Two at a time, because a phone downloading an episode is also playing one, and a third
+    /// transfer buys nothing but contention. Work already in flight keeps its slot: a row whose
+    /// token the transfer layer still holds is cheaper to resume than a queued one is to start,
+    /// and dropping it would throw away bytes already on disk. Everything else follows in the
+    /// order the viewer queued it.
+    ///
+    /// A row that failed for want of a network is not offered a slot even while it is pending:
+    /// it waits for connectivity to come back and clear the failure, so a tunnel cannot spin the
+    /// queue against a network that is not there.
+    static func admittedIDs(_ entries: [DownloadEntry], occupiedTokens: Set<String>, slots: Int = 2) -> [String] {
+        let candidates = entries.filter { $0.state.isPending && $0.failure != .network }
+        let live = candidates.filter { $0.taskToken.map(occupiedTokens.contains) ?? false }
+        let waiting = candidates.filter { !($0.taskToken.map(occupiedTokens.contains) ?? false) }
+        return (live + waiting).prefix(slots).map(\.id)
+    }
+
     static func shouldRefresh(status: Int?, bytes: Int64) -> Bool { status == 403 || status == 410 || bytes > 0 }
     static func claimRefresh(_ entry: inout DownloadEntry, now: Date = Date()) -> Bool {
         entry.refreshAttempts.removeAll { now.timeIntervalSince($0) > 3600 }

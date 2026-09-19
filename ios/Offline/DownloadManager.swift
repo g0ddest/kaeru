@@ -211,15 +211,19 @@ import Observation
     }
     private func pump() {
         guard isReady, catalogReadable else { return }
-        var active = 0
         for index in entries.indices where entries[index].state.isPending {
             if !isConnected || (policies.wifiOnly && !isOnWiFi) {
                 if let token = entries[index].taskToken { transfers.pause(token) }
                 entries[index].state = !isConnected ? .waitingForNetwork : .waitingForWiFi
-                continue
             }
-            if active >= 2 { continue }
-            active += 1
+        }
+        // The slot policy lives in OfflineRules, where it can be read and tested on its own:
+        // what may run at all is a decision about the queue, not about this loop.
+        let occupied = Set(transfers.tasks.keys).union(resolving.keys)
+        let admitted = Set(OfflineRules.admittedIDs(entries, occupiedTokens: occupied))
+        for index in entries.indices where entries[index].state.isPending {
+            guard isConnected, !(policies.wifiOnly && !isOnWiFi) else { continue }
+            guard admitted.contains(entries[index].id) else { continue }
             if let token = entries[index].taskToken, transfers.tasks[token] != nil {
                 entries[index].state = .downloading; transfers.resume(token)
             } else if let token = entries[index].taskToken, resolving[token] != nil {
