@@ -5,6 +5,12 @@
 .DS_Store
 /build/
 /app/build/
+/shared/build/
+/ios/build/
+/ios/build-device/
+/ios/App/Local.xcconfig
+/ios/App/Configuration.plist
+xcuserdata/
 /captures
 .externalNativeBuild
 .cxx

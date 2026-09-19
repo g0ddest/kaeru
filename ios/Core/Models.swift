@@ -1,0 +1,121 @@
+import Foundation
+
+struct Anime: Codable, Identifiable, Hashable {
+    var id: Int
+    var title: String
+    var originalTitle = ""
+    var poster = ""
+    var description = ""
+    var episodes = 0
+    var episodesAired = 0
+    var status = ""
+    var score = ""
+    var year = ""
+    var nextEpisodeAt = ""
+    var availableEpisodes: Int { status == "released" ? max(episodes, episodesAired) : episodesAired }
+    var nextAirDate: Date? { ISO8601DateFormatter().date(from: nextEpisodeAt) }
+    var subtitle: String { [year, episodes > 0 ? "\(episodes) эп." : nil, score.isEmpty ? nil : "★ \(score)"].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ") }
+    var plainDescription: String {
+        description.replacingOccurrences(of: "\\[/?[^\\]]+\\]", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "&quot;", with: "\"").replacingOccurrences(of: "&amp;", with: "&")
+    }
+}
+
+struct LibraryItem: Codable, Identifiable, Hashable {
+    var id: Int64
+    var anime: Anime
+    var status: String
+    var episodes: Int
+}
+
+enum WatchStatus: String, CaseIterable, Identifiable {
+    case watching, planned, completed, onHold = "on_hold", dropped, rewatching
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .watching: "Смотрю"
+        case .planned: "В планах"
+        case .completed: "Просмотрено"
+        case .onHold: "Отложено"
+        case .dropped: "Брошено"
+        case .rewatching: "Пересматриваю"
+        }
+    }
+}
+
+struct Translation: Codable, Identifiable, Hashable { var id: Int; var title: String; var episodes: Int }
+struct StreamURL: Codable, Hashable { var quality: Int; var url: String }
+struct Stream: Codable { var urls: [StreamURL]; var headers: [String: String]; var translation: Translation; var episode: Int }
+struct Account: Codable, Equatable { var id: Int64; var nickname: String; var avatar: String }
+struct Tokens: Codable {
+    var access_token: String
+    var refresh_token: String
+    var expires_in: Double
+    var created_at: Double?
+    var expiresAt: Date { Date(timeIntervalSince1970: created_at ?? 0).addingTimeInterval(expires_in) }
+}
+struct Session: Codable { var account: Account; var tokens: Tokens }
+
+struct EpisodeProgress: Codable, Equatable {
+    var animeID: Int
+    var episode: Int
+    var position: Double
+    var duration: Double
+    var updatedAt = Date()
+    var watched: Bool { duration.isFinite && duration > 0 && position.isFinite && position >= duration * 0.9 }
+}
+
+func continueEpisode(anime: Anime, watched: Int, progress: EpisodeProgress?) -> Int {
+    let available = anime.availableEpisodes
+    guard available > 0 else { return 0 }
+    if let progress, !progress.watched, progress.episode > watched {
+        return min(available, max(1, progress.episode))
+    }
+    return min(available, max(watched, progress?.watched == true ? progress!.episode : 0) + 1)
+}
+
+struct PendingRate: Codable, Identifiable {
+    var id: Int { anime.id }
+    var anime: Anime
+    var status: String
+    var episodes: Int
+    var revision = UUID()
+}
+
+struct AccountSnapshot: Codable {
+    var library: [LibraryItem] = []
+    var pending: [PendingRate] = []
+    var progress: [Int: EpisodeProgress] = [:]
+    var recent: [Int: Anime] = [:]
+}
+
+enum AppError: LocalizedError {
+    case message(String), invalidCallback, signedOut, missingConfiguration
+    var errorDescription: String? {
+        switch self {
+        case .message(let message): message
+        case .invalidCallback: "Не удалось проверить вход. Попробуйте войти ещё раз."
+        case .signedOut: "Сессия завершена. Войдите снова."
+        case .missingConfiguration: "В этой сборке не настроен вход в Shikimori."
+        }
+    }
+}
+
+struct OAuthAttempt {
+    private var pendingState: String?
+    mutating func begin(state: String) { pendingState = state }
+    mutating func cancel() { pendingState = nil }
+    mutating func consume(_ url: URL) throws -> String {
+        let expected = pendingState
+        pendingState = nil
+        guard let expected, let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              parts.scheme == "kaeru", parts.host == "oauth", parts.path.isEmpty,
+              parts.user == nil, parts.password == nil, parts.port == nil, parts.fragment == nil else { throw AppError.invalidCallback }
+        let codes = parts.queryItems?.filter { $0.name == "code" } ?? []
+        let states = parts.queryItems?.filter { $0.name == "state" } ?? []
+        guard codes.count == 1, states.count == 1, states[0].value == expected,
+              let code = codes[0].value, !code.isEmpty else { throw AppError.invalidCallback }
+        return code
+    }
+}

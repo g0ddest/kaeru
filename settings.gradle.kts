@@ -20,3 +20,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "kaeru"
 include(":app")
+include(":shared")

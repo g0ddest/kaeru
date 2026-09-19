@@ -1,14 +1,28 @@
 # Kaeru shared
 
-Общий Kotlin Multiplatform-модуль для Android и iOS.
+Kotlin Multiplatform online-core для Android/iOS: Shikimori, OAuth relay,
+Kodik resolver и правила прогресса. Существующее Android-приложение пока
+использует свои репозитории; его UI и сетевой стек не изменены.
 
-В первом этапе сюда выносятся модели и правила domain, цепочка Kodik,
-клиент Shikimori, авторизация, выбор озвучки и качества, а также синхронизация
-прогресса. UI и платформенное воспроизведение остаются в приложениях:
+`src/commonMain` содержит переносимую логику, `androidMain` — Ktor OkHttp,
+`iosMain` — Ktor Darwin. `NativeApi` экспортируется в статический
+`KaeruShared.framework`; suspend-методы возвращают стабильный JSON-контракт
+и NSError при ошибках. Swift декодирует его в свои модели. Секрет OAuth,
+Keychain, состояние сессии, локальный кэш и очередь не дублируются в shared.
 
-- `commonMain` — переносимая бизнес-логика и контракты;
-- `androidMain` — Android-реализации платформенных сервисов;
-- `iosMain` — iOS-реализации платформенных сервисов.
+```sh
+export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+export ANDROID_HOME="$HOME/Library/Android/sdk"
+./gradlew :shared:allTests :shared:linkDebugFrameworkIosSimulatorArm64 \
+  :shared:linkDebugFrameworkIosArm64
+```
 
-Офлайн-загрузки, Watch Together, Cast и уведомления подключаются после
-завершения первой iOS-версии.
+Тесты common используют реальные Kodik HTML-фикстуры из Android, MockEngine
+и виртуальное время. `verification/SwiftBridgeSmoke.swift` вместе с
+`swift_bridge_smoke.py` проверяет NSError 401 и Content-Length OAuth на
+настоящем Darwin transport через локальный HTTP fixture server.
+
+Кодовый обмен использует `kaeru://oauth`. HTTP 401 обрабатывает Swift:
+один refresh/retry, единый refresh для конкурентных запросов, проверка
+поколения аккаунта до отправки и применения результата. Подписанные Kodik URL
+не сохраняются. Каталоги озвучек и подписи запрашиваются заново.

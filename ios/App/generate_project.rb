@@ -1,0 +1,81 @@
+#!/usr/bin/env ruby
+require 'xcodeproj'
+require 'fileutils'
+
+root = File.expand_path('..', __dir__)
+project_path = File.join(__dir__, 'Kaeru.xcodeproj')
+# Rebuild the in-memory project; save only generated files, preserve user data.
+project = Xcodeproj::Project.new(project_path)
+app = project.new_target(:application, 'Kaeru', :ios, '17.0')
+tests = project.new_target(:unit_test_bundle, 'KaeruTests', :ios, '17.0')
+ui_tests = project.new_target(:ui_test_bundle, 'KaeruUITests', :ios, '17.0')
+tests.add_dependency(app)
+ui_tests.add_dependency(app)
+group = project.new_group('Kaeru', '..')
+# Only public OAuth configuration belongs in the application. Never copy the secret.
+properties_path = ARGV.first || File.join(root, '..', 'local.properties')
+properties = File.exist?(properties_path) ? File.readlines(properties_path).filter_map { |line| line.strip.split('=', 2) if line.include?('=') && !line.start_with?('#') }.to_h : {}
+configuration = %w[SHIKIMORI_CLIENT_ID AUTH_PROXY_URL].to_h { |key| [key, ENV[key] || properties[key] || ''] }
+Xcodeproj::Plist.write_to_path(configuration, File.join(__dir__, 'Configuration.plist'))
+app.resources_build_phase.add_file_reference(group.new_file('App/Configuration.plist'))
+app.resources_build_phase.add_file_reference(group.new_file('App/Assets.xcassets'))
+Dir[File.join(root, '**', '*.swift')].sort.each do |file|
+  next if file.include?('/build/')
+  reference = group.new_file(file.delete_prefix(root + '/'))
+  target = file.include?('/UITests/') ? ui_tests : (file.include?('/Tests/') ? tests : app)
+  target.add_file_references([reference])
+end
+phase = app.new_shell_script_build_phase('Build shared framework')
+phase.shell_script = '/bin/sh "$SRCROOT/../Scripts/BuildSharedFramework.sh"'
+phase.always_out_of_date = '1'
+app.build_phases.delete(phase)
+app.build_phases.unshift(phase)
+
+[app, tests, ui_tests].each do |target|
+  target.build_configurations.each do |config|
+    config.build_settings.merge!({
+      'SWIFT_VERSION' => '5.0',
+      'ARCHS' => 'arm64',
+      'IPHONEOS_DEPLOYMENT_TARGET' => '17.0',
+      'TARGETED_DEVICE_FAMILY' => '1,2',
+      'GENERATE_INFOPLIST_FILE' => 'YES',
+      'PRODUCT_BUNDLE_IDENTIFIER' => target == app ? 'app.kaeru.ios' : "app.kaeru.ios.#{target.name.downcase}",
+      'ENABLE_USER_SCRIPT_SANDBOXING' => 'NO',
+      'FRAMEWORK_SEARCH_PATHS' => ['$(inherited)', '$(SRCROOT)/../../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)'],
+      'OTHER_LDFLAGS' => ['$(inherited)', '-framework', 'KaeruShared'],
+      'LD_RUNPATH_SEARCH_PATHS' => ['$(inherited)', '@executable_path/Frameworks'],
+      'SWIFT_EMIT_LOC_STRINGS' => 'YES'
+    })
+    if target == app
+      config.build_settings.merge!({
+        'INFOPLIST_FILE' => 'Info.plist',
+        'ASSETCATALOG_COMPILER_APPICON_NAME' => 'AppIcon',
+        'INFOPLIST_KEY_CFBundleDisplayName' => 'Kaeru',
+        'INFOPLIST_KEY_UILaunchScreen_Generation' => 'YES',
+        'INFOPLIST_KEY_UIApplicationSceneManifest_Generation' => 'YES',
+        'INFOPLIST_KEY_UISupportedInterfaceOrientations' => 'UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight',
+        'INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad' => 'UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight'
+      })
+    elsif target == tests
+      config.build_settings['TEST_HOST'] = '$(BUILT_PRODUCTS_DIR)/Kaeru.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Kaeru'
+      config.build_settings['BUNDLE_LOADER'] = '$(TEST_HOST)'
+    else
+      config.build_settings['TEST_TARGET_NAME'] = 'Kaeru'
+    end
+  end
+end
+project.save
+scheme = Xcodeproj::XCScheme.new
+scheme.add_build_target(app)
+scheme.add_test_target(tests)
+scheme.set_launch_target(app)
+scheme.save_as(project_path, 'Kaeru', true)
+scheme.test_action.should_use_launch_scheme_args_env = false
+scheme.test_action.environment_variables = Xcodeproj::XCScheme::EnvironmentVariables.new([{ key: 'KAERU_LIVE_TESTS', value: '1', enabled: true }])
+scheme.save_as(project_path, 'Kaeru-Live', true)
+ui_scheme = Xcodeproj::XCScheme.new
+ui_scheme.add_build_target(app)
+ui_scheme.add_test_target(ui_tests)
+ui_scheme.set_launch_target(app)
+ui_scheme.save_as(project_path, 'Kaeru-UI', true)
+puts "Generated #{project_path}"
