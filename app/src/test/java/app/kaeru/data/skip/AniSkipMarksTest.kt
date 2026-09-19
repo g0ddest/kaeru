@@ -10,8 +10,12 @@ import java.time.Duration
 import java.time.Instant
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import retrofit2.HttpException
+import retrofit2.Response
 
 /**
  * The marks as the player asks for them: once per episode, out of the table when it is fresh
@@ -158,7 +162,85 @@ class AniSkipMarksTest {
         assertEquals(SkipMarks.NONE, marks.marks(100, 1, 0))
         assertTrue(api.asked.isEmpty())
     }
+
+    // --- a refusal is an answer -------------------------------------------------------------------
+
+    @Test
+    fun `a refusal is how this service says nobody marked this one`() = runTest {
+        api.failure = notFound()
+
+        assertEquals(SkipMarks.NONE, marks.marks(100, 1, 1_560_000))
+
+        assertEquals(1, dao.rows.size)
+    }
+
+    @Test
+    fun `an episode the service refused is not asked about again for a week`() = runTest {
+        api.failure = notFound()
+        marks.marks(100, 1, 1_560_000)
+        clock.advance(Duration.ofDays(6))
+
+        assertEquals(SkipMarks.NONE, marks.marks(100, 1, 1_560_000))
+        assertEquals(1, api.asked.size)
+    }
+
+    @Test
+    fun `a week after a refusal it is worth asking again`() = runTest {
+        api.failure = notFound()
+        marks.marks(100, 1, 1_560_000)
+        clock.advance(Duration.ofDays(8))
+        api.failure = null
+        api.answer = frieren
+
+        assertEquals(SkipInterval(3_000, 93_000), marks.marks(100, 1, 1_560_000).opening)
+        assertEquals(2, api.asked.size)
+    }
+
+    @Test
+    fun `a service that is merely broken is not an answer to remember`() = runTest {
+        api.failure = HttpException(Response.error<AniSkipResponse>(500, "".toResponseBody(JSON)))
+
+        assertEquals(SkipMarks.NONE, marks.marks(100, 1, 1_560_000))
+        assertTrue(dao.rows.isEmpty())
+    }
+
+    // --- one file, one row ------------------------------------------------------------------------
+
+    @Test
+    fun `the length is asked for in whole seconds, rounded rather than cut`() = runTest {
+        marks.marks(100, 1, 1_559_700)
+
+        assertEquals(listOf("100/1 op,ed,mixed-op,mixed-ed @1560"), api.asked)
+    }
+
+    @Test
+    fun `a length that moved by a second is the same file and the same row`() = runTest {
+        api.answer = frieren
+        marks.marks(100, 1, 1_560_000)
+
+        val again = marks.marks(100, 1, 1_558_400)
+
+        assertEquals(1, api.asked.size)
+        assertEquals(1, dao.rows.size)
+        assertEquals(SkipInterval(3_000, 93_000), again.opening)
+    }
+
+    @Test
+    fun `a length three seconds out is another file and another question`() = runTest {
+        api.answer = frieren
+        marks.marks(100, 1, 1_560_000)
+
+        marks.marks(100, 1, 1_556_000)
+
+        assertEquals(2, api.asked.size)
+    }
+
+    /** A 404 exactly as Retrofit raises it: the body decodes, and the call still throws. */
+    private fun notFound() =
+        HttpException(Response.error<AniSkipResponse>(404, """{"found":false}""".toResponseBody(JSON)))
 }
+
+private val JSON = "application/json".toMediaType()
 
 /** Answers with whatever the test pasted in, and remembers what it was asked. */
 private class FakeAniSkipApi : AniSkipApi {
@@ -181,8 +263,11 @@ private class FakeAniSkipApi : AniSkipApi {
 private class FakeSkipMarksDao : SkipMarksDao {
     val rows = mutableMapOf<Triple<Int, Int, Int>, SkipMarksEntity>()
 
-    override suspend fun find(animeId: Int, episode: Int, lengthSec: Int): SkipMarksEntity? =
-        rows[Triple(animeId, episode, lengthSec)]
+    override suspend fun find(animeId: Int, episode: Int, lengthSec: Int, toleranceSec: Int): SkipMarksEntity? =
+        rows.values
+            .filter { it.animeId == animeId && it.episode == episode }
+            .filter { kotlin.math.abs(it.lengthSec - lengthSec) <= toleranceSec }
+            .minByOrNull { kotlin.math.abs(it.lengthSec - lengthSec) }
 
     override suspend fun upsert(marks: SkipMarksEntity) {
         rows[Triple(marks.animeId, marks.episode, marks.lengthSec)] = marks
