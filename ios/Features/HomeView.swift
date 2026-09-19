@@ -83,7 +83,6 @@ struct HomeView: View {
                 }
             }.padding(.vertical, sizeClass == .regular ? 32 : 20).frame(maxWidth: 1400).frame(maxWidth: .infinity)
         }
-        .background(sizeClass == .regular ? Color.black : Color.clear)
         .refreshable { await model.reload(); revision += 1 }
         .task(id: "\(season.id)-\(revision)") { await loadSeason() }
         .fullScreenCover(item: $route) { PlayerScreen(anime: $0.anime, episode: $0.episode, model: model) }

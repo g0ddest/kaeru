@@ -39,8 +39,10 @@ struct RootView: View {
                 }
             }
         }
-        .preferredColorScheme(sizeClass == .regular ? .dark : nil)
-        .background { if sizeClass == .regular { Color.black.ignoresSafeArea() } }
+        // The viewer's choice, and by default the system's. What stood here forced dark on every
+        // iPad: it overruled a phone deliberately set to light, and repainted the whole app on
+        // screen whenever a Split View divider changed the size class.
+        .preferredColorScheme(scheme)
         .sheet(isPresented: $settings) { SettingsView() }
         .alert("Kaeru", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK", role: .cancel) { model.error = nil }
@@ -63,6 +65,13 @@ struct RootView: View {
         .task { await model.start() }
         .task { openPending() }
         .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await model.flush() } } }
+    }
+    private var scheme: ColorScheme? {
+        switch AppAppearance(stored: model.preferences.appearance) {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
     }
     private var settingsButton: some View {
         Button { settings = true } label: { Image(systemName: "person.crop.circle") }.accessibilityLabel("Аккаунт и настройки")

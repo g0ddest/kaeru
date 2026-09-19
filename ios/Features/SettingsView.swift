@@ -103,6 +103,15 @@ struct SettingsView: View {
                         .textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("kodik-token")
                     if !model.kodikToken.isEmpty { Button("Очистить токен", role: .destructive) { model.kodikToken = "" } }
                 } header: { Text("Источник видео") } footer: { Text("Свой токен нужен, только если публичный токен Kodik перестал работать. Оставьте поле пустым для автоматического выбора.") }
+                Section {
+                    Picker("Оформление", selection: Binding(
+                        get: { AppAppearance(stored: model.preferences.appearance) },
+                        set: { model.preferences.appearance = $0.rawValue })) {
+                        ForEach(AppAppearance.allCases) { Text($0.title).tag($0) }
+                    }.accessibilityIdentifier("appearance")
+                } header: { Text("Оформление") } footer: {
+                    Text("«Как в системе» следует настройке iOS, включая расписание автоматической тёмной темы.")
+                }
                 Section("О приложении") { LabeledContent("Kaeru", value: version).textSelection(.enabled) }
             }
             .navigationTitle("Настройки").navigationBarTitleDisplayMode(.inline)

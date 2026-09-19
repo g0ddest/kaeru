@@ -18,9 +18,32 @@ struct PlaybackPreferences: Codable, Equatable {
         playbackSpeed = playbackSpeed.isFinite ? min(2, max(0.5, playbackSpeed)) : 1
         watchedThreshold = watchedThreshold.isFinite ? min(1, max(0.5, watchedThreshold)) : 0.9
         skipSeconds = min(90, max(5, skipSeconds))
+        appearance = AppAppearance(stored: appearance).rawValue
         var seen = Set<String>()
         studios = studios.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+    }
+}
+
+/// What the app should look like — the one setting allowed to disagree with the system, and only
+/// because somebody asked it to.
+///
+/// The default is to follow iOS, schedule and all. A build that forces a look of its own takes a
+/// phone set to light for a reason — a bright room, an eye condition, a preference — and overrules
+/// it, which is exactly what the system setting exists to prevent.
+enum AppAppearance: String, CaseIterable, Identifiable, Sendable {
+    case system, light, dark
+    var id: Self { self }
+
+    /// Anything unknown — an older build's value, a hand-edited file — reads as «как в системе».
+    init(stored value: String?) { self = AppAppearance(rawValue: value ?? "") ?? .system }
+
+    var title: String {
+        switch self {
+        case .system: "Как в системе"
+        case .light: "Светлая"
+        case .dark: "Тёмная"
+        }
     }
 }
 
