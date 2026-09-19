@@ -4,7 +4,7 @@ import app.kaeru.domain.model.Quality
 import kotlinx.coroutines.flow.Flow
 
 /**
- * The settings playback obeys, as the playback code sees them: five flows and nothing about
+ * The settings playback obeys, as the playback code sees them: six flows and nothing about
  * where they are stored.
  *
  * It exists so that the use-cases, the controller and the screens depend on a domain type
@@ -16,6 +16,14 @@ interface PlaybackPreferences {
 
     /** Whether finishing an episode starts the next one by itself. */
     val autoplayNext: Flow<Boolean>
+
+    /**
+     * Whether an ending steps aside by itself ten seconds after it begins.
+     *
+     * Off unless the viewer asks for it. The button is offered either way — it is unobtrusive and
+     * takes itself off the screen — and this is the stronger wish: never see an ending again.
+     */
+    val skipEnding: Flow<Boolean>
 
     /**
      * Whether leaving the app with an episode playing folds it into a floating window.

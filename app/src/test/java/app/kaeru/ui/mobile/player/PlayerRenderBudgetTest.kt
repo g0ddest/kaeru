@@ -94,6 +94,7 @@ class PlayerRenderBudgetTest {
                         onSeekTo = {},
                         onSeekBy = {},
                         onSkipIntro = {},
+                        onSkip = {},
                         onNext = {},
                         onCancelAutoplay = {},
                         onOpenTranslations = {},

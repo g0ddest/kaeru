@@ -21,6 +21,9 @@ import app.kaeru.domain.playback.FakeEpisodeProgressRepository
 import app.kaeru.domain.playback.FakePlaybackPreferences
 import app.kaeru.domain.playback.FakeWatchStateRepository
 import app.kaeru.domain.playback.ResolveEpisodeStream
+import app.kaeru.domain.playback.SkipInterval
+import app.kaeru.domain.playback.SkipKind
+import app.kaeru.domain.playback.SkipOffer
 import app.kaeru.domain.playback.StreamPrefetchCache
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.source.EpisodeSourceProvider
@@ -1108,4 +1111,146 @@ class PlayerViewModelTest {
             // over an ongoing cast makes.
             assertEquals(2, controller.attaches)
         }
+
+    // --- the opening and the ending -------------------------------------------------------------
+
+    /** What the controller says is on offer right now. */
+    private fun offering(kind: SkipKind, interval: SkipInterval, aired: Int = 12, countdown: Int? = null) {
+        controller.playback.update {
+            it.copy(
+                target = PlaybackTarget(100, 4, 0, null),
+                durationMs = 1_440_000,
+                airedEpisodes = aired,
+                autoplayCountdownSec = countdown,
+                skip = SkipOffer(kind, interval),
+            )
+        }
+    }
+
+    @Test
+    fun `the opening on offer reaches the screen`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+
+        offering(SkipKind.OPENING, SkipInterval(3_000, 93_000))
+        advanceUntilIdle()
+
+        assertEquals(SkipKind.OPENING, viewModel.uiState.value.skip)
+    }
+
+    @Test
+    fun `pressing it on the opening steps over the opening`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+        offering(SkipKind.OPENING, SkipInterval(3_000, 93_000))
+
+        viewModel.skip()
+        advanceUntilIdle()
+
+        assertEquals(1, controller.openingSkips)
+        assertEquals(0, controller.nexts)
+    }
+
+    @Test
+    fun `pressing it on the ending is the move to the next episode`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+        offering(SkipKind.ENDING, SkipInterval(1_340_000, 1_440_000))
+
+        viewModel.skip()
+        advanceUntilIdle()
+
+        assertEquals(1, controller.nexts)
+        assertEquals(0, controller.openingSkips)
+    }
+
+    @Test
+    fun `the ending offers nothing where there is no next episode to offer`() = runTest(main.dispatcher) {
+        viewModel.start(100, 12)
+        advanceUntilIdle()
+
+        offering(SkipKind.ENDING, SkipInterval(1_340_000, 1_440_000), aired = 4)
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.skip)
+    }
+
+    @Test
+    fun `the ending button and the countdown are never on screen together`() = runTest(main.dispatcher) {
+        viewModel.start(100, 4)
+        advanceUntilIdle()
+
+        offering(SkipKind.ENDING, SkipInterval(1_340_000, 1_440_000), countdown = 7)
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.skip)
+    }
+
+    @Test
+    fun `the opening button is not held back by anything the end of the episode is doing`() =
+        runTest(main.dispatcher) {
+            viewModel.start(100, 4)
+            advanceUntilIdle()
+
+            offering(SkipKind.OPENING, SkipInterval(3_000, 93_000), aired = 4, countdown = 7)
+            advanceUntilIdle()
+
+            assertEquals(SkipKind.OPENING, viewModel.uiState.value.skip)
+        }
+
+    @Test
+    fun `an ending that steps aside waits for the question about closing the show off`() =
+        runTest(main.dispatcher) {
+            viewModel.start(100, 12)
+            advanceUntilIdle()
+            controller.announced.emit(PlaybackEvent.SuggestCompleted(100))
+            advanceUntilIdle()
+
+            // The mark is raised a minute before the ending's ten seconds are up, so the question
+            // is already on screen when the ending decides there is nothing left to play.
+            controller.announced.emit(PlaybackEvent.NothingLeftToPlay)
+            advanceUntilIdle()
+
+            assertTrue(viewModel.uiState.value.completedPrompt)
+            assertFalse(viewModel.uiState.value.leaving)
+        }
+
+    @Test
+    fun `and leaves the moment it is answered`() = runTest(main.dispatcher) {
+        viewModel.start(100, 12)
+        advanceUntilIdle()
+        controller.announced.emit(PlaybackEvent.SuggestCompleted(100))
+        controller.announced.emit(PlaybackEvent.NothingLeftToPlay)
+        advanceUntilIdle()
+
+        viewModel.dismissCompleted()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.leaving)
+    }
+
+    @Test
+    fun `yes to the question leaves as well`() = runTest(main.dispatcher) {
+        viewModel.start(100, 12)
+        advanceUntilIdle()
+        controller.announced.emit(PlaybackEvent.SuggestCompleted(100))
+        controller.announced.emit(PlaybackEvent.NothingLeftToPlay)
+        advanceUntilIdle()
+
+        viewModel.confirmCompleted()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.leaving)
+    }
+
+    @Test
+    fun `with nothing to answer it leaves at once`() = runTest(main.dispatcher) {
+        viewModel.start(100, 12)
+        advanceUntilIdle()
+
+        controller.announced.emit(PlaybackEvent.NothingLeftToPlay)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.leaving)
+    }
 }

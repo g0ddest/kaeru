@@ -53,6 +53,7 @@ class LibraryViewModelTest {
     /** Settings whose threshold flow a test supplies: prompt, silent, or broken. */
     private class Preferences(override val watchedThreshold: Flow<Float>) : PlaybackPreferences {
         override val autoplayNext = MutableStateFlow(true)
+        override val skipEnding = MutableStateFlow(false)
         override val pipOnLeave = MutableStateFlow(true)
         override val defaultQuality = MutableStateFlow<Quality?>(null)
         override val preferredTranslations = MutableStateFlow(emptyList<String>())

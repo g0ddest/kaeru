@@ -10,6 +10,7 @@ import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.PlaybackTarget
 import app.kaeru.domain.model.UserRate
+import app.kaeru.domain.playback.FakeSkipMarks
 import app.kaeru.domain.playback.FakePlaybackSampleRepository
 import app.kaeru.domain.playback.FakePlaybackPreferences
 import app.kaeru.domain.playback.FakeWatchStateRepository
@@ -89,6 +90,7 @@ class CastSessionBridgeTest {
             headers = headers,
             downloads = downloads,
             connectivity = FakeConnectivity(),
+            skipMarks = FakeSkipMarks(),
             scope = scope,
             io = dispatcher,
         )

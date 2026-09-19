@@ -5,7 +5,7 @@ import app.kaeru.domain.model.Quality
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
- * The settings store as a test can hold it: eight mutable flows and a record of every write.
+ * The settings store as a test can hold it: nine mutable flows and a record of every write.
  *
  * [echo] is what makes optimism testable. With it off a setter is recorded but the flow it belongs
  * to never changes, so anything the screen still shows afterwards is something it decided to show
@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 class FakeSettingsStore(
     studios: List<String> = emptyList(),
     autoplay: Boolean = true,
+    skipEnding: Boolean = false,
     quality: Quality? = null,
     threshold: Float = 0.9f,
     token: String? = null,
@@ -24,6 +25,7 @@ class FakeSettingsStore(
 ) : SettingsStore {
     override val preferredTranslations = MutableStateFlow(studios)
     override val autoplayNext = MutableStateFlow(autoplay)
+    override val skipEnding = MutableStateFlow(skipEnding)
     override val pipOnLeave = MutableStateFlow(pip)
     override val newEpisodeNotifications = MutableStateFlow(newEpisodes)
     override val defaultQuality = MutableStateFlow(quality)
@@ -41,6 +43,11 @@ class FakeSettingsStore(
     override suspend fun setAutoplayNext(enabled: Boolean) {
         writes += "autoplay=$enabled"
         if (echo) autoplayNext.value = enabled
+    }
+
+    override suspend fun setSkipEnding(enabled: Boolean) {
+        writes += "skipEnding=$enabled"
+        if (echo) this.skipEnding.value = enabled
     }
 
     override suspend fun setPipOnLeave(enabled: Boolean) {

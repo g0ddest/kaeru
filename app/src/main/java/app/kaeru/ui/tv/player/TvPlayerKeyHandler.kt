@@ -108,6 +108,7 @@ object TvPlayerKeyHandler {
      *   with one play/pause button and a remote with two
      * @param cardOpen a card is asking a question — the autoplay offer, a failure, the question
      *   about closing the show off — and the D-pad is walking its buttons rather than the panel
+     * @param skipFocused the skip button is up and holding the focus, so the centre is its
      * @param repeatCount how many repeats the remote has already sent for this hold
      */
     fun onKey(
@@ -116,6 +117,7 @@ object TvPlayerKeyHandler {
         panelVisible: Boolean,
         isPlaying: Boolean,
         cardOpen: Boolean = false,
+        skipFocused: Boolean = false,
         repeatCount: Int = 0,
     ): TvPlayerCommand? {
         if (action != KeyAction.DOWN) return null
@@ -146,6 +148,13 @@ object TvPlayerKeyHandler {
         if (cardOpen) {
             return if (key == TvKey.UP || key == TvKey.DOWN) TvPlayerCommand.KeepFocus else null
         }
+
+        // The skip button is not a card: it is a shortcut standing on the picture, and the
+        // picture's own remote goes on working around it. One key changes hands — OK, which is
+        // what makes it one press rather than two — and the rest scrub and raise the panel
+        // exactly as they do with nothing on screen. A viewer who walks the focus away from the
+        // button has simply chosen the panel; the button waits out its ten seconds either way.
+        if (skipFocused && key == TvKey.CENTER) return null
 
         if (panelVisible) {
             return when (key) {

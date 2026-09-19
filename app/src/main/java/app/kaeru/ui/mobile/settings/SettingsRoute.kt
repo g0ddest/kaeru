@@ -64,6 +64,7 @@ fun SettingsRoute(
         onBack = onBack,
         onSignOut = vm::signOut,
         onAutoplay = vm::setAutoplayNext,
+        onSkipEnding = vm::setSkipEnding,
         onPipOnLeave = vm::setPipOnLeave,
         onNewEpisodes = { wanted ->
             when (pressOfNewEpisodes(wanted, Build.VERSION.SDK_INT, notificationsGranted(context))) {

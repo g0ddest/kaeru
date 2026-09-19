@@ -24,8 +24,9 @@ class TvPlayerKeyHandlerTest {
         panel: Boolean = false,
         playing: Boolean = true,
         card: Boolean = false,
+        skip: Boolean = false,
         repeat: Int = 0,
-    ) = TvPlayerKeyHandler.onKey(key, KeyAction.DOWN, panel, playing, card, repeat)
+    ) = TvPlayerKeyHandler.onKey(key, KeyAction.DOWN, panel, playing, card, skip, repeat)
 
     private fun release(key: TvKey, panel: Boolean = false) =
         TvPlayerKeyHandler.onKey(key, KeyAction.UP, panel, isPlaying = true)
@@ -160,6 +161,38 @@ class TvPlayerKeyHandlerTest {
             assertEquals(TvPlayerCommand.KeepFocus, press(TvKey.UP, panel = panel, card = true))
             assertEquals(TvPlayerCommand.KeepFocus, press(TvKey.DOWN, panel = panel, card = true))
         }
+    }
+
+    // --- the skip button holding the focus ------------------------------------------------------
+
+    @Test
+    fun `the skip button takes the centre and leaves the rest of the remote alone`() {
+        // Ten seconds of a television that cannot scrub is a worse trade than a shortcut nobody
+        // presses, so left and right still jog and up and down still bring the panel back. Moving
+        // the focus off the button is the viewer's to make; the button stays up either way.
+        assertEquals(TvPlayerCommand.SeekBy(-EpisodeQueue.SEEK_STEP_MS), press(TvKey.LEFT, skip = true))
+        assertEquals(TvPlayerCommand.SeekBy(EpisodeQueue.SEEK_STEP_MS), press(TvKey.RIGHT, skip = true))
+        assertEquals(TvPlayerCommand.ShowPanel(TvPanelRung.EPISODES), press(TvKey.UP, skip = true))
+        assertEquals(TvPlayerCommand.ShowPanel(TvPanelRung.QUALITY), press(TvKey.DOWN, skip = true))
+        // The one key that changes hands: OK belongs to the focused button, and a handler that
+        // read it as «pause the picture» would make the shortcut cost two presses — or, on the
+        // ending, pause instead of moving on and move on instead of pausing.
+        assertNull(press(TvKey.CENTER, skip = true))
+    }
+
+    @Test
+    fun `back still leaves the player while the button is up`() {
+        assertEquals(TvPlayerCommand.Exit, press(TvKey.BACK, skip = true))
+    }
+
+    @Test
+    fun `a card outranks the button, and the panel answers for its own row`() {
+        // A question on screen still owns the D-pad, button or no button.
+        assertEquals(TvPlayerCommand.KeepFocus, press(TvKey.UP, card = true, skip = true))
+        assertNull(press(TvKey.CENTER, card = true, skip = true))
+        // And with the controls up, up and down walk the rungs as they always do.
+        assertEquals(TvPlayerCommand.MoveRung(down = false), press(TvKey.UP, panel = true, skip = true))
+        assertNull(press(TvKey.LEFT, panel = true, skip = true))
     }
 
     // --- releases ---------------------------------------------------------------------------

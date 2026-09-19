@@ -274,6 +274,28 @@ fun NextEpisodeCard(episode: Int, countdownSec: Int, onNow: () -> Unit, onCancel
 }
 
 /**
+ * The offer the marks put on the picture, for the ten seconds it stands.
+ *
+ * One pill with one sentence: what pressing it does, and nothing about what it steps over. It
+ * takes the corner the two end-of-episode cards use, and the screen makes sure it is never drawn
+ * beside one of them — a corner with two offers in it is a corner with none.
+ */
+@Composable
+fun SkipButton(label: String, onSkip: () -> Unit, modifier: Modifier = Modifier) {
+    Button(
+        onClick = onSkip,
+        modifier = modifier.defaultMinSize(minHeight = KaeruTokens.MinTouchTarget),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = KaeruElevated.copy(alpha = 0.94f),
+            contentColor = OnVideo,
+        ),
+        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
+    ) {
+        Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+    }
+}
+
+/**
  * What a swipe over the video is doing, while it does it.
  *
  * A strip rather than a number: the viewer is dragging a level, and a bar that fills answers

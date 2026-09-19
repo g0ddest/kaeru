@@ -43,6 +43,7 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
     private val watchedThresholdKey = floatPreferencesKey("watched_threshold")
     private val preferredTranslationsKey = stringPreferencesKey("preferred_translations")
     private val autoplayNextKey = booleanPreferencesKey("autoplay_next")
+    private val skipEndingKey = booleanPreferencesKey("skip_ending")
     private val pipOnLeaveKey = booleanPreferencesKey("pip_on_leave")
     private val newEpisodeNotificationsKey = booleanPreferencesKey("new_episode_notifications")
     private val defaultQualityKey = intPreferencesKey("default_quality")
@@ -138,6 +139,13 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
 
     override suspend fun setAutoplayNext(enabled: Boolean) {
         dataStore.edit { it[autoplayNextKey] = enabled }
+    }
+
+    /** Off until somebody asks for it: an ending skipping itself is a thing to opt into, not out of. */
+    override val skipEnding: Flow<Boolean> = dataStore.data.map { it[skipEndingKey] ?: false }
+
+    override suspend fun setSkipEnding(enabled: Boolean) {
+        dataStore.edit { it[skipEndingKey] = enabled }
     }
 
     /** On until somebody says otherwise: the window is what plan 3 asked for, the switch is the way out. */

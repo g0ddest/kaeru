@@ -10,12 +10,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 class FakePlaybackPreferences(
     threshold: Float = 0.9f,
     autoplay: Boolean = true,
+    skipEnding: Boolean = false,
     quality: Quality? = null,
     preferred: List<String> = emptyList(),
     pip: Boolean = true,
 ) : PlaybackPreferences {
     override val watchedThreshold = MutableStateFlow(threshold)
     override val autoplayNext = MutableStateFlow(autoplay)
+    override val skipEnding = MutableStateFlow(skipEnding)
     override val pipOnLeave = MutableStateFlow(pip)
     override val defaultQuality = MutableStateFlow(quality)
     override val preferredTranslations = MutableStateFlow(preferred)

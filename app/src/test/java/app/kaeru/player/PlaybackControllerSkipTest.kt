@@ -1,0 +1,532 @@
+package app.kaeru.player
+
+import app.kaeru.domain.connectivity.FakeConnectivity
+import app.kaeru.domain.error.NetworkUnavailable
+import app.kaeru.domain.download.DeferredDownloadRemoval
+import app.kaeru.domain.download.FakeDeferredRemovals
+import app.kaeru.domain.download.FakeDownloadRepository
+import app.kaeru.domain.model.Anime
+import app.kaeru.domain.model.AnimeStatus
+import app.kaeru.domain.model.LibraryEntry
+import app.kaeru.domain.model.ListStatus
+import app.kaeru.domain.model.PlaybackTarget
+import app.kaeru.domain.model.UserRate
+import app.kaeru.domain.playback.AddStartedTitleToList
+import app.kaeru.domain.playback.FakePlaybackPreferences
+import app.kaeru.domain.playback.FakePlaybackSampleRepository
+import app.kaeru.domain.playback.FakeSkipMarks
+import app.kaeru.domain.playback.FakeWatchStateRepository
+import app.kaeru.domain.playback.MarkEpisodeWatched
+import app.kaeru.domain.playback.ResolveEpisodeStream
+import app.kaeru.domain.playback.SkipInterval
+import app.kaeru.domain.playback.SkipKind
+import app.kaeru.domain.playback.SkipMarks
+import app.kaeru.domain.playback.StreamPrefetchCache
+import app.kaeru.domain.playback.SuppressedMarks
+import app.kaeru.domain.playback.WatchProgress
+import app.kaeru.domain.settings.FakeSettingsStore
+import app.kaeru.domain.together.LocalAction
+import app.kaeru.test.MutableClock
+import java.time.Instant
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+
+/**
+ * The opening and the ending as the controller sees them: one question per episode, and an offer
+ * that lives on played seconds rather than on a timer.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class PlaybackControllerSkipTest {
+    private val dispatcher = StandardTestDispatcher()
+    private val scope = CoroutineScope(dispatcher + SupervisorJob())
+    private val now = Instant.parse("2026-09-19T10:00:00Z")
+    private val clock = MutableClock(now)
+
+    private val engine = FakePlaybackEngine()
+    private val watchStates = FakeWatchStateRepository()
+    private val source = FakeEpisodeSource()
+    private val library = FakeLibraryRepository()
+    private val prefs = FakePlaybackPreferences()
+    private val downloads = FakeDownloadRepository()
+    private val settings = FakeSettingsStore()
+    private val skipMarks = FakeSkipMarks()
+    private lateinit var controller: DefaultPlaybackController
+
+    /** Frieren episode 1 as AniSkip has it: a 1560-second file, opening 3–93, ending 1460–1560. */
+    private val episodeMs = 1_560_000L
+    private val opening = SkipInterval(3_000, 93_000)
+    private val ending = SkipInterval(1_460_000, 1_560_000)
+
+    @Before
+    fun setUp() {
+        library.put(
+            LibraryEntry(
+                Anime(
+                    100, "Фрирен", "Frieren", null, emptyList(), AnimeStatus.RELEASED,
+                    episodes = 12, episodesAired = 12, nextEpisodeAt = null,
+                    score = null, year = null, studio = null, description = null,
+                ),
+                UserRate(1, 100, ListStatus.WATCHING, episodes = 3, updatedAt = now),
+                null,
+            ),
+        )
+        val deleteWatched = DeferredDownloadRemoval(downloads, settings, FakeDeferredRemovals())
+        controller = DefaultPlaybackController(
+            localEngine = engine,
+            resolve = ResolveEpisodeStream(source, watchStates, prefs, clock, StreamPrefetchCache(clock)),
+            progress = WatchProgress(watchStates, FakePlaybackSampleRepository(watchStates), clock),
+            markWatched = MarkEpisodeWatched(library, watchStates, clock, deleteWatched),
+            addToList = AddStartedTitleToList(library),
+            suppressedMarks = SuppressedMarks(),
+            deleteWatchedDownloads = deleteWatched,
+            library = library,
+            prefs = prefs,
+            headers = StreamHeaders("Chrome/128.0", "https://kodikplayer.com/"),
+            downloads = downloads,
+            connectivity = FakeConnectivity(),
+            skipMarks = skipMarks,
+            scope = scope,
+            io = dispatcher,
+        )
+    }
+
+    @After
+    fun tearDown() = scope.cancel()
+
+    private suspend fun start(episode: Int = 4, durationMs: Long = episodeMs) {
+        controller.play(PlaybackTarget(100, episode, 0, translation = null))
+        engine.ready(durationMs)
+    }
+
+    /**
+     * Playback arriving somewhere the way playback arrives: one report after another.
+     *
+     * The automatic skip asks where the viewer came from, so a test that jumps straight to a
+     * position is testing a drag of the bar rather than an episode running into its ending.
+     */
+    private fun TestScope.walkInto(positionMs: Long, step: Long = 1_000) {
+        engine.moveTo(positionMs - step)
+        advanceUntilIdle()
+        engine.moveTo(positionMs)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `the marks are asked for once the engine knows how long the episode is`() = runTest(dispatcher) {
+        skipMarks.answer = SkipMarks(opening, ending)
+
+        start()
+        advanceUntilIdle()
+
+        assertEquals(listOf("100/4@1560000"), skipMarks.asked)
+    }
+
+    @Test
+    fun `an episode asks once, however many positions it reports`() = runTest(dispatcher) {
+        start()
+        advanceUntilIdle()
+        repeat(5) { engine.moveTo(10_000L * it) }
+        advanceUntilIdle()
+
+        assertEquals(1, skipMarks.asked.size)
+    }
+
+    @Test
+    fun `the next episode is a question of its own`() = runTest(dispatcher) {
+        start(episode = 4)
+        advanceUntilIdle()
+
+        controller.playNext()
+        engine.ready(1_470_000)
+        advanceUntilIdle()
+
+        assertEquals(listOf("100/4@1560000", "100/5@1470000"), skipMarks.asked)
+    }
+
+    @Test
+    fun `nothing is asked while the length is unknown`() = runTest(dispatcher) {
+        controller.play(PlaybackTarget(100, 4, 0, translation = null))
+        advanceUntilIdle()
+
+        assertTrue(skipMarks.asked.isEmpty())
+    }
+
+    // --- the offer ------------------------------------------------------------------------------
+
+    @Test
+    fun `walking into the opening puts the offer on the state for ten seconds`() = runTest(dispatcher) {
+        skipMarks.answer = SkipMarks(opening, ending)
+        start()
+        advanceUntilIdle()
+
+        engine.moveTo(2_000)
+        advanceUntilIdle()
+        assertNull(controller.state.value.skip)
+
+        engine.moveTo(4_000)
+        advanceUntilIdle()
+        assertEquals(SkipKind.OPENING, controller.state.value.skip?.kind)
+
+        engine.moveTo(14_000)
+        advanceUntilIdle()
+        assertNull(controller.state.value.skip)
+    }
+
+    @Test
+    fun `walking into the ending offers the ending instead`() = runTest(dispatcher) {
+        skipMarks.answer = SkipMarks(opening, ending)
+        start()
+        advanceUntilIdle()
+
+        engine.moveTo(1_462_000)
+        advanceUntilIdle()
+
+        assertEquals(SkipKind.ENDING, controller.state.value.skip?.kind)
+        assertEquals(ending, controller.state.value.skip?.interval)
+    }
+
+    @Test
+    fun `an ending marked in the first minutes of the episode is never offered`() = runTest(dispatcher) {
+        skipMarks.answer = SkipMarks(ending = SkipInterval(5_000, 95_000))
+        start()
+        advanceUntilIdle()
+
+        engine.moveTo(6_000)
+        advanceUntilIdle()
+
+        assertNull(controller.state.value.skip)
+    }
+
+    @Test
+    fun `an episode nobody marked offers nothing at all`() = runTest(dispatcher) {
+        skipMarks.answer = SkipMarks.NONE
+        start()
+        advanceUntilIdle()
+
+        engine.moveTo(4_000)
+        advanceUntilIdle()
+
+        assertNull(controller.state.value.skip)
+    }
+
+    @Test
+    fun `an offer that arrives after the opening has begun is shown at once`() = runTest(dispatcher) {
+        // The request takes a moment; the episode is already four seconds in when it lands.
+        skipMarks.answer = SkipMarks(opening, ending)
+        controller.play(PlaybackTarget(100, 4, 0, translation = null))
+        engine.ready(episodeMs)
+        engine.moveTo(4_000)
+        advanceUntilIdle()
+
+        assertEquals(SkipKind.OPENING, controller.state.value.skip?.kind)
+    }
+
+    // --- pressing it ----------------------------------------------------------------------------
+
+    @Test
+    fun `skipping the opening lands on its last second and takes the offer away`() = runTest(dispatcher) {
+        skipMarks.answer = SkipMarks(opening, ending)
+        start()
+        advanceUntilIdle()
+        engine.moveTo(4_000)
+        advanceUntilIdle()
+
+        controller.skipOpening()
+        advanceUntilIdle()
+
+        assertEquals(93_000L, controller.state.value.positionMs)
+        assertNull(controller.state.value.skip)
+    }
+
+    @Test
+    fun `a friend watching along sees it as the seek it is`() = runTest(dispatcher) {
+        skipMarks.answer = SkipMarks(opening, ending)
+        val announced = mutableListOf<LocalAction>()
+        val collecting = launch { controller.localActions.toList(announced) }
+        start()
+        advanceUntilIdle()
+        engine.moveTo(4_000)
+        advanceUntilIdle()
+
+        controller.skipOpening()
+        advanceUntilIdle()
+
+        assertTrue(announced.contains(LocalAction.Seek(93_000)))
+        collecting.cancel()
+    }
+
+    @Test
+    fun `pressing nothing on offer does nothing`() = runTest(dispatcher) {
+        start()
+        advanceUntilIdle()
+        engine.moveTo(600_000)
+        advanceUntilIdle()
+
+        controller.skipOpening()
+        advanceUntilIdle()
+
+        assertEquals(600_000L, controller.state.value.positionMs)
+    }
+
+    @Test
+    fun `the ending is not skipped by the opening's button`() = runTest(dispatcher) {
+        skipMarks.answer = SkipMarks(opening, ending)
+        start()
+        advanceUntilIdle()
+        engine.moveTo(1_462_000)
+        advanceUntilIdle()
+
+        controller.skipOpening()
+        advanceUntilIdle()
+
+        assertEquals(1_462_000L, controller.state.value.positionMs)
+    }
+
+    // --- «Пропускать эндинг» --------------------------------------------------------------------
+
+    /**
+     * A threshold high enough that the ending's ten seconds are behind the viewer before the
+     * episode would be counted watched on its own. Without it every one of these tests would be
+     * asserting what the ordinary threshold already did minutes earlier.
+     */
+    private fun lateThreshold() {
+        prefs.watchedThreshold.value = 0.99f
+    }
+
+    @Test
+    fun `with the setting off the ending plays out`() = runTest(dispatcher) {
+        skipMarks.answer = SkipMarks(opening, ending)
+        start()
+        advanceUntilIdle()
+
+        walkInto(1_475_000)
+
+        assertEquals(4, controller.state.value.target?.episode)
+    }
+
+    @Test
+    fun `with the setting on the next episode starts ten seconds into the ending`() =
+        runTest(dispatcher) {
+            prefs.skipEnding.value = true
+            skipMarks.answer = SkipMarks(opening, ending)
+            start()
+            advanceUntilIdle()
+
+            engine.moveTo(1_469_000)
+            advanceUntilIdle()
+            assertEquals(4, controller.state.value.target?.episode)
+
+            engine.moveTo(1_470_000)
+            advanceUntilIdle()
+
+            assertEquals(5, controller.state.value.target?.episode)
+        }
+
+    @Test
+    fun `an ending that skips itself counts the episode as watched`() = runTest(dispatcher) {
+        prefs.skipEnding.value = true
+        lateThreshold()
+        skipMarks.answer = SkipMarks(opening, ending)
+        start()
+        advanceUntilIdle()
+
+        walkInto(1_470_000)
+
+        assertEquals(listOf(100 to 4), library.episodeWrites)
+    }
+
+    @Test
+    fun `pressing the ending's button counts the episode as watched too`() = runTest(dispatcher) {
+        lateThreshold()
+        skipMarks.answer = SkipMarks(opening, ending)
+        start()
+        advanceUntilIdle()
+        engine.moveTo(1_462_000)
+        advanceUntilIdle()
+
+        controller.playNext()
+        advanceUntilIdle()
+
+        assertEquals(listOf(100 to 4), library.episodeWrites)
+        assertEquals(5, controller.state.value.target?.episode)
+    }
+
+    @Test
+    fun `moving on from the middle of an episode counts nothing`() = runTest(dispatcher) {
+        lateThreshold()
+        skipMarks.answer = SkipMarks(opening, ending)
+        start()
+        advanceUntilIdle()
+        engine.moveTo(600_000)
+        advanceUntilIdle()
+
+        controller.playNext()
+        advanceUntilIdle()
+
+        assertTrue(library.episodeWrites.isEmpty())
+    }
+
+    @Test
+    fun `with no episode after it the player is told there is nothing left`() = runTest(dispatcher) {
+        prefs.skipEnding.value = true
+        lateThreshold()
+        skipMarks.answer = SkipMarks(opening, ending)
+        val announced = mutableListOf<PlaybackEvent>()
+        val collecting = launch { controller.events.toList(announced) }
+
+        start(episode = 12)
+        advanceUntilIdle()
+        walkInto(1_470_000)
+
+        assertTrue(announced.any { it is PlaybackEvent.NothingLeftToPlay })
+        assertEquals(12, controller.state.value.target?.episode)
+        assertEquals(listOf(100 to 12), library.episodeWrites)
+        // The credits stop with the decision rather than with the navigation that follows it:
+        // a floating window outlives the screen, and would sit there playing what was skipped.
+        assertFalse(controller.state.value.isPlaying)
+        collecting.cancel()
+    }
+
+    @Test
+    fun `an ending skips itself once, not on every position after it`() = runTest(dispatcher) {
+        prefs.skipEnding.value = true
+        skipMarks.answer = SkipMarks(opening, ending)
+        val announced = mutableListOf<PlaybackEvent>()
+        val collecting = launch { controller.events.toList(announced) }
+
+        start(episode = 12)
+        advanceUntilIdle()
+        walkInto(1_470_000)
+        engine.moveTo(1_480_000)
+        advanceUntilIdle()
+        engine.moveTo(1_490_000)
+        advanceUntilIdle()
+
+        assertEquals(1, announced.count { it is PlaybackEvent.NothingLeftToPlay })
+        collecting.cancel()
+    }
+
+    @Test
+    fun `an ending the sieve threw away never skips itself`() = runTest(dispatcher) {
+        prefs.skipEnding.value = true
+        skipMarks.answer = SkipMarks(ending = SkipInterval(5_000, 95_000))
+        start()
+        advanceUntilIdle()
+
+        engine.moveTo(20_000)
+        advanceUntilIdle()
+
+        assertEquals(4, controller.state.value.target?.episode)
+    }
+
+    @Test
+    fun `turning the setting on mid-episode does not move the goalposts of the one playing`() =
+        runTest(dispatcher) {
+            skipMarks.answer = SkipMarks(opening, ending)
+            start()
+            advanceUntilIdle()
+
+            prefs.skipEnding.value = true
+            walkInto(1_475_000)
+
+            assertEquals(4, controller.state.value.target?.episode)
+        }
+
+    @Test
+    fun `an ending on a show this device has no count for simply plays out`() = runTest(dispatcher) {
+        prefs.skipEnding.value = true
+        lateThreshold()
+        skipMarks.answer = SkipMarks(opening, ending)
+        val announced = mutableListOf<PlaybackEvent>()
+        val collecting = launch { controller.events.toList(announced) }
+
+        // Nothing in the catalogue for this title, so «that was the last one» and «we do not know
+        // how many there are» look exactly alike — and ejecting the viewer is not the answer to
+        // either of them.
+        controller.play(PlaybackTarget(200, 5, 0, translation = null))
+        engine.ready(episodeMs)
+        advanceUntilIdle()
+        walkInto(1_470_000)
+
+        assertEquals(0, controller.state.value.airedEpisodes)
+        assertTrue(announced.none { it is PlaybackEvent.NothingLeftToPlay })
+        assertEquals(5, controller.state.value.target?.episode)
+        assertTrue(controller.state.value.isPlaying)
+        collecting.cancel()
+    }
+
+    @Test
+    fun `dragging into the ending is not walking into it`() = runTest(dispatcher) {
+        prefs.skipEnding.value = true
+        skipMarks.answer = SkipMarks(opening, ending)
+        start()
+        advanceUntilIdle()
+        engine.moveTo(600_000)
+        advanceUntilIdle()
+
+        // The bar dragged into the last minute to see how it ends. The engine reports the new
+        // position at once, and again a quarter of a second later.
+        controller.seekTo(1_500_000)
+        engine.moveTo(1_500_000)
+        advanceUntilIdle()
+        engine.moveTo(1_500_250)
+        advanceUntilIdle()
+
+        assertEquals(4, controller.state.value.target?.episode)
+    }
+
+    // --- another voice is another file ------------------------------------------------------------
+
+    @Test
+    fun `changing the voice asks again, with the length of the file that is now playing`() =
+        runTest(dispatcher) {
+            skipMarks.answer = SkipMarks(opening, ending)
+            start()
+            advanceUntilIdle()
+            engine.moveTo(4_000)
+            advanceUntilIdle()
+            assertEquals(SkipKind.OPENING, controller.state.value.skip?.kind)
+
+            // Another dub, three minutes shorter: the old opening would land in the middle of a
+            // scene, so the old answer is not an answer to this question at all.
+            skipMarks.answer = SkipMarks.NONE
+            controller.changeTranslation(source.studioBanda)
+            engine.ready(1_446_000)
+            advanceUntilIdle()
+
+            assertEquals(listOf("100/4@1560000", "100/4@1446000"), skipMarks.asked)
+            assertNull(controller.state.value.skip)
+        }
+
+    @Test
+    fun `the same file resolved again is not another question`() = runTest(dispatcher) {
+        skipMarks.answer = SkipMarks(opening, ending)
+        start()
+        advanceUntilIdle()
+        engine.moveTo(320_000)
+        advanceUntilIdle()
+
+        // An expired link, re-signed behind the viewer's back. Same voice, same rung, same file.
+        engine.fail(NetworkUnavailable(java.io.IOException("403")))
+        advanceUntilIdle()
+        engine.ready(episodeMs)
+        advanceUntilIdle()
+
+        assertEquals(listOf("100/4@1560000"), skipMarks.asked)
+    }
+}

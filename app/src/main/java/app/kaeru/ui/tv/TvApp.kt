@@ -183,6 +183,7 @@ private fun TvPlayer(
         onTogglePlayPause = viewModel::togglePlayPause,
         onSeekBy = viewModel::seekBy,
         onSkipIntro = viewModel::skipIntro,
+        onSkip = viewModel::skip,
         onNext = viewModel::playNext,
         onCancelAutoplay = viewModel::cancelAutoplay,
         // Filled rather than opened: on a television the voices are a row of the panel, not a

@@ -266,6 +266,7 @@ class PlayerActivity : FragmentActivity() {
                         onSeekTo = viewModel::seekTo,
                         onSeekBy = viewModel::seekBy,
                         onSkipIntro = viewModel::skipIntro,
+                        onSkip = viewModel::skip,
                         onNext = viewModel::playNext,
                         onCancelAutoplay = viewModel::cancelAutoplay,
                         onOpenTranslations = viewModel::openTranslations,

@@ -37,6 +37,8 @@ class FakePlaybackController : PlaybackController {
         private set
     var nexts = 0
         private set
+    var openingSkips = 0
+        private set
     var cancels = 0
         private set
     var retries = 0
@@ -81,6 +83,10 @@ class FakePlaybackController : PlaybackController {
     }
 
     override fun seekBy(deltaMs: Long) = seekTo(playback.value.positionMs + deltaMs)
+
+    override fun skipOpening() {
+        openingSkips += 1
+    }
 
     override suspend fun changeTranslation(translation: Translation) {
         tracks += translation
