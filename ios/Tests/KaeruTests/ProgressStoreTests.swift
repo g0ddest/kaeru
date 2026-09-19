@@ -132,3 +132,22 @@ private typealias Stream = Kaeru.Stream
         XCTAssertTrue(model.recentAnime.isEmpty)
     }
 }
+
+extension ProgressStoreTests {
+    /// The memo is only as good as what invalidates it: a mark, a position and a status all move
+    /// the answer, and a card that kept the old one would offer the episode just finished.
+    func testTheRememberedTargetFollowsEveryChange() {
+        let store = CountingStore()
+        let model = made(store)
+        XCTAssertEqual(model.continueTarget(for: anime).episode, 1)
+        model.saveProgress(EpisodeProgress(animeID: 7, episode: 1, position: 600, duration: 1200), anime: anime, account: model.accountKey)
+        XCTAssertEqual(model.continueTarget(for: anime).episode, 1, "Half way through the first is still the first")
+        XCTAssertEqual(model.continueTarget(for: anime).position, 600)
+        model.markEpisode(anime: anime, episode: 1, watched: true)
+        XCTAssertEqual(model.continueTarget(for: anime).episode, 2)
+        model.markEpisode(anime: anime, episode: 1, watched: false)
+        XCTAssertEqual(model.continueTarget(for: anime).episode, 1)
+        model.undoEpisodeChange()
+        XCTAssertEqual(model.continueTarget(for: anime).episode, 2)
+    }
+}

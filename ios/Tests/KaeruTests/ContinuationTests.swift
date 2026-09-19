@@ -35,3 +35,42 @@ final class ContinuationTests: XCTestCase {
         XCTAssertEqual(TranslationPreference.pick(tracks, episode: 2, remembered: 1, studios: [], usage: [:]), 1)
     }
 }
+
+/// The memo in front of the continuation rule. Everything here is about how often the answer is
+/// worked out, never about what it is — that is `ContinuationTests` above.
+final class ContinueTargetCacheTests: XCTestCase {
+    private let anime = Anime(id: 7, title: "Test", episodes: 12, episodesAired: 8, status: "ongoing")
+    private func resolve(_ anime: Anime) -> ContinueTarget {
+        ContinueTarget.resolve(anime: anime, counted: 0, rewatching: false, progress: [], threshold: 0.9)
+    }
+    func testTheSameTitleIsWorkedOutOnce() {
+        var cache = ContinueTargetCache()
+        for _ in 0..<50 { _ = cache.target(for: anime, threshold: 0.9, resolve: resolve) }
+        XCTAssertEqual(cache.computed, 1)
+    }
+    func testAChangedListWorksItOutAgain() {
+        var cache = ContinueTargetCache()
+        _ = cache.target(for: anime, threshold: 0.9, resolve: resolve)
+        cache.invalidate()
+        _ = cache.target(for: anime, threshold: 0.9, resolve: resolve)
+        XCTAssertEqual(cache.computed, 2)
+    }
+    /// The setting the rule reads, changed while the screen is up: every answer on it is stale.
+    func testMovingTheThresholdWorksEverythingOutAgain() {
+        var cache = ContinueTargetCache()
+        _ = cache.target(for: anime, threshold: 0.9, resolve: resolve)
+        _ = cache.target(for: anime, threshold: 0.8, resolve: resolve)
+        _ = cache.target(for: anime, threshold: 0.8, resolve: resolve)
+        XCTAssertEqual(cache.computed, 2)
+    }
+    /// One id, two counts of what has aired: the catalogue's copy and the list's. A cache keyed on
+    /// the id alone would hand one of them the other's episode.
+    func testTheSameIdWithADifferentCountIsADifferentQuestion() {
+        var cache = ContinueTargetCache()
+        let aired = cache.target(for: anime, threshold: 0.9, resolve: resolve)
+        var more = anime; more.episodesAired = 12
+        let later = cache.target(for: more, threshold: 0.9, resolve: resolve)
+        XCTAssertEqual(cache.computed, 2)
+        XCTAssertTrue(aired.canPlay && later.canPlay)
+    }
+}

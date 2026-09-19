@@ -78,6 +78,8 @@ import AuthenticationServices
     private var refreshTask: Task<String, Error>?
     private var refreshID = UUID()
     private var mutationRevision = 0
+    /// What the continuation rule last said, per title. See `ContinueTargetCache`.
+    @ObservationIgnored private var targets = ContinueTargetCache()
     private var loaded = false
     private let authentication = Authentication()
     private let saveSession: (Session?) throws -> Void
@@ -131,6 +133,7 @@ import AuthenticationServices
         do {
             let rates = try await authorized { token in try await self.service.library(userID, token: token) }
             guard fence == generation, revision == mutationRevision else { return }
+            targets.invalidate()
             library = rates
             for change in pending { apply(change, rateID: rate(for: change.id)?.id ?? 0) }
             try persistLibrary()
@@ -193,7 +196,13 @@ import AuthenticationServices
     func rate(for id: Int) -> LibraryItem? { library.first { $0.anime.id == id } }
     func progressFor(animeID: Int, episode: Int) -> EpisodeProgress? { episodeHistory["\(animeID):\(episode)"] }
     func continueTarget(for anime: Anime) -> ContinueTarget {
-        ContinueTarget.resolve(anime: anime, counted: rate(for: anime.id)?.episodes ?? 0, rewatching: rate(for: anime.id)?.status == "rewatching", progress: Array(episodeHistory.values), threshold: preferences.watchedThreshold)
+        targets.target(for: anime, threshold: preferences.watchedThreshold) { anime in
+            let rate = rate(for: anime.id)
+            return ContinueTarget.resolve(anime: anime, counted: rate?.episodes ?? 0,
+                                          rewatching: rate?.status == "rewatching",
+                                          progress: episodeHistory.values.filter { $0.animeID == anime.id },
+                                          threshold: preferences.watchedThreshold)
+        }
     }
     func beginPlayback(anime: Anime) {
         notificationService?.clearForPlayback(animeID: anime.id)
@@ -209,6 +218,7 @@ import AuthenticationServices
     func markEpisode(anime: Anime, episode: Int, watched: Bool) {
         guard session != nil, episode > 0, episode <= max(anime.availableEpisodes, rate(for: anime.id)?.episodes ?? 0) else { return }
         let previous = snapshot
+        targets.invalidate()
         let rate = rate(for: anime.id)
         let previousSuppressed = suppressedMarks
         if watched {
@@ -241,6 +251,7 @@ import AuthenticationServices
     func undoEpisodeChange() {
         guard let undo = undoChange, undo.account == accountKey else { return }
         let previous = snapshot
+        targets.invalidate()
         stageRate(anime: undo.anime, status: undo.rate?.status ?? "watching", episodes: undo.rate?.episodes ?? 0)
         episodeHistory = episodeHistory.filter { $0.value.animeID != undo.anime.id }.merging(undo.history) { _, old in old }
         progress[undo.anime.id] = undo.progress
@@ -279,6 +290,7 @@ import AuthenticationServices
               value.position.isFinite, value.duration.isFinite, value.position >= 0, value.duration >= 0 else { return }
         guard !(suppressedMarks[anime.id].map { value.episode >= $0 } ?? false) else { return }
         let previous = snapshot
+        targets.invalidate()
         progress[anime.id] = value; recentAnime[anime.id] = anime
         episodeHistory["\(anime.id):\(value.episode)"] = value
         let watched = value.duration > 0 && value.position >= value.duration * preferences.watchedThreshold
@@ -385,6 +397,7 @@ import AuthenticationServices
         return token
     }
     private func apply(_ change: PendingRate, rateID: Int64) {
+        targets.invalidate()
         library.removeAll { $0.anime.id == change.id }
         library.append(LibraryItem(id: rateID, anime: change.anime, status: change.status, episodes: change.episodes))
     }
@@ -428,10 +441,12 @@ import AuthenticationServices
         AccountSnapshot(library: library, pending: pending, progress: progress, recent: recentAnime, episodeHistory: episodeHistory, translations: titleTranslations)
     }
     private func restore(_ snapshot: AccountSnapshot) {
+        targets.invalidate()
         library = snapshot.library; pending = snapshot.pending; progress = snapshot.progress; recentAnime = snapshot.recent
         episodeHistory = snapshot.episodeHistory; titleTranslations = snapshot.translations
     }
     private func restoreAccount() throws {
+        targets.invalidate()
         undoChange = nil; suppressedMarks = [:]; completionSuggestion = nil
         library = []; pending = []; progress = [:]; recentAnime = [:]; episodeHistory = [:]; titleTranslations = [:]
         let stored = try store.read(AccountSnapshot.self, key: snapshotKey) ?? AccountSnapshot()
