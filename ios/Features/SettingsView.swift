@@ -97,6 +97,11 @@ struct SettingsView: View {
                     if model.together.phase == .live, let peer = model.together.peerName {
                         Text("Подключён: \(peer)").font(.footnote).foregroundStyle(.secondary)
                     }
+                    // For the evening something goes wrong: what the room said and did, without
+                    // the key. Off by default — nobody wants a file that grows on every viewing.
+                    Toggle("Журнал сессии", isOn: Binding(get: { TogetherLog.enabled }, set: { TogetherLog.setEnabled($0) }))
+                    Text("Для разбора неполадок: адрес комнаты, кадры и состояние плеера, без ключей. Файл — Library/Caches/together.log.")
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section {
                     SecureField("Свой токен Kodik", text: $model.kodikToken)

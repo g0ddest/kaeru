@@ -17,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -78,6 +79,12 @@ private const val NEW_EPISODES_NOTE =
     "Приложение само проверяет, не вышла ли следующая серия того, что вы смотрите, и говорит об этом"
 private const val NEW_EPISODES_BLOCKED =
     "Android не разрешил уведомления. Включите их для Kaeru в настройках системы, затем вернитесь сюда"
+
+private const val TOGETHER = "Совместный просмотр"
+private const val TOGETHER_LOG = "Журнал сессии"
+private const val TOGETHER_LOG_NOTE =
+    "Для разбора неполадок: адрес комнаты, кадры и состояние плеера, без ключей. " +
+        "Файл — Android/data/app.kaeru/files/together.log"
 
 private const val DUBS = "Озвучки"
 private const val DUBS_NOTE = "Порядок работает, когда у аниме ещё нет запомненной озвучки"
@@ -148,6 +155,7 @@ fun SettingsScreen(
             AccountSection(state, onRetryAccount, onSignOutPressed = { confirming = true })
             PlaybackSection(state, onAutoplay, onSkipEnding, onPipOnLeave, onQuality, onThreshold)
             NotificationsSection(state.newEpisodes, notificationsBlocked, onNewEpisodes)
+            TogetherSection()
             DownloadsSection(onDownloads)
             DubsSection(state, onStudioUp, onStudioDown, onStudioRemove, onStudioAdd, onStudiosReset)
             KodikSection(state.kodikToken, onKodikToken)
@@ -174,6 +182,23 @@ fun SettingsScreen(
  * only after a refusal this screen happened to witness: a viewer who revoked the permission in
  * system settings a month ago must not find a switch still claiming to be on.
  */
+/**
+ * The journal is for the evening something goes wrong, not for every evening: off by default, and
+ * kept in `TogetherLog` itself rather than in the settings store, because the transport writes to
+ * it before any view model exists.
+ */
+@Composable
+private fun TogetherSection() {
+    var journal by remember { mutableStateOf(app.kaeru.data.together.TogetherLog.enabled) }
+    SettingsSection(TOGETHER) {
+        SettingNote(TOGETHER_LOG_NOTE)
+        SettingSwitchRow(TOGETHER_LOG, journal, onCheckedChange = { on ->
+            app.kaeru.data.together.TogetherLog.setEnabled(on)
+            journal = on
+        })
+    }
+}
+
 @Composable
 private fun NotificationsSection(enabled: Boolean, blocked: Boolean, onNewEpisodes: (Boolean) -> Unit) {
     SettingsSection(NOTIFICATIONS) {

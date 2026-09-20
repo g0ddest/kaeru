@@ -325,7 +325,9 @@ AAC в контейнере MPEG-4 (Apple не декодирует Ogg/Opus, п
 
 ## 13. Журнал и проба
 
-Обе платформы пишут журнал сессии — одни и те же строки, без ключей:
+Обе платформы умеют писать журнал сессии — одни и те же строки, без ключей. По умолчанию он
+**выключен**: включается тумблером «Журнал сессии» в настройках (раздел «Совместный просмотр»);
+при выключении файл удаляется.
 
 - iOS: `Library/Caches/together.log` — `xcrun devicectl device copy from --domain-type
   appDataContainer --domain-identifier app.kaeru.ios --source Library/Caches/together.log`;

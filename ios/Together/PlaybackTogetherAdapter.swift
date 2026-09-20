@@ -39,7 +39,12 @@ import Foundation
         // exactly what the friend takes for a pause with an empty buffer and never waits for.
         // AVPlayer's `rate` is the rate that was asked for and stays non-zero through the wait;
         // it is the intent, and a picture stalling on its way to playing is playing, and buffering.
-        let playing = value.snapshot.isPlaying || (value.snapshot.buffering && value.player.rate > 0)
+        // …and while the stream is still resolving there is no player to have a rate: the intent
+        // is the whole of the answer. Without it the first seconds of an episode opened for the
+        // room went out as «paused, buffering» — a pause with an empty buffer, which the friend
+        // rightly never waits for — and the friend was two or three seconds ahead before the first
+        // frame. That was the start of every episode.
+        let playing = value.snapshot.isPlaying || (value.snapshot.buffering && (value.player.rate > 0 || value.wantsPlayback))
         return .init(animeID: value.snapshot.animeID, episode: value.snapshot.episode,
                      translationID: value.snapshot.translation, positionMs: Int64(max(0, position) * 1000),
                      playing: playing, buffering: value.snapshot.buffering, ready: value.snapshot.ready)
@@ -77,7 +82,9 @@ import Foundation
             await playback.openTitle(id: episode.animeID, episode: episode.episode, position: Double(episode.positionMs) / 1000)
             return
         }
-        playback.selectEpisode(episode.episode, position: Double(episode.positionMs) / 1000, play: false, notify: false)
+        // Opened with the intent to play: the session says play or pause right after, and until
+        // then the report to the friend must read as «wants to play, loading», or they run ahead.
+        playback.selectEpisode(episode.episode, position: Double(episode.positionMs) / 1000, play: true, notify: false)
     }
     func close() {
         if let playback, let manager { manager.detach(self); playback.onLocalAction = nil }

@@ -26,7 +26,9 @@ object TogetherLog {
     private const val NAME = "together.log"
 
     /** Beyond this the file is started again: this is for the last evening, not for all of them. */
-    private const val LIMIT = 64 * 1024
+    private const val LIMIT = 512 * 1024
+    private const val PREFERENCES = "kaeru.together"
+    private const val KEY_ENABLED = "log"
 
     @Volatile
     private var file: File? = null
@@ -39,11 +41,40 @@ object TogetherLog {
     private val stamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
 
     /** Where the journal lives. Called once by whoever knows the app's directories; null keeps it off. */
-    fun install(directory: File?) {
+    @Volatile
+    private var preferences: android.content.SharedPreferences? = null
+
+    /**
+     * Off unless the viewer turned it on in Settings. A journal is for the evening something goes
+     * wrong, not for every evening — a file that grows on every viewing is a file nobody asked for.
+     */
+    val enabled: Boolean
+        get() = forced ?: (preferences?.getBoolean(KEY_ENABLED, false) == true)
+
+    /** Set by the test seam below, where there are no preferences to read the switch from. */
+    @Volatile
+    private var forced: Boolean? = null
+
+    fun install(context: android.content.Context) {
+        file = context.getExternalFilesDir(null)?.let { File(it, NAME) }
+        preferences = context.getSharedPreferences(PREFERENCES, android.content.Context.MODE_PRIVATE)
+        forced = null
+    }
+
+    /** A directory and no switch: the journal is simply on. For tests, which have no `Context`. */
+    fun install(directory: File?, enabled: Boolean = true) {
         file = directory?.let { File(it, NAME) }
+        preferences = null
+        forced = enabled
+    }
+
+    fun setEnabled(on: Boolean) {
+        preferences?.edit()?.putBoolean(KEY_ENABLED, on)?.apply()
+        if (!on) writer.execute { file?.delete() }
     }
 
     fun write(line: String) {
+        if (!enabled) return
         val target = file ?: return
         val at = System.currentTimeMillis()
         runCatching { writer.execute { append(target, at, line) } }

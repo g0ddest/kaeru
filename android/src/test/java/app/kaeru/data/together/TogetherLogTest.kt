@@ -35,15 +35,19 @@ class TogetherLogTest {
         assertEquals(lines.joinToString("\n") + "\n", TogetherLog.read())
     }
 
-    /** For the last evening, not for all of them: past 64 KB the file is started again. */
+    /**
+     * For the last evening, not for all of them: past 512 KB the file is started again. Half a
+     * megabyte, because at 64 KB an evening of two phones testing rolled the file over in the
+     * middle of the very session that needed reading.
+     */
     @Test
     fun `past its cap the journal starts again rather than growing`() {
         TogetherLog.install(directory)
         val line = "state in pos=1234567 playing=true buffering=false here=1234000/true"
-        repeat(2_000) { TogetherLog.write(line) }
+        repeat(9_000) { TogetherLog.write(line) }
         TogetherLog.flush()
         val file = File(directory, "together.log")
-        assertTrue(file.length() < 64 * 1024 + 2 * line.length + 32)
+        assertTrue(file.length() < 512 * 1024 + 2 * line.length + 32)
         assertTrue(file.length() > 0)
     }
 

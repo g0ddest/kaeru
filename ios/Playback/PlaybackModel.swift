@@ -72,6 +72,10 @@ enum PlaybackLocalAction {
     // snapshot does not echo back through onLocalAction; guests can disable automatic decisions.
     var onLocalAction: ((PlaybackLocalAction) -> Void)?
     private(set) var synchronizationControlled = false
+    /// What the viewer asked of the picture, whatever the engine is managing right now. Read by the
+    /// shared-viewing adapter while the stream is still resolving: the player does not exist yet,
+    /// its rate is nothing, and the only honest answer to «are you playing?» is the intent.
+    var wantsPlayback: Bool { intent.wantsPlayback }
     var snapshot: PlaybackSnapshot {
         PlaybackSnapshot(animeID: anime.id, episode: episode, translation: translation,
                          position: position, duration: duration, isPlaying: isPlaying,

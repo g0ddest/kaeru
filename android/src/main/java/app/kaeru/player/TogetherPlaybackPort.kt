@@ -65,7 +65,15 @@ class TogetherPlaybackPort @Inject constructor(
      * the room has no player to read, and a picture that is buffering over there is what the
      * controller says it is.
      */
-    private fun wantsToPlay(): Boolean = controller.videoPlayer.value?.playWhenReady == true
+    /// What the viewer asked of the picture. While the stream is still resolving there is no player
+    /// to ask, and the answer is what an opening always is — a picture that means to play: without
+    /// this the first seconds of an episode opened for the room went out as «paused, buffering»,
+    /// which a friend rightly never waits for, and they were two or three seconds ahead before the
+    /// first frame. That was the start of every episode.
+    private fun wantsToPlay(): Boolean {
+        val player = controller.videoPlayer.value ?: return controller.state.value.isBuffering
+        return player.playWhenReady
+    }
 
     override suspend fun play() = controller.setPlaying(true, ActionOrigin.REMOTE)
 

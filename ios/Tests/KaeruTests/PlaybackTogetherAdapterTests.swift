@@ -34,6 +34,14 @@ private typealias Stream = Kaeru.Stream
 
     /// Normal speed handed to a paused picture used to start it: a pause a beat after a nudge
     /// ended was undone, and announced to the friend as this viewer pressing play.
+    /// The first seconds of an episode opened for the room: no player yet, no rate, only intent.
+    func testAResolvingPictureThatMeansToPlayReportsPlayingAndBuffering() throws {
+        let (playback, adapter) = try bench()
+        let report = adapter.togetherSnapshot
+        XCTAssertTrue(report.buffering, "поток ещё разрешается — это буферизация")
+        XCTAssertTrue(report.playing, "и намерение играть, а не пауза с пустым буфером")
+        XCTAssertTrue(playback.wantsPlayback)
+    }
     func testACorrectionOnAPausedPictureDoesNotStartIt() throws {
         let (playback, adapter) = try bench()
         defer { playback.close() }
@@ -68,7 +76,9 @@ private typealias Stream = Kaeru.Stream
         defer { playback.close() }
         playback.player.replaceCurrentItem(with: AVPlayerItem(url: URL(fileURLWithPath: "/dev/null")))
         XCTAssertTrue(adapter.togetherSnapshot.buffering)
-        XCTAssertFalse(adapter.togetherSnapshot.playing)
+        // Before the engine has a rate at all, the answer is the intent — and a fresh player means
+        // to play. It used to read as a pause, and the friend ran ahead through every opening.
+        XCTAssertTrue(adapter.togetherSnapshot.playing, "намерение играть — уже при загрузке")
         playback.player.rate = 1
         XCTAssertTrue(adapter.togetherSnapshot.buffering)
         XCTAssertTrue(adapter.togetherSnapshot.playing, "стоп на пути к воспроизведению — не пауза")
