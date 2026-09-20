@@ -47,7 +47,9 @@ struct DetailView: View {
             }
             .background(Palette.canvas)
         }
-        .navigationTitle(anime.title).navigationBarTitleDisplayMode(.inline)
+        // The header is the title — in full, over the artwork, at display size. A bar that repeats
+        // it prints the same name a second time in ten points with an ellipsis in it.
+        .navigationTitle("").navigationBarTitleDisplayMode(.inline)
         .task(id: "\(initial.id)-\(revision)") { await loadDetails() }
         .refreshable { await loadDetails() }
         .safeAreaInset(edge: .bottom, spacing: 0) { EpisodeUndoBar() }

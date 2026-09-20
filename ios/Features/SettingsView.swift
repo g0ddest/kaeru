@@ -90,9 +90,9 @@ struct SettingsView: View {
                         Label("Подключить Android TV", systemImage: "tv.and.arrow.forward")
                     }
                 }
-                Section("Совместный просмотр") {
+                Section(TogetherCopy.watchTogether) {
                     NavigationLink { TogetherView(manager: model.together) } label: {
-                        Label("Watch Together", systemImage: "person.2.wave.2")
+                        Label(TogetherCopy.watchTogether, systemImage: "person.2.wave.2")
                     }
                     if model.together.phase == .live, let peer = model.together.peerName {
                         Text("Подключён: \(peer)").font(.footnote).foregroundStyle(.secondary)

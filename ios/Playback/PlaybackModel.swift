@@ -31,6 +31,33 @@ enum PlaybackLocalAction {
     private(set) var position = 0.0
     private(set) var duration = 0.0
     private(set) var isPlaying = false
+    /// Whether this app's own controls are on screen.
+    ///
+    /// AVKit's transport bar fades itself out a few seconds into an episode and the picture is
+    /// left alone, which is the whole feel of a player on this phone. The bar this app draws above
+    /// it used to stay — a black strip across the top of a frame with nothing else on it. There is
+    /// no API that reports AVKit's own visibility, so this follows the same tap AVKit follows and
+    /// fades on the same sort of timer, and it never fades while the episode is paused, because
+    /// AVKit does not either.
+    private(set) var chromeVisible = true
+    @ObservationIgnored private var chromeTimer: Task<Void, Never>?
+    /// The single tap AVKit uses to raise and lower its own controls.
+    func toggleChrome() {
+        chromeVisible.toggle()
+        if chromeVisible { scheduleChromeHide() } else { chromeTimer?.cancel(); chromeTimer = nil }
+    }
+    func showChrome() {
+        chromeVisible = true
+        scheduleChromeHide()
+    }
+    private func scheduleChromeHide() {
+        chromeTimer?.cancel()
+        chromeTimer = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled, let self, self.isPlaying, self.error == nil else { return }
+            self.chromeVisible = false
+        }
+    }
     private(set) var pictureInPicture = false
     private(set) var finished = false
     private(set) var nextEpisode = NextEpisodeState()
@@ -223,7 +250,9 @@ enum PlaybackLocalAction {
     func retry() { retried = false; beginResolve(position: requestedPosition, play: intent.wantsPlayback) }
     func downloadCurrent() {
         guard !isLocal, translation > 0 else { return }
-        model.downloads.enqueue(anime: anime, episodes: [episode], translation: translation, quality: selectedQuality)
+        model.downloads.enqueue(anime: anime, episodes: [episode], translation: translation,
+                                quality: selectedQuality,
+                                translationTitle: translations.first { $0.id == translation }?.title)
     }
     func castCurrent() {
         guard translation > 0, !loading else { return }

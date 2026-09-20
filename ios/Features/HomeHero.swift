@@ -97,6 +97,18 @@ private struct HeroPage: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity,
                alignment: sizeClass == .regular ? .leading : .bottomLeading)
         .background { Backdrop(anime: anime) }
+        // The status bar sits on this artwork — the hero runs under it on purpose — and a clock in
+        // white over a pale poster is unreadable, in either appearance. One short fall of shadow
+        // along the top, the same shadow the bottom of the hero already casts.
+        .overlay(alignment: .top) {
+            LinearGradient(stops: [
+                .init(color: .black.opacity(0.55), location: 0),
+                .init(color: .black.opacity(0.18), location: 0.55),
+                .init(color: .clear, location: 1)
+            ], startPoint: .top, endPoint: .bottom)
+            .frame(height: 132)
+            .allowsHitTesting(false)
+        }
         .contentShape(Rectangle())
     }
 }

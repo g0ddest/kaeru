@@ -10,16 +10,24 @@ struct Artwork: View {
     var anime: Anime
     var shape: Shape = .poster
     var body: some View {
-        Color.clear.aspectRatio(shape.ratio, contentMode: .fit).overlay {
+        // The height is the width and the ratio, taken here rather than left to `aspectRatio`,
+        // which measures what it is given and lets a row of cards end at different places once one
+        // of them is a pixel narrower. A shelf of artwork has one baseline.
+        GeometryReader { proxy in
             AsyncImage(url: URL(string: anime.poster)) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Rectangle().fill(Palette.elevated)
                     .overlay { Image(systemName: "film").font(.title).foregroundStyle(Palette.inkSoft) }
             }
+            .frame(width: proxy.size.width, height: proxy.size.width / shape.ratio)
+            .clipped()
+            // Artwork needs no outline — it has edges of its own. The hairline belongs to the
+            // surfaces of the app, and drawing it round every poster put a grey box round pictures
+            // that were already rectangles.
+            .clipShape(RoundedRectangle(cornerRadius: shape.radius, style: .continuous))
         }
-        .clipped()
-        .kaeruCard(radius: shape.radius)
+        .aspectRatio(shape.ratio, contentMode: .fit)
         .accessibilityHidden(true)
     }
 }
@@ -88,8 +96,10 @@ struct AnimeCard: View {
                     }
                 }
             VStack(alignment: .leading, spacing: 2) {
+                // Two lines whether or not there are two: a shelf where one title wraps and its
+                // neighbour does not is a shelf whose captions sit at two different heights.
                 Text(anime.title).font(.kaeruCardTitle).foregroundStyle(Palette.ink)
-                    .lineLimit(2).multilineTextAlignment(.leading)
+                    .lineLimit(2, reservesSpace: true).multilineTextAlignment(.leading)
                 Text(caption ?? anime.subtitle).font(.kaeruCardCaption).foregroundStyle(Palette.inkSoft).lineLimit(1)
             }
         }
@@ -142,8 +152,10 @@ struct EpisodeCard: View {
             .accessibilityHint(target.position > 0 ? "Продолжить просмотр" : "Смотреть")
             .accessibilityAddTraits(.isButton)
             NavigationLink(value: anime) {
+                // Reserved, like the poster card's: one title that wraps and one that does not is
+                // a shelf whose cards end at two different heights.
                 Text(anime.title).font(.kaeruCardTitle).foregroundStyle(Palette.ink)
-                    .lineLimit(typeSize.isAccessibilitySize ? 3 : 2)
+                    .lineLimit(typeSize.isAccessibilitySize ? 3 : 2, reservesSpace: true)
                     .multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
             }.buttonStyle(.plain)
         }
@@ -307,7 +319,9 @@ struct CatalogGrid<Content: View>: View {
     var still = false
     @ViewBuilder var content: Content
     private var minimum: CGFloat {
-        let base = still ? Metrics.stillWidth(sizeClass) * 0.82 : Metrics.gridPosterWidth(sizeClass)
+        // A 16:9 card is wide, and 0.82 of a shelf's width left a phone showing three across —
+        // three cards whose pictures were smaller than the text under them. Two, and they read.
+        let base = still ? max(166, Metrics.stillWidth(sizeClass) * 0.82) : Metrics.gridPosterWidth(sizeClass)
         return typeSize.isAccessibilitySize ? base * 1.35 : base
     }
     var body: some View {

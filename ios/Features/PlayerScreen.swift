@@ -64,7 +64,13 @@ struct PlayerScreen: View {
                 ToolbarItem(placement: .topBarTrailing) { CastButton(manager: playback.castManager) }
                 ToolbarItem(placement: .primaryAction) { options }
             }
-            .toolbarBackground(.visible, for: .navigationBar)
+            // No strip of its own: what is behind these controls is the picture, and AVKit's own
+            // controls sit on nothing but a gradient. They go away together, too — see
+            // `PlaybackModel.chromeVisible`.
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbar(playback.chromeVisible ? .visible : .hidden, for: .navigationBar)
+            .animation(.easeInOut(duration: 0.25), value: playback.chromeVisible)
+            .tint(.white)
             // A room nobody was invited to is a room for one. Android raises the share sheet the
             // moment the room exists; so does this.
             .sheet(item: $sharing) { ShareSheet(items: [$0.text]) }
@@ -228,14 +234,12 @@ struct PlayerScreen: View {
             Section {
                 if playback.isLocal { Label("Скачанная серия", systemImage: "checkmark.circle") }
                 else {
-                    Button { playback.castCurrent() } label: { Label("Смотреть на Chromecast", systemImage: "tv") }
-                        .disabled(playback.translation <= 0 || !playback.castManager.isConnected)
                     Button { playback.downloadCurrent() } label: { Label("Скачать серию", systemImage: "arrow.down.circle") }
                         .disabled(playback.translation <= 0)
                 }
                 if playback.hasNext { Button("Следующая серия") { playback.nextNow() } }
             }
-        } label: { Image(systemName: "ellipsis.circle") }
+        } label: { Image(systemName: "ellipsis") }
         .accessibilityLabel("Настройки воспроизведения")
         .disabled(playback.loading)
     }

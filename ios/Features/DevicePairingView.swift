@@ -68,7 +68,7 @@ struct DevicePairingView: View {
             Text("Откройте на телевизоре «Войти в Shikimori» и наведите камеру на QR-код.")
         }
         Section {
-            TextField("kaeru://pair…", text: $typed, axis: .vertical)
+            TextField("Ссылка с телевизора", text: $typed, axis: .vertical)
                 .textInputAutocapitalization(.never).autocorrectionDisabled()
                 .accessibilityIdentifier("pairing-link")
             Button("Продолжить по ссылке") { open(typed) }

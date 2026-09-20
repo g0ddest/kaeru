@@ -11,7 +11,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .downloads: "Загрузки"
         case .recent: "Недавно добавленные"
         case .television: "Телевизор"
-        case .together: "Совместный просмотр"
+        case .together: TogetherCopy.watchTogether
         case .more: "Ещё"
         }
     }

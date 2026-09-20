@@ -33,7 +33,7 @@ struct MoreView: View {
             Section("Устройства") {
                 NavigationLink { DevicePairingView(embedded: true) } label: { Label("Телевизор", systemImage: "tv") }
                 NavigationLink { TogetherView(manager: model.together, embedded: true) } label: {
-                    Label("Совместный просмотр", systemImage: "person.2.wave.2")
+                    Label(TogetherCopy.watchTogether, systemImage: "person.2.wave.2")
                 }
             }
             Section {

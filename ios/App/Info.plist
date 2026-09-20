@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
+    <!-- Всё, что пишет система за приложение: «Нет результатов», «Отмена», меню выделения,
+         подписи AVKit. Без этого половина строк на экране была английской. -->
+    <key>CFBundleDevelopmentRegion</key><string>ru</string>
+    <key>CFBundleLocalizations</key><array><string>ru</string><string>en</string></array>
     <key>CFBundleURLTypes</key><array><dict>
         <key>CFBundleURLName</key><string>app.kaeru.oauth</string>
         <key>CFBundleURLSchemes</key><array><string>kaeru</string></array>

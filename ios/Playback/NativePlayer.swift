@@ -36,6 +36,14 @@ struct NativePlayer<Overlay: View>: UIViewControllerRepresentable {
         double.numberOfTapsRequired = 2
         double.cancelsTouchesInView = false
         controller.contentOverlayView?.addGestureRecognizer(double)
+        // The same single tap AVKit reads to raise and lower its transport bar, read again here so
+        // this app's own controls come and go with it. Nothing is cancelled and nothing is
+        // required to fail: AVKit still sees every touch, and the first tap of a double tap
+        // raising the bar is what every player on this phone does anyway.
+        let single = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.singleTapped))
+        single.numberOfTapsRequired = 1
+        single.cancelsTouchesInView = false
+        controller.contentOverlayView?.addGestureRecognizer(single)
         controller.contentOverlayView?.isUserInteractionEnabled = true
         if let container = controller.contentOverlayView {
             let host = UIHostingController(rootView: overlay())
@@ -70,6 +78,7 @@ struct NativePlayer<Overlay: View>: UIViewControllerRepresentable {
         }
         /// Ten seconds either way, by which third of the picture the finger landed on — the same
         /// rule as Android's `GestureMath.doubleTapZone`.
+        @objc func singleTapped(_ recognizer: UITapGestureRecognizer) { playback.toggleChrome() }
         @objc func doubleTapped(_ recognizer: UITapGestureRecognizer) {
             guard let view = recognizer.view else { return }
             let zone = PlayerGestures.zone(x: recognizer.location(in: view).x, width: view.bounds.width)

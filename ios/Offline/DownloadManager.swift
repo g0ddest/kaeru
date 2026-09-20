@@ -56,7 +56,7 @@ import Observation
     func clearError() { errorMessage = nil }
 
     /// Synchronous admission; resolution and background transfer continue independently of the view.
-    func enqueue(anime: Anime, episodes: [Int], translation: Int, quality: Int) {
+    func enqueue(anime: Anime, episodes: [Int], translation: Int, quality: Int, translationTitle: String? = nil) {
         guard catalogReadable, anime.id > 0, translation > 0 else { return }
         let sizes = entries.filter { $0.state == .completed && $0.bytes > 0 }.map(\.bytes)
         let estimate = sizes.isEmpty ? DownloadPolicies.fallbackEstimate : sizes.reduce(0, +) / Int64(sizes.count)
@@ -74,7 +74,8 @@ import Observation
             guard hasDiskSpace(estimate) else { errorMessage = DownloadFailure.noSpace.message; break }
             for row in existing { remove(id: row.id) }
             guard !entries.contains(where: { $0.anime.id == anime.id && $0.episode == episode }) else { continue }
-            var entry = DownloadEntry(anime: anime, episode: episode, translation: translation, quality: wanted)
+            var entry = DownloadEntry(anime: anime, episode: episode, translation: translation,
+                                      translationTitle: translationTitle, quality: wanted)
             entry.estimatedBytes = estimate
             entries.append(entry)
         }

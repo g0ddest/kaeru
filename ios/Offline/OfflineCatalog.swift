@@ -75,6 +75,10 @@ struct DownloadEntry: Codable, Identifiable {
     var anime: Anime
     var episode: Int
     var translation: Int
+    /// What the dub is called — «AniLibria», «Субтитры Crunchyroll». Optional because a catalogue
+    /// written by an older build has only the number, which is what the list used to show: «Озвучка
+    /// 610» is an identifier, and nobody has ever chosen a dub by one.
+    var translationTitle: String?
     var quality: Int
     var id: String { "\(anime.id):\(episode):\(translation):\(quality)" }
     var state: DownloadState = .queued

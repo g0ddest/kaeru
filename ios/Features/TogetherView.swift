@@ -52,7 +52,7 @@ struct TogetherView: View {
                 }
             }
         }
-        .navigationTitle("Watch Together")
+        .navigationTitle(TogetherCopy.watchTogether)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { if !embedded { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } } }
     }
