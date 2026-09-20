@@ -20,6 +20,10 @@ import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.SuppressedMarks
 import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.playback.ResolveEpisodeStream
+import app.kaeru.domain.playback.SkipKind
+import app.kaeru.domain.playback.SkipMarks
+import app.kaeru.domain.playback.SkipMarksSource
+import app.kaeru.domain.playback.SkipRules
 import app.kaeru.domain.playback.WatchProgress
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.together.LocalAction
@@ -103,6 +107,14 @@ interface PlaybackController {
     fun seekTo(positionMs: Long, origin: ActionOrigin = ActionOrigin.LOCAL)
 
     fun seekBy(deltaMs: Long)
+
+    /**
+     * Steps over the opening the player is offering to step over, if it is offering one.
+     *
+     * A seek and nothing else, so a friend watching along is told the same thing they would be
+     * told about a scrub — there is no «skip» in the protocol and there does not need to be.
+     */
+    fun skipOpening()
 
     /**
      * Plays slightly slow or slightly fast. `1.0` is normal speed.
@@ -196,6 +208,7 @@ class DefaultPlaybackController @Inject constructor(
     private val headers: StreamHeaders,
     private val downloads: DownloadRepository,
     private val connectivity: Connectivity,
+    private val skipMarks: SkipMarksSource,
     @param:PlaybackScope private val scope: CoroutineScope,
     @param:IoDispatcher private val io: CoroutineDispatcher,
 ) : PlaybackController {
@@ -277,6 +290,7 @@ class DefaultPlaybackController @Inject constructor(
         val threshold: Float = 0.9f,
         val autoplay: Boolean = true,
         val quality: Quality? = null,
+        val skipEnding: Boolean = false,
     )
 
     private val _state = MutableStateFlow(PlaybackState())
@@ -315,6 +329,28 @@ class DefaultPlaybackController @Inject constructor(
     private val switching: Boolean get() = transition?.isActive == true
 
     private var markedEpisode = false
+
+    /** This episode's opening and ending, already sieved, or nothing known about them yet. */
+    private var marks = SkipMarks.NONE
+
+    /** Whether the one question per episode has been asked; an answer of «none» still counts. */
+    private var marksAsked = false
+
+    /** This episode's ending has already been stepped over, by a press or by itself. */
+    private var endingSkipped = false
+
+    /**
+     * Where the engine said playback was last time, so an episode that walked into its ending can
+     * be told from a bar dragged into it. Negative until the first report of an episode.
+     */
+    private var lastSeenMs = -1L
+
+    /**
+     * Until playback has carried this far, every position is a seek's rather than the episode's.
+     * A jump lands inside the ending in one report, and a viewer checking how it ends has not
+     * asked to be moved on.
+     */
+    private var settledAtMs = -1L
 
     /** Whether the sound is wanted down right now, so an engine taking over can be told. */
     private var ducked = false
@@ -387,7 +423,14 @@ class DefaultPlaybackController @Inject constructor(
 
     override fun seekTo(positionMs: Long, origin: ActionOrigin) {
         val clamped = EpisodeQueue.clampSeek(positionMs, _state.value.durationMs)
-        _state.update { it.copy(positionMs = clamped) }
+        // The offer moves with the position rather than waiting for the next report: pressing the
+        // button has to take it off the screen at once, and a scrub into the opening is the same
+        // arithmetic answered the same way.
+        _state.update { it.copy(positionMs = clamped, skip = SkipRules.offer(marks, clamped, it.durationMs)) }
+        // Where the viewer went, and how long the automatic skip stands down for afterwards. A
+        // drag into the last minute is not an episode running into its ending.
+        lastSeenMs = clamped
+        settledAtMs = clamped + SkipRules.SEEK_SETTLE_MS
         engine.seekTo(clamped)
         announce(origin) { LocalAction.Seek(clamped) }
     }
@@ -405,6 +448,12 @@ class DefaultPlaybackController @Inject constructor(
     }
 
     override fun seekBy(deltaMs: Long) = seekTo(_state.value.positionMs + deltaMs)
+
+    override fun skipOpening() {
+        val offer = _state.value.skip ?: return
+        if (offer.kind != SkipKind.OPENING) return
+        seekTo(offer.interval.endMs)
+    }
 
     override suspend fun changeTranslation(translation: Translation) {
         transition {
@@ -639,6 +688,11 @@ class DefaultPlaybackController @Inject constructor(
         opening = null
         _state.value = PlaybackState(isCasting = casting)
         markedEpisode = false
+        marks = SkipMarks.NONE
+        marksAsked = false
+        endingSkipped = false
+        lastSeenMs = -1
+        settledAtMs = -1
         playingDownload = false
         reResolved = false
         autoplayCancelled = false
@@ -681,8 +735,24 @@ class DefaultPlaybackController @Inject constructor(
             markedEpisode = false
             reResolved = false
             autoplayCancelled = false
+            // Whether the ending was stepped over belongs to the episode rather than to the file,
+            // so it survives a swap and goes with the episode.
+            endingSkipped = false
+        }
+        // The marks belong to the file, and another voice or another rung is another file with
+        // another length — which is the one fact the whole feature is keyed on. Anything else
+        // arriving here is the same file opened again: a re-signed link, or an engine taking the
+        // episode over, and there is nothing new to ask.
+        val sameFile = !freshEpisode &&
+            before.stream?.translation?.id == stream.translation.id &&
+            before.quality == quality
+        if (!sameFile) {
+            marks = SkipMarks.NONE
+            marksAsked = false
         }
         lastReportedMs = target.startPositionMs
+        lastSeenMs = -1
+        settledAtMs = -1
         wasPlaying = false
         _state.value = PlaybackState(
             target = target,
@@ -802,6 +872,11 @@ class DefaultPlaybackController @Inject constructor(
 
     private suspend fun openNext() {
         val current = _state.value.target ?: return
+        // Moving on from inside the ending *is* finishing the episode, whether the viewer pressed
+        // «Следующая серия» or the setting did it for them. Said here rather than at each caller
+        // so every road to the next episode — the button, the automatic skip, the remote's own
+        // next key — counts the one being left in the same way.
+        countWatchedIfLeavingTheEnding()
         // The voice the viewer has, not the one that stood in for it: a stand-in was for one
         // episode, and the next is asked for in the chosen voice again — which may well have it.
         val track = _state.value.insteadOf ?: _state.value.stream?.translation ?: current.translation
@@ -850,6 +925,7 @@ class DefaultPlaybackController @Inject constructor(
         threshold = prefs.watchedThreshold.first(),
         autoplay = prefs.autoplayNext.first(),
         quality = prefs.defaultQuality.first(),
+        skipEnding = prefs.skipEnding.first(),
     )
 
     private fun onEngineState(engineState: EngineState, force: Boolean = false) {
@@ -879,12 +955,16 @@ class DefaultPlaybackController @Inject constructor(
             nextEpisodeDue =
                 if (lengthKnown) EpisodeQueue.nextEpisodeDue(position, duration, ended) else current.nextEpisodeDue,
             autoplayCountdownSec = countdown,
+            skip = if (lengthKnown) SkipRules.offer(marks, position, duration) else current.skip,
         )
         if (lengthKnown) {
+            askForMarks(target, duration)
             reportIfDue(position, duration, paused = wasPlaying && !engineState.isPlaying)
             markIfWatched(position, duration)
+            skipEndingIfDue(position, duration)
         }
         wasPlaying = engineState.isPlaying
+        if (lengthKnown) lastSeenMs = position
         if (lengthKnown && countdown != null && countdown <= 0) advanceToNext()
     }
 
@@ -939,6 +1019,89 @@ class DefaultPlaybackController @Inject constructor(
     private fun advanceToNext() {
         if (switching) return
         transition { openNext() }
+    }
+
+    /**
+     * Asks once, as soon as there is a length to ask with.
+     *
+     * Here rather than at the resolve because the length is the question: AniSkip keeps intervals
+     * against the file they were marked for, and until the engine has read the manifest nobody
+     * knows which file is playing. Never awaited and never retried — an episode plays exactly the
+     * same without an answer, and a source that is down must not be asked four times a second.
+     */
+    private fun askForMarks(target: PlaybackTarget, durationMs: Long) {
+        if (marksAsked) return
+        marksAsked = true
+        scope.launch {
+            val found = withContext(io) { skipMarks.marks(target.animeId, target.episode, durationMs) }
+            // The episode can move on inside a request. Marks belong to the episode they were
+            // asked about, and to no other.
+            val live = _state.value.target ?: return@launch
+            if (live.animeId != target.animeId || live.episode != target.episode) return@launch
+            marks = SkipRules.accept(found, durationMs)
+            // Shown at once rather than on the next report: an answer that lands four seconds
+            // into a ninety-second opening still has most of its ten seconds to be useful in.
+            _state.update { it.copy(skip = SkipRules.offer(marks, it.positionMs, it.durationMs)) }
+        }
+    }
+
+    /**
+     * Counts the episode as watched when what is being stepped over is its ending.
+     *
+     * Through the same path a natural finish takes — the threshold, the suppression, the
+     * once-per-episode guard all still apply — by standing the position at the end of the
+     * episode, which is where the viewer is going. An episode left from anywhere else is not
+     * touched: pressing «Следующая серия» three minutes in is not finishing anything.
+     */
+    private fun countWatchedIfLeavingTheEnding() {
+        val current = _state.value
+        if (current.durationMs <= 0) return
+        if (!SkipRules.endingSkipDue(marks, current.positionMs, current.durationMs) &&
+            current.skip?.kind != SkipKind.ENDING
+        ) {
+            return
+        }
+        endingSkipped = true
+        markIfWatched(current.durationMs, current.durationMs)
+    }
+
+    /**
+     * «Пропускать эндинг»: ten seconds into the ending, step over the rest of it.
+     *
+     * The next episode where there is one, and out of the player where there is not — an episode
+     * that ends a show should not leave the viewer watching credits they asked never to see. Once
+     * per episode, because a position past the ten-second mark keeps arriving four times a second.
+     */
+    private fun skipEndingIfDue(positionMs: Long, durationMs: Long) {
+        if (!settings.skipEnding || endingSkipped || switching) return
+        if (!SkipRules.endingSkipDue(marks, positionMs, durationMs)) return
+        // Playing into the ending, not landing in it. A position the bar was dragged to arrives
+        // from somewhere outside the ending, and a second drag inside it arrives before playback
+        // has carried a second past the seek — neither is the viewer asking to be moved on.
+        if (positionMs < settledAtMs) return
+        if (!SkipRules.insideEnding(marks, lastSeenMs, durationMs)) return
+        val current = _state.value
+        when {
+            current.hasNextEpisode -> {
+                endingSkipped = true
+                transition { openNext() }
+            }
+            // The count is known and this was the last of them: the episode is finished here
+            // rather than by the next one starting, and the screen is told there is nowhere left
+            // to go. The picture stops with the decision, so credits nobody asked to see cannot
+            // keep sounding over the way out — or outlive the screen in a floating window.
+            current.airedEpisodes > 0 -> {
+                endingSkipped = true
+                markIfWatched(durationMs, durationMs)
+                engine.pause()
+                _events.trySend(PlaybackEvent.NothingLeftToPlay)
+            }
+            // No count at all: an anime this device has never cached, an announcement, an ongoing
+            // show with nothing recorded as aired. «That was the last one» and «we do not know how
+            // many there are» look exactly alike from here, and the ejection is only right about
+            // one of them — so the ending plays out, which is what it does with the setting off.
+            else -> Unit
+        }
     }
 
     private fun reportIfDue(positionMs: Long, durationMs: Long, paused: Boolean) {

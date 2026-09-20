@@ -39,6 +39,7 @@ import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.design.waitingLabel
 import app.kaeru.ui.common.player.PlayerUiState
 import app.kaeru.ui.common.player.playerFailure
+import app.kaeru.ui.common.player.skipLabel
 import app.kaeru.ui.tv.claimFocusWhenReady
 import app.kaeru.ui.tv.requestFocusOrLog
 import kotlinx.coroutines.delay
@@ -73,6 +74,8 @@ fun TvPlayerScreen(
     onTogglePlayPause: () -> Unit,
     onSeekBy: (Long) -> Unit,
     onSkipIntro: () -> Unit,
+    /** The one button the marks put on the picture: past the opening, or on to the next episode. */
+    onSkip: () -> Unit,
     onNext: () -> Unit,
     onCancelAutoplay: () -> Unit,
     onLoadTranslations: () -> Unit,
@@ -91,6 +94,7 @@ fun TvPlayerScreen(
     var tracksAsked by remember { mutableStateOf(false) }
     val rootFocus = remember { FocusRequester() }
     val rungFocus = remember { TvPanelRung.entries.associateWith { FocusRequester() } }
+    val skipFocus = remember { FocusRequester() }
     /** Whether the player itself holds the D-pad, which is what the claim below waits for. */
     var rootFocused by remember { mutableStateOf(false) }
 
@@ -110,11 +114,22 @@ fun TvPlayerScreen(
     // there anything to control before the first frame: the poster is the whole screen until
     // there is an episode behind it.
     val panelShown = panel.visible && !failed && !state.completedPrompt && !state.isLoading
+    /**
+     * The skip button is on the picture and holding the remote.
+     *
+     * Never beside a card: a card is a question and this is a shortcut, and the one thing worse
+     * than missing the shortcut is answering the question by accident.
+     */
+    val skipOffered = state.skip != null && !cardOpen && !state.isLoading
+    /** Whether the button itself has the D-pad, which is the whole of what it takes from it. */
+    var skipFocused by remember { mutableStateOf(false) }
     val content = rememberTvPanelContent(state)
     val clock = rememberTvPlayerClock(state)
     val rungs = content.rungs
     // Nothing to drive before the first frame, so the D-pad is held the way a card holds it: the
     // centre cannot toggle a stream that has not started, and up and down go nowhere visible.
+    // The skip button is not on this list: a shortcut on the picture must not take the remote
+    // away from the picture for ten seconds. It takes OK, and nothing else.
     val remoteHeld = cardOpen || state.isLoading
     // Taken once per episode: the only thing measured against it is which day the next one airs.
     val now = remember(state.episode) { Instant.now() }
@@ -164,6 +179,25 @@ fun TvPlayerScreen(
     LaunchedEffect(countdown) { if (countdown) panel = panel.shown() }
     // Whichever rung the D-pad is standing on is the one holding focus — and when nothing at all
     // wants it, the player itself takes it back so the next press still arrives.
+    /**
+     * The button asks for the focus the moment it appears, and hands it back when it goes.
+     *
+     * Its own effect rather than a branch of the one below, and keyed on nothing but the offer,
+     * so that a viewer who walks the focus away from it — up into the panel, which is a press
+     * that still works — is not dragged back to it on the next frame.
+     */
+    LaunchedEffect(skipOffered) {
+        withFrameNanos { }
+        when {
+            cardOpen -> Unit
+            // One press of OK is the whole point of the button.
+            skipOffered -> skipFocus.requestFocusOrLog("кнопку пропуска")
+            // Its ten seconds are up: back to wherever the focus came from, or nothing on screen
+            // holds the D-pad and the next press is spent getting it back.
+            panelShown -> rungFocus.getValue(tvRungOrNearest(rungs, panel.rung)).requestFocusOrLog("панель плеера")
+            else -> rootFocus.claimFocusWhenReady("плеер") { rootFocused }
+        }
+    }
     LaunchedEffect(panelShown, panel.rung, cardOpen, rungs) {
         when {
             cardOpen -> Unit
@@ -194,6 +228,10 @@ fun TvPlayerScreen(
             onToastShown()
         }
     }
+
+    // The ending of the last episode stepped aside by itself and nothing follows it. Leaving for
+    // the title is the same move «К списку серий» makes, and it is the one that saves the position.
+    LaunchedEffect(state.leaving) { if (state.leaving) onBackToEpisodes() }
 
     // A television that sleeps through an episode is a television with a broken remote.
     val view = LocalView.current
@@ -234,6 +272,9 @@ fun TvPlayerScreen(
                     panelVisible = wasVisible,
                     isPlaying = state.isPlaying,
                     cardOpen = remoteHeld,
+                    // And only while it is actually on screen: a button leaving the
+                    // composition does not always say it lost the focus on its way out.
+                    skipFocused = skipOffered && skipFocused,
                     repeatCount = event.nativeKeyEvent.repeatCount,
                 )
                 if (action == KeyAction.DOWN && wakesPanel(key, wasVisible)) {
@@ -278,6 +319,16 @@ fun TvPlayerScreen(
                 .align(Alignment.End)
             when {
                 failed || state.completedPrompt -> Unit
+                // First for the same reason as on the phone: this corner carries one offer at a
+                // time, and the opening's is minutes away from anything the end of the episode
+                // has to say.
+                skipOffered && state.skip != null -> TvSkipButton(
+                    label = skipLabel(state.skip),
+                    onSkip = onSkip,
+                    modifier = card
+                        .then(Modifier.focusRequester(skipFocus))
+                        .onFocusChanged { skipFocused = it.isFocused },
+                )
                 countdown -> TvAutoplayCard(
                     episode = state.episode + 1,
                     countdownSec = state.autoplayCountdownSec,

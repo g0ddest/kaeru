@@ -5,6 +5,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import app.kaeru.domain.model.Quality
+import app.kaeru.domain.playback.SkipKind
 import app.kaeru.ui.common.details.EpisodeCell
 import app.kaeru.ui.common.player.LocalCastAvailable
 import app.kaeru.ui.common.player.PlayerUiState
@@ -164,6 +165,29 @@ class RemoteRenderBudgetTest {
         compose.screen("remote-port-crowded-big").remoteFits(PAUSE)
     }
 
+    // --- the ten seconds the skip button is on it ------------------------------------------------
+
+    @Test
+    @Config(qualifiers = LANDSCAPE)
+    fun `the remote fits a landscape phone with the opening skip on it`() {
+        show(skipping)
+        compose.screen("remote-land-skip").remoteFits(PAUSE)
+    }
+
+    @Test
+    @Config(qualifiers = PORTRAIT, fontScale = BIG_TYPE)
+    fun `the remote fits a portrait phone in big type with the opening skip on it`() {
+        show(skipping)
+        compose.screen("remote-port-skip").remoteFits(PAUSE)
+    }
+
+    @Test
+    @Config(qualifiers = SPLIT_WIDEISH)
+    fun `the remote fits the shorter half of a split screen with the opening skip on it`() {
+        show(skipping)
+        compose.screen("remote-split-skip").remoteFits(PAUSE)
+    }
+
     // --- split screen: the one shape that is narrow and short at once ----------------------------
 
     @Test
@@ -241,6 +265,14 @@ class RemoteRenderBudgetTest {
         translationTitle = "Многоголосый закадровый, AniDUB HD",
     )
 
+    /**
+     * The opening's button, which takes the end of the transport line for ten seconds.
+     *
+     * «Пропустить опенинг» is two words longer than the glyph it stands in for, and on the half
+     * of a phone that is narrow and short at once the line it is on has no slack at all.
+     */
+    private val skipping = playing.copy(skip = SkipKind.OPENING)
+
     private fun show(state: PlayerUiState, peer: String? = null) {
         compose.dressedAsTheApp()
         compose.setContent {
@@ -255,6 +287,7 @@ class RemoteRenderBudgetTest {
                         onTogglePlayPause = {},
                         onSeekTo = {},
                         onSeekBy = {},
+                        onSkip = {},
                         onNext = {},
                         onCancelAutoplay = {},
                         onOpenTranslations = {},

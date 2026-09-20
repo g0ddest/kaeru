@@ -48,6 +48,7 @@ import app.kaeru.ui.common.player.PlayerRecovery
 import app.kaeru.ui.common.player.PlayerSheet
 import app.kaeru.ui.common.player.PlayerUiState
 import app.kaeru.ui.common.player.playerFailure
+import app.kaeru.ui.common.player.skipLabel
 import app.kaeru.ui.common.together.TogetherCopy
 import app.kaeru.ui.mobile.together.TogetherControls
 import app.kaeru.ui.mobile.together.TogetherOverlay
@@ -76,6 +77,8 @@ fun PlayerScreen(
     onSeekTo: (Long) -> Unit,
     onSeekBy: (Long) -> Unit,
     onSkipIntro: () -> Unit,
+    /** The one button the marks put on the picture: past the opening, or on to the next episode. */
+    onSkip: () -> Unit,
     onNext: () -> Unit,
     onCancelAutoplay: () -> Unit,
     onOpenTranslations: () -> Unit,
@@ -197,6 +200,10 @@ fun PlayerScreen(
                 shareInvitation(context, request)
                 together.onShareShown()
             }
+            // The ending of the last episode stepped aside by itself and nothing follows it. The
+            // card of the show is where a viewer who has just run out of it belongs, and
+            // «К списку серий» is already the way there.
+            LaunchedEffect(state.leaving) { if (state.leaving) onBackToEpisodes() }
             // Text that disappears on a timer is exactly what WCAG 2.2.1 will not have, so with a
             // screen reader running the corner keeps what it is given until it is dismissed.
             val talkback = touchExploration()
@@ -216,6 +223,7 @@ fun PlayerScreen(
                         onTogglePlayPause = onTogglePlayPause,
                         onSeekTo = onSeekTo,
                         onSeekBy = onSeekBy,
+                        onSkip = onSkip,
                         onNext = onNext,
                         onCancelAutoplay = onCancelAutoplay,
                         onOpenTranslations = onOpenTranslations,
@@ -408,6 +416,10 @@ fun PlayerScreen(
                 .padding(end = 24.dp, bottom = if (controlsVisible) 148.dp else 24.dp)
             when {
                 state.isCasting || failed -> Unit
+                // First, and that is what keeps this corner to one offer. An opening is offered
+                // minutes before anything here has an opinion about the end of the episode, and
+                // the ending's own button is already held back while the countdown is up.
+                state.skip != null -> SkipButton(skipLabel(state.skip), onSkip, endOfEpisode)
                 state.autoplayCountdownSec != null && state.nextEpisodeAvailable -> NextEpisodeCard(
                     episode = state.episode + 1,
                     countdownSec = state.autoplayCountdownSec,

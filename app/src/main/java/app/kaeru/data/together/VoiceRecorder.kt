@@ -17,10 +17,12 @@ import javax.inject.Singleton
 /**
  * The microphone, for as long as a finger is on the button and not one millisecond longer.
  *
- * Opus at 16 kHz mono, which is about 3 KB a second: thirty seconds of speech is under 100 KB, so
- * a clip crosses the channel in one breath rather than in a visible transfer. Ogg and Opus arrived
- * in `MediaRecorder` at API 29, so older phones get AAC in an MP4 container — same sample rate,
- * same mono, a little larger, and both play back through the same decoder on the other side.
+ * AAC in an MP4 container, 16 kHz mono at 24 kbps: thirty seconds of speech is around 90 KB, so a
+ * clip crosses the channel in one breath rather than in a visible transfer. Opus is a little
+ * smaller and this recorded it until the iPhone client arrived — but Apple ships no Ogg or Opus
+ * decoder, so an Opus clip reaches an iPhone as a file it can only refuse. AAC is the one voice
+ * codec both platforms record and both play, and Android has always played it: it was already the
+ * path every phone below API 29 took.
  *
  * It records to a file rather than to memory because `MediaRecorder` has no other mode. The file
  * lives in the cache and is deleted as soon as its bytes have been read, so a recording exists on
@@ -77,13 +79,8 @@ class VoiceRecorder @Inject constructor(
         val media = newRecorder()
         return runCatching {
             media.setAudioSource(MediaRecorder.AudioSource.MIC)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                media.setOutputFormat(MediaRecorder.OutputFormat.OGG)
-                media.setAudioEncoder(MediaRecorder.AudioEncoder.OPUS)
-            } else {
-                media.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                media.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            }
+            media.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            media.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
             media.setAudioChannels(1)
             media.setAudioSamplingRate(SAMPLE_RATE)
             media.setAudioEncodingBitRate(BIT_RATE)

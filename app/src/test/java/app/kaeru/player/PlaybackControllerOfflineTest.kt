@@ -20,6 +20,7 @@ import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.model.UserRate
+import app.kaeru.domain.playback.FakeSkipMarks
 import app.kaeru.domain.playback.FakePlaybackPreferences
 import app.kaeru.domain.playback.FakePlaybackSampleRepository
 import app.kaeru.domain.playback.FakeWatchStateRepository
@@ -105,6 +106,7 @@ class PlaybackControllerOfflineTest {
             headers = headers,
             downloads = downloads,
             connectivity = connectivity,
+            skipMarks = FakeSkipMarks(),
             scope = scope,
             io = dispatcher,
         )

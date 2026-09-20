@@ -12,9 +12,9 @@ import java.time.Instant
 @Database(
     entities = [
         AnimeEntity::class, UserRateEntity::class, WatchStateEntity::class, EpisodeProgressEntity::class,
-        RateOutboxEntity::class, NotifiedEpisodeEntity::class,
+        RateOutboxEntity::class, NotifiedEpisodeEntity::class, SkipMarksEntity::class,
     ],
-    version = 5,
+    version = 6,
     // Written to `app/schemas` from version 2 on, so the next migration can be checked against
     // the schema it produces rather than only against the rows it preserves.
     exportSchema = true,
@@ -27,6 +27,7 @@ abstract class KaeruDatabase : RoomDatabase() {
     abstract fun episodeProgressDao(): EpisodeProgressDao
     abstract fun rateOutboxDao(): RateOutboxDao
     abstract fun notifiedEpisodeDao(): NotifiedEpisodeDao
+    abstract fun skipMarksDao(): SkipMarksDao
 
     /**
      * The two rows one progress sample leaves behind, committed together.
@@ -153,6 +154,25 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
             "CREATE TABLE IF NOT EXISTS `notified_episodes` (" +
                 "`animeId` INTEGER NOT NULL, `episode` INTEGER NOT NULL, `notifiedAt` INTEGER NOT NULL, " +
                 "PRIMARY KEY(`animeId`, `episode`))",
+        )
+    }
+}
+
+/**
+ * Version 6 gives the opening and the ending somewhere to be remembered.
+ *
+ * Nothing existing changes: `skip_marks` starts empty, which is exactly the state the source
+ * reads as «this episode has never been asked about», so the first time each is played the marks
+ * are fetched once and kept. The rows belong to the device rather than to the account — like the
+ * downloads they are there to serve — so `clearAccountData` deliberately leaves them alone.
+ */
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL(
+            "CREATE TABLE IF NOT EXISTS `skip_marks` (" +
+                "`animeId` INTEGER NOT NULL, `episode` INTEGER NOT NULL, `lengthSec` INTEGER NOT NULL, " +
+                "`opStart` INTEGER, `opEnd` INTEGER, `edStart` INTEGER, `edEnd` INTEGER, " +
+                "`fetchedAt` INTEGER NOT NULL, PRIMARY KEY(`animeId`, `episode`, `lengthSec`))",
         )
     }
 }

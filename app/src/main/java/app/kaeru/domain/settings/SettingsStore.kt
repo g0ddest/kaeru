@@ -40,6 +40,18 @@ interface SettingsStore {
 
     suspend fun setAutoplayNext(enabled: Boolean)
 
+    /**
+     * Whether an ending steps aside by itself ten seconds after it begins, taking the viewer to
+     * the next episode — or, when there is none, out of the player.
+     *
+     * Off until somebody asks for it. There is deliberately no switch beside it for the opening:
+     * that button appears for ten seconds and then leaves, and a setting to turn off something
+     * that already turns itself off is a setting nobody needs to find.
+     */
+    val skipEnding: Flow<Boolean>
+
+    suspend fun setSkipEnding(enabled: Boolean)
+
     /** Whether leaving the app with an episode playing folds it into a floating window. */
     val pipOnLeave: Flow<Boolean>
 

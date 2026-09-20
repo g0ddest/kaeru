@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +38,7 @@ import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.playback.RankedTranslation
+import app.kaeru.domain.playback.SkipKind
 import app.kaeru.domain.update.UpdateRelease
 import app.kaeru.ui.common.auth.AuthUiState
 import app.kaeru.ui.common.design.KaeruTokens
@@ -44,6 +46,7 @@ import app.kaeru.ui.common.details.DetailsUiState
 import app.kaeru.ui.common.details.EpisodeCell
 import app.kaeru.ui.common.home.HomeUiState
 import app.kaeru.ui.common.player.PlayerUiState
+import app.kaeru.ui.common.player.skipLabel
 import app.kaeru.ui.common.settings.SettingsUiState
 import app.kaeru.ui.common.theme.KaeruTvTheme
 import app.kaeru.ui.common.update.UpdateStage
@@ -55,7 +58,9 @@ import app.kaeru.ui.tv.details.TvTitleScreen
 import app.kaeru.ui.tv.home.TvHomeScreen
 import app.kaeru.ui.tv.player.TvPanelRung
 import app.kaeru.ui.tv.player.TvPlayerHeader
+import app.kaeru.ui.tv.player.PlayerGutter
 import app.kaeru.ui.tv.player.TvPlayerPanel
+import app.kaeru.ui.tv.player.TvSkipButton
 import app.kaeru.ui.tv.player.rememberTvPanelContent
 import app.kaeru.ui.tv.player.rememberTvPlayerClock
 import app.kaeru.ui.tv.settings.TvSettingsScreen
@@ -277,6 +282,49 @@ class TvRenderBudgetTest {
     }
 
     @Test
+    fun `the skip button stands over the panel and is drawn whole`() {
+        compose.setContent {
+            KaeruTvTheme {
+                val content = rememberTvPanelContent(playerState)
+                val clock = rememberTvPlayerClock(playerState)
+                val rungFocus = remember { TvPanelRung.entries.associateWith { FocusRequester() } }
+                Box(Modifier.fillMaxSize().background(Color(0xFF05070C))) {
+                    TvPlayerHeader(playerState.title, Modifier.align(Alignment.TopStart))
+                    Column(Modifier.align(Alignment.BottomStart).fillMaxWidth()) {
+                        // Where the screen puts it: above the panel, hard against the right
+                        // gutter, with the panel still standing underneath.
+                        TvSkipButton(
+                            label = skipLabel(SkipKind.OPENING),
+                            onSkip = {},
+                            modifier = Modifier
+                                .padding(end = PlayerGutter, bottom = KaeruTokens.Space4)
+                                .align(Alignment.End),
+                        )
+                        TvPlayerPanel(
+                            content = content,
+                            clock = clock,
+                            rungFocus = rungFocus,
+                            onPickEpisode = {},
+                            onPickTranslation = {},
+                            onPickQuality = {},
+                            onTogglePlayPause = {},
+                            onSeekBy = {},
+                            onSkipIntro = {},
+                            onNext = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        val panel = panel("player-skip")
+        panel.textIsNeverSqueezed()
+        panel.nothingBelow(PANEL, panel.root)
+        panel.everythingUnderIsWhole(panel.root)
+        panel.wholeAndOnThePanel(panel.saying(skipLabel(SkipKind.OPENING)))
+    }
+
+    @Test
     fun `the updates page opens on a button that is drawn whole`() {
         compose.setContent {
             KaeruTvTheme {
@@ -337,6 +385,7 @@ class TvRenderBudgetTest {
                 ),
                 onSignOut = {},
                 onAutoplay = {},
+                onSkipEnding = {},
                 onQuality = {},
                 onThreshold = {},
                 onStudioUp = {},

@@ -118,6 +118,18 @@ fun TvWaitingCard(waiting: String, modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * The one button the marks put on the picture: «Пропустить опенинг», or «Следующая серия».
+ *
+ * A button rather than a card, because there is no question in it — one press and the thing
+ * happens. It stands where the cards stand and takes the focus the moment it appears, so a viewer
+ * with a remote in their hand presses OK once and nothing else.
+ */
+@Composable
+fun TvSkipButton(label: String, onSkip: () -> Unit, modifier: Modifier = Modifier) {
+    PrimaryButton(label, onSkip, modifier)
+}
+
 /** The one shape both end-of-episode cards take, so they read as the same kind of thing. */
 @Composable
 private fun TvPlayerCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {

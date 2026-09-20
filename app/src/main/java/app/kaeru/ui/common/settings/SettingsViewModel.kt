@@ -50,6 +50,7 @@ class SettingsViewModel @Inject constructor(
     /** What the viewer has chosen on this screen, ahead of the store having said it back. */
     private data class Overrides(
         val autoplay: Boolean? = null,
+        val skipEnding: Boolean? = null,
         val pipOnLeave: Boolean? = null,
         val newEpisodes: Boolean? = null,
         val quality: Quality? = null,
@@ -60,7 +61,7 @@ class SettingsViewModel @Inject constructor(
         val token: String? = null,
     )
 
-    /** The seven settings, read together so one recomposition carries all of them. */
+    /** The eight settings, read together so one recomposition carries all of them. */
     private data class Stored(
         val studios: List<String>,
         val autoplay: Boolean,
@@ -69,6 +70,7 @@ class SettingsViewModel @Inject constructor(
         val token: String?,
         val pipOnLeave: Boolean = true,
         val newEpisodes: Boolean = true,
+        val skipEnding: Boolean = false,
     )
 
     private data class AccountState(val loaded: Boolean, val account: Account?)
@@ -91,7 +93,7 @@ class SettingsViewModel @Inject constructor(
     /** The question currently out, so a second press of «Повторить» does not start a second one. */
     private var asked: Job? = null
 
-    // Two steps, because `combine` is typed up to five flows and there are seven.
+    // Two steps, because `combine` is typed up to five flows and there are eight.
     private val stored = combine(
         combine(
             settings.preferredTranslations,
@@ -102,7 +104,10 @@ class SettingsViewModel @Inject constructor(
         ) { studios, autoplay, quality, threshold, token -> Stored(studios, autoplay, quality, threshold, token) },
         settings.pipOnLeave,
         settings.newEpisodeNotifications,
-    ) { playback, pipOnLeave, newEpisodes -> playback.copy(pipOnLeave = pipOnLeave, newEpisodes = newEpisodes) }
+        settings.skipEnding,
+    ) { playback, pipOnLeave, newEpisodes, skipEnding ->
+        playback.copy(pipOnLeave = pipOnLeave, newEpisodes = newEpisodes, skipEnding = skipEnding)
+    }
 
     private val accountState = accounts.account
         .map { AccountState(loaded = true, account = it) }
@@ -124,6 +129,7 @@ class SettingsViewModel @Inject constructor(
                 accountLoading = !account.loaded || (account.account == null && asking),
                 account = account.account,
                 autoplayNext = chosen.autoplay ?: settings.autoplay,
+                skipEnding = chosen.skipEnding ?: settings.skipEnding,
                 pipOnLeave = chosen.pipOnLeave ?: settings.pipOnLeave,
                 newEpisodes = wantsNewEpisodes && allowed,
                 newEpisodesBlocked = wantsNewEpisodes && !allowed,
@@ -163,6 +169,12 @@ class SettingsViewModel @Inject constructor(
         if (enabled == uiState.value.autoplayNext) return
         overrides.update { it.copy(autoplay = enabled) }
         viewModelScope.launch { settings.setAutoplayNext(enabled) }
+    }
+
+    fun setSkipEnding(enabled: Boolean) {
+        if (enabled == uiState.value.skipEnding) return
+        overrides.update { it.copy(skipEnding = enabled) }
+        viewModelScope.launch { settings.setSkipEnding(enabled) }
     }
 
     fun setPipOnLeave(enabled: Boolean) {
