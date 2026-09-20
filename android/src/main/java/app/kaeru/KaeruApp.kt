@@ -2,6 +2,7 @@ package app.kaeru
 
 import android.app.Activity
 import android.app.Application
+import app.kaeru.data.together.TogetherLog
 import android.os.Bundle
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
@@ -53,6 +54,8 @@ class KaeruApp : Application(), SingletonImageLoader.Factory, Configuration.Prov
 
     override fun onCreate() {
         super.onCreate()
+        // The shared-viewing journal, where `adb pull` can reach it on a release build.
+        TogetherLog.install(getExternalFilesDir(null))
         offlineSync.start()
         // Downloads outlive every screen too: the policy has to reach the engine, an expired
         // Kodik signature has to be replaced, and whatever last night's queue left unfinished

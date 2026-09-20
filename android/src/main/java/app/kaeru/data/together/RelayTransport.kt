@@ -108,6 +108,10 @@ class RelayTransport @Inject constructor(
                 closedByUs = false
                 backlog.clear()
             }
+            TogetherLog.write(
+                "connect room=${link.roomId} as=${if (asHost) "host" else "guest"} " +
+                    "host=${baseUrl.substringAfter("://").substringBefore("/")}",
+            )
             keepConnected(owned, this)
         }
         channel.close()
@@ -150,6 +154,13 @@ class RelayTransport @Inject constructor(
             // only get the same one. They are checked before anything else, including before a
             // socket that opened resets the budget — a room refusing a third peer opens first.
             val code = closeCode.get()
+            TogetherLog.write(
+                when {
+                    code in TERMINAL_CLOSES -> "socket refused close=$code"
+                    opened.get() -> "socket lost close=$code; reconnecting"
+                    else -> "dial failed close=$code; retrying"
+                },
+            )
             if (code in TERMINAL_CLOSES) {
                 _state.value = ConnectionState.CLOSED
                 refusalOf(code)?.let { out.trySend(Result.failure(TogetherFailed(it))) }
@@ -178,6 +189,7 @@ class RelayTransport @Inject constructor(
             delay(wait)
         }
         _state.value = ConnectionState.CLOSED
+        TogetherLog.write("gave up dialling after ${timeouts.reconnectBudgetMs / 1000}s")
         out.trySend(Result.failure(TogetherFailed(TogetherFailureReason.UNREACHABLE)))
     }
 
@@ -296,6 +308,7 @@ class RelayTransport @Inject constructor(
 
         override fun onOpen(webSocket: WebSocket, response: Response) {
             opened.set(true)
+            TogetherLog.write("dial ok")
             synchronized(lock) {
                 live = webSocket
                 // Inside the lock so a send arriving now queues behind the backlog rather than
@@ -327,7 +340,10 @@ class RelayTransport @Inject constructor(
          * Anything else in words is from a relay newer than this build and is ignored.
          */
         override fun onMessage(webSocket: WebSocket, text: String) {
-            if (peerLeft(text)) out.trySend(Result.success(TogetherMessage.PeerLeft()))
+            if (peerLeft(text)) {
+                TogetherLog.write("relay says peer-left")
+                out.trySend(Result.success(TogetherMessage.PeerLeft()))
+            }
         }
 
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
