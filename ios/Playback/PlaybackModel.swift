@@ -112,6 +112,8 @@ enum PlaybackLocalAction {
     private var seeking = false
     /// When the session last moved this player without a person asking. See the time-jump observer.
     private var quietSeekAt = Date.distantPast
+    /// When the session last paused or started this player without a person asking. See `tick`.
+    private var quietPlayingChangeAt = Date.distantPast
     private var seekRevision = UUID()
     private var retried = false
     private var closed = false
@@ -235,6 +237,7 @@ enum PlaybackLocalAction {
     func setPlaying(_ value: Bool, notify: Bool = true) {
         guard !closed else { return }
         intent.userSetPlaying(value)
+        if !notify { quietPlayingChangeAt = Date() }
         if value {
             do { try activateAudio() } catch { self.error = error.localizedDescription; return }
             if intent.shouldPlay, !loading, !restoring, !interruptionPaused { player.play() }
@@ -352,7 +355,15 @@ enum PlaybackLocalAction {
             let atEnd = duration > 0 && safePosition >= duration - 0.1
             if status == .playing || (status == .paused && !atEnd) {
                 let playing = status == .playing
-                if playing != intent.wantsPlayback { intent.userSetPlaying(playing); onLocalAction?(.playing(playing)) }
+                // A player that disagrees with what was asked of it is read as the viewer having
+                // used AVKit's own button — that is how a press on the transport bar reaches the
+                // friend. But not in the seconds after the session itself paused or started this
+                // player: the engine catches up with such a request a beat later, and reading
+                // that beat as a person pressing pause sent the friend a `pause` nobody pressed.
+                let settling = Date().timeIntervalSince(quietPlayingChangeAt) < 2
+                if playing != intent.wantsPlayback, !settling {
+                    intent.userSetPlaying(playing); onLocalAction?(.playing(playing))
+                }
             }
         }
         if isPlaying, !beganLibraryPlayback, account == model.accountKey {

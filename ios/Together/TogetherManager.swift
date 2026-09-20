@@ -432,7 +432,7 @@ struct TogetherJoinTarget: Equatable {
     /// Let go of a hold — because the friend is ready, or because they have taken too long and a
     /// held picture with nothing on screen explaining it is worse than being out of step.
     private func releaseHold() {
-        TogetherLog.write("hold released")
+        TogetherLog.write("hold released: the friend is ready")
         dropHold()
         // Nothing is corrected against a report taken while the picture was standing still.
         report = nil
