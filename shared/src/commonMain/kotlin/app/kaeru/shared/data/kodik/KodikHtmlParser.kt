@@ -4,7 +4,7 @@ import kotlin.io.encoding.Base64
 import io.ktor.http.decodeURLQueryComponent
 import kotlinx.serialization.json.*
 
-internal data class KodikTranslationOption(
+data class KodikTranslationOption(
     val id: Int,
     val title: String,
     val type: TranslationType,
@@ -13,7 +13,7 @@ internal data class KodikTranslationOption(
     val mediaHash: String,
 )
 
-internal enum class TranslationType { VOICE, SUBTITLES }
+enum class TranslationType { VOICE, SUBTITLES }
 
 internal data class KodikEpisodeOption(
     val number: Int,

@@ -30,7 +30,7 @@ class PosterEnrichmentTest {
     }
     private fun card(id: Int) = """{"id":$id,"name":"Title $id","image":{"original":"/legacy/$id.jpg"}}"""
 
-    @Test fun searchMapsPostersByIdPrefersMainAndKeepsMissingRestFallback() = runTest {
+    @Test fun searchMapsPostersByIdPrefersOriginalAndKeepsMissingRestFallback() = runTest {
         val api = api { request ->
             if (request.url.encodedPath == "/api/graphql") {
                 assertEquals("{ animes(ids: \"1,2,3\", limit: 50) { id poster { mainUrl originalUrl } } }", request.query())
@@ -39,7 +39,8 @@ class PosterEnrichmentTest {
         }
         try {
             val cards = api.search("title").cards()
-            assertEquals(listOf("https://cdn.example/1.webp", "https://cdn.example/2.webp", "https://shikimori.io/legacy/3.jpg", "https://cdn.example/1.webp"), cards.map { it.poster() })
+            // `originalUrl` first: `mainUrl` is the 225×318 thumbnail. A card with only one of them takes it.
+            assertEquals(listOf("https://cdn.example/large1.webp", "https://cdn.example/2.webp", "https://shikimori.io/legacy/3.jpg", "https://cdn.example/large1.webp"), cards.map { it.poster() })
             assertEquals(listOf("Title 1", "Title 2", "Title 3", "Title 1"), cards.map { it.getValue("title").jsonPrimitive.content })
         } finally { api.close() }
     }

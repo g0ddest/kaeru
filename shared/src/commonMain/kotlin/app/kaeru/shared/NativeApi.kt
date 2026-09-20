@@ -1,8 +1,14 @@
 package app.kaeru.shared
 
 import app.kaeru.shared.data.kodik.KodikClient
+import app.kaeru.shared.data.kodik.KodikStream
+import app.kaeru.shared.data.kodik.KodikTranslationOption
+import app.kaeru.shared.data.kodik.TranslationType
 import app.kaeru.shared.data.network.*
 import app.kaeru.shared.data.shikimori.*
+import app.kaeru.shared.domain.Stream
+import app.kaeru.shared.domain.StreamUrl
+import app.kaeru.shared.domain.Translation
 import io.ktor.client.HttpClient
 import kotlinx.serialization.encodeToString
 
@@ -55,11 +61,33 @@ class NativeApi internal constructor(
         wireJson.encodeToString(shikimori.setRate(animeId, userId, rateId, status, episodes, accessToken))
 
     @Throws(Exception::class)
-    suspend fun translations(animeId: Int): String = wireJson.encodeToString(kodik.translations(animeId))
+    suspend fun translations(animeId: Int): String = wireJson.encodeToString(kodik.translations(animeId).map { it.toWire() })
 
     @Throws(Exception::class)
     suspend fun resolve(animeId: Int, translationId: Int, episode: Int): String =
-        wireJson.encodeToString(kodik.resolve(animeId, translationId, episode))
+        wireJson.encodeToString(kodik.resolve(animeId, translationId, episode).toWire())
+
+    /**
+     * Drops what is kept about this anime's tracks, so the next [translations] or [resolve] asks
+     * Kodik afresh: for a retry over an episode a studio has released since the catalogue was read.
+     */
+    @Throws(Exception::class)
+    suspend fun forgetTranslations(animeId: Int) = kodik.forget(animeId)
 
     fun close() = http.close()
+
+    private fun KodikTranslationOption.toWire() = Translation(
+        id, title, episodesCount ?: 0,
+        kind = when (type) {
+            TranslationType.VOICE -> "voice"
+            TranslationType.SUBTITLES -> "subtitles"
+        },
+    )
+
+    private fun KodikStream.toWire() = Stream(
+        urls = urls.entries.sortedBy { it.key }.map { StreamUrl(it.key, it.value) },
+        headers = headers,
+        translation = translation.toWire(),
+        episode = episode,
+    )
 }

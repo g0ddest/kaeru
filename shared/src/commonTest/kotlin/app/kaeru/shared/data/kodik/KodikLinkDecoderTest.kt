@@ -1,5 +1,6 @@
 package app.kaeru.shared.data.kodik
 
+import app.kaeru.shared.TestFixtures
 import kotlin.io.encoding.Base64
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -10,7 +11,7 @@ import kotlin.test.Test
 class KodikLinkDecoderTest {
 
     private fun fixture(name: String): String =
-        KodikFixtures.text(name)
+        TestFixtures.text("kodik/$name")
 
     private fun rotate(s: String, n: Int): String = s.map { c ->
         when {

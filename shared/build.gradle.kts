@@ -23,7 +23,7 @@ kotlin {
         androidMain.dependencies { implementation(libs.ktor.client.okhttp) }
         iosMain.dependencies { implementation(libs.ktor.client.darwin) }
         commonTest {
-            kotlin.srcDir(layout.buildDirectory.dir("generated/kodikFixtures"))
+            kotlin.srcDir(layout.buildDirectory.dir("generated/testFixtures"))
             dependencies {
                 implementation(kotlin("test"))
                 implementation(libs.ktor.client.mock)
@@ -43,22 +43,29 @@ android {
     }
 }
 
-// Compile the existing Android fixtures into common test strings: native has no JVM classloader.
-val generateKodikFixtures by tasks.registering {
-    val fixtures = rootProject.layout.projectDirectory.dir("android/src/test/resources/kodik")
-    val output = layout.buildDirectory.dir("generated/kodikFixtures")
+// Compile the Android test fixtures into common test strings: native has no JVM classloader.
+// Both modules read the same files, so a captured page or payload is fixed in one place.
+val generateTestFixtures by tasks.registering {
+    val fixtures = rootProject.layout.projectDirectory.dir("android/src/test/resources")
+    val output = layout.buildDirectory.dir("generated/testFixtures")
     inputs.dir(fixtures)
     outputs.dir(output)
     doLast {
-        val file = output.get().file("app/kaeru/shared/data/kodik/KodikFixtures.kt").asFile
+        val root = fixtures.asFile
+        val files = listOf("kodik", "shikimori").flatMap { dir ->
+            root.resolve(dir).listFiles()!!.filter { it.isFile }.sortedBy { it.name }
+        }
+        val file = output.get().file("app/kaeru/shared/TestFixtures.kt").asFile
         file.parentFile.mkdirs()
         file.writeText(buildString {
-            appendLine("package app.kaeru.shared.data.kodik")
-            appendLine("internal object KodikFixtures {")
+            appendLine("package app.kaeru.shared")
+            appendLine("internal object TestFixtures {")
+            appendLine("/** A fixture by its path under `android/src/test/resources`, e.g. `kodik/player.html`. */")
             appendLine("fun text(name: String): String = kotlin.io.encoding.Base64.decode(when(name) {")
-            fixtures.asFile.listFiles()!!.sortedBy { it.name }.forEach { fixture ->
+            files.forEach { fixture ->
                 val chunks = Base64.getEncoder().encodeToString(fixture.readBytes()).chunked(8000)
-                appendLine("\"${fixture.name}\" -> listOf(${chunks.joinToString { "\"$it\"" }}).joinToString(\"\")")
+                val key = fixture.relativeTo(root).path.replace('\\', '/')
+                appendLine("\"$key\" -> listOf(${chunks.joinToString { "\"$it\"" }}).joinToString(\"\")")
             }
             appendLine("else -> error(\"Unknown fixture: \$name\")")
             appendLine("}).decodeToString() }")
@@ -66,5 +73,5 @@ val generateKodikFixtures by tasks.registering {
     }
 }
 tasks.configureEach {
-    if (name.startsWith("compile") && name.contains("Test")) dependsOn(generateKodikFixtures)
+    if (name.startsWith("compile") && name.contains("Test")) dependsOn(generateTestFixtures)
 }
