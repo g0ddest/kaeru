@@ -208,6 +208,17 @@
     var open = document.getElementById('open');
     var key = window.location.hash.replace(/^#/, '');
     var real = /^[A-Za-z0-9_-]{11}$/.test(room) && /^[A-Za-z0-9_-]{22}$/.test(key);
+    // A room and no key is the one shape of address this page can explain rather than merely fail
+    // on. The key travels in the fragment precisely so no server ever sees it — and a fragment is
+    // also the part some in-app browsers drop on «Открыть в Safari», that gets lost when only the
+    // visible half of a link is copied, that a share sheet sometimes trims. Whoever is looking at
+    // this page then sees a code and a button that says «Установить», and concludes the app is
+    // broken. It is the link that is broken, and the fix is to open it whole.
+    if (/^[A-Za-z0-9_-]{11}$/.test(room) && !real) {
+      document.getElementById('hint').textContent =
+        'В этой ссылке нет ключа — часть после «#». Так бывает, когда ссылку открывают из ' +
+        'мессенджера или копируют не целиком. Откройте ссылку из самого сообщения ещё раз.';
+    }
     if (real && /android/i.test(navigator.userAgent)) {
       open.href = 'intent://watch?r=' + room + '&k=' + key +
         '#Intent;scheme=kaeru;package=app.kaeru;S.browser_fallback_url=' +

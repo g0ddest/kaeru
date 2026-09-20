@@ -26,9 +26,16 @@ import Foundation
 
     var togetherSnapshot: TogetherPlaybackSnapshot {
         guard let value = playback else { return .init() }
+        // `buffering` included, at last: without it this phone never once told the friend it was
+        // waiting for the network, so the friend never waited back — and dragged it forward.
+        // Read off the player this instant, not off the model's cached position: the cache moves on
+        // the tick, and a report that says where the picture was up to a quarter of a second ago
+        // is a report the friend will settle a quarter of a second — or a second — away from.
+        let live = value.player.currentTime().seconds
+        let position = value.snapshot.ready && live.isFinite && live >= 0 ? live : value.snapshot.position
         return .init(animeID: value.snapshot.animeID, episode: value.snapshot.episode,
-                     translationID: value.snapshot.translation, positionMs: Int64(max(0, value.snapshot.position) * 1000),
-                     playing: value.snapshot.isPlaying, ready: value.snapshot.ready)
+                     translationID: value.snapshot.translation, positionMs: Int64(max(0, position) * 1000),
+                     playing: value.snapshot.isPlaying, buffering: value.snapshot.buffering, ready: value.snapshot.ready)
     }
     var togetherSupportsRate: Bool { true }
     func togetherPlay() { playback?.setPlaying(true, notify: false) }

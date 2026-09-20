@@ -10,6 +10,9 @@ struct PlaybackSnapshot: Equatable {
     var isPlaying: Bool
     var speed: Double
     var ready: Bool
+    /// The player wants to play and cannot: it is waiting for the network. This is what the
+    /// friend's phone is told, so that it waits too instead of running ahead.
+    var buffering = false
 }
 enum PlaybackLocalAction {
     case playing(Bool), seek(Double), speed(Double), episode(Int)
@@ -70,7 +73,11 @@ enum PlaybackLocalAction {
     var snapshot: PlaybackSnapshot {
         PlaybackSnapshot(animeID: anime.id, episode: episode, translation: translation,
                          position: position, duration: duration, isPlaying: isPlaying,
-                         speed: speed, ready: !loading && player.currentItem?.status == .readyToPlay)
+                         speed: speed, ready: !loading && player.currentItem?.status == .readyToPlay,
+                         // `waitingToPlayAtSpecifiedRate` is AVKit's spinner: play was asked for
+                         // and the segment is not here yet. A player that is loading its first
+                         // frames reports it too, which is right — the friend waits either way.
+                         buffering: loading || player.timeControlStatus == .waitingToPlayAtSpecifiedRate)
     }
     private(set) var speed: Double
     var autoNext: Bool { model.autoNext }
@@ -103,6 +110,8 @@ enum PlaybackLocalAction {
     private var readyItem: AVPlayerItem?
     private var restoring = false
     private var seeking = false
+    /// When the session last moved this player without a person asking. See the time-jump observer.
+    private var quietSeekAt = Date.distantPast
     private var seekRevision = UUID()
     private var retried = false
     private var closed = false
@@ -141,7 +150,13 @@ enum PlaybackLocalAction {
         observe(.AVPlayerItemTimeJumped, reading: { PlaybackModel.item($0) }) { playback, item in
             guard let item, playback.currentItemID == item, !playback.restoring else { return }
             playback.policy.didSeek(to: playback.safePosition)
-            if !playback.seeking { playback.onLocalAction?(.seek(playback.safePosition)) }
+            // Told to the friend only when a person did it. AVKit reports a jump for reasons of
+            // its own as well — a stall it recovered from, a segment boundary, the seek the
+            // session itself just asked for — and every one of those used to go out as a `seek`,
+            // land on the other phone as «перемотал на», and come back as a correction. Anything
+            // within a few seconds of a quiet seek is that seek, not a new one.
+            guard !playback.seeking, Date().timeIntervalSince(playback.quietSeekAt) > 3 else { return }
+            playback.onLocalAction?(.seek(playback.safePosition))
         }
         observe(AVAudioSession.interruptionNotification, reading: { AudioInterruption($0) }) { playback, interruption in
             playback.handleInterruption(interruption)
@@ -232,6 +247,7 @@ enum PlaybackLocalAction {
         let target = PlaybackPolicy.clampSeek(value, duration: duration)
         completedEpisode = nil; finished = false
         policy.didSeek(to: target); seeking = true
+        if !notify { quietSeekAt = Date() }
         let revision = UUID(), fence = request
         seekRevision = revision
         player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] success in

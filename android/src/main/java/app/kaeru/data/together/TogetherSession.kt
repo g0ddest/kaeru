@@ -128,6 +128,9 @@ class TogetherSession(
     private var drift = 0L
     private var correcting = false
 
+    /** The factor the player was last asked to run at, so the same one is not asked for twice. */
+    private var currentRate = SyncPolicy.NORMAL
+
     /** The friend's player said it is filling its buffer. */
     private var peerLoading = false
 
@@ -559,6 +562,14 @@ class TogetherSession(
      */
     private suspend fun correct() {
         if (_state.value !is SessionState.Live) return
+        // One side follows and the other is the reference — the way every watch-together that
+        // works does it. Two phones each correcting towards the other, by two different estimates
+        // of the clock offset, settle a second apart and take turns jumping; the side that made
+        // the room is the one the picture is measured against.
+        if (asHost) {
+            if (correcting) forceNormalSpeed()
+            return
+        }
         // Nobody is corrected while either player is filling its buffer, and nothing is corrected
         // in the seconds right after a jump: a seek costs an HLS player a stall, and a rule that
         // judges the stall it caused will order another jump. That is the loop.
@@ -588,7 +599,10 @@ class TogetherSession(
         when (action) {
             SyncAction.None -> Unit
             is SyncAction.Rate -> if (port.supportsRate) {
-                port.setRate(action.factor)
+                // Once. The guest now judges the gap the moment a report lands as well as on its
+                // own beat, and a factor the player is already running at is not news to it.
+                if (action.factor != currentRate) port.setRate(action.factor)
+                currentRate = action.factor
                 correcting = action.factor != SyncPolicy.NORMAL
             } else if (kotlin.math.abs(here.positionMs - target) > RATELESS_SEEK_MS) {
                 // Nothing here can play slightly slow — the picture is on a television — so the
@@ -625,6 +639,7 @@ class TogetherSession(
      */
     private suspend fun forceNormalSpeed() {
         port.setRate(SyncPolicy.NORMAL)
+        currentRate = SyncPolicy.NORMAL
         correcting = false
     }
 

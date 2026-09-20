@@ -116,6 +116,28 @@ class TogetherSessionTest {
         runCurrent()
     }
 
+    /**
+     * The same room, seen from the side that followed the link.
+     *
+     * The side that made the room is the reference and never corrects itself, so everything
+     * about closing a gap — a nudge in speed, a jump, a jump with a sentence next to it — is
+     * something only the guest does, and is tested from the guest's seat.
+     */
+    private suspend fun TestScope.liveAsGuest(): RoomLink {
+        val link = RoomLink("room", ByteArray(16), null)
+        val joining = launch { session.join(link, "Костя") }
+        runCurrent()
+        transport.deliver(peerHello())
+        runCurrent()
+        joining.join()
+        runCurrent()
+        assertTrue("гость на той же серии сразу в эфире", session.state.value is SessionState.Live)
+        // Joining is itself a jump to where the friend is. What the tests below count starts after.
+        port.seeks.clear()
+        port.rates.clear()
+        return link
+    }
+
     /** A room with a friend already in it, seen from the side that made the link. */
     private suspend fun TestScope.live(): RoomLink {
         val link = session.host("Костя")
@@ -859,6 +881,16 @@ class TogetherSessionTest {
         assertEquals(1, port.plays)
     }
 
+    /** The side that made the room is what the picture is measured against; it never moves. */
+    @Test
+    fun `the host never corrects itself`() = sessionTest {
+        live()
+        friendIsAt(59_000)
+        friendIsAt(75_000, seq = 21)
+        assertTrue(port.rates.isEmpty())
+        assertTrue(port.seeks.isEmpty())
+    }
+
     // ---- what this viewer did ----
 
     @Test
@@ -950,7 +982,7 @@ class TogetherSessionTest {
 
     @Test
     fun `a gap of a couple of seconds is closed by playing a little slower`() = sessionTest {
-        live()
+        liveAsGuest()
         // The friend is a second behind: this side is at a minute, theirs at fifty-nine seconds.
         friendIsAt(59_000)
 
@@ -960,7 +992,7 @@ class TogetherSessionTest {
 
     @Test
     fun `a gap too big to play out of is jumped, and a huge one is jumped and mentioned`() = sessionTest {
-        live()
+        liveAsGuest()
         val seen = mutableListOf<TogetherEvent>()
         val watching = launch { session.events.toList(seen) }
         runCurrent()
@@ -1315,7 +1347,7 @@ class TogetherSessionTest {
 
     @Test
     fun `a session that dies mid-correction gives the picture its speed back`() = sessionTest {
-        live()
+        liveAsGuest()
         friendIsAt(59_000)
         assertEquals(SyncPolicy.SLOW, port.rates.single(), 0.0001f)
 
@@ -1327,7 +1359,7 @@ class TogetherSessionTest {
 
     @Test
     fun `an episode change mid-correction does not carry the speed into it`() = sessionTest {
-        live()
+        liveAsGuest()
         friendIsAt(59_000)
         assertEquals(SyncPolicy.SLOW, port.rates.single(), 0.0001f)
 
@@ -1504,7 +1536,7 @@ class TogetherSessionTest {
 
     @Test
     fun `a correction the player can no longer honour is taken off`() = sessionTest {
-        live()
+        liveAsGuest()
         friendIsAt(59_000)
         assertEquals(SyncPolicy.SLOW, port.rates.single(), 0.0001f)
 
@@ -1519,7 +1551,7 @@ class TogetherSessionTest {
     @Test
     fun `a player with no speed control is jumped rather than nudged`() = sessionTest {
         port.supportsRate = false
-        live()
+        liveAsGuest()
 
         friendIsAt(58_500)
         runCurrent()

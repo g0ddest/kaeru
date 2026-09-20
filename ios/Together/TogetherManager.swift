@@ -372,6 +372,14 @@ struct TogetherJoinTarget: Equatable {
     }
     func correct() {
         guard phase == .live, let playback else { return }
+        // One side follows and the other is the reference — the way every watch-together that
+        // works does it. Two phones each correcting towards the other, by two different estimates
+        // of the clock offset, settle a second apart and take turns jumping; the side that made
+        // the room is the one the picture is measured against.
+        guard side == .guest else {
+            if correcting { playback.togetherSetRate(1); correcting = false }
+            return
+        }
         // A correction the player can no longer honour is one nothing will ever take off again.
         if correcting && !playback.togetherSupportsRate { playback.togetherSetRate(1); correcting = false }
         // Nobody is corrected while either player is filling its buffer, and nothing is corrected
