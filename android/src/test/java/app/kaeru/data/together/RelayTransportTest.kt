@@ -325,6 +325,27 @@ class RelayTransportTest {
         assertEquals(ConnectionState.CONNECTED, transport.state.first())
     }
 
+    /**
+     * A socket that dies the moment it opens used to take the backlog with it: the loop removed a
+     * frame first and wrote it second, and nothing looked at what the write said.
+     */
+    @Test
+    fun `a backlog the new socket would not take is kept, in order, for the next one`() {
+        val backlog = ArrayDeque(listOf(byteArrayOf(1), byteArrayOf(2), byteArrayOf(3)))
+        val written = mutableListOf<Byte>()
+
+        val emptied = RelayTransport.flush(backlog) { frame ->
+            if (frame[0] == 2.toByte()) false else { written += frame[0]; true }
+        }
+
+        assertFalse(emptied)
+        assertEquals(listOf<Byte>(1), written)
+        assertEquals(listOf<Byte>(2, 3), backlog.map { it[0] })
+        assertTrue(RelayTransport.flush(backlog) { written += it[0]; true })
+        assertEquals(listOf<Byte>(1, 2, 3), written)
+        assertTrue(backlog.isEmpty())
+    }
+
     @Test
     fun `the relay saying the friend left is not the connection dropping`() = runBlocking<Unit> {
         val relay = upgrade()

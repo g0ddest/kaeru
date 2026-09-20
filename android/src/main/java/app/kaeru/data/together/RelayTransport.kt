@@ -1,5 +1,6 @@
 package app.kaeru.data.together
 
+import android.util.Log
 import app.kaeru.di.IoDispatcher
 import app.kaeru.di.TogetherClient
 import app.kaeru.di.TogetherRelayUrl
@@ -196,12 +197,20 @@ class RelayTransport @Inject constructor(
         }
         val open = synchronized(lock) {
             live ?: run {
-                backlog.addLast(frame)
-                while (backlog.size > MAX_BUFFERED) backlog.removeFirst()
+                hold(frame)
                 null
             }
         }
-        open?.send(frame.toByteString())
+        // `false` is a socket that is closing or closed: OkHttp takes nothing more for it, and
+        // its listener is about to say so. The frame is kept for the next socket rather than
+        // dropped on this one's way out.
+        if (open != null && !open.send(frame.toByteString())) synchronized(lock) { hold(frame) }
+    }
+
+    /** Under [lock]. The newest survive: the last action is the one that counts. */
+    private fun hold(frame: ByteArray) {
+        backlog.addLast(frame)
+        while (backlog.size > MAX_BUFFERED) backlog.removeFirst()
     }
 
     /**
@@ -300,7 +309,9 @@ class RelayTransport @Inject constructor(
                 live = webSocket
                 // Inside the lock so a send arriving now queues behind the backlog rather than
                 // jumping in front of actions the viewer took first.
-                while (backlog.isNotEmpty()) webSocket.send(backlog.removeFirst().toByteString())
+                if (!flush(backlog) { webSocket.send(it) }) {
+                    Log.w(TAG, "The socket died under the backlog; ${backlog.size} frames kept for the next")
+                }
             }
             _state.value = ConnectionState.CONNECTED
         }
@@ -373,6 +384,7 @@ class RelayTransport @Inject constructor(
         private const val PEER_LEFT = "peer-left"
 
         private val control = Json { ignoreUnknownKeys = true }
+        private const val TAG = "RelayTransport"
 
         /**
          * What to tell the viewer about a close that ends things. Each of the three is its own
@@ -384,6 +396,22 @@ class RelayTransport @Inject constructor(
             CLOSE_FRAME_TOO_LARGE -> TogetherFailureReason.FRAME_TOO_LARGE
             CLOSE_IDLE -> TogetherFailureReason.EXPIRED
             else -> null
+        }
+
+        /**
+         * Writes what is held, oldest first, taking each frame off only once the socket has taken
+         * it. A write that fails is a socket on its way out: it and everything after it stay, in
+         * order, for the next socket. Whether the backlog was emptied.
+         *
+         * Used to be a loop that removed first and wrote second, and a socket that died the moment
+         * it opened took half a minute of a viewer's scrubbing with it, silently.
+         */
+        internal fun flush(backlog: ArrayDeque<ByteArray>, write: (ByteString) -> Boolean): Boolean {
+            while (backlog.isNotEmpty()) {
+                if (!write(backlog.first().toByteString())) return false
+                backlog.removeFirst()
+            }
+            return true
         }
 
         private fun peerLeft(text: String): Boolean =
