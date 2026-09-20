@@ -195,7 +195,13 @@ struct TogetherJoinTarget: Equatable {
         guard phase != .ended else { return }
         let fence = generation
         receiveTask?.cancel(); receiveTask = nil
-        if let transport, let invitation {
+        // «Не сейчас» on the join screen is not leaving a session: nothing was joined. No goodbye
+        // goes out — the socket simply closes, the relay tells the host «peer-left», and the host
+        // holds the seat for half a minute the way it does for a dropped connection. Android's
+        // `dismissJoin()` has always been this quiet; a goodbye from here ended the host's room
+        // for anybody who tapped the link out of curiosity.
+        let declining = joining != nil
+        if !declining, let transport, let invitation {
             // Goodbye waits for the wire: everything after this line tears the session down, and a
             // frame handed to a cancelled transport is a friend left staring at a paused picture.
             var bye = TogetherMessage(t: .bye, seq: 1)
@@ -216,6 +222,7 @@ struct TogetherJoinTarget: Equatable {
         // go away.
         invitation = nil
         joining = nil
+        if declining { enter(.idle); return }
         conversation.message = TogetherCopy.leftSession
         enter(.ended)
     }

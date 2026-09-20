@@ -49,8 +49,9 @@ private final class TransportEvents: @unchecked Sendable {
             guard let event = try await events.next() else { throw TogetherError.disconnected }
             return event
         }
+        var closes = 0
         func send(_ frame: Data) async throws { outgoing.append(frame) }
-        func close() { continuation.finish() }
+        func close() { closes += 1; continuation.finish() }
         func deliver(_ message: TogetherMessage, link: TogetherInvitation, side: TogetherSide) throws {
             continuation.yield(.frame(try TogetherCodec.encode(message, invitation: link, from: side)))
         }
@@ -263,6 +264,52 @@ private final class TransportEvents: @unchecked Sendable {
         XCTAssertEqual(player.opened.map(\.episode), [4])
         XCTAssertTrue(player.togetherSnapshot.playing, "an episode a friend opened is one they are playing")
         await manager.leave()
+    }
+
+    /// «Не сейчас» is not leaving a session — nothing was joined. No goodbye goes out: the socket
+    /// closes, the relay says «peer-left», and the host keeps the seat for half a minute the way
+    /// it does for a dropped connection. A goodbye from here ended the host's room for anybody
+    /// who tapped the link out of curiosity; Android's `dismissJoin()` has always been this quiet.
+    func testDecliningTheInvitationSaysNoGoodbye() async throws {
+        let transport = TogetherManagerTests.Transport()
+        let player = TogetherManagerTests.Playback()
+        let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Guest", transportFactory: { _, _ in transport })
+        manager.attach(player)
+        let link = try TogetherInvitation(roomID: "AAAAAAAAAAA", key: Data(repeating: 0, count: 16))
+        await manager.join(link)
+        try await Task.sleep(for: .milliseconds(20))
+        try transport.deliver(TogetherMessage(t: .hello, seq: 1, name: "Host", animeId: 7, episode: 3, positionMs: 5_000, playing: true),
+                              link: link, side: .host)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(manager.joining?.episode?.episode, 3)
+        await manager.leave()
+        try await Task.sleep(for: .milliseconds(20))
+        let said = transport.outgoing.compactMap { try? TogetherCodec.decode($0, invitation: link, from: .guest) }
+        XCTAssertFalse(said.contains { $0.t == .bye }, "a viewer who never joined has nothing to say goodbye to")
+        XCTAssertEqual(transport.closes, 1, "the socket simply closes")
+        XCTAssertNil(manager.joining)
+        XCTAssertEqual(manager.phase, .idle, "nothing was joined, so nothing ended")
+        XCTAssertEqual(player.togetherSnapshot.episode, 1, "and the viewer's own video is untouched")
+    }
+
+    /// Whereas a viewer who did join, and leaves, says so — the host must not wait half a minute.
+    func testLeavingAJoinedRoomStillSaysGoodbye() async throws {
+        let transport = TogetherManagerTests.Transport()
+        let player = TogetherManagerTests.Playback()
+        let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Guest", transportFactory: { _, _ in transport })
+        manager.attach(player)
+        let link = try TogetherInvitation(roomID: "AAAAAAAAAAA", key: Data(repeating: 0, count: 16))
+        await manager.join(link)
+        try await Task.sleep(for: .milliseconds(20))
+        try transport.deliver(TogetherMessage(t: .hello, seq: 1, name: "Host", animeId: 7, episode: 1, positionMs: 1_000, playing: true),
+                              link: link, side: .host)
+        try await Task.sleep(for: .milliseconds(20))
+        manager.acceptJoin()
+        await manager.leave()
+        try await Task.sleep(for: .milliseconds(20))
+        let said = transport.outgoing.compactMap { try? TogetherCodec.decode($0, invitation: link, from: .guest) }
+        XCTAssertTrue(said.contains { $0.t == .bye })
+        XCTAssertEqual(manager.phase, .ended)
     }
 }
 
