@@ -107,6 +107,10 @@ private final class TransportEvents: @unchecked Sendable {
         await manager.join(link); await settle()
         try transport.deliver(TogetherMessage(t: .hello, seq: 1, name: "Host", animeId: 7, episode: 3, translationId: 4, positionMs: 5000, playing: false), link: link, side: .host)
         await settle(); XCTAssertEqual(opened?.episode, 3)
+        // What the join screen is for: the greeting is an offer until somebody takes it, and the
+        // player is opened by the screen that took it.
+        XCTAssertEqual(manager.joining?.episode?.episode, 3)
+        manager.acceptJoin()
         manager.attach(player); await settle()
         XCTAssertEqual(manager.phase, .live); XCTAssertEqual(player.togetherSnapshot.episode, 3)
         XCTAssertFalse(player.togetherSnapshot.playing)
@@ -170,5 +174,35 @@ private final class TransportEvents: @unchecked Sendable {
         await settle()
         XCTAssertEqual(transport.outgoing.count, before)
         XCTAssertTrue(manager.conversation.history.isEmpty)
+    }
+}
+
+/// An invitation that arrives while this phone is already watching something.
+///
+/// The greeting used to go straight to the player that happened to be open, and the join screen —
+/// which is what the viewer is looking at — was never told what the room turned out to be. It said
+/// «Подключаемся…» for as long as they cared to wait.
+@MainActor final class TogetherJoinScreenTests: XCTestCase {
+    func testAGreetingFillsTheJoinScreenEvenWithAPlayerOpen() async throws {
+        let transport = TogetherManagerTests.Transport()
+        let player = TogetherManagerTests.Playback()
+        let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Guest", transportFactory: { _, _ in transport })
+        manager.attach(player)
+        let link = try TogetherInvitation(roomID: "AAAAAAAAAAA", key: Data(repeating: 0, count: 16))
+        await manager.join(link)
+        try await Task.sleep(for: .milliseconds(20))
+        try transport.deliver(TogetherMessage(t: .hello, seq: 1, name: "Host", animeId: 7, episode: 3,
+                                              translationId: 4, positionMs: 5000, playing: true),
+                              link: link, side: .host)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(manager.joining?.episode?.episode, 3)
+        XCTAssertEqual(manager.joining?.episode?.animeID, 7)
+        // Nothing has been agreed to yet, so the player is left exactly where it was.
+        XCTAssertEqual(player.togetherSnapshot.episode, 1)
+        manager.acceptJoin()
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertNil(manager.joining)
+        XCTAssertEqual(player.togetherSnapshot.episode, 3)
+        await manager.leave()
     }
 }

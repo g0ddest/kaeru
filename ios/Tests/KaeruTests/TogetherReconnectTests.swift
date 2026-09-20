@@ -101,3 +101,17 @@ import XCTest
         XCTAssertEqual(bench.manager.error, .disconnected)
     }
 }
+
+/// A room with one person in it is silent, and silence is not a failure.
+///
+/// The relay socket used to carry a ten-second request deadline. Nothing arrives in a room nobody
+/// has joined, so the task failed on that silence, the session said «Восстанавливаем связь»,
+/// dialled again and failed ten seconds later — for as long as somebody was copying the link.
+final class TogetherSocketDeadlineTests: XCTestCase {
+    func testTheSocketOutlivesASilentRoom() {
+        XCTAssertGreaterThanOrEqual(TogetherTiming.socketLifetimeSeconds, 3600)
+        // The first dial still has to answer for itself, and quickly.
+        XCTAssertLessThanOrEqual(TogetherTiming.dialSeconds, 15)
+        XCTAssertLessThan(TogetherTiming.dialSeconds, TogetherTiming.socketLifetimeSeconds)
+    }
+}

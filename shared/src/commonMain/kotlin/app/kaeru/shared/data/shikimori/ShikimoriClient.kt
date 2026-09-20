@@ -164,7 +164,9 @@ internal class ShikimoriClient(
                     val dto = entry as? JsonObject ?: return@forEach
                     val id = dto.int("id").takeIf { it in ids } ?: return@forEach
                     val poster = dto["poster"] as? JsonObject ?: return@forEach
-                    val url = poster.string("mainUrl").ifBlank { poster.string("originalUrl") }
+                    // `originalUrl` first: `mainUrl` is Shikimori's 225×318 thumbnail, which a
+                    // card on a phone is already wider than, and a hero stretched it fourfold.
+                    val url = poster.string("originalUrl").ifBlank { poster.string("mainUrl") }
                     if (url.isNotBlank()) posters[id] = imageUrl(url)
                 }
             } catch (cancelled: CancellationException) {

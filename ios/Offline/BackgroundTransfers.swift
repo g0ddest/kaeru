@@ -6,6 +6,15 @@ import Foundation
 @MainActor final class BackgroundTransfers: NSObject, @preconcurrency AVAssetDownloadDelegate, @preconcurrency URLSessionDownloadDelegate {
     weak var owner: DownloadManager?
     private var sessions: [String: URLSession] = [:]
+    /// The HLS sessions, kept at their own type.
+    ///
+    /// `AVAssetDownloadURLSession(configuration:…)` hands back a `__NSURLBackgroundSession` — a
+    /// class cluster, not a subclass — so `session as? AVAssetDownloadURLSession` is nil for a
+    /// session that is one. That cast was how `start` decided which kind of task to make: an
+    /// episode went down the ordinary `downloadTask` branch, which such a session answers with an
+    /// Objective-C exception, and an exception in Swift is an `abort()`. Every download crashed
+    /// the app, and the restored queue crashed it again at the next launch.
+    private var assetSessions: [String: AVAssetDownloadURLSession] = [:]
     private(set) var tasks: [String: URLSessionTask] = [:]
     private var completions: [String: [() -> Void]] = [:]
     private var finishedEvents = Set<String>()
@@ -24,7 +33,9 @@ import Foundation
         configuration.httpAdditionalHeaders = transfer.headers
         let session: URLSession
         if transfer.isHLS {
-            session = AVAssetDownloadURLSession(configuration: configuration, assetDownloadDelegate: self, delegateQueue: .main)
+            let hls = AVAssetDownloadURLSession(configuration: configuration, assetDownloadDelegate: self, delegateQueue: .main)
+            assetSessions[transfer.identifier] = hls
+            session = hls
         } else {
             session = URLSession(configuration: configuration, delegate: self, delegateQueue: .main)
         }
@@ -49,7 +60,8 @@ import Foundation
     func start(_ transfer: OfflineTransfer, url: URL, title: String) throws {
         let session = session(transfer)
         let task: URLSessionTask
-        if let hls = session as? AVAssetDownloadURLSession {
+        // By what this transfer is, never by what the session says it is: see `assetSessions`.
+        if transfer.isHLS, let hls = assetSessions[transfer.identifier] {
             var options: [String: Any] = [AVURLAssetAllowsCellularAccessKey: !transfer.wifiOnly]
             if let agent = transfer.headers.first(where: { $0.key.lowercased() == "user-agent" })?.value {
                 options[AVURLAssetHTTPUserAgentKey] = agent
@@ -75,7 +87,10 @@ import Foundation
     func retire(_ transfer: OfflineTransfer) {
         tasks.removeValue(forKey: transfer.token)
         // finishTasksAndInvalidate preserves any pending delegate callbacks.
-        sessions[transfer.identifier]?.finishTasksAndInvalidate()
+        sessions.removeValue(forKey: transfer.identifier)?.finishTasksAndInvalidate()
+        // Forgotten as well, or downloading this episode again would make its task in a session
+        // that has been invalidated — which is another Objective-C exception, and another abort.
+        assetSessions.removeValue(forKey: transfer.identifier)
     }
     func destination(_ token: String) -> URL { mediaDirectory.appendingPathComponent(token + ".mp4") }
 
@@ -109,6 +124,7 @@ import Foundation
     func urlSession(_ session: URLSession, didBecomeInvalidWithError error: Error?) {
         if let identifier = session.configuration.identifier {
             sessions.removeValue(forKey: identifier)
+            assetSessions.removeValue(forKey: identifier)
             if completions[identifier] != nil { finish(identifier) }
         }
     }

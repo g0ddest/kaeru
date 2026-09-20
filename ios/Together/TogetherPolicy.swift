@@ -65,6 +65,11 @@ enum TogetherTiming {
     static let staleStateMs: Int64 = 5_000
     /// How long a friend whose socket went away has to walk back into the room.
     static let rejoinWindowMs: Int64 = 30_000
+    /// How long a socket may live and how long it may be quiet for — an evening, not a moment.
+    /// Silence is the normal state of a room nobody has joined yet, so it must not be a failure.
+    static let socketLifetimeSeconds: TimeInterval = 24 * 60 * 60
+    /// What the first dial gets before it is reported as unreachable. Only the handshake.
+    static let dialSeconds: TimeInterval = 10
 }
 
 enum TogetherSync {

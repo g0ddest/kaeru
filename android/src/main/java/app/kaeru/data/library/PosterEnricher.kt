@@ -40,7 +40,10 @@ class PosterEnricher @Inject constructor(private val api: ShikimoriApi) {
                 emptyList()
             }
         }.mapNotNull { dto ->
-            val url = dto.poster?.mainUrl ?: dto.poster?.originalUrl ?: return@mapNotNull null
+            // `originalUrl` first: `mainUrl` is Shikimori's 225×318 thumbnail, and a card on a
+            // phone is already wider than that — on a hero it was a poster blown up four times.
+            // The thumbnail stays as the fallback, because a small poster beats none.
+            val url = dto.poster?.originalUrl ?: dto.poster?.mainUrl ?: return@mapNotNull null
             dto.id.toIntOrNull()?.let { it to url }
         }.toMap()
         return animes.map { anime ->

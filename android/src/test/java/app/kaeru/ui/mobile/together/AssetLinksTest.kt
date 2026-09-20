@@ -162,20 +162,23 @@ class AssetLinksTest {
         )
     }
 
-    /** The key is read once, checked, and written into that one address — and nowhere else. */
+    /** The key is read once, checked, and written into the addresses that open the app. */
     @Test
-    fun `the hash is used only to build the intent uri`() {
+    fun `the hash is used only to build the addresses that open the app`() {
         val page = File(site, "w/index.html").readText()
         val script = page.substringAfter("<script>").substringBefore("</script>")
         assertEquals("the hash is read in one place", 1, Regex("location\\.hash").findAll(page).count())
         assertTrue("and that place is before the one request the page makes", script.indexOf("location.hash") in 0 until script.indexOf("fetch("))
-        // Comments aside, the identifier the hash lands in appears three times — read, checked,
-        // written into the intent — and never after the intent is finished.
+        // Comments aside, the identifier the hash lands in appears four times — read, checked, and
+        // written into the two addresses that open the app: Android's intent uri and, on iPhone,
+        // the app's own scheme. Never anywhere else, and above all never in a request: whoever
+        // holds the key can open the room, which is why it lives in a fragment no browser sends.
         val code = script.lines().filterNot { it.trimStart().startsWith("//") }.joinToString("\n")
             .replace(Regex("/\\*.*?\\*/", RegexOption.DOT_MATCHES_ALL), "")
         val key = Regex("\\bkey\\b")
-        assertEquals(3, key.findAll(code).count())
-        assertFalse(key.containsMatchIn(code.substringAfter("';end'")))
+        assertEquals(4, key.findAll(code).count())
+        assertFalse("the key must not reach the one request the page makes",
+            key.containsMatchIn(code.substringAfter("fetch(")))
     }
 
     @Test

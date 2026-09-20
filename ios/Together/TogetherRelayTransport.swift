@@ -38,8 +38,15 @@ import Foundation
     private func dial(_ endpoint: URL) async throws {
         dropSocket()
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 10
-        configuration.timeoutIntervalForResource = 24 * 60 * 60
+        // No read deadline on the socket itself, exactly as Android's client says of its own:
+        // a room with one person in it has no incoming traffic at all, and ten seconds of that
+        // is normal — it is somebody who has just pressed «Смотреть вместе» and is copying the
+        // link. With a request timeout on it the task failed on that silence, the session went to
+        // «Восстанавливаем связь», dialled, and failed again ten seconds later, forever. The
+        // first dial still answers within ten seconds, because that deadline is put on the
+        // handshake below rather than on the life of the socket.
+        configuration.timeoutIntervalForRequest = TogetherTiming.socketLifetimeSeconds
+        configuration.timeoutIntervalForResource = TogetherTiming.socketLifetimeSeconds
         configuration.httpShouldSetCookies = false
         let session = URLSession(configuration: configuration)
         let socket = session.webSocketTask(with: endpoint)
@@ -48,7 +55,7 @@ import Foundation
         socket.resume()
         do {
             // A WebSocket control ping confirms the upgrade without sending an application frame.
-            try await togetherTimeout(10) {
+            try await togetherTimeout(TogetherTiming.dialSeconds) {
                 try await withTaskCancellationHandler {
                     try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                         socket.sendPing { error in

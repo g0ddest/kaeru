@@ -147,7 +147,16 @@ struct TogetherJoinTarget: Equatable {
     }
     /// «Смотреть вместе» on the join screen: the room stays, the screen goes, and the player the
     /// caller opens next is the one this session attaches to.
-    func acceptJoin() { joining = nil }
+    ///
+    /// A player that is already open never attaches again, so the greeting that was held back
+    /// while the invitation was being read is applied here instead — otherwise agreeing to join
+    /// would leave this phone on whatever it happened to be watching.
+    func acceptJoin() {
+        joining = nil
+        guard playback != nil, let greeting = pendingGreeting else { return }
+        pendingGreeting = nil
+        apply(greeting)
+    }
     /// «Повторить» after a room that would not open. The invitation is kept for exactly this: it
     /// is cleared when a room fails, because a dead link is not one to share.
     func retryJoin() async {
@@ -461,6 +470,18 @@ struct TogetherJoinTarget: Equatable {
             // would abandon the episode it invited them to — and the first hello of a guest that
             // has not opened anything yet names episode zero.
             guard side == .guest else { return }
+            // An invitation being read is not an invitation accepted, and this phone may well
+            // have a player of its own open behind the screen — somebody watching something else
+            // when the link arrived. The greeting fills the screen in and stops there; the player
+            // hears about it when they press «Присоединиться», out of `attach`.
+            if joining != nil, let animeID = message.animeId, let episode = message.episode {
+                pendingGreeting = message
+                joining = TogetherJoinTarget(peerName: peerName,
+                                             episode: TogetherEpisode(animeID: animeID, episode: episode,
+                                                                      translationID: message.translationId,
+                                                                      positionMs: message.positionMs ?? 0))
+                return
+            }
             guard let animeID = message.animeId, let episode = message.episode, let playing = message.playing else { return }
             let item = TogetherEpisode(animeID: animeID, episode: episode, translationID: message.translationId, positionMs: message.positionMs ?? 0)
             if playback.togetherSnapshot.animeID != animeID || playback.togetherSnapshot.episode != episode {
