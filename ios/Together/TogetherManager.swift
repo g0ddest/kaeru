@@ -342,15 +342,11 @@ struct TogetherJoinTarget: Equatable {
 
     private func sendState() {
         guard let snapshot = playback?.togetherSnapshot else { return }
+        reportedBuffering = snapshot.buffering
         sendMessage(.init(t: .state, seq: 1, positionMs: snapshot.positionMs, playing: snapshot.playing,
                           buffering: snapshot.buffering, sentAt: now()))
     }
 
-        reportedBuffering = snapshot.buffering
-    /// One look at the gap, and usually nothing to do about it.
-    ///
-    /// The friend's last report is carried forward to now before it is judged: a report that is a
-    /// second and a half old says where they were, and half a second is the whole width of the
     /// A stall is said the moment it starts and the moment it ends, not on the next beat.
     ///
     /// The friend stops for a picture that is loading and starts again when it is not, and both
@@ -365,6 +361,10 @@ struct TogetherJoinTarget: Equatable {
         sendState()
     }
 
+    /// One look at the gap, and usually nothing to do about it.
+    ///
+    /// The friend's last report is carried forward to now before it is judged: a report that is a
+    /// second and a half old says where they were, and half a second is the whole width of the
     /// band that means «leave it alone».
     /// The friend's player is filling its buffer, so this one waits instead of running ahead.
     ///
@@ -615,6 +615,9 @@ struct TogetherJoinTarget: Equatable {
             conversation.clip(TogetherClip(data: clip.data, durationMs: clip.durationMs),
                               mine: false, author: TogetherCopy.name(peerName))
             return
+        case .bye:
+            peerSaidGoodbye()
+            return
         default: break
         }
         guard let playback else {
@@ -624,7 +627,7 @@ struct TogetherJoinTarget: Equatable {
             if side == .guest, message.t == .hello, let animeID = message.animeId, let episode = message.episode {
                 let item = TogetherEpisode(animeID: animeID, episode: episode,
                                            translationID: message.translationId, positionMs: message.positionMs ?? 0)
-                pendingGreeting = message
+                pendingGreeting = message; pendingGreetingAt = now()
                 joining = TogetherJoinTarget(peerName: peerName, episode: item)
                 onOpenPlayback?(item)
             }
@@ -641,7 +644,7 @@ struct TogetherJoinTarget: Equatable {
             // when the link arrived. The greeting fills the screen in and stops there; the player
             // hears about it when they press «Присоединиться», out of `attach`.
             if joining != nil, let animeID = message.animeId, let episode = message.episode {
-                pendingGreeting = message
+                pendingGreeting = message; pendingGreetingAt = now()
                 joining = TogetherJoinTarget(peerName: peerName,
                                              episode: TogetherEpisode(animeID: animeID, episode: episode,
                                                                       translationID: message.translationId,
@@ -655,14 +658,23 @@ struct TogetherJoinTarget: Equatable {
                                        positionMs: peerPositionNow(fallback: message))
             dropHold()
             if playback.togetherSnapshot.animeID != animeID || playback.togetherSnapshot.episode != episode {
+                normalSpeed()
                 onOpenPlayback?(item)
-                Task { try? await playback.togetherOpen(item); playback.togetherSetRate(1); if playing { playback.togetherPlay() } else { playback.togetherPause() } }
+                Task { try? await playback.togetherOpen(item); if playing { playback.togetherPlay() } else { playback.togetherPause() } }
             } else {
-                playback.togetherSeek(toMilliseconds: item.positionMs)
+                // A greeting can come mid-session too — the host answers every one of this
+                // side's, and this side greets again whenever a player attaches or a socket
+                // comes back. Close enough is left alone, as it is for a pause: the jump would
+                // be a stall for nothing.
+                catchUp(to: item.positionMs, on: playback)
                 playing ? playback.togetherPlay() : playback.togetherPause()
             }
+        // Whatever the friend says next outranks a picture this side stopped for them: a pause
+        // pressed while this side was waiting is a pause, and a hold that later let go with `play`
+        // would overrule it — while the friend's own reports, being paused, said nothing.
         case .play:
-            if let positionMs = message.positionMs { playback.togetherSeek(toMilliseconds: positionMs) }
+            dropHold()
+            if let positionMs = message.positionMs { catchUp(to: positionMs, on: playback) }
             playback.togetherPlay()
             conversation.notice(.played, peerName: peerName, positionMs: message.positionMs ?? 0)
         case .pause:
@@ -670,39 +682,27 @@ struct TogetherJoinTarget: Equatable {
             if let positionMs = message.positionMs { catchUp(to: positionMs, on: playback) }
             playback.togetherPause()
             conversation.notice(.paused, peerName: peerName, positionMs: message.positionMs ?? 0)
-        // Whatever the friend says next outranks a picture this side stopped for them: a pause
-        // pressed while this side was waiting is a pause, and a hold that later let go with `play`
-        // would overrule it — while the friend's own reports, being paused, said nothing.
         case .seek:
             dropHold()
-            if let positionMs = message.positionMs { catchUp(to: positionMs, on: playback) }
+            if let positionMs = message.positionMs { playback.togetherSeek(toMilliseconds: positionMs) }
             conversation.notice(.seeked, peerName: peerName, positionMs: message.positionMs ?? 0)
         case .episode:
             guard let episode = message.episode else { return }
             let item = TogetherEpisode(animeID: message.animeId ?? playback.togetherSnapshot.animeID ?? 0,
                                        episode: episode, translationID: message.translationId, positionMs: message.positionMs ?? 0)
-            onOpenPlayback?(item)
-            conversation.notice(.episode, peerName: peerName, episode: episode)
-            dropHold()
-            Task { try? await playback.togetherOpen(item) }
-        case .state, .ping, .pong, .chat, .reaction, .voice, .bye: break
-        }
-    }
-
-    private enum Action { case play(position: Int64), pause(position: Int64), seek(position: Int64), episode(TogetherEpisode) }
             dropHold()
             // A correction running when the episode changes would be inherited by one it was
             // never about; and an episode a friend opened is one they are playing — on both
             // phones opening one starts it — so this side plays it too rather than sitting on
             // its first frame while the friend's reports say they are a minute in.
             normalSpeed()
-    private var currentPosition: Int64 { playback?.togetherSnapshot.positionMs ?? 0 }
-    private func sendAction(_ action: Action) {
-        switch action {
-        case .play(let position): dropHold(); sendMessage(.init(t: .play, seq: 1, positionMs: position, playing: true))
-        case .pause(let position): dropHold(); sendMessage(.init(t: .pause, seq: 1, positionMs: position, playing: false))
-        case .seek(let position): sendMessage(.init(t: .seek, seq: 1, positionMs: position))
-        case .episode(let item): dropHold(); sendMessage(.init(t: .episode, seq: 1, animeId: item.animeID, episode: item.episode, translationId: item.translationID, positionMs: item.positionMs))
+            onOpenPlayback?(item)
+            conversation.notice(.episode, peerName: peerName, episode: episode)
+            Task { try? await playback.togetherOpen(item); playback.togetherPlay() }
+        case .state, .ping, .pong, .chat, .reaction, .voice, .bye: break
+        }
+    }
+
     /// The friend pressed «выйти». Nobody to hold a seat for.
     ///
     /// Used to be ignored: the relay's `peer-left` followed a moment later and was the only thing
@@ -728,11 +728,19 @@ struct TogetherJoinTarget: Equatable {
         enter(.ended)
     }
 
+    private enum Action { case play(position: Int64), pause(position: Int64), seek(position: Int64), episode(TogetherEpisode) }
+    private var currentPosition: Int64 { playback?.togetherSnapshot.positionMs ?? 0 }
+    private func sendAction(_ action: Action) {
+        // This viewer said what they want the picture doing, and a wait this side had put on it
+        // for the friend's sake must not say otherwise when the friend is ready.
+        switch action {
+        case .play(let position): dropHold(); sendMessage(.init(t: .play, seq: 1, positionMs: position, playing: true))
+        case .pause(let position): dropHold(); sendMessage(.init(t: .pause, seq: 1, positionMs: position, playing: false))
+        case .seek(let position): sendMessage(.init(t: .seek, seq: 1, positionMs: position))
+        case .episode(let item): dropHold(); sendMessage(.init(t: .episode, seq: 1, animeId: item.animeID, episode: item.episode, translationId: item.translationID, positionMs: item.positionMs))
         }
     }
     private func sendMessage(_ message: TogetherMessage, invitation: TogetherInvitation? = nil, transport: TogetherTransport? = nil) {
-        // This viewer said what they want the picture doing, and a wait this side had put on it
-        // for the friend's sake must not say otherwise when the friend is ready.
         guard let invitation = invitation ?? self.invitation, let transport = transport ?? self.transport else { return }
         // The number and the bytes are settled here, on this actor, in the order the caller wrote
         // them. Doing it inside the task would let the language schedule two sends in either order,

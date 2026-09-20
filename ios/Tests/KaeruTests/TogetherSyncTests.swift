@@ -194,6 +194,49 @@ import XCTest
         XCTAssertTrue(bench.player.seeks.isEmpty)
     }
 
+    // MARK: - what a friend's word costs
+
+    /// A friend's pause used to be a seek to where they paused, however close this side already
+    /// was — and on HLS a seek is a stall, the stall is reported, and the friend then waits for it.
+    /// Every pause and every play cost the room a hiccup.
+    func testAFriendsPauseWithinHalfASecondIsAppliedWithoutAJump() async throws {
+        let bench = try await Bench.live()
+        bench.player.togetherSnapshot.positionMs = 10_000
+        try bench.deliver(.init(t: .pause, seq: 10, positionMs: 10_300))
+        await bench.settle()
+        XCTAssertEqual(bench.player.pauses, 1)
+        XCTAssertTrue(bench.player.seeks.isEmpty, "триста миллисекунд — не повод перематывать")
+        // Half a second and more is a jump worth making, as it is on Android.
+        try bench.deliver(.init(t: .play, seq: 11, positionMs: 12_000))
+        await bench.settle()
+        XCTAssertEqual(bench.player.seeks, [12_000])
+        XCTAssertTrue(bench.player.togetherSnapshot.playing)
+    }
+
+    /// Opening an episode starts it on both phones, so an episode the friend opened plays here too
+    /// rather than sitting on its first frame while their reports say they are a minute in.
+    func testAnEpisodeTheFriendOpenedPlaysHereToo() async throws {
+        let bench = try await Bench.live()
+        try bench.deliver(.init(t: .episode, seq: 10, episode: 2))
+        await bench.settle()
+        XCTAssertEqual(bench.player.opened.last?.episode, 2)
+        XCTAssertTrue(bench.player.togetherSnapshot.playing)
+    }
+
+    /// A friend who pressed «выйти» is gone, and the room is over here and now — not half a
+    /// minute of «Восстанавливаем связь» and then «Связь прервалась».
+    func testAFriendsGoodbyeEndsTheRoomHereAndNow() async throws {
+        let bench = try await Bench.live()
+        try bench.deliver(.init(t: .bye, seq: 10))
+        await bench.settle()
+        XCTAssertEqual(bench.manager.phase, .ended)
+        XCTAssertNil(bench.manager.invitation)
+        // Whatever the relay hands over after that belongs to a room that has ended.
+        bench.transport.continuation.yield(.peerLeft)
+        await bench.settle()
+        XCTAssertEqual(bench.manager.phase, .ended)
+    }
+
     func testAPausedFriendIsNotBehind() async throws {
         let bench = try await Bench.live()
         bench.player.togetherSnapshot.positionMs = 10_000
@@ -204,6 +247,37 @@ import XCTest
         await bench.settle()
         XCTAssertTrue(bench.player.seeks.isEmpty)
         XCTAssertEqual(bench.player.rate, 1)
+    }
+
+    /// The greeting is stale by however long the invitation sat on screen. Opening at it meant a
+    /// visible jump, with a sentence next to it, the moment the session caught up.
+    func testAGuestLandsWhereTheFriendIsNowNotWhereTheyWereWhenTheySaidHello() async throws {
+        let bench = try await Bench.joining()
+        bench.clock.value = 1_000
+        try bench.deliver(.init(t: .hello, seq: 1, name: "Хозяин", animeId: 7, episode: 1, positionMs: 5_000, playing: true))
+        await bench.settle()
+        XCTAssertEqual(bench.manager.joining?.episode?.positionMs, 5_000)
+        // Twelve seconds of reading the invitation, with nothing said since.
+        bench.clock.value = 13_000
+        bench.manager.acceptJoin()
+        bench.manager.attach(bench.player)
+        await bench.settle()
+        XCTAssertEqual(bench.player.seeks.last, 17_000)
+    }
+
+    func testAGuestLandsWhereTheFriendsLastReportPutsThemNow() async throws {
+        let bench = try await Bench.joining()
+        bench.clock.value = 1_000
+        try bench.deliver(.init(t: .hello, seq: 1, name: "Хозяин", animeId: 7, episode: 1, positionMs: 5_000, playing: true))
+        // A report from the join screen's own minute: they were at 30 s two seconds ago.
+        bench.clock.value = 11_000
+        try bench.deliver(.init(t: .state, seq: 2, positionMs: 30_000, playing: true, buffering: false, sentAt: 11_000))
+        await bench.settle()
+        bench.clock.value = 13_000
+        bench.manager.acceptJoin()
+        bench.manager.attach(bench.player)
+        await bench.settle()
+        XCTAssertEqual(bench.player.seeks.last, 32_000)
     }
 
     // MARK: - bench
@@ -234,6 +308,15 @@ import XCTest
         static func live() async throws -> Bench {
             let bench = try Bench()
             bench.manager.attach(bench.player)
+            await bench.manager.join(bench.invitation)
+            await bench.settle()
+            return bench
+        }
+
+        /// The same room from the join screen: the link has been followed, nothing has been agreed
+        /// to and no player is attached yet.
+        static func joining() async throws -> Bench {
+            let bench = try Bench()
             await bench.manager.join(bench.invitation)
             await bench.settle()
             return bench
@@ -289,21 +372,6 @@ import XCTest
         XCTAssertTrue(player.togetherSnapshot.playing, "и продолжает, когда друг готов")
         await manager.leave()
     }
-    func testNothingIsCorrectedWhileTheFriendLoads() async throws {
-        let (transport, player, manager, link) = try await room()
-        try transport.deliver(TogetherMessage(t: .hello, seq: 1, name: "Guest", animeId: 7, episode: 1, positionMs: 0, playing: true),
-                              link: link, side: .guest)
-        try transport.deliver(TogetherMessage(t: .state, seq: 2, positionMs: 0, playing: true, buffering: true, sentAt: 1),
-                              link: link, side: .guest)
-        try await Task.sleep(for: .milliseconds(20))
-        XCTAssertEqual(manager.peerName, "Guest")
-        player.seeks.removeAll()
-        // A gap that would normally be a seek and a sentence about it.
-        manager.correct()
-        XCTAssertTrue(player.seeks.isEmpty, "никаких перемоток, пока друг подгружает")
-        await manager.leave()
-    }
-}
     /// A hold is a wait for a friend who wants to play, and the friend's own word ends it. Their
     /// pause used to be applied and then undone: the pause paused this side, their next report —
     /// paused, so no longer «loading» — let the hold go, and letting go meant play.
@@ -359,3 +427,18 @@ import XCTest
         await manager.leave()
     }
 
+    func testNothingIsCorrectedWhileTheFriendLoads() async throws {
+        let (transport, player, manager, link) = try await room()
+        try transport.deliver(TogetherMessage(t: .hello, seq: 1, name: "Guest", animeId: 7, episode: 1, positionMs: 0, playing: true),
+                              link: link, side: .guest)
+        try transport.deliver(TogetherMessage(t: .state, seq: 2, positionMs: 0, playing: true, buffering: true, sentAt: 1),
+                              link: link, side: .guest)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(manager.peerName, "Guest")
+        player.seeks.removeAll()
+        // A gap that would normally be a seek and a sentence about it.
+        manager.correct()
+        XCTAssertTrue(player.seeks.isEmpty, "никаких перемоток, пока друг подгружает")
+        await manager.leave()
+    }
+}
