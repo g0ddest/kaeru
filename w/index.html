@@ -218,8 +218,23 @@
       // does nothing at all when there is none — which is why the page under the button still
       // says how to get one, and why the key rides in the query: a scheme URL has its own
       // fragment and this one is already taken.
-      open.href = 'kaeru://watch?r=' + room + '&k=' + key;
+      var scheme = 'kaeru://watch?r=' + room + '&k=' + key;
+      open.href = scheme;
       open.textContent = 'Открыть в Kaeru';
+      // Tried once, without being asked to. There is no way to ask iOS whether an app is
+      // installed — the only test is the attempt, and the answer is whether this page is still
+      // being looked at a moment later. A phone with Kaeru goes straight to the room; a phone
+      // without it stays here, on the page that says how to get one, and the attempt leaves
+      // nothing behind. `iframe` is what this used to be done with and modern Safari ignores it,
+      // so this is the visible navigation — undone by the app taking over the screen.
+      var left = false;
+      var gone = function () { left = true; };
+      window.addEventListener('pagehide', gone);
+      document.addEventListener('visibilitychange', function () { if (document.hidden) gone(); });
+      setTimeout(function () {
+        if (left || document.hidden) { return; }
+        window.location.href = scheme;
+      }, 60);
     }
 
     // «latest» on GitHub means «latest full release», and every Kaeru build so far is a
