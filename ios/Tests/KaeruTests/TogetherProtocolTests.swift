@@ -46,11 +46,14 @@ final class TogetherProtocolTests: XCTestCase {
     func testMalformedMessagesAndForwardCompatibleFields() throws {
         let valid = Data(#"{"t":"play","seq":1,"positionMs":123,"future":true}"#.utf8)
         XCTAssertEqual(try TogetherCodec.decodeJSON(valid).positionMs, 123)
+        let greeting = Data(#"{"t":"hello","seq":1,"name":"a","animeId":1,"episode":1,"positionMs":0,"playing":true}"#.utf8)
+        XCTAssertNil(try TogetherCodec.decodeJSON(greeting).epoch, "a build older than the epoch still greets")
         for raw in [
             #"{"t":"peer-left","seq":0}"#, #"{"t":"unknown","seq":1}"#,
             #"{"t":"play","seq":1}"#, #"{"t":"seek","seq":-1,"positionMs":0}"#,
             #"{"t":"seek","seq":1,"positionMs":-1}"#,
             #"{"t":"reaction","seq":1,"kind":"bad"}"#,
+            #"{"t":"hello","seq":1,"name":"a","animeId":1,"episode":1,"positionMs":0,"playing":true,"epoch":0}"#,
             #"{"t":"voice","seq":1,"chunk":0,"total":9,"bytes":"AA","durationMs":1000}"#,
             #"{"t":"voice","seq":1,"chunk":1,"total":1,"bytes":"AA","durationMs":1000}"#
         ] { XCTAssertThrowsError(try TogetherCodec.decodeJSON(Data(raw.utf8)), raw) }
@@ -70,6 +73,52 @@ final class TogetherProtocolTests: XCTestCase {
         host.allowRejoin()
         XCTAssertTrue(host.accept(seq: 1, control: false, hello: true))
         XCTAssertGreaterThan(try host.next(control: true), 5)
+    }
+
+    /// A relay keeps every frame it carries, and it decides when a socket drops. Handing a kept
+    /// greeting back into the half-minute window used to reopen the count, and with it every
+    /// frame of the evening, in order. A greeting says which session it belongs to now, and one
+    /// that was heard before is judged by its count like any other frame.
+    func testAGreetingTheRelayKeptCannotReopenTheCount() {
+        var host = TogetherOrdering(isHost: true)
+        XCTAssertTrue(host.accept(seq: 1, control: false, hello: true, epoch: 77))
+        XCTAssertTrue(host.accept(seq: 40, control: true))
+        host.allowRejoin()
+        // The same greeting, handed back: same epoch, and forty is the mark.
+        XCTAssertFalse(host.accept(seq: 1, control: false, hello: true, epoch: 77))
+        XCTAssertFalse(host.accept(seq: 40, control: true), "the seek that followed it must not play again")
+        // The friend's session started over: a greeting with an epoch never heard, and it alone
+        // comes below the mark.
+        XCTAssertTrue(host.accept(seq: 1, control: false, hello: true, epoch: 78))
+        XCTAssertFalse(host.accept(seq: 40, control: true), "what was said before the restart stays refused")
+        // Counted above what they heard from this side, their next word is theirs.
+        XCTAssertTrue(host.accept(seq: 41, control: true))
+        // Neither greeting can be played again, window or no window.
+        host.allowRejoin()
+        XCTAssertFalse(host.accept(seq: 1, control: false, hello: true, epoch: 78))
+        XCTAssertFalse(host.accept(seq: 1, control: false, hello: true, epoch: 77))
+        XCTAssertEqual(host.peerEpochs, [77, 78])
+    }
+
+    /// A friend on a build older than the epoch gets the older rule, for as long as they stay on it.
+    func testAGreetingWithNoEpochKeepsTheOldRule() {
+        var host = TogetherOrdering(isHost: true)
+        XCTAssertTrue(host.accept(seq: 1, control: false, hello: true))
+        XCTAssertTrue(host.accept(seq: 40, control: true))
+        // No window open: below the mark is below the mark.
+        XCTAssertFalse(host.accept(seq: 1, control: false, hello: true))
+        host.allowRejoin()
+        XCTAssertTrue(host.accept(seq: 1, control: false, hello: true))
+        XCTAssertTrue(host.accept(seq: 2, control: true), "they count from one again, and are followed")
+        // Once, per window.
+        XCTAssertFalse(host.accept(seq: 1, control: false, hello: true))
+        // A friend who has ever greeted with an epoch is on the new rule: a bare greeting inside
+        // a window is a frame like any other.
+        var guest = TogetherOrdering(isHost: false)
+        XCTAssertTrue(guest.accept(seq: 1, control: false, hello: true, epoch: 9))
+        XCTAssertTrue(guest.accept(seq: 30, control: false))
+        guest.allowRejoin()
+        XCTAssertFalse(guest.accept(seq: 1, control: false, hello: true))
     }
 
     func testClockProjectionAndDriftBoundaries() {

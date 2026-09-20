@@ -86,6 +86,38 @@ import XCTest
         XCTAssertEqual(bench.manager.peerName, "Хозяин")
     }
 
+    /// The relay sees every frame and decides when a socket drops. It used to be able to hand a
+    /// kept greeting into the window that follows and then every frame after it, in order — an
+    /// old seek, an old line, an old clip, each taken for the friend saying it now.
+    func testAFrameTheRelayKeptIsNotPlayedAgainAfterAReconnect() async throws {
+        let bench = try await TogetherSyncTests.Bench.live()
+        try bench.deliver(.init(t: .hello, seq: 1, name: "Хозяин", animeId: 7, episode: 1, positionMs: 4_000, playing: true, epoch: 5))
+        try bench.deliver(.init(t: .seek, seq: 40, positionMs: 4_000))
+        await bench.settle()
+        XCTAssertEqual(bench.player.seeks, [4_000])
+
+        bench.transport.continuation.yield(.peerLeft)
+        await bench.settle()
+        XCTAssertEqual(bench.manager.phase, .reconnecting)
+
+        // The greeting again, and the seek after it, exactly as they were first carried.
+        try bench.deliver(.init(t: .hello, seq: 1, name: "Хозяин", animeId: 7, episode: 1, positionMs: 4_000, playing: true, epoch: 5))
+        try bench.deliver(.init(t: .seek, seq: 40, positionMs: 4_000))
+        await bench.settle()
+        XCTAssertEqual(bench.manager.phase, .reconnecting, "a kept greeting is not the friend walking back in")
+        XCTAssertEqual(bench.player.seeks, [4_000])
+
+        // The friend's session started over: a new epoch, and the seat is theirs again.
+        try bench.deliver(.init(t: .hello, seq: 1, name: "Хозяин", animeId: 7, episode: 1, positionMs: 4_000, playing: true, epoch: 6))
+        await bench.settle()
+        XCTAssertEqual(bench.manager.phase, .live)
+        // Still nothing from before the drop plays again — and what they say next does.
+        try bench.deliver(.init(t: .seek, seq: 40, positionMs: 4_000))
+        try bench.deliver(.init(t: .seek, seq: 41, positionMs: 9_000))
+        await bench.settle()
+        XCTAssertEqual(bench.player.seeks, [4_000, 9_000])
+    }
+
     func testNobodyWalksBackInAndTheEveningIsCalledOver() async throws {
         let bench = try await TogetherSyncTests.Bench.live()
         bench.clock.value = 1_000

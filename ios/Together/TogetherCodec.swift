@@ -26,6 +26,11 @@ struct TogetherMessage: Codable, Equatable, Sendable {
     var durationMs: Int64? = nil
     var pingSentAt: Int64? = nil
     var receivedAt: Int64? = nil
+    /// Which connection of the sender's this greeting belongs to: drawn at random each time a side
+    /// connects, and never the same twice. A friend whose session started over counts from one
+    /// again, and this is what tells that greeting apart from one the relay kept and handed back.
+    /// Absent from a build older than this field, and read as such.
+    var epoch: Int64? = nil
     var isControl: Bool { [.play, .pause, .seek, .episode].contains(t) }
     func validate() throws {
         guard seq > 0, seq < Int64.max else { throw TogetherError.invalidMessage }
@@ -34,6 +39,7 @@ struct TogetherMessage: Codable, Equatable, Sendable {
             guard (0...100_000_000_000_000).contains(time) else { throw TogetherError.invalidMessage }
         }
         if let translationId, translationId < 0 { throw TogetherError.invalidMessage }
+        if let epoch, epoch <= 0 { throw TogetherError.invalidMessage }
         let valid: Bool
         switch t {
         case .hello: valid = name != nil && name!.utf8.count <= 1024 && animeId != nil && animeId! >= 0 && episode != nil && episode! >= 0 && positionMs != nil && playing != nil

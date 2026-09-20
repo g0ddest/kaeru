@@ -47,6 +47,9 @@ struct TogetherJoinTarget: Equatable {
     @ObservationIgnored private var receiveTask: Task<Void, Never>?
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var side: TogetherSide = .guest
+    /// Which connection this is, for the greeting to say: drawn afresh each time this side
+    /// connects, so a friend can tell a session that started over from a greeting the relay kept.
+    @ObservationIgnored private var epoch: Int64 = 0
     /// The invitation this phone was given, kept past a failure so «Повторить» has something to
     /// knock on.
     @ObservationIgnored private var lastJoin: TogetherInvitation?
@@ -277,6 +280,7 @@ struct TogetherJoinTarget: Equatable {
         let value = transportFactory(invitation, asHost)
         self.invitation = invitation; self.transport = value; self.side = asHost ? .host : .guest
         self.ordering = TogetherOrdering(isHost: asHost); self.clock = TogetherClock()
+        epoch = Int64.random(in: 1...Int64.max)
         error = nil; peerName = nil; conversation.forget(); enter(.connecting); generation = UUID()
         self.report = nil; self.correcting = false; self.beats = 0; self.rejoinBy = nil
         // A wait belongs to the room it was made in: a hold left by a friend who was loading when
@@ -489,7 +493,7 @@ struct TogetherJoinTarget: Equatable {
         let message = TogetherMessage(t: .hello, seq: 1, name: displayName,
                                       animeId: snapshot.animeID ?? 0, episode: snapshot.episode ?? 0,
                                       translationId: snapshot.translationID, positionMs: snapshot.positionMs,
-                                      playing: snapshot.playing)
+                                      playing: snapshot.playing, epoch: epoch)
         sendMessage(message, invitation: invitation, transport: transport)
     }
 
@@ -532,7 +536,12 @@ struct TogetherJoinTarget: Equatable {
             TogetherLog.write("frame refused: did not authenticate as \(remoteSide)")
             return
         }
-        guard ordering.accept(seq: message.seq, control: message.isControl, hello: message.t == .hello) else {
+        if message.t == .hello, message.epoch == nil {
+            // A build older than the epoch. Its greeting after a drop is let in the old way — any
+            // one greeting inside the window the relay's «peer-left» opens resets the count.
+            TogetherLog.write("hello without an epoch: the other phone runs an older build")
+        }
+        guard ordering.accept(seq: message.seq, control: message.isControl, hello: message.t == .hello, epoch: message.epoch) else {
             TogetherLog.write("frame refused: \(message.t) seq=\(message.seq) out of order")
             return
         }
@@ -557,9 +566,9 @@ struct TogetherJoinTarget: Equatable {
 
     /// The friend's socket went away, and it is not the end: a room keeps the seat for half a
     /// minute, which is about how long a train takes to leave a tunnel. A friend who walks back in
-    /// has restarted their count from one, so the replay guard is told to expect exactly one
-    /// greeting below the mark it holds — and only a greeting, or the window would be thirty
-    /// seconds in which any captured frame plays again.
+    /// with a session that started over greets with a new epoch, and that greeting alone is let in
+    /// below the replay guard's mark. The guard is told about the drop all the same, for a friend
+    /// on a build too old to carry an epoch: theirs is the one greeting inside this window.
     private func peerLeft() {
         TogetherLog.write("peer left, holding the seat for \(TogetherTiming.rejoinWindowMs / 1000)s")
         guard phase == .live || phase == .reconnecting else { return }

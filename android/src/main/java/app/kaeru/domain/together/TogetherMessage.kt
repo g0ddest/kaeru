@@ -31,7 +31,14 @@ import java.util.Base64
 sealed interface TogetherMessage {
     val seq: Long
 
-    /** The first thing either side sends: who this is, and what they are already watching. */
+    /**
+     * The first thing either side sends: who this is, and what they are already watching.
+     *
+     * [epoch] says which connection of the sender's this greeting belongs to: drawn at random each
+     * time a side connects, never the same twice. A friend whose session started over counts from
+     * one again, and the epoch is what tells that greeting apart from one the relay kept and handed
+     * back. Null from a build older than the field, and read as such.
+     */
     @Serializable
     @SerialName("hello")
     data class Hello(
@@ -42,6 +49,7 @@ sealed interface TogetherMessage {
         val positionMs: Long,
         val playing: Boolean,
         override val seq: Long,
+        val epoch: Long? = null,
     ) : TogetherMessage
 
     @Serializable

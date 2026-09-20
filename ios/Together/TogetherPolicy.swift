@@ -1,11 +1,35 @@
 import Foundation
 
+/// Whose word came later, and which frames are the relay handing back rather than the friend
+/// saying something now.
+///
+/// Every frame carries the sender's own count, and nothing at or below the highest count already
+/// accepted from a peer is theirs now: a relay cannot read or forge a frame, but it can keep one
+/// and deliver it again, and the count is the whole of what stops an old seek or an old clip
+/// playing a second time.
+///
+/// The one thing that legitimately comes below the mark is the greeting of a friend whose session
+/// started over — their count did too. Their greeting says which session it belongs to: an epoch
+/// drawn at random each time their side connects. A greeting with an epoch never heard before is
+/// that friend, and it alone is let in below the mark; a greeting with an epoch already heard is
+/// the relay's copy of one, and is judged by its count like everything else. The mark itself never
+/// moves down: the peer's next frames are counted above whatever they hear from this side, and
+/// everything they said before the restart stays refused.
+///
+/// A greeting with no epoch at all is a build older than the field, and it gets the older rule —
+/// the one greeting inside the window the relay's «peer-left» opens resets the count. `TogetherLog`
+/// says so when it happens.
 struct TogetherOrdering {
+    /// How many of the peer's epochs are remembered. A session sees a handful; this is a ceiling.
+    static let epochsKept = 32
+
     let isHost: Bool
     private(set) var sequence: Int64 = 0
     private var peerSequence: Int64 = 0
     private var lastControl: (Int64, Bool) = (0, false)
     private var rejoining = false
+    /// Every epoch the peer has greeted with, oldest first.
+    private(set) var peerEpochs: [Int64] = []
     mutating func next(control: Bool) throws -> Int64 {
         guard sequence < Int64.max - 1 else { throw TogetherError.invalidMessage }
         sequence += 1
@@ -13,10 +37,25 @@ struct TogetherOrdering {
         return sequence
     }
     mutating func allowRejoin() { rejoining = true }
-    mutating func accept(seq: Int64, control: Bool, hello: Bool = false) -> Bool {
+    mutating func accept(seq: Int64, control: Bool, hello: Bool = false, epoch: Int64? = nil) -> Bool {
         guard seq > 0, seq < Int64.max else { return false }
-        if rejoining && hello { peerSequence = 0; lastControl = (0, false); rejoining = false }
+        if hello, let epoch {
+            if peerEpochs.contains(epoch) {
+                // Heard before: the friend greeting again on the same session, or the relay
+                // handing an old greeting back. The count tells the two apart.
+            } else {
+                peerEpochs.append(epoch)
+                if peerEpochs.count > Self.epochsKept { peerEpochs.removeFirst() }
+                rejoining = false
+                lastControl = (0, false)
+                peerSequence = max(peerSequence, seq); sequence = max(sequence, seq)
+                return true
+            }
+        } else if hello, rejoining, peerEpochs.isEmpty {
+            peerSequence = 0; lastControl = (0, false)
+        }
         guard seq > peerSequence else { return false }
+        if hello { rejoining = false }
         peerSequence = seq; sequence = max(sequence, seq)
         guard control else { return true }
         let wins = seq > lastControl.0 || (seq == lastControl.0 && !isHost && !lastControl.1)

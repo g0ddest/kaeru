@@ -91,7 +91,8 @@ class TogetherSessionTest {
         positionMs: Long = 60_000,
         playing: Boolean = true,
         seq: Long = 1,
-    ) = TogetherMessage.Hello(name, 100, episode, translationId, positionMs, playing, seq)
+        epoch: Long? = null,
+    ) = TogetherMessage.Hello(name, 100, episode, translationId, positionMs, playing, seq, epoch)
 
     /**
      * Hands the session a report from the friend and lets the next sync pass act on it.
@@ -1371,6 +1372,71 @@ class TogetherSessionTest {
         runCurrent()
 
         assertEquals(SessionState.Live("Аня", 0, 0), session.state.value)
+    }
+
+    /**
+     * The relay sees every frame and decides when a socket drops. It used to be able to hand a
+     * kept hello into the window that follows and then every frame after it, in order — an old
+     * seek, an old line, an old clip, each taken for the friend saying it now.
+     */
+    @Test
+    fun `a hello the relay kept does not reopen the count`() = sessionTest {
+        session.host("Костя")
+        runCurrent()
+        transport.deliver(peerHello(seq = 1, epoch = 5))
+        transport.deliver(TogetherMessage.Seek(positionMs = 300_000, seq = 40))
+        runCurrent()
+        assertEquals(listOf(300_000L), port.seeks)
+
+        transport.deliver(TogetherMessage.PeerLeft())
+        runCurrent()
+        // The hello again, and the seek after it, exactly as they were first carried.
+        transport.deliver(peerHello(seq = 1, epoch = 5))
+        transport.deliver(TogetherMessage.Seek(positionMs = 300_000, seq = 40))
+        runCurrent()
+        assertEquals(listOf(300_000L), port.seeks)
+
+        // The friend's session started over: a new epoch, and the seat is theirs again — but
+        // nothing from before the drop plays, and what they say next, counted above what they
+        // heard from this side, does.
+        transport.deliver(peerHello(seq = 1, epoch = 6))
+        transport.deliver(TogetherMessage.Seek(positionMs = 300_000, seq = 40))
+        transport.deliver(TogetherMessage.Seek(positionMs = 120_000, seq = 41))
+        runCurrent()
+        assertEquals(listOf(300_000L, 120_000L), port.seeks)
+        advanceTimeBy(TogetherSession.REJOIN_WINDOW_MS + 1)
+        runCurrent()
+        assertTrue(session.state.value is SessionState.Live)
+    }
+
+    /** A session that started over says so whenever it greets, whether or not the relay said «peer-left». */
+    @Test
+    fun `a friend whose session started over is let in even when nobody said they left`() = sessionTest {
+        session.host("Костя")
+        runCurrent()
+        transport.deliver(peerHello(seq = 1, epoch = 5))
+        transport.deliver(TogetherMessage.Seek(positionMs = 300_000, seq = 40))
+        runCurrent()
+
+        transport.deliver(peerHello(seq = 1, epoch = 6))
+        transport.deliver(TogetherMessage.Seek(positionMs = 120_000, seq = 41))
+        runCurrent()
+
+        assertEquals(listOf(300_000L, 120_000L), port.seeks)
+    }
+
+    @Test
+    fun `this side's hello carries an epoch, and the same one for the whole session`() = sessionTest {
+        session.host("Костя")
+        runCurrent()
+        transport.deliver(peerHello(seq = 1, epoch = 5))
+        transport.deliver(peerHello(seq = 2, epoch = 5))
+        runCurrent()
+
+        val epochs = transport.sentOf<TogetherMessage.Hello>().map { it.epoch }
+        assertEquals(2, epochs.size)
+        assertTrue("an epoch is a positive number, or the other phone refuses the hello", epochs.all { it != null && it > 0 })
+        assertEquals(1, epochs.distinct().size)
     }
 
     @Test

@@ -114,8 +114,23 @@ class TogetherSession(
     private var rejoin: Job? = null
     private var becomingLive: Job? = null
 
-    /** Whether a friend who has just gone is still owed the one hello that may count below the mark. */
+    /**
+     * Whether a friend who has just gone is still owed the one hello that may count below the mark.
+     *
+     * Only for a friend on a build too old to say which session a greeting belongs to. One that
+     * greets with an [epoch] needs no window: a greeting with an epoch never heard is a session that
+     * started over, whenever it arrives.
+     */
     private var rejoining = false
+
+    /**
+     * Which connection this is, for the greeting to say. Drawn afresh in [begin], so a friend can
+     * tell a session that started over from a greeting the relay kept.
+     */
+    private var epoch = 0L
+
+    /** Every epoch the friend has greeted with, oldest first. A handful in a long evening. */
+    private val peerEpochs = ArrayDeque<Long>()
 
     /** The five loops and collectors of one session, so losing it stops all of them at once. */
     private var ticks: Job? = null
@@ -397,6 +412,8 @@ class TogetherSession(
         correctionSettledAt = 0
         voice = null
         rejoining = false
+        epoch = newEpoch()
+        peerEpochs.clear()
         pendingEpisode = null
         movedSinceReport = false
         closingBecause = null
@@ -710,22 +727,38 @@ class TogetherSession(
             // peer's count only ever rises, so anything not above the highest already accepted
             // from them did not come from them now.
             //
-            // The one exception is a hello inside the rejoin window, and only a hello: a friend
-            // walking back in has restarted their count, so theirs is below the mark by
-            // definition. Everything else stays gated by the old mark until that hello arrives,
-            // or the window would be thirty seconds in which any captured frame plays again.
-            // Once, and only while the window is open. A relay cannot forge or read a frame, but
-            // it can hand one back — and an exception that stayed open for the whole window would
-            // let a replayed hello re-seed the guard and the captured session follow it in order.
-            val returning = rejoining && message is TogetherMessage.Hello
-            if (!returning && message.seq <= peerSeq) return
-            // Their count is theirs again from here, and so is the last action anybody applied —
-            // a returned peer must not have to count its way back up before it may pause anything.
-            if (returning) {
+            // The one exception is the hello of a friend whose session started over — their count
+            // did too. Their hello names its session: an epoch drawn afresh on every connection.
+            // One never heard before is that friend, and that one frame comes in below the mark;
+            // one heard before is the relay's copy, and is judged by its count like everything
+            // else. The mark itself never moves down. Their next frames are counted above whatever
+            // they hear from this side, and everything they said before the restart stays under it —
+            // which is what stops a relay closing a socket, handing the old hello back into the
+            // window that opens, and following it with the whole evening in order.
+            val greeting = message as? TogetherMessage.Hello
+            if (greeting != null && greeting.epoch == null) {
+                Log.i(TAG, "A hello with no epoch: the other phone runs an older build")
+            }
+            val restarted = greeting?.epoch?.let { it !in peerEpochs } == true
+            if (restarted) {
+                peerEpochs.addLast(greeting!!.epoch!!)
+                while (peerEpochs.size > EPOCHS_KEPT) peerEpochs.removeFirst()
                 rejoining = false
                 lastControl = Control(0, byHost = false)
+                peerSeq = maxOf(peerSeq, message.seq)
+            } else {
+                // A friend on a build older than the epoch gets the older rule: one hello inside
+                // the rejoin window resets the count, and only while the window is open.
+                val returning = greeting != null && greeting.epoch == null && rejoining && peerEpochs.isEmpty()
+                if (returning) {
+                    rejoining = false
+                    lastControl = Control(0, byHost = false)
+                    peerSeq = 0
+                }
+                if (message.seq <= peerSeq) return
+                if (greeting != null) rejoining = false
+                peerSeq = message.seq
             }
-            peerSeq = message.seq
             // And a Lamport count of our own on top of it: raising ours above anything we hear is
             // what makes «later» mean the same thing on both phones, so neither side can be
             // outvoted for ever merely by being the quieter one.
@@ -1085,8 +1118,12 @@ class TogetherSession(
             positionMs = now.positionMs,
             playing = now.playing,
             seq = nextSeq(),
+            epoch = epoch,
         )
     }
+
+    /** Positive, because the other phone refuses a greeting whose epoch is not. */
+    private fun newEpoch(): Long = (random.nextLong() and Long.MAX_VALUE).coerceAtLeast(1)
 
     /**
      * A write that fails is a dropped action, never a dropped session: whether the channel is
@@ -1180,6 +1217,9 @@ class TogetherSession(
 
         /** Three, because one is a packet and two is bad luck. */
         const val GARBLED_LIMIT = 3
+
+        /** How many of the friend's epochs are remembered. A session sees a handful; this is a ceiling. */
+        private const val EPOCHS_KEPT = 32
 
         private const val EVENT_BUFFER = 64
 
