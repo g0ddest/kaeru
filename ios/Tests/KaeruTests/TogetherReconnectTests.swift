@@ -91,7 +91,7 @@ import XCTest
     /// old seek, an old line, an old clip, each taken for the friend saying it now.
     func testAFrameTheRelayKeptIsNotPlayedAgainAfterAReconnect() async throws {
         let bench = try await TogetherSyncTests.Bench.live()
-        try bench.deliver(.init(t: .hello, seq: 1, name: "Хозяин", animeId: 7, episode: 1, positionMs: 4_000, playing: true, epoch: 5))
+        try bench.deliver(.init(t: .hello, seq: 1, name: "Хозяин", animeId: 7, episode: 1, positionMs: 1_000, playing: true, epoch: 5))
         try bench.deliver(.init(t: .seek, seq: 40, positionMs: 4_000))
         await bench.settle()
         XCTAssertEqual(bench.player.seeks, [4_000])
@@ -101,7 +101,7 @@ import XCTest
         XCTAssertEqual(bench.manager.phase, .reconnecting)
 
         // The greeting again, and the seek after it, exactly as they were first carried.
-        try bench.deliver(.init(t: .hello, seq: 1, name: "Хозяин", animeId: 7, episode: 1, positionMs: 4_000, playing: true, epoch: 5))
+        try bench.deliver(.init(t: .hello, seq: 1, name: "Хозяин", animeId: 7, episode: 1, positionMs: 1_000, playing: true, epoch: 5))
         try bench.deliver(.init(t: .seek, seq: 40, positionMs: 4_000))
         await bench.settle()
         XCTAssertEqual(bench.manager.phase, .reconnecting, "a kept greeting is not the friend walking back in")

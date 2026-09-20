@@ -209,6 +209,61 @@ private final class TransportEvents: @unchecked Sendable {
         XCTAssertEqual(player.togetherSnapshot.episode, 3)
         await manager.leave()
     }
+
+    /// A pause, a jump or another episode from the host used to reach the player behind the join
+    /// screen — somebody else's video, paused and scrubbed by a friend nobody had said yes to.
+    /// Android gates every control on the session being live; this is the same rule here.
+    func testTheFriendsCommandsWaitOnTheJoinScreenAndAreAppliedAsOneStateOnYes() async throws {
+        let transport = TogetherManagerTests.Transport()
+        let player = TogetherManagerTests.Playback()
+        let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Guest", transportFactory: { _, _ in transport })
+        manager.attach(player)
+        let link = try TogetherInvitation(roomID: "AAAAAAAAAAA", key: Data(repeating: 0, count: 16))
+        await manager.join(link)
+        try await Task.sleep(for: .milliseconds(20))
+        try transport.deliver(TogetherMessage(t: .hello, seq: 1, name: "Host", animeId: 7, episode: 3, positionMs: 5_000, playing: true),
+                              link: link, side: .host)
+        try transport.deliver(TogetherMessage(t: .pause, seq: 2, positionMs: 6_000), link: link, side: .host)
+        try transport.deliver(TogetherMessage(t: .seek, seq: 3, positionMs: 9_000), link: link, side: .host)
+        try transport.deliver(TogetherMessage(t: .state, seq: 4, positionMs: 9_000, playing: false, buffering: false, sentAt: 1), link: link, side: .host)
+        try await Task.sleep(for: .milliseconds(20))
+        // Nothing has been agreed to, so the player is exactly where it was.
+        XCTAssertEqual(player.pauses, 0)
+        XCTAssertEqual(player.seeks, [])
+        XCTAssertEqual(player.togetherSnapshot.episode, 1)
+        XCTAssertTrue(player.togetherSnapshot.playing)
+        manager.acceptJoin()
+        try await Task.sleep(for: .milliseconds(20))
+        // One state, not three actions: the friend's episode, paused, at the place they jumped to.
+        XCTAssertEqual(player.opened.map(\.episode), [3])
+        XCTAssertEqual(player.opened.last?.positionMs, 9_000)
+        XCTAssertFalse(player.togetherSnapshot.playing)
+        XCTAssertEqual(player.seeks, [], "the position is where the episode is opened, not a jump after")
+        await manager.leave()
+    }
+
+    /// The friend's autoplay ran into the next episode while the invitation sat on screen. The
+    /// screen names the new one, and saying yes opens it — Android's `pendingEpisode`.
+    func testAnEpisodeTheFriendMovedToWhileTheInvitationWasReadIsTheOneOpened() async throws {
+        let transport = TogetherManagerTests.Transport()
+        let player = TogetherManagerTests.Playback()
+        let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Guest", transportFactory: { _, _ in transport })
+        manager.attach(player)
+        let link = try TogetherInvitation(roomID: "AAAAAAAAAAA", key: Data(repeating: 0, count: 16))
+        await manager.join(link)
+        try await Task.sleep(for: .milliseconds(20))
+        try transport.deliver(TogetherMessage(t: .hello, seq: 1, name: "Host", animeId: 7, episode: 3, translationId: 4, positionMs: 1_300_000, playing: true),
+                              link: link, side: .host)
+        try transport.deliver(TogetherMessage(t: .episode, seq: 2, animeId: 7, episode: 4, translationId: 4, positionMs: 0), link: link, side: .host)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(manager.joining?.episode?.episode, 4)
+        XCTAssertEqual(player.togetherSnapshot.episode, 1)
+        manager.acceptJoin()
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(player.opened.map(\.episode), [4])
+        XCTAssertTrue(player.togetherSnapshot.playing, "an episode a friend opened is one they are playing")
+        await manager.leave()
+    }
 }
 
 /// A greeting nobody heard is said again.

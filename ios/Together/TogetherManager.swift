@@ -318,10 +318,11 @@ struct TogetherJoinTarget: Equatable {
     func beat() {
         guard phase == .live || phase == .reconnecting else { return }
         beats += 1
-        // A report is only worth sending while there is something to report about; a ping is
-        // worth sending either way, because it is what keeps the offset current and the socket
-        // from idling out.
-        if phase == .live { sendState() }
+        // A report is only worth sending while there is something to report about — and only
+        // once this viewer has said yes, or the friend would be measuring drift against whatever
+        // this phone happened to be watching when the link arrived. A ping is worth sending
+        // either way, because it is what keeps the offset current and the socket from idling out.
+        if phase == .live, joining == nil { sendState() }
         if beats % (TogetherTiming.pingMs / TogetherTiming.stateMs) == 0 { sendPing() }
         // Said again until somebody answers it.
         //
@@ -360,7 +361,7 @@ struct TogetherJoinTarget: Equatable {
     /// Said at once, both delays shrink to a trip through the relay, and cancel. Ten times a
     /// second, off the sweeper: the same clock the corner's lines fade on.
     func reportStallIfChanged() {
-        guard phase == .live, let reported = reportedBuffering,
+        guard phase == .live, joining == nil, let reported = reportedBuffering,
               let buffering = playback?.togetherSnapshot.buffering, buffering != reported else { return }
         sendState()
     }
@@ -380,7 +381,7 @@ struct TogetherJoinTarget: Equatable {
     private func peerIsLoading(_ loading: Bool) {
         guard loading != peerLoading else { return }
         peerLoading = loading
-        guard let playback else { return }
+        guard joining == nil, let playback else { return }
         if loading {
             guard playback.togetherSnapshot.playing else { return }
             heldForPeer = true
@@ -438,7 +439,9 @@ struct TogetherJoinTarget: Equatable {
         return said + min(max(0, now - pendingGreetingAt), TogetherTiming.helloCarryMaxMs)
     }
     func correct() {
-        guard phase == .live, let playback else { return }
+        // Nothing is corrected on the join screen: the player behind it, if there is one, is
+        // showing what this viewer was watching when the link arrived, and is nobody's to move.
+        guard phase == .live, joining == nil, let playback else { return }
         // One side follows and the other is the reference — the way every watch-together that
         // works does it. Two phones each correcting towards the other, by two different estimates
         // of the clock offset, settle a second apart and take turns jumping; the side that made
@@ -634,6 +637,15 @@ struct TogetherJoinTarget: Equatable {
             return
         default: break
         }
+        // An invitation being read is not an invitation accepted. Whatever the friend does
+        // meanwhile is folded into the greeting the screen is about, for the moment this viewer
+        // says yes — the way Android keeps its `pendingEpisode` — and the player that may be open
+        // behind the screen, showing something else entirely, is not touched. Android gates every
+        // control on the session being live; this is the same rule, read from the join screen.
+        if joining != nil, message.isControl {
+            stash(message)
+            return
+        }
         guard let playback else {
             // The join screen asks what the friend is watching before any player exists — that is
             // the whole content of the screen the viewer decides on. Tell the screen now and keep
@@ -715,6 +727,50 @@ struct TogetherJoinTarget: Equatable {
             Task { try? await playback.togetherOpen(item); playback.togetherPlay() }
         case .state, .ping, .pong, .chat, .reaction, .voice, .bye: break
         }
+    }
+
+    /// What the friend did while the invitation was being read, folded into the greeting that
+    /// will be applied when it is accepted.
+    ///
+    /// A state, not a queue: a pause and then a jump is a paused picture at the new place, and
+    /// replaying each in turn would move a player the viewer never agreed to lend. Their last
+    /// report is forgotten with it — it describes where they were before this, and the next one
+    /// describes where they are after. Nothing said before the greeting itself changes it: the
+    /// host greets again on every greeting of this side's, and a fresh greeting already says
+    /// what an older pause did.
+    private func stash(_ message: TogetherMessage) {
+        report = nil
+        guard var greeting = pendingGreeting, message.seq > greeting.seq else {
+            TogetherLog.write("\(message.t) seq=\(message.seq) on the join screen, before a greeting; dropped")
+            return
+        }
+        switch message.t {
+        case .play:
+            greeting.playing = true
+            greeting.positionMs = message.positionMs ?? greeting.positionMs
+        case .pause:
+            greeting.playing = false
+            greeting.positionMs = message.positionMs ?? greeting.positionMs
+        case .seek:
+            greeting.positionMs = message.positionMs ?? greeting.positionMs
+        case .episode:
+            // An episode a friend opened is one they are playing, from its start.
+            greeting.animeId = message.animeId ?? greeting.animeId
+            greeting.episode = message.episode
+            greeting.translationId = message.translationId
+            greeting.positionMs = message.positionMs ?? 0
+            greeting.playing = true
+        default: return
+        }
+        greeting.seq = message.seq
+        pendingGreeting = greeting
+        pendingGreetingAt = now()
+        // The screen names the episode it is about, and that has just changed.
+        if message.t == .episode, let episode = greeting.episode, let animeID = greeting.animeId, var target = joining, target.episode != nil {
+            target.episode = TogetherEpisode(animeID: animeID, episode: episode, translationID: greeting.translationId, positionMs: greeting.positionMs ?? 0)
+            joining = target
+        }
+        TogetherLog.write("\(message.t) seq=\(message.seq) folded into the greeting on the join screen")
     }
 
     /// The friend pressed «выйти». Nobody to hold a seat for.

@@ -310,6 +310,8 @@ import XCTest
             bench.manager.attach(bench.player)
             await bench.manager.join(bench.invitation)
             await bench.settle()
+            // The viewer said yes. Until they do, nothing the friend does reaches the player.
+            bench.manager.acceptJoin()
             return bench
         }
 

@@ -71,9 +71,10 @@ import XCTest
         let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Гость",
                                       transportFactory: { _, _ in transport }, now: { clock.value })
         let invitation = try TogetherInvitation(roomID: "AAAAAAAAAAA", key: Data(repeating: 3, count: 16))
-        // The order the app has: the link is followed first, the player opens after.
+        // The order the app has: the link is followed first, the viewer says yes, the player opens after.
         await manager.join(invitation)
         await settle()
+        manager.acceptJoin()
         manager.attach(player)
         await settle()
 
