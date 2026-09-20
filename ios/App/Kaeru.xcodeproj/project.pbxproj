@@ -7,421 +7,457 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		00D61972107C6D4F47602DFB /* LANConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 874E7695103B421C4FF53887 /* LANConnection.swift */; };
-		030E49A902CE6F9C4306A87B /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8CAE5544E1F2E87999717B43 /* Foundation.framework */; };
-		03CE5A21DB56BE025FD22BAB /* ContinuationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35AF5A163422A3BC1BA97617 /* ContinuationTests.swift */; };
-		085FE0D772814D532EDF095D /* TogetherManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B1C84D4F62D4C18329CFBE6 /* TogetherManager.swift */; };
-		0D31ACBA42CA37D6576D9818 /* PairingProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07D557439DC6B7532213536B /* PairingProtocolTests.swift */; };
-		0D7AC0B0BC5FB729E2978555 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A38D2F053BB23D58F14E51 /* SearchView.swift */; };
-		0DFA852987FB316ED2E9D9C8 /* ShelfScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = B71075DD091E6AD8013A8254 /* ShelfScreen.swift */; };
-		0EA310D42E75397ACAD5A696 /* AppearanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89E3A221797D8E8683FB2DDA /* AppearanceTests.swift */; };
-		0FF562A1A67431A151CDE77B /* DomainTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30E5771150FBC9D6131CE30F /* DomainTests.swift */; };
-		100F78FB4D8DA03EF9EBDD3B /* ReleaseNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 061B706C28B5666FB4DE124B /* ReleaseNotes.swift */; };
-		118F1AC49988FFD635DB4476 /* VoiceRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C9A584650A4DA5A0115A630 /* VoiceRecorder.swift */; };
-		13E0E6C8FC00348EF8025B3A /* TogetherProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D660A45FD7C2CE462873DE62 /* TogetherProtocolTests.swift */; };
-		1AD7D6AA7D311AC459FD551E /* DevicePairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8693DB5FE7F0963E7C0583C2 /* DevicePairingView.swift */; };
-		1CC447CD0F37BDFCA8AD601A /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4548257A2788918F1AD83AF8 /* HomeView.swift */; };
-		1D90FB2FB49DBECFAD0313C7 /* UpdatesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 629E5203C34F8CD8943F1A5B /* UpdatesView.swift */; };
-		20919EEFF42A9075ABA88B6A /* DownloadsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7854F639DA790BAF8B417E48 /* DownloadsView.swift */; };
-		232AD080D1D5A624974B503E /* TogetherView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56D67C8C32C059C77A2D3FF0 /* TogetherView.swift */; };
-		240194EC5E66775D04A05309 /* MoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE858B76FBA450EF9A03989F /* MoreView.swift */; };
-		283731EA7DAB5490A554589A /* TogetherOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65F5A29C0C54B25F68EA9861 /* TogetherOverlay.swift */; };
-		2BF9E1B0FE69E68505C73A90 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8CAE5544E1F2E87999717B43 /* Foundation.framework */; };
-		2D9DE65B34DB781203AB36B6 /* PlayerGestures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 259F8D27F4B75848C7697DF5 /* PlayerGestures.swift */; };
-		2DF995F88D1D498A5A3E79A0 /* UpdateVersionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D5207E27C4DEA04202EC57B /* UpdateVersionTests.swift */; };
-		2E368086B7177ABAA6A55DD6 /* VoiceButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = E53EA73171A878288C976925 /* VoiceButton.swift */; };
-		2ED03A7EA02CEE0AD003CC72 /* Preferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3AAD19067FEF5CA572CD096 /* Preferences.swift */; };
-		34D4FA01FC68B8D031412D7E /* TogetherCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC26EDC26411A1CCBF33D1C7 /* TogetherCopy.swift */; };
-		38DDEE4A47DD7E397999A9E5 /* PlaybackModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 534DD850D7A6F5F612844D7B /* PlaybackModel.swift */; };
-		39D4B1DD580279DFA9BF3E40 /* KeychainTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 243D178C4A728EE61D1299EA /* KeychainTests.swift */; };
-		3A0BC880817C4BA109F5D004 /* CastPlaybackState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24183CE60F731B35A1E37B32 /* CastPlaybackState.swift */; };
-		4150E89F22BC4E18374A2329 /* CatalogPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2575D2BF634EE0B029E556E1 /* CatalogPresentation.swift */; };
-		41E38C56417CBD54E30B0713 /* NativePlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90F24BE6C6FAB050DF6CF4F7 /* NativePlayer.swift */; };
-		4252D44955D4B1709FA56CAA /* ApplicationRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 587A7CB690C977C79BD69E40 /* ApplicationRuntime.swift */; };
-		44342BF04BC7B691ED73BCDA /* UpdateRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C75F37063E5A48D5A196BF6 /* UpdateRepository.swift */; };
-		483B2E616104DBDF03655FCB /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C96E1B699F862B2AF09A2D4B /* QRScannerView.swift */; };
-		4B4E9F489530BBDC2C24ACE4 /* TogetherManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FC8A9FCE81AAEE7B9F9EF36 /* TogetherManagerTests.swift */; };
-		4BEA14436C1635040DC8C725 /* TogetherSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D846BBE94FEC4E0937876835 /* TogetherSyncTests.swift */; };
-		4C29C5BD1EA421BDD9D4F109 /* AppModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64224F1F405B992244A8E17E /* AppModelTests.swift */; };
-		4CEC705F7CFEED8A9DCC5F7B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22D380C979BC0DF99D6047B4 /* SettingsView.swift */; };
-		4FB8B936F598B0DD2180B8EA /* UpdateCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9084E7096BD4E816CB4F858 /* UpdateCopy.swift */; };
-		5051FD209E75DACDEBB2FAAE /* GoogleCast.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6DA0CB31B242770ABD48BBBB /* GoogleCast.xcframework */; };
-		50F0FB0BB0B41D9C3C30A6DA /* CastManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDF44C50E7389D3BE44FCB42 /* CastManager.swift */; };
-		54065BADBEF9FCFE04EB68F1 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CFD25EFD1A8BAA44F83367E /* RootView.swift */; };
-		54CE8A6FB1E6665CC021F6BE /* GitHubReleases.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59A8D4EC0CCE7584EFA50145 /* GitHubReleases.swift */; };
-		585599319874FA3991C129B1 /* OfflineCoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E132C0A279CDE6C346D5C55 /* OfflineCoreTests.swift */; };
-		58E92CE994D66EA431E0F184 /* ContinueTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B384DD6538FC7DE79A3A05F5 /* ContinueTarget.swift */; };
-		5D599F683F12DA72175C25F9 /* ProgressStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA4EE32CF900AF79B99C6C0 /* ProgressStoreTests.swift */; };
-		601BC79666F7DEFB2B89D84B /* TogetherPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8DCBA9A74769DFAC0FF9887 /* TogetherPolicy.swift */; };
-		64985B8ECF8B89642F7FBE1D /* TogetherReconnect.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DF3E5C7C8FCA8B94ABD507F /* TogetherReconnect.swift */; };
-		656FF5808AD7D79134B7A413 /* DeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E61E72E2D335299D7976C04 /* DeepLink.swift */; };
-		70F375FD97996E6759B1461D /* Version.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF1DECD57679B905342D4EC /* Version.swift */; };
-		71CEA71A0EC20A8DC1DCEC17 /* PlaybackTogetherAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 131284E4C470DDB77F3C9025 /* PlaybackTogetherAdapter.swift */; };
-		72168B56EF3E0769024DCE25 /* DownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E645EBC8C080D38961B39E04 /* DownloadManager.swift */; };
-		77FDB43580C4B982207DAB67 /* TogetherInvitation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E12362EE78600367A8CE7F41 /* TogetherInvitation.swift */; };
-		7C8F97DD926059FB04152037 /* TVPairingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3C5308CE694A4825E6C088A /* TVPairingClient.swift */; };
-		7CD912EB07D3AF02A073F9CD /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C3AF14AD142C1A82839A7F35 /* Assets.xcassets */; };
-		7E1C29AA497F35D70B3A3B59 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4038402A6ECDD941FB290BD0 /* Models.swift */; };
-		7E6C571E7D6B045AFD5206C9 /* PlayerScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = F018AAF3066CA77C39580227 /* PlayerScreen.swift */; };
-		7F616F4B362376D28290377B /* UpdateModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A81D8CBD25AB8D67CC8100D4 /* UpdateModelTests.swift */; };
-		80DDDFBC63249C800655E176 /* PlaybackPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68C3CF5112DDC3F28E0EB280 /* PlaybackPolicy.swift */; };
-		83E32D4E49E7A659E47A374B /* UpdateModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F7F5F859B9881F6598EF5A1 /* UpdateModels.swift */; };
-		85B11FEF0A2D20A93F19AFFA /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0B7B47287C165343BA9E8A /* LibraryView.swift */; };
-		869563D041FC5AC9FDFFB024 /* UpdateRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAE1311FA8CC838C49F8E05D /* UpdateRepositoryTests.swift */; };
-		8CB450896D2E44A6DE47593D /* KaeruApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C80987602FA062901DEC346 /* KaeruApp.swift */; };
-		942C6D34A3DA0A2B794E97B6 /* OfflineCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52675A403682822A3AFF1BE1 /* OfflineCatalog.swift */; };
-		9634D676570DBE35D68FED6B /* ServiceFailureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5266C9B752CF4CD34EE92470 /* ServiceFailureTests.swift */; };
-		96B631CD08567DA626D5093E /* CatalogComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BA0A91BC1AB119AD8909D63 /* CatalogComponents.swift */; };
-		9D7A2E7D2A789EFC02F12438 /* PairingCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C060B21D34B2A214F46E19D2 /* PairingCoordinator.swift */; };
-		9E49F8ED8CBB2F76200C9138 /* DetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D635AFC402FCC738E347A19 /* DetailView.swift */; };
-		A11351DE12AAACD83D37098F /* DownloadedShelf.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FAD2E568400AA7DF7977FB1 /* DownloadedShelf.swift */; };
-		A13B6A1524879E7AAD98B7C7 /* TogetherLANTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E34153D8045740B4B129CD47 /* TogetherLANTransport.swift */; };
-		A257FE7422146820FFCC5738 /* PlayerGestureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDE45559133F765851F21F46 /* PlayerGestureTests.swift */; };
-		A323B13C91AB719847AEC0E1 /* NavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B2A8D14ED5F24C22780F7E3 /* NavigationTests.swift */; };
-		A792C7A7FEDBEEF67A962B6F /* PairingProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22A7BA0D0AD2C9B800242E90 /* PairingProtocol.swift */; };
-		A953F2CC761C3C3DDE78D462 /* GoogleCastTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3DD6D20BF3B0F9901DC0BFA /* GoogleCastTransport.swift */; };
-		AB3D4C19AFB4189B1CC0AC90 /* PairingCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5780184A47ED759B2974AB10 /* PairingCoordinatorTests.swift */; };
-		ABFDF25E625235925BC656CC /* Palette.swift in Sources */ = {isa = PBXBuildFile; fileRef = D84B7B1EFC3939B55B537582 /* Palette.swift */; };
-		B011B97CA1C20B38A3C76529 /* UpdateModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08EE23B1DAED2DA7961000A0 /* UpdateModel.swift */; };
-		B16D83453616074710D4BBB6 /* CastCoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FCF4628601850FCC1CB3F28 /* CastCoreTests.swift */; };
-		B4DFA800E99B7B4ABABDBE20 /* CastManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 296D4828BF0BD1ED6C3F6C66 /* CastManagerTests.swift */; };
-		B8C1260775AB9E898B85849C /* TogetherPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC68AE78A1CD534AD3DEA1E8 /* TogetherPlayback.swift */; };
-		BD5C13BC32E83205AA41FF64 /* BackgroundTransfers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16B4DE8443519E3D53CBC0E7 /* BackgroundTransfers.swift */; };
-		BFCC48AA37D31F25C45121DD /* PlaybackMediaControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 077915EB87155602AD33D06A /* PlaybackMediaControls.swift */; };
-		C5314E412272850189803539 /* AniSkipClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF250EC9FB4BC28A68C7A98C /* AniSkipClient.swift */; };
-		C64B286917C3DEFE8A6BCEED /* Configuration.plist in Resources */ = {isa = PBXBuildFile; fileRef = F63B28EEACEA5F6ADFAC6D0A /* Configuration.plist */; };
-		CC1BCE4FBD237E313192A70E /* PlaybackParityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC7F7B97D3D71BB4DE9B2AA1 /* PlaybackParityTests.swift */; };
-		CD226D2357B04C3AE9A5C44A /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8CAE5544E1F2E87999717B43 /* Foundation.framework */; };
-		D0020FC67D0EA51E8455B366 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 972E687F5D5F713D7B1DB13A /* AppModel.swift */; };
-		D3BC3C8C3A4E852DBD603384 /* HomeHero.swift in Sources */ = {isa = PBXBuildFile; fileRef = 693F3C5CA37F084670D4EB99 /* HomeHero.swift */; };
-		D67BF3A424311D7FC00FE22F /* DeepLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 132E07299C51D33B1BB49E90 /* DeepLinkTests.swift */; };
-		D9A27DB2E6B280CB203221C2 /* DownloadedShelfTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8C324904253D57DDC2BEE34 /* DownloadedShelfTests.swift */; };
-		DBA9EAA3DEDD311DFB530000 /* LiveServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA30E5F520EFBC8D2D02624 /* LiveServiceTests.swift */; };
-		DBE8C31B9593441794C7F75D /* Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40315D2FF5F101A56654AD1C /* Service.swift */; };
-		DC6B3959CB0334D003FE83A7 /* TogetherConversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30D37E532D7F51DDC2E2D1B3 /* TogetherConversation.swift */; };
-		E14391EEE1EEFF300F617E72 /* TogetherReconnectTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C7C9DC1526C71C30FE2EDBD /* TogetherReconnectTests.swift */; };
-		E29AD6E55FCC32D8B6C24479 /* TogetherCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9029CDA3B5A7A019717B0A1 /* TogetherCodec.swift */; };
-		E52929CE66E53A865BD9EE0F /* EpisodeReleaseState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64691DB9CDEB3397B613836F /* EpisodeReleaseState.swift */; };
-		E627B61BB75CA9D88B164880 /* CastViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70E3280847A43EA7F1A03175 /* CastViews.swift */; };
-		EB5844BF88D34B5A5C1635EC /* Authentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DFF6A36C348CBC082781839 /* Authentication.swift */; };
-		EC77DBF8A585B26BA6FE9E36 /* SeamTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7017DE96ED7215B842EA7708 /* SeamTests.swift */; };
-		EE258AD7CF0B04E9C375DAE4 /* EpisodeNotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D4E47477AA4233E1E74A9B2 /* EpisodeNotificationService.swift */; };
-		EE8C7F7CA5F581246B80C6F3 /* TogetherConversationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE5A9F9B9166D7B5A54EAC68 /* TogetherConversationTests.swift */; };
-		F2393E85001FCE7DF9C02D26 /* EpisodeNotificationPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD6908D3CE608B20BCE4631 /* EpisodeNotificationPlan.swift */; };
-		F3651AC0EF3E30662AB5CC57 /* TogetherRelayTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79DC13D82EFDAA8E66B7AD99 /* TogetherRelayTransport.swift */; };
-		F3A8FFF5E4FC2D5C5407D5F3 /* LocalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0FF2E0948677ED43E49BCAF /* LocalStore.swift */; };
-		FEBC2ED4F47D6A2DB3A49D1E /* ReleaseNotesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 811486D1CF4E885CF635345D /* ReleaseNotesTests.swift */; };
+		0140C85D061DA3DA4B80206A /* PlayerGestureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1BDDFA9E52847C30A6F0B58 /* PlayerGestureTests.swift */; };
+		031EED271EC2EAE9FAE875DA /* UpdatesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22B93033C144343028EC85AF /* UpdatesView.swift */; };
+		05653EE72C46B04EF7AA9C6E /* AniSkipClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45B0CE2A9ABFCE520A37BF26 /* AniSkipClient.swift */; };
+		0665324B91E9648631A36D7C /* PlayerGestures.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC10AD40125CD71990B110F5 /* PlayerGestures.swift */; };
+		0731AB5868AD99A897BE645E /* ApplicationRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = B442900DFA79CAB2099D9608 /* ApplicationRuntime.swift */; };
+		0B1D5D19C69BEA297CEE6C0A /* TogetherManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DC632E0D26B39C9F05D00FD /* TogetherManager.swift */; };
+		0C451A853B2B0D24C37ADB40 /* TogetherSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D21A693D14E7B46679724710 /* TogetherSyncTests.swift */; };
+		0D6A9B96F9266EA9F1AC955F /* TogetherInvitation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C87D121CE790BEB2568EE17 /* TogetherInvitation.swift */; };
+		1014E39765FA42B146AE46F5 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06EC380076392D24AAE3F740 /* HomeView.swift */; };
+		10361DD52202644CE92A78BE /* AppModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2ABF76CC1C8963CE5A4CD89 /* AppModelTests.swift */; };
+		189B1CB7056D70C086D1C525 /* PlaybackTogetherAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 350C7D217C57CB6A1B481E7F /* PlaybackTogetherAdapter.swift */; };
+		1A9B13C1D2E0B9FEEDADA922 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6275BF2817EF142CE4E2A7DC /* Foundation.framework */; };
+		1AF80ADB1C6AD2CBA4D6FF86 /* DownloadedShelfTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8EFEA32F66E6FE31A2495E9 /* DownloadedShelfTests.swift */; };
+		1DDD7473F6EA7F8C5543A185 /* UpdateRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ACBE18DC2E04386A536E2F3 /* UpdateRepositoryTests.swift */; };
+		21689180D87EE218D826F52A /* UpdateModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E08867EBA8C76113E3FA3F /* UpdateModel.swift */; };
+		21DB48903DE65DFBC820B1AA /* TogetherManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 854C6AA5CB57440275763D53 /* TogetherManagerTests.swift */; };
+		22DCE4F58FB43838D4B30673 /* VoiceButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = A65DC81DF61BA9F4D90F8577 /* VoiceButton.swift */; };
+		249BC86C7AE48B0E70D932E8 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D0D139415AD09BE6E623CA9 /* LibraryView.swift */; };
+		2B3D04C93A2F87D8542A94B6 /* PairingProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCF1AC12A83DC6AAAD6EEDB6 /* PairingProtocolTests.swift */; };
+		2BC3103B0DED6277B1A250F0 /* MoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF542D28D356645717C57369 /* MoreView.swift */; };
+		2E4B76F29344B3094327D5C2 /* PlaybackParityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AC4234477891137A8D5679B /* PlaybackParityTests.swift */; };
+		30C93E9F130048FA55A1AFB5 /* HomeHero.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86DB62B2355D2CE29EC17CB2 /* HomeHero.swift */; };
+		31BBFF5F84F63A3DABA8983B /* LocalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA823E3B4671C97C6177B9AA /* LocalStore.swift */; };
+		31CC4A03ACF4FEEECD7A57BC /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A148D54A9DCB549CCFA40F8 /* Models.swift */; };
+		3238A39B702C02A569E9A24A /* ContinueTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3E3D0E2304DC06719389191 /* ContinueTarget.swift */; };
+		3330A53222B8AF3C8F1B52B0 /* Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = E68BF404DDF461F12BCEEF18 /* Service.swift */; };
+		3583C0087F00D6608EC835A9 /* TVPairingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F80648F4F7C83629A4108E3 /* TVPairingClient.swift */; };
+		37D21127397ABF6FE29BDB8A /* TogetherCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5151FA517AC38E448362A793 /* TogetherCopy.swift */; };
+		3A8AA647223BCA4A8B07541F /* DownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C9A7ED6921C82C09BC7C50C /* DownloadManager.swift */; };
+		3F7813BB3966B0515A4497F4 /* EpisodeNotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFAA14B13E28B254472B8960 /* EpisodeNotificationService.swift */; };
+		3FE04D93845AA94CE7799C0A /* UpdateCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 631451E3E396595D964A1457 /* UpdateCopy.swift */; };
+		48A8E82FCC441CAB06B8E54B /* TogetherReconnect.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9332B7C48AF58E4CBA32E4D9 /* TogetherReconnect.swift */; };
+		53839B2FC13BC8EE0B380451 /* DomainTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B47C9A9CBA1B02291F5CC6A9 /* DomainTests.swift */; };
+		5728B29D7A221C9E8B6D216A /* PlaybackPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F162BBA89BC4C04C2541E85 /* PlaybackPolicy.swift */; };
+		5A9E5D9F77887243A927B3EB /* TogetherLANTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32A3D675A2977BBBFB380037 /* TogetherLANTransport.swift */; };
+		5BCABE8F6FC40D4BFD1C399F /* CatalogPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1943041FF8C26702A8A328C0 /* CatalogPresentation.swift */; };
+		5CA3AFF4895C37D17328D2B4 /* EpisodeReleaseState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C7D64FD5940F767464C5402 /* EpisodeReleaseState.swift */; };
+		5E57DE9870FA93239AC99759 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68E0FA4D481A7F3B30E73BAA /* RootView.swift */; };
+		5E68F63DBE80024CD27F9844 /* CastCoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C645EB1B8333AC3E16931218 /* CastCoreTests.swift */; };
+		5ED4B7213C09084FDF3F56C4 /* Version.swift in Sources */ = {isa = PBXBuildFile; fileRef = 706183FA5C573FAF20B1F90F /* Version.swift */; };
+		5EFEC6218F5BCB42E774F360 /* Preferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AE8F53FEE0E03C27E7E3372 /* Preferences.swift */; };
+		5F2FC29F47C2899C753CAC90 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6275BF2817EF142CE4E2A7DC /* Foundation.framework */; };
+		60C9BE74090B1BA0D5F790FA /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F22CD8814314566F8DB84CF /* SettingsView.swift */; };
+		65802AA912294DBA89508C4D /* Configuration.plist in Resources */ = {isa = PBXBuildFile; fileRef = FE9CF5A3135285D526763315 /* Configuration.plist */; };
+		6B2836B11D5E8F1053A3EF0C /* ShelfScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9AEBB94FC83C0ACEF07D253 /* ShelfScreen.swift */; };
+		6E94991EBF4F943CC5C0E4A3 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 834035A780A7059852388915 /* SearchView.swift */; };
+		700B9FEBF0CEE72EBD9FBE5C /* PlayerScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AB012A0DFB485AAE9A614C6 /* PlayerScreen.swift */; };
+		7270954081A613C27F057FF2 /* TogetherOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = E062BE61E1C327580501088E /* TogetherOverlay.swift */; };
+		7487D08D208C48F1762A31D9 /* CastViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43DEE3BCABEAD057F9AA5780 /* CastViews.swift */; };
+		75B22ED06168473E4ED1FC23 /* SeamTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73F998BC728BA8169C9A24A2 /* SeamTests.swift */; };
+		771DD90D494A7ACA3AB888C4 /* DevicePairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB76D2A1A0ADD881673F9ECD /* DevicePairingView.swift */; };
+		7F5948A403E5792BAA7C7A18 /* Palette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13314EA5ACCB0C1F7131D453 /* Palette.swift */; };
+		8293D85D93F1DFCB5EA8722D /* LiveServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FC26160DC17356173C649D6 /* LiveServiceTests.swift */; };
+		82B2A22CBB1F1D8BB6AD3D89 /* TogetherView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8724A902ADDF045295F89FD4 /* TogetherView.swift */; };
+		840411544264BF489B8417CE /* ReleaseNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 413C12BB5265B0AAED7F2B2D /* ReleaseNotes.swift */; };
+		863AA162C4CD6FF2656DA83D /* DeepLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C550DCF995B9C3FA2D4A3AF9 /* DeepLinkTests.swift */; };
+		877154F80EBE7CD66B8FB1D3 /* TogetherProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 356FE8AD4EBB7DBBA18ADBEA /* TogetherProtocolTests.swift */; };
+		87DB6019FCB68D7B187BC7F5 /* UpdateModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C58B9DD8518E8246AF603F3F /* UpdateModelTests.swift */; };
+		9909372DA22E4CA86FA0F182 /* TogetherReconnectTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 806FB25171C6FD50F1DEEE95 /* TogetherReconnectTests.swift */; };
+		9AAD996C3319DF1999DAE299 /* GitHubReleases.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9DB84CE7BAF2C6DE3224B79 /* GitHubReleases.swift */; };
+		9DB52E50581E93AA6D58CC87 /* GoogleCastTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB6A2DD010A28C6B858096CB /* GoogleCastTransport.swift */; };
+		9FC43DA7A4194CF0E31A199F /* ContinuationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C2B00631597937507CC2B89 /* ContinuationTests.swift */; };
+		A1447C85EA8878F33C6154C3 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E163A2438F61FC2579B26CBC /* Assets.xcassets */; };
+		A3EBE644386649B263838991 /* TogetherRelayTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDB6F82D5886F2C283D3FB7A /* TogetherRelayTransport.swift */; };
+		A6E2F07E57AAEC0105F1BC88 /* NativePlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8C815D911F55E2AE5A6A209 /* NativePlayer.swift */; };
+		A7647FC660EC741B722F85C2 /* TogetherPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D51661ED7CD1ACDA87129410 /* TogetherPolicy.swift */; };
+		AA255DAF92512645EE9D6D3C /* CastManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAFF224ABD675BAA8E5B34BD /* CastManagerTests.swift */; };
+		AA52DCFD5073CDF855B65D28 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DA52714112A6A1DF286391D /* QRScannerView.swift */; };
+		B1D43DED452818A880433ABC /* PlaybackModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A183BCBDB0508D1BCD6C3A2B /* PlaybackModel.swift */; };
+		B388AE63580F646ECBEA2BB6 /* TogetherCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = D83819552D5319665B4B6A42 /* TogetherCodec.swift */; };
+		B7D8A3042E179EDB1D67BACE /* ServiceFailureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09C0B305ED484EB2468080C0 /* ServiceFailureTests.swift */; };
+		B7F19E2148D2F6B68379807A /* ProgressStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 639B48337269148CCDFB13D7 /* ProgressStoreTests.swift */; };
+		BC149429B2E307F085C5EDCC /* DownloadsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7508BFDA2D6AB2D029F476BB /* DownloadsView.swift */; };
+		BDE21108AE5CB1C98CC3080C /* DownloadedShelf.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03207C944AB55D7D633A204B /* DownloadedShelf.swift */; };
+		BF08733764AE297515DFACDC /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E3FE795059FFDC5DA0FD8F5 /* AppModel.swift */; };
+		C4D294A9D69F8B11978ADF90 /* KeychainTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E576F323863A85184809867 /* KeychainTests.swift */; };
+		C94E6AAF01CAA927AC0A44B5 /* DeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = B536A3E2AC8C6B267DBD8F78 /* DeepLink.swift */; };
+		D001A7166A0B908B8F13E351 /* TogetherConversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDF4D2297C86121867D29A1E /* TogetherConversation.swift */; };
+		D0DB224C3E69479ED7B91FEB /* LANConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 146B6CE68D5CE16D217D047B /* LANConnection.swift */; };
+		D16AC50942C7C0641867A22E /* TogetherPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF90F1C415C759466E30570E /* TogetherPlayback.swift */; };
+		D1A571DB6B8CEE6AC72F704A /* EpisodeNotificationPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 165D39A76A9F6BC6E408E3FB /* EpisodeNotificationPlan.swift */; };
+		DC497F7BA66D06D8F794A22E /* UpdateRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0DC86F6B08CEEA76D8F4C37 /* UpdateRepository.swift */; };
+		DD31F2B42C41FE601D223A9A /* PairingCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 107900E9498BC9AA83FC8DDD /* PairingCoordinator.swift */; };
+		E1441B6BC6114BDF2CA2FE60 /* Authentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26013099530462BE1CCB2B7A /* Authentication.swift */; };
+		E1D23803FA61D7B9346F9D6B /* GoogleCast.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 87FB78F7D1E0D736A48EBD71 /* GoogleCast.xcframework */; };
+		E213F1D0D11ABF38B7231DF3 /* NavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A19D887C63B6402808C533D /* NavigationTests.swift */; };
+		E5D591ED6D699A2117407FCC /* KaeruApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0721ED785DB219908AA1177A /* KaeruApp.swift */; };
+		E6B367DC0EF607B887D96758 /* PairingCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD2BE10C833690159A4565B1 /* PairingCoordinatorTests.swift */; };
+		E7A93A6A124BD3DBA8A66FFD /* UpdateModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD8FFCA92ACA0C703555B6F3 /* UpdateModels.swift */; };
+		E88418CB75C4BE3C6F1911C5 /* VoiceRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE5FB6CEA5CC39321DB1B5B5 /* VoiceRecorder.swift */; };
+		ED351516D77C487E50B0D1CE /* CatalogComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C9E6034B7F640165AC9F948 /* CatalogComponents.swift */; };
+		EF973BE90CA0CF9C7B2A4CD3 /* AppearanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE7DB7F8A63C297452CF99D6 /* AppearanceTests.swift */; };
+		EFE126D1D49CBDB7E7B54B81 /* UpdateVersionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A60ECF4A910B0A1216644AF /* UpdateVersionTests.swift */; };
+		F21ADC26C32F2039C590FA34 /* PlaybackMediaControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51657B3FC3070721AC020B6 /* PlaybackMediaControls.swift */; };
+		F5706EF6AF8E544CF5D91262 /* TogetherConversationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0B6C4F7B59152C97C6AA843 /* TogetherConversationTests.swift */; };
+		F9EBD90A487C3CEF2E5E1073 /* BackgroundTransfers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A58DC98BD2B64C49188E9DBC /* BackgroundTransfers.swift */; };
+		FB1E16FB77C1793D5F428B16 /* PairingProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D4091C1EA5B6912987276D7 /* PairingProtocol.swift */; };
+		FB48BD1C191E093BA5FCCEF2 /* CastPlaybackState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ADA51A0B0660911BA8A9056 /* CastPlaybackState.swift */; };
+		FB94B0488960CC98DF194529 /* OfflineCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAEAB650B56467A1B4848F24 /* OfflineCatalog.swift */; };
+		FBC46C830F0541103B91AF52 /* OfflineCoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F82D7132F2D781C5354186D2 /* OfflineCoreTests.swift */; };
+		FC3B4F7520AC963500DFDCC6 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6275BF2817EF142CE4E2A7DC /* Foundation.framework */; };
+		FC661F926BDBA76529C6567D /* ReleaseNotesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92C064C86133AA22792651AF /* ReleaseNotesTests.swift */; };
+		FDB9F1D652BFDC52CAAC0BB5 /* CastManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 452B9DFA1BF9A3EA25A2B7DE /* CastManager.swift */; };
+		FE3FC92FF2B3F90FCD8097D8 /* DetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F521AB978A8C3B2143E0064D /* DetailView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		9D547834A7A8F0A7B96D2EB0 /* PBXContainerItemProxy */ = {
+		6DF5284B8DDB32F7B27EE79E /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = 7A195A2FBB18A26E0EAE74B7 /* Project object */;
+			containerPortal = CD1063AC168629B345804FC8 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = 34F059B01C9B067B36B93DAD;
+			remoteGlobalIDString = FDF8E4B4C5400A364D635538;
 			remoteInfo = Kaeru;
 		};
-		FC8D3FDB45F702F0F007F7CF /* PBXContainerItemProxy */ = {
+		9493A5713EE00E4E86365388 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = 7A195A2FBB18A26E0EAE74B7 /* Project object */;
+			containerPortal = CD1063AC168629B345804FC8 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = 34F059B01C9B067B36B93DAD;
+			remoteGlobalIDString = FDF8E4B4C5400A364D635538;
 			remoteInfo = Kaeru;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		061B706C28B5666FB4DE124B /* ReleaseNotes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ReleaseNotes.swift; path = Update/ReleaseNotes.swift; sourceTree = "<group>"; };
-		077915EB87155602AD33D06A /* PlaybackMediaControls.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PlaybackMediaControls.swift; path = Playback/PlaybackMediaControls.swift; sourceTree = "<group>"; };
-		07D557439DC6B7532213536B /* PairingProtocolTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PairingProtocolTests.swift; path = Tests/KaeruTests/PairingProtocolTests.swift; sourceTree = "<group>"; };
-		08EE23B1DAED2DA7961000A0 /* UpdateModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UpdateModel.swift; path = Update/UpdateModel.swift; sourceTree = "<group>"; };
-		0C9A584650A4DA5A0115A630 /* VoiceRecorder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = VoiceRecorder.swift; path = Together/VoiceRecorder.swift; sourceTree = "<group>"; };
-		0D4E47477AA4233E1E74A9B2 /* EpisodeNotificationService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = EpisodeNotificationService.swift; path = Notifications/EpisodeNotificationService.swift; sourceTree = "<group>"; };
-		131284E4C470DDB77F3C9025 /* PlaybackTogetherAdapter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PlaybackTogetherAdapter.swift; path = Together/PlaybackTogetherAdapter.swift; sourceTree = "<group>"; };
-		132E07299C51D33B1BB49E90 /* DeepLinkTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DeepLinkTests.swift; path = Tests/KaeruTests/DeepLinkTests.swift; sourceTree = "<group>"; };
-		16B4DE8443519E3D53CBC0E7 /* BackgroundTransfers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BackgroundTransfers.swift; path = Offline/BackgroundTransfers.swift; sourceTree = "<group>"; };
-		1A2FE485DEC35704C2C1918C /* Kaeru.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Kaeru.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		1E132C0A279CDE6C346D5C55 /* OfflineCoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OfflineCoreTests.swift; path = Tests/KaeruTests/OfflineCoreTests.swift; sourceTree = "<group>"; };
-		22A7BA0D0AD2C9B800242E90 /* PairingProtocol.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PairingProtocol.swift; path = Device/PairingProtocol.swift; sourceTree = "<group>"; };
-		22D380C979BC0DF99D6047B4 /* SettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SettingsView.swift; path = Features/SettingsView.swift; sourceTree = "<group>"; };
-		24183CE60F731B35A1E37B32 /* CastPlaybackState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CastPlaybackState.swift; path = Cast/CastPlaybackState.swift; sourceTree = "<group>"; };
-		243D178C4A728EE61D1299EA /* KeychainTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = KeychainTests.swift; path = Tests/KaeruTests/KeychainTests.swift; sourceTree = "<group>"; };
-		2575D2BF634EE0B029E556E1 /* CatalogPresentation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CatalogPresentation.swift; path = Features/CatalogPresentation.swift; sourceTree = "<group>"; };
-		259F8D27F4B75848C7697DF5 /* PlayerGestures.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PlayerGestures.swift; path = Playback/PlayerGestures.swift; sourceTree = "<group>"; };
-		296D4828BF0BD1ED6C3F6C66 /* CastManagerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CastManagerTests.swift; path = Tests/KaeruTests/CastManagerTests.swift; sourceTree = "<group>"; };
-		297A4A6A28A05C52A6570A54 /* KaeruUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KaeruUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		2C80987602FA062901DEC346 /* KaeruApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = KaeruApp.swift; path = App/KaeruApp.swift; sourceTree = "<group>"; };
-		2E61E72E2D335299D7976C04 /* DeepLink.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DeepLink.swift; path = Core/DeepLink.swift; sourceTree = "<group>"; };
-		2FAD2E568400AA7DF7977FB1 /* DownloadedShelf.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DownloadedShelf.swift; path = Offline/DownloadedShelf.swift; sourceTree = "<group>"; };
-		30D37E532D7F51DDC2E2D1B3 /* TogetherConversation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherConversation.swift; path = Together/TogetherConversation.swift; sourceTree = "<group>"; };
-		30E5771150FBC9D6131CE30F /* DomainTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DomainTests.swift; path = Tests/KaeruTests/DomainTests.swift; sourceTree = "<group>"; };
-		35AF5A163422A3BC1BA97617 /* ContinuationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ContinuationTests.swift; path = Tests/KaeruTests/ContinuationTests.swift; sourceTree = "<group>"; };
-		3BA0A91BC1AB119AD8909D63 /* CatalogComponents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CatalogComponents.swift; path = Features/CatalogComponents.swift; sourceTree = "<group>"; };
-		3CF1DECD57679B905342D4EC /* Version.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Version.swift; path = Update/Version.swift; sourceTree = "<group>"; };
-		3FA30E5F520EFBC8D2D02624 /* LiveServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = LiveServiceTests.swift; path = Tests/KaeruTests/LiveServiceTests.swift; sourceTree = "<group>"; };
-		40315D2FF5F101A56654AD1C /* Service.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Service.swift; path = Core/Service.swift; sourceTree = "<group>"; };
-		4038402A6ECDD941FB290BD0 /* Models.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Models.swift; path = Core/Models.swift; sourceTree = "<group>"; };
-		4548257A2788918F1AD83AF8 /* HomeView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HomeView.swift; path = Features/HomeView.swift; sourceTree = "<group>"; };
-		4C75F37063E5A48D5A196BF6 /* UpdateRepository.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UpdateRepository.swift; path = Update/UpdateRepository.swift; sourceTree = "<group>"; };
-		4DF3E5C7C8FCA8B94ABD507F /* TogetherReconnect.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherReconnect.swift; path = Together/TogetherReconnect.swift; sourceTree = "<group>"; };
-		5266C9B752CF4CD34EE92470 /* ServiceFailureTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ServiceFailureTests.swift; path = Tests/KaeruTests/ServiceFailureTests.swift; sourceTree = "<group>"; };
-		52675A403682822A3AFF1BE1 /* OfflineCatalog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OfflineCatalog.swift; path = Offline/OfflineCatalog.swift; sourceTree = "<group>"; };
-		534DD850D7A6F5F612844D7B /* PlaybackModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PlaybackModel.swift; path = Playback/PlaybackModel.swift; sourceTree = "<group>"; };
-		56D67C8C32C059C77A2D3FF0 /* TogetherView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherView.swift; path = Features/TogetherView.swift; sourceTree = "<group>"; };
-		5780184A47ED759B2974AB10 /* PairingCoordinatorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PairingCoordinatorTests.swift; path = Tests/KaeruTests/PairingCoordinatorTests.swift; sourceTree = "<group>"; };
-		587A7CB690C977C79BD69E40 /* ApplicationRuntime.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ApplicationRuntime.swift; path = App/ApplicationRuntime.swift; sourceTree = "<group>"; };
-		59A8D4EC0CCE7584EFA50145 /* GitHubReleases.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = GitHubReleases.swift; path = Update/GitHubReleases.swift; sourceTree = "<group>"; };
-		5C7C9DC1526C71C30FE2EDBD /* TogetherReconnectTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherReconnectTests.swift; path = Tests/KaeruTests/TogetherReconnectTests.swift; sourceTree = "<group>"; };
-		629E5203C34F8CD8943F1A5B /* UpdatesView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UpdatesView.swift; path = Features/UpdatesView.swift; sourceTree = "<group>"; };
-		64224F1F405B992244A8E17E /* AppModelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppModelTests.swift; path = Tests/KaeruTests/AppModelTests.swift; sourceTree = "<group>"; };
-		64691DB9CDEB3397B613836F /* EpisodeReleaseState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = EpisodeReleaseState.swift; path = Notifications/EpisodeReleaseState.swift; sourceTree = "<group>"; };
-		65F5A29C0C54B25F68EA9861 /* TogetherOverlay.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherOverlay.swift; path = Features/TogetherOverlay.swift; sourceTree = "<group>"; };
-		68C3CF5112DDC3F28E0EB280 /* PlaybackPolicy.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PlaybackPolicy.swift; path = Playback/PlaybackPolicy.swift; sourceTree = "<group>"; };
-		693F3C5CA37F084670D4EB99 /* HomeHero.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HomeHero.swift; path = Features/HomeHero.swift; sourceTree = "<group>"; };
-		6B1C84D4F62D4C18329CFBE6 /* TogetherManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherManager.swift; path = Together/TogetherManager.swift; sourceTree = "<group>"; };
-		6D5207E27C4DEA04202EC57B /* UpdateVersionTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UpdateVersionTests.swift; path = Tests/KaeruTests/UpdateVersionTests.swift; sourceTree = "<group>"; };
-		6DA0CB31B242770ABD48BBBB /* GoogleCast.xcframework */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcframework; name = GoogleCast.xcframework; path = "Dependencies/GoogleCastSDK-ios-4.8.6_static_xcframework/GoogleCast.xcframework"; sourceTree = "<group>"; };
-		7017DE96ED7215B842EA7708 /* SeamTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SeamTests.swift; path = Tests/UITests/SeamTests.swift; sourceTree = "<group>"; };
-		70E3280847A43EA7F1A03175 /* CastViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CastViews.swift; path = Cast/CastViews.swift; sourceTree = "<group>"; };
-		7854F639DA790BAF8B417E48 /* DownloadsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DownloadsView.swift; path = Features/DownloadsView.swift; sourceTree = "<group>"; };
-		79DC13D82EFDAA8E66B7AD99 /* TogetherRelayTransport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherRelayTransport.swift; path = Together/TogetherRelayTransport.swift; sourceTree = "<group>"; };
-		7B0B7B47287C165343BA9E8A /* LibraryView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = LibraryView.swift; path = Features/LibraryView.swift; sourceTree = "<group>"; };
-		7D635AFC402FCC738E347A19 /* DetailView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DetailView.swift; path = Features/DetailView.swift; sourceTree = "<group>"; };
-		7FC8A9FCE81AAEE7B9F9EF36 /* TogetherManagerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherManagerTests.swift; path = Tests/KaeruTests/TogetherManagerTests.swift; sourceTree = "<group>"; };
-		7FCF4628601850FCC1CB3F28 /* CastCoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CastCoreTests.swift; path = Tests/KaeruTests/CastCoreTests.swift; sourceTree = "<group>"; };
-		811486D1CF4E885CF635345D /* ReleaseNotesTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ReleaseNotesTests.swift; path = Tests/KaeruTests/ReleaseNotesTests.swift; sourceTree = "<group>"; };
-		8693DB5FE7F0963E7C0583C2 /* DevicePairingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DevicePairingView.swift; path = Features/DevicePairingView.swift; sourceTree = "<group>"; };
-		874E7695103B421C4FF53887 /* LANConnection.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = LANConnection.swift; path = Device/LANConnection.swift; sourceTree = "<group>"; };
-		89E3A221797D8E8683FB2DDA /* AppearanceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppearanceTests.swift; path = Tests/KaeruTests/AppearanceTests.swift; sourceTree = "<group>"; };
-		8B2A8D14ED5F24C22780F7E3 /* NavigationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NavigationTests.swift; path = Tests/UITests/NavigationTests.swift; sourceTree = "<group>"; };
-		8CAE5544E1F2E87999717B43 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS14.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
-		8DFF6A36C348CBC082781839 /* Authentication.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Authentication.swift; path = Core/Authentication.swift; sourceTree = "<group>"; };
-		90F24BE6C6FAB050DF6CF4F7 /* NativePlayer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NativePlayer.swift; path = Playback/NativePlayer.swift; sourceTree = "<group>"; };
-		972E687F5D5F713D7B1DB13A /* AppModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppModel.swift; path = Core/AppModel.swift; sourceTree = "<group>"; };
-		9CFD25EFD1A8BAA44F83367E /* RootView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RootView.swift; path = Features/RootView.swift; sourceTree = "<group>"; };
-		9F7F5F859B9881F6598EF5A1 /* UpdateModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UpdateModels.swift; path = Update/UpdateModels.swift; sourceTree = "<group>"; };
-		A3C5308CE694A4825E6C088A /* TVPairingClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TVPairingClient.swift; path = Device/TVPairingClient.swift; sourceTree = "<group>"; };
-		A81D8CBD25AB8D67CC8100D4 /* UpdateModelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UpdateModelTests.swift; path = Tests/KaeruTests/UpdateModelTests.swift; sourceTree = "<group>"; };
-		AC26EDC26411A1CCBF33D1C7 /* TogetherCopy.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherCopy.swift; path = Together/TogetherCopy.swift; sourceTree = "<group>"; };
-		AC7F7B97D3D71BB4DE9B2AA1 /* PlaybackParityTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PlaybackParityTests.swift; path = Tests/KaeruTests/PlaybackParityTests.swift; sourceTree = "<group>"; };
-		B384DD6538FC7DE79A3A05F5 /* ContinueTarget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ContinueTarget.swift; path = Core/ContinueTarget.swift; sourceTree = "<group>"; };
-		B6C6D81B2F02BF0E5925B244 /* KaeruTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KaeruTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		B71075DD091E6AD8013A8254 /* ShelfScreen.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ShelfScreen.swift; path = Features/ShelfScreen.swift; sourceTree = "<group>"; };
-		B8DCBA9A74769DFAC0FF9887 /* TogetherPolicy.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherPolicy.swift; path = Together/TogetherPolicy.swift; sourceTree = "<group>"; };
-		BC68AE78A1CD534AD3DEA1E8 /* TogetherPlayback.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherPlayback.swift; path = Together/TogetherPlayback.swift; sourceTree = "<group>"; };
-		C060B21D34B2A214F46E19D2 /* PairingCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PairingCoordinator.swift; path = Device/PairingCoordinator.swift; sourceTree = "<group>"; };
-		C3AAD19067FEF5CA572CD096 /* Preferences.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Preferences.swift; path = Core/Preferences.swift; sourceTree = "<group>"; };
-		C3AF14AD142C1A82839A7F35 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = App/Assets.xcassets; sourceTree = "<group>"; };
-		C9029CDA3B5A7A019717B0A1 /* TogetherCodec.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherCodec.swift; path = Together/TogetherCodec.swift; sourceTree = "<group>"; };
-		C96E1B699F862B2AF09A2D4B /* QRScannerView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = QRScannerView.swift; path = Features/QRScannerView.swift; sourceTree = "<group>"; };
-		CDF44C50E7389D3BE44FCB42 /* CastManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CastManager.swift; path = Cast/CastManager.swift; sourceTree = "<group>"; };
-		CE5A9F9B9166D7B5A54EAC68 /* TogetherConversationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherConversationTests.swift; path = Tests/KaeruTests/TogetherConversationTests.swift; sourceTree = "<group>"; };
-		CE858B76FBA450EF9A03989F /* MoreView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MoreView.swift; path = Features/MoreView.swift; sourceTree = "<group>"; };
-		CF250EC9FB4BC28A68C7A98C /* AniSkipClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AniSkipClient.swift; path = Playback/AniSkipClient.swift; sourceTree = "<group>"; };
-		D0FF2E0948677ED43E49BCAF /* LocalStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = LocalStore.swift; path = Core/LocalStore.swift; sourceTree = "<group>"; };
-		D660A45FD7C2CE462873DE62 /* TogetherProtocolTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherProtocolTests.swift; path = Tests/KaeruTests/TogetherProtocolTests.swift; sourceTree = "<group>"; };
-		D846BBE94FEC4E0937876835 /* TogetherSyncTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherSyncTests.swift; path = Tests/KaeruTests/TogetherSyncTests.swift; sourceTree = "<group>"; };
-		D84B7B1EFC3939B55B537582 /* Palette.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Palette.swift; path = Core/Palette.swift; sourceTree = "<group>"; };
-		DDE45559133F765851F21F46 /* PlayerGestureTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PlayerGestureTests.swift; path = Tests/KaeruTests/PlayerGestureTests.swift; sourceTree = "<group>"; };
-		E12362EE78600367A8CE7F41 /* TogetherInvitation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherInvitation.swift; path = Together/TogetherInvitation.swift; sourceTree = "<group>"; };
-		E34153D8045740B4B129CD47 /* TogetherLANTransport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherLANTransport.swift; path = Together/TogetherLANTransport.swift; sourceTree = "<group>"; };
-		E3DD6D20BF3B0F9901DC0BFA /* GoogleCastTransport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = GoogleCastTransport.swift; path = Cast/GoogleCastTransport.swift; sourceTree = "<group>"; };
-		E53EA73171A878288C976925 /* VoiceButton.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = VoiceButton.swift; path = Features/VoiceButton.swift; sourceTree = "<group>"; };
-		E645EBC8C080D38961B39E04 /* DownloadManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DownloadManager.swift; path = Offline/DownloadManager.swift; sourceTree = "<group>"; };
-		E7A38D2F053BB23D58F14E51 /* SearchView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SearchView.swift; path = Features/SearchView.swift; sourceTree = "<group>"; };
-		E9084E7096BD4E816CB4F858 /* UpdateCopy.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UpdateCopy.swift; path = Update/UpdateCopy.swift; sourceTree = "<group>"; };
-		EAD6908D3CE608B20BCE4631 /* EpisodeNotificationPlan.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = EpisodeNotificationPlan.swift; path = Notifications/EpisodeNotificationPlan.swift; sourceTree = "<group>"; };
-		F018AAF3066CA77C39580227 /* PlayerScreen.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PlayerScreen.swift; path = Features/PlayerScreen.swift; sourceTree = "<group>"; };
-		F63B28EEACEA5F6ADFAC6D0A /* Configuration.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; name = Configuration.plist; path = App/Configuration.plist; sourceTree = "<group>"; };
-		F8C324904253D57DDC2BEE34 /* DownloadedShelfTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DownloadedShelfTests.swift; path = Tests/KaeruTests/DownloadedShelfTests.swift; sourceTree = "<group>"; };
-		FAE1311FA8CC838C49F8E05D /* UpdateRepositoryTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UpdateRepositoryTests.swift; path = Tests/KaeruTests/UpdateRepositoryTests.swift; sourceTree = "<group>"; };
-		FEA4EE32CF900AF79B99C6C0 /* ProgressStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProgressStoreTests.swift; path = Tests/KaeruTests/ProgressStoreTests.swift; sourceTree = "<group>"; };
+		03207C944AB55D7D633A204B /* DownloadedShelf.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DownloadedShelf.swift; path = Offline/DownloadedShelf.swift; sourceTree = "<group>"; };
+		06EC380076392D24AAE3F740 /* HomeView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HomeView.swift; path = Features/HomeView.swift; sourceTree = "<group>"; };
+		0721ED785DB219908AA1177A /* KaeruApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = KaeruApp.swift; path = App/KaeruApp.swift; sourceTree = "<group>"; };
+		09C0B305ED484EB2468080C0 /* ServiceFailureTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ServiceFailureTests.swift; path = Tests/KaeruTests/ServiceFailureTests.swift; sourceTree = "<group>"; };
+		0AC4234477891137A8D5679B /* PlaybackParityTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PlaybackParityTests.swift; path = Tests/KaeruTests/PlaybackParityTests.swift; sourceTree = "<group>"; };
+		0C7D64FD5940F767464C5402 /* EpisodeReleaseState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = EpisodeReleaseState.swift; path = Notifications/EpisodeReleaseState.swift; sourceTree = "<group>"; };
+		107900E9498BC9AA83FC8DDD /* PairingCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PairingCoordinator.swift; path = Device/PairingCoordinator.swift; sourceTree = "<group>"; };
+		13314EA5ACCB0C1F7131D453 /* Palette.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Palette.swift; path = Core/Palette.swift; sourceTree = "<group>"; };
+		146B6CE68D5CE16D217D047B /* LANConnection.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = LANConnection.swift; path = Device/LANConnection.swift; sourceTree = "<group>"; };
+		165D39A76A9F6BC6E408E3FB /* EpisodeNotificationPlan.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = EpisodeNotificationPlan.swift; path = Notifications/EpisodeNotificationPlan.swift; sourceTree = "<group>"; };
+		1943041FF8C26702A8A328C0 /* CatalogPresentation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CatalogPresentation.swift; path = Features/CatalogPresentation.swift; sourceTree = "<group>"; };
+		1C9A7ED6921C82C09BC7C50C /* DownloadManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DownloadManager.swift; path = Offline/DownloadManager.swift; sourceTree = "<group>"; };
+		1DA52714112A6A1DF286391D /* QRScannerView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = QRScannerView.swift; path = Features/QRScannerView.swift; sourceTree = "<group>"; };
+		22B93033C144343028EC85AF /* UpdatesView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UpdatesView.swift; path = Features/UpdatesView.swift; sourceTree = "<group>"; };
+		26013099530462BE1CCB2B7A /* Authentication.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Authentication.swift; path = Core/Authentication.swift; sourceTree = "<group>"; };
+		2C87D121CE790BEB2568EE17 /* TogetherInvitation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherInvitation.swift; path = Together/TogetherInvitation.swift; sourceTree = "<group>"; };
+		2F80648F4F7C83629A4108E3 /* TVPairingClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TVPairingClient.swift; path = Device/TVPairingClient.swift; sourceTree = "<group>"; };
+		32A3D675A2977BBBFB380037 /* TogetherLANTransport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherLANTransport.swift; path = Together/TogetherLANTransport.swift; sourceTree = "<group>"; };
+		350C7D217C57CB6A1B481E7F /* PlaybackTogetherAdapter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PlaybackTogetherAdapter.swift; path = Together/PlaybackTogetherAdapter.swift; sourceTree = "<group>"; };
+		356FE8AD4EBB7DBBA18ADBEA /* TogetherProtocolTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherProtocolTests.swift; path = Tests/KaeruTests/TogetherProtocolTests.swift; sourceTree = "<group>"; };
+		3A19D887C63B6402808C533D /* NavigationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NavigationTests.swift; path = Tests/UITests/NavigationTests.swift; sourceTree = "<group>"; };
+		3AE8F53FEE0E03C27E7E3372 /* Preferences.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Preferences.swift; path = Core/Preferences.swift; sourceTree = "<group>"; };
+		3E576F323863A85184809867 /* KeychainTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = KeychainTests.swift; path = Tests/KaeruTests/KeychainTests.swift; sourceTree = "<group>"; };
+		413C12BB5265B0AAED7F2B2D /* ReleaseNotes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ReleaseNotes.swift; path = Update/ReleaseNotes.swift; sourceTree = "<group>"; };
+		43DEE3BCABEAD057F9AA5780 /* CastViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CastViews.swift; path = Cast/CastViews.swift; sourceTree = "<group>"; };
+		452B9DFA1BF9A3EA25A2B7DE /* CastManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CastManager.swift; path = Cast/CastManager.swift; sourceTree = "<group>"; };
+		45B0CE2A9ABFCE520A37BF26 /* AniSkipClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AniSkipClient.swift; path = Playback/AniSkipClient.swift; sourceTree = "<group>"; };
+		4A60ECF4A910B0A1216644AF /* UpdateVersionTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UpdateVersionTests.swift; path = Tests/KaeruTests/UpdateVersionTests.swift; sourceTree = "<group>"; };
+		4DC632E0D26B39C9F05D00FD /* TogetherManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherManager.swift; path = Together/TogetherManager.swift; sourceTree = "<group>"; };
+		4F22CD8814314566F8DB84CF /* SettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SettingsView.swift; path = Features/SettingsView.swift; sourceTree = "<group>"; };
+		5151FA517AC38E448362A793 /* TogetherCopy.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherCopy.swift; path = Together/TogetherCopy.swift; sourceTree = "<group>"; };
+		5F162BBA89BC4C04C2541E85 /* PlaybackPolicy.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PlaybackPolicy.swift; path = Playback/PlaybackPolicy.swift; sourceTree = "<group>"; };
+		5FC26160DC17356173C649D6 /* LiveServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = LiveServiceTests.swift; path = Tests/KaeruTests/LiveServiceTests.swift; sourceTree = "<group>"; };
+		6275BF2817EF142CE4E2A7DC /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS14.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		631451E3E396595D964A1457 /* UpdateCopy.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UpdateCopy.swift; path = Update/UpdateCopy.swift; sourceTree = "<group>"; };
+		639B48337269148CCDFB13D7 /* ProgressStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProgressStoreTests.swift; path = Tests/KaeruTests/ProgressStoreTests.swift; sourceTree = "<group>"; };
+		68E0FA4D481A7F3B30E73BAA /* RootView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RootView.swift; path = Features/RootView.swift; sourceTree = "<group>"; };
+		706183FA5C573FAF20B1F90F /* Version.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Version.swift; path = Update/Version.swift; sourceTree = "<group>"; };
+		73F998BC728BA8169C9A24A2 /* SeamTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SeamTests.swift; path = Tests/UITests/SeamTests.swift; sourceTree = "<group>"; };
+		7508BFDA2D6AB2D029F476BB /* DownloadsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DownloadsView.swift; path = Features/DownloadsView.swift; sourceTree = "<group>"; };
+		7C2B00631597937507CC2B89 /* ContinuationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ContinuationTests.swift; path = Tests/KaeruTests/ContinuationTests.swift; sourceTree = "<group>"; };
+		7C9E6034B7F640165AC9F948 /* CatalogComponents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CatalogComponents.swift; path = Features/CatalogComponents.swift; sourceTree = "<group>"; };
+		806FB25171C6FD50F1DEEE95 /* TogetherReconnectTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherReconnectTests.swift; path = Tests/KaeruTests/TogetherReconnectTests.swift; sourceTree = "<group>"; };
+		818604DF7696F83EACC755C3 /* KaeruUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KaeruUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		834035A780A7059852388915 /* SearchView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SearchView.swift; path = Features/SearchView.swift; sourceTree = "<group>"; };
+		854C6AA5CB57440275763D53 /* TogetherManagerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherManagerTests.swift; path = Tests/KaeruTests/TogetherManagerTests.swift; sourceTree = "<group>"; };
+		86DB62B2355D2CE29EC17CB2 /* HomeHero.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HomeHero.swift; path = Features/HomeHero.swift; sourceTree = "<group>"; };
+		8724A902ADDF045295F89FD4 /* TogetherView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherView.swift; path = Features/TogetherView.swift; sourceTree = "<group>"; };
+		87FB78F7D1E0D736A48EBD71 /* GoogleCast.xcframework */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcframework; name = GoogleCast.xcframework; path = "Dependencies/GoogleCastSDK-ios-4.8.6_static_xcframework/GoogleCast.xcframework"; sourceTree = "<group>"; };
+		8D0D139415AD09BE6E623CA9 /* LibraryView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = LibraryView.swift; path = Features/LibraryView.swift; sourceTree = "<group>"; };
+		8D4091C1EA5B6912987276D7 /* PairingProtocol.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PairingProtocol.swift; path = Device/PairingProtocol.swift; sourceTree = "<group>"; };
+		8E3FE795059FFDC5DA0FD8F5 /* AppModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppModel.swift; path = Core/AppModel.swift; sourceTree = "<group>"; };
+		92C064C86133AA22792651AF /* ReleaseNotesTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ReleaseNotesTests.swift; path = Tests/KaeruTests/ReleaseNotesTests.swift; sourceTree = "<group>"; };
+		9332B7C48AF58E4CBA32E4D9 /* TogetherReconnect.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherReconnect.swift; path = Together/TogetherReconnect.swift; sourceTree = "<group>"; };
+		9A148D54A9DCB549CCFA40F8 /* Models.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Models.swift; path = Core/Models.swift; sourceTree = "<group>"; };
+		9AB012A0DFB485AAE9A614C6 /* PlayerScreen.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PlayerScreen.swift; path = Features/PlayerScreen.swift; sourceTree = "<group>"; };
+		9ACBE18DC2E04386A536E2F3 /* UpdateRepositoryTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UpdateRepositoryTests.swift; path = Tests/KaeruTests/UpdateRepositoryTests.swift; sourceTree = "<group>"; };
+		9ADA51A0B0660911BA8A9056 /* CastPlaybackState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CastPlaybackState.swift; path = Cast/CastPlaybackState.swift; sourceTree = "<group>"; };
+		A183BCBDB0508D1BCD6C3A2B /* PlaybackModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PlaybackModel.swift; path = Playback/PlaybackModel.swift; sourceTree = "<group>"; };
+		A2ABF76CC1C8963CE5A4CD89 /* AppModelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppModelTests.swift; path = Tests/KaeruTests/AppModelTests.swift; sourceTree = "<group>"; };
+		A51657B3FC3070721AC020B6 /* PlaybackMediaControls.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PlaybackMediaControls.swift; path = Playback/PlaybackMediaControls.swift; sourceTree = "<group>"; };
+		A58DC98BD2B64C49188E9DBC /* BackgroundTransfers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BackgroundTransfers.swift; path = Offline/BackgroundTransfers.swift; sourceTree = "<group>"; };
+		A65DC81DF61BA9F4D90F8577 /* VoiceButton.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = VoiceButton.swift; path = Features/VoiceButton.swift; sourceTree = "<group>"; };
+		A7E08867EBA8C76113E3FA3F /* UpdateModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UpdateModel.swift; path = Update/UpdateModel.swift; sourceTree = "<group>"; };
+		A9AEBB94FC83C0ACEF07D253 /* ShelfScreen.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ShelfScreen.swift; path = Features/ShelfScreen.swift; sourceTree = "<group>"; };
+		AC10AD40125CD71990B110F5 /* PlayerGestures.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PlayerGestures.swift; path = Playback/PlayerGestures.swift; sourceTree = "<group>"; };
+		B442900DFA79CAB2099D9608 /* ApplicationRuntime.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ApplicationRuntime.swift; path = App/ApplicationRuntime.swift; sourceTree = "<group>"; };
+		B47C9A9CBA1B02291F5CC6A9 /* DomainTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DomainTests.swift; path = Tests/KaeruTests/DomainTests.swift; sourceTree = "<group>"; };
+		B536A3E2AC8C6B267DBD8F78 /* DeepLink.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DeepLink.swift; path = Core/DeepLink.swift; sourceTree = "<group>"; };
+		BA823E3B4671C97C6177B9AA /* LocalStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = LocalStore.swift; path = Core/LocalStore.swift; sourceTree = "<group>"; };
+		BCF1AC12A83DC6AAAD6EEDB6 /* PairingProtocolTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PairingProtocolTests.swift; path = Tests/KaeruTests/PairingProtocolTests.swift; sourceTree = "<group>"; };
+		BD2BE10C833690159A4565B1 /* PairingCoordinatorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PairingCoordinatorTests.swift; path = Tests/KaeruTests/PairingCoordinatorTests.swift; sourceTree = "<group>"; };
+		BD8FFCA92ACA0C703555B6F3 /* UpdateModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UpdateModels.swift; path = Update/UpdateModels.swift; sourceTree = "<group>"; };
+		BE7DB7F8A63C297452CF99D6 /* AppearanceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppearanceTests.swift; path = Tests/KaeruTests/AppearanceTests.swift; sourceTree = "<group>"; };
+		C3E3D0E2304DC06719389191 /* ContinueTarget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ContinueTarget.swift; path = Core/ContinueTarget.swift; sourceTree = "<group>"; };
+		C550DCF995B9C3FA2D4A3AF9 /* DeepLinkTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DeepLinkTests.swift; path = Tests/KaeruTests/DeepLinkTests.swift; sourceTree = "<group>"; };
+		C58B9DD8518E8246AF603F3F /* UpdateModelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UpdateModelTests.swift; path = Tests/KaeruTests/UpdateModelTests.swift; sourceTree = "<group>"; };
+		C645EB1B8333AC3E16931218 /* CastCoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CastCoreTests.swift; path = Tests/KaeruTests/CastCoreTests.swift; sourceTree = "<group>"; };
+		C9DB84CE7BAF2C6DE3224B79 /* GitHubReleases.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = GitHubReleases.swift; path = Update/GitHubReleases.swift; sourceTree = "<group>"; };
+		CB76D2A1A0ADD881673F9ECD /* DevicePairingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DevicePairingView.swift; path = Features/DevicePairingView.swift; sourceTree = "<group>"; };
+		D0DC86F6B08CEEA76D8F4C37 /* UpdateRepository.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UpdateRepository.swift; path = Update/UpdateRepository.swift; sourceTree = "<group>"; };
+		D1BDDFA9E52847C30A6F0B58 /* PlayerGestureTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PlayerGestureTests.swift; path = Tests/KaeruTests/PlayerGestureTests.swift; sourceTree = "<group>"; };
+		D21A693D14E7B46679724710 /* TogetherSyncTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherSyncTests.swift; path = Tests/KaeruTests/TogetherSyncTests.swift; sourceTree = "<group>"; };
+		D35F3C332123A656C33FD77B /* Kaeru.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Kaeru.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D51661ED7CD1ACDA87129410 /* TogetherPolicy.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherPolicy.swift; path = Together/TogetherPolicy.swift; sourceTree = "<group>"; };
+		D83819552D5319665B4B6A42 /* TogetherCodec.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherCodec.swift; path = Together/TogetherCodec.swift; sourceTree = "<group>"; };
+		DAEAB650B56467A1B4848F24 /* OfflineCatalog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OfflineCatalog.swift; path = Offline/OfflineCatalog.swift; sourceTree = "<group>"; };
+		DB6A2DD010A28C6B858096CB /* GoogleCastTransport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = GoogleCastTransport.swift; path = Cast/GoogleCastTransport.swift; sourceTree = "<group>"; };
+		DDB6F82D5886F2C283D3FB7A /* TogetherRelayTransport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherRelayTransport.swift; path = Together/TogetherRelayTransport.swift; sourceTree = "<group>"; };
+		DF90F1C415C759466E30570E /* TogetherPlayback.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherPlayback.swift; path = Together/TogetherPlayback.swift; sourceTree = "<group>"; };
+		E062BE61E1C327580501088E /* TogetherOverlay.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherOverlay.swift; path = Features/TogetherOverlay.swift; sourceTree = "<group>"; };
+		E163A2438F61FC2579B26CBC /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = App/Assets.xcassets; sourceTree = "<group>"; };
+		E30537B41FFD04EBAE6A6674 /* KaeruTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KaeruTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		E68BF404DDF461F12BCEEF18 /* Service.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Service.swift; path = Core/Service.swift; sourceTree = "<group>"; };
+		EAFF224ABD675BAA8E5B34BD /* CastManagerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CastManagerTests.swift; path = Tests/KaeruTests/CastManagerTests.swift; sourceTree = "<group>"; };
+		EDF4D2297C86121867D29A1E /* TogetherConversation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherConversation.swift; path = Together/TogetherConversation.swift; sourceTree = "<group>"; };
+		EF542D28D356645717C57369 /* MoreView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MoreView.swift; path = Features/MoreView.swift; sourceTree = "<group>"; };
+		EFAA14B13E28B254472B8960 /* EpisodeNotificationService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = EpisodeNotificationService.swift; path = Notifications/EpisodeNotificationService.swift; sourceTree = "<group>"; };
+		F0B6C4F7B59152C97C6AA843 /* TogetherConversationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TogetherConversationTests.swift; path = Tests/KaeruTests/TogetherConversationTests.swift; sourceTree = "<group>"; };
+		F521AB978A8C3B2143E0064D /* DetailView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DetailView.swift; path = Features/DetailView.swift; sourceTree = "<group>"; };
+		F82D7132F2D781C5354186D2 /* OfflineCoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OfflineCoreTests.swift; path = Tests/KaeruTests/OfflineCoreTests.swift; sourceTree = "<group>"; };
+		F8C815D911F55E2AE5A6A209 /* NativePlayer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NativePlayer.swift; path = Playback/NativePlayer.swift; sourceTree = "<group>"; };
+		F8EFEA32F66E6FE31A2495E9 /* DownloadedShelfTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DownloadedShelfTests.swift; path = Tests/KaeruTests/DownloadedShelfTests.swift; sourceTree = "<group>"; };
+		FE5FB6CEA5CC39321DB1B5B5 /* VoiceRecorder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = VoiceRecorder.swift; path = Together/VoiceRecorder.swift; sourceTree = "<group>"; };
+		FE9CF5A3135285D526763315 /* Configuration.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; name = Configuration.plist; path = App/Configuration.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		022B6BCC656FCCAF0016AFE2 /* Frameworks */ = {
+		A9CD2AFA960543BCFB994BA2 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				030E49A902CE6F9C4306A87B /* Foundation.framework in Frameworks */,
-				5051FD209E75DACDEBB2FAAE /* GoogleCast.xcframework in Frameworks */,
+				FC3B4F7520AC963500DFDCC6 /* Foundation.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		44778927DC3B8892F1BB64BB /* Frameworks */ = {
+		EDFFAB81629A1FC522E1B0FB /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				CD226D2357B04C3AE9A5C44A /* Foundation.framework in Frameworks */,
+				5F2FC29F47C2899C753CAC90 /* Foundation.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		4711914EF84CA1720469D684 /* Frameworks */ = {
+		F76F8258AB079264CBF72D82 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				2BF9E1B0FE69E68505C73A90 /* Foundation.framework in Frameworks */,
+				1A9B13C1D2E0B9FEEDADA922 /* Foundation.framework in Frameworks */,
+				E1D23803FA61D7B9346F9D6B /* GoogleCast.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		026A4234A7469C3C42F1BA1D /* Frameworks */ = {
+		02D02A67FDA2C6EDBEE46AB2 = {
 			isa = PBXGroup;
 			children = (
-				B4C1A3DC6AED8B0BC9246AB5 /* iOS */,
+				1A08AC684C3B312FB2F7FBE1 /* Products */,
+				B473B023DB621CB587F59D0F /* Frameworks */,
+				F1442996DEE39468BC7733B9 /* Kaeru */,
+			);
+			sourceTree = "<group>";
+		};
+		1A08AC684C3B312FB2F7FBE1 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				D35F3C332123A656C33FD77B /* Kaeru.app */,
+				E30537B41FFD04EBAE6A6674 /* KaeruTests.xctest */,
+				818604DF7696F83EACC755C3 /* KaeruUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		B473B023DB621CB587F59D0F /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				ED81471EDCAD44B4573C4CC8 /* iOS */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
-		B4C1A3DC6AED8B0BC9246AB5 /* iOS */ = {
+		ED81471EDCAD44B4573C4CC8 /* iOS */ = {
 			isa = PBXGroup;
 			children = (
-				8CAE5544E1F2E87999717B43 /* Foundation.framework */,
+				6275BF2817EF142CE4E2A7DC /* Foundation.framework */,
 			);
 			name = iOS;
 			sourceTree = "<group>";
 		};
-		C2EEC94E806436E6297D7A13 /* Kaeru */ = {
+		F1442996DEE39468BC7733B9 /* Kaeru */ = {
 			isa = PBXGroup;
 			children = (
-				F63B28EEACEA5F6ADFAC6D0A /* Configuration.plist */,
-				C3AF14AD142C1A82839A7F35 /* Assets.xcassets */,
-				6DA0CB31B242770ABD48BBBB /* GoogleCast.xcframework */,
-				587A7CB690C977C79BD69E40 /* ApplicationRuntime.swift */,
-				2C80987602FA062901DEC346 /* KaeruApp.swift */,
-				CDF44C50E7389D3BE44FCB42 /* CastManager.swift */,
-				24183CE60F731B35A1E37B32 /* CastPlaybackState.swift */,
-				70E3280847A43EA7F1A03175 /* CastViews.swift */,
-				E3DD6D20BF3B0F9901DC0BFA /* GoogleCastTransport.swift */,
-				972E687F5D5F713D7B1DB13A /* AppModel.swift */,
-				8DFF6A36C348CBC082781839 /* Authentication.swift */,
-				B384DD6538FC7DE79A3A05F5 /* ContinueTarget.swift */,
-				2E61E72E2D335299D7976C04 /* DeepLink.swift */,
-				D0FF2E0948677ED43E49BCAF /* LocalStore.swift */,
-				4038402A6ECDD941FB290BD0 /* Models.swift */,
-				D84B7B1EFC3939B55B537582 /* Palette.swift */,
-				C3AAD19067FEF5CA572CD096 /* Preferences.swift */,
-				40315D2FF5F101A56654AD1C /* Service.swift */,
-				874E7695103B421C4FF53887 /* LANConnection.swift */,
-				C060B21D34B2A214F46E19D2 /* PairingCoordinator.swift */,
-				22A7BA0D0AD2C9B800242E90 /* PairingProtocol.swift */,
-				A3C5308CE694A4825E6C088A /* TVPairingClient.swift */,
-				3BA0A91BC1AB119AD8909D63 /* CatalogComponents.swift */,
-				2575D2BF634EE0B029E556E1 /* CatalogPresentation.swift */,
-				7D635AFC402FCC738E347A19 /* DetailView.swift */,
-				8693DB5FE7F0963E7C0583C2 /* DevicePairingView.swift */,
-				7854F639DA790BAF8B417E48 /* DownloadsView.swift */,
-				693F3C5CA37F084670D4EB99 /* HomeHero.swift */,
-				4548257A2788918F1AD83AF8 /* HomeView.swift */,
-				7B0B7B47287C165343BA9E8A /* LibraryView.swift */,
-				CE858B76FBA450EF9A03989F /* MoreView.swift */,
-				F018AAF3066CA77C39580227 /* PlayerScreen.swift */,
-				C96E1B699F862B2AF09A2D4B /* QRScannerView.swift */,
-				9CFD25EFD1A8BAA44F83367E /* RootView.swift */,
-				E7A38D2F053BB23D58F14E51 /* SearchView.swift */,
-				22D380C979BC0DF99D6047B4 /* SettingsView.swift */,
-				B71075DD091E6AD8013A8254 /* ShelfScreen.swift */,
-				65F5A29C0C54B25F68EA9861 /* TogetherOverlay.swift */,
-				56D67C8C32C059C77A2D3FF0 /* TogetherView.swift */,
-				629E5203C34F8CD8943F1A5B /* UpdatesView.swift */,
-				E53EA73171A878288C976925 /* VoiceButton.swift */,
-				EAD6908D3CE608B20BCE4631 /* EpisodeNotificationPlan.swift */,
-				0D4E47477AA4233E1E74A9B2 /* EpisodeNotificationService.swift */,
-				64691DB9CDEB3397B613836F /* EpisodeReleaseState.swift */,
-				16B4DE8443519E3D53CBC0E7 /* BackgroundTransfers.swift */,
-				E645EBC8C080D38961B39E04 /* DownloadManager.swift */,
-				2FAD2E568400AA7DF7977FB1 /* DownloadedShelf.swift */,
-				52675A403682822A3AFF1BE1 /* OfflineCatalog.swift */,
-				CF250EC9FB4BC28A68C7A98C /* AniSkipClient.swift */,
-				90F24BE6C6FAB050DF6CF4F7 /* NativePlayer.swift */,
-				077915EB87155602AD33D06A /* PlaybackMediaControls.swift */,
-				534DD850D7A6F5F612844D7B /* PlaybackModel.swift */,
-				68C3CF5112DDC3F28E0EB280 /* PlaybackPolicy.swift */,
-				259F8D27F4B75848C7697DF5 /* PlayerGestures.swift */,
-				64224F1F405B992244A8E17E /* AppModelTests.swift */,
-				89E3A221797D8E8683FB2DDA /* AppearanceTests.swift */,
-				7FCF4628601850FCC1CB3F28 /* CastCoreTests.swift */,
-				296D4828BF0BD1ED6C3F6C66 /* CastManagerTests.swift */,
-				35AF5A163422A3BC1BA97617 /* ContinuationTests.swift */,
-				132E07299C51D33B1BB49E90 /* DeepLinkTests.swift */,
-				30E5771150FBC9D6131CE30F /* DomainTests.swift */,
-				F8C324904253D57DDC2BEE34 /* DownloadedShelfTests.swift */,
-				243D178C4A728EE61D1299EA /* KeychainTests.swift */,
-				3FA30E5F520EFBC8D2D02624 /* LiveServiceTests.swift */,
-				1E132C0A279CDE6C346D5C55 /* OfflineCoreTests.swift */,
-				5780184A47ED759B2974AB10 /* PairingCoordinatorTests.swift */,
-				07D557439DC6B7532213536B /* PairingProtocolTests.swift */,
-				AC7F7B97D3D71BB4DE9B2AA1 /* PlaybackParityTests.swift */,
-				DDE45559133F765851F21F46 /* PlayerGestureTests.swift */,
-				FEA4EE32CF900AF79B99C6C0 /* ProgressStoreTests.swift */,
-				811486D1CF4E885CF635345D /* ReleaseNotesTests.swift */,
-				5266C9B752CF4CD34EE92470 /* ServiceFailureTests.swift */,
-				CE5A9F9B9166D7B5A54EAC68 /* TogetherConversationTests.swift */,
-				7FC8A9FCE81AAEE7B9F9EF36 /* TogetherManagerTests.swift */,
-				D660A45FD7C2CE462873DE62 /* TogetherProtocolTests.swift */,
-				5C7C9DC1526C71C30FE2EDBD /* TogetherReconnectTests.swift */,
-				D846BBE94FEC4E0937876835 /* TogetherSyncTests.swift */,
-				A81D8CBD25AB8D67CC8100D4 /* UpdateModelTests.swift */,
-				FAE1311FA8CC838C49F8E05D /* UpdateRepositoryTests.swift */,
-				6D5207E27C4DEA04202EC57B /* UpdateVersionTests.swift */,
-				8B2A8D14ED5F24C22780F7E3 /* NavigationTests.swift */,
-				7017DE96ED7215B842EA7708 /* SeamTests.swift */,
-				131284E4C470DDB77F3C9025 /* PlaybackTogetherAdapter.swift */,
-				C9029CDA3B5A7A019717B0A1 /* TogetherCodec.swift */,
-				30D37E532D7F51DDC2E2D1B3 /* TogetherConversation.swift */,
-				AC26EDC26411A1CCBF33D1C7 /* TogetherCopy.swift */,
-				E12362EE78600367A8CE7F41 /* TogetherInvitation.swift */,
-				E34153D8045740B4B129CD47 /* TogetherLANTransport.swift */,
-				6B1C84D4F62D4C18329CFBE6 /* TogetherManager.swift */,
-				BC68AE78A1CD534AD3DEA1E8 /* TogetherPlayback.swift */,
-				B8DCBA9A74769DFAC0FF9887 /* TogetherPolicy.swift */,
-				4DF3E5C7C8FCA8B94ABD507F /* TogetherReconnect.swift */,
-				79DC13D82EFDAA8E66B7AD99 /* TogetherRelayTransport.swift */,
-				0C9A584650A4DA5A0115A630 /* VoiceRecorder.swift */,
-				59A8D4EC0CCE7584EFA50145 /* GitHubReleases.swift */,
-				061B706C28B5666FB4DE124B /* ReleaseNotes.swift */,
-				E9084E7096BD4E816CB4F858 /* UpdateCopy.swift */,
-				08EE23B1DAED2DA7961000A0 /* UpdateModel.swift */,
-				9F7F5F859B9881F6598EF5A1 /* UpdateModels.swift */,
-				4C75F37063E5A48D5A196BF6 /* UpdateRepository.swift */,
-				3CF1DECD57679B905342D4EC /* Version.swift */,
+				FE9CF5A3135285D526763315 /* Configuration.plist */,
+				E163A2438F61FC2579B26CBC /* Assets.xcassets */,
+				87FB78F7D1E0D736A48EBD71 /* GoogleCast.xcframework */,
+				B442900DFA79CAB2099D9608 /* ApplicationRuntime.swift */,
+				0721ED785DB219908AA1177A /* KaeruApp.swift */,
+				452B9DFA1BF9A3EA25A2B7DE /* CastManager.swift */,
+				9ADA51A0B0660911BA8A9056 /* CastPlaybackState.swift */,
+				43DEE3BCABEAD057F9AA5780 /* CastViews.swift */,
+				DB6A2DD010A28C6B858096CB /* GoogleCastTransport.swift */,
+				8E3FE795059FFDC5DA0FD8F5 /* AppModel.swift */,
+				26013099530462BE1CCB2B7A /* Authentication.swift */,
+				C3E3D0E2304DC06719389191 /* ContinueTarget.swift */,
+				B536A3E2AC8C6B267DBD8F78 /* DeepLink.swift */,
+				BA823E3B4671C97C6177B9AA /* LocalStore.swift */,
+				9A148D54A9DCB549CCFA40F8 /* Models.swift */,
+				13314EA5ACCB0C1F7131D453 /* Palette.swift */,
+				3AE8F53FEE0E03C27E7E3372 /* Preferences.swift */,
+				E68BF404DDF461F12BCEEF18 /* Service.swift */,
+				146B6CE68D5CE16D217D047B /* LANConnection.swift */,
+				107900E9498BC9AA83FC8DDD /* PairingCoordinator.swift */,
+				8D4091C1EA5B6912987276D7 /* PairingProtocol.swift */,
+				2F80648F4F7C83629A4108E3 /* TVPairingClient.swift */,
+				7C9E6034B7F640165AC9F948 /* CatalogComponents.swift */,
+				1943041FF8C26702A8A328C0 /* CatalogPresentation.swift */,
+				F521AB978A8C3B2143E0064D /* DetailView.swift */,
+				CB76D2A1A0ADD881673F9ECD /* DevicePairingView.swift */,
+				7508BFDA2D6AB2D029F476BB /* DownloadsView.swift */,
+				86DB62B2355D2CE29EC17CB2 /* HomeHero.swift */,
+				06EC380076392D24AAE3F740 /* HomeView.swift */,
+				8D0D139415AD09BE6E623CA9 /* LibraryView.swift */,
+				EF542D28D356645717C57369 /* MoreView.swift */,
+				9AB012A0DFB485AAE9A614C6 /* PlayerScreen.swift */,
+				1DA52714112A6A1DF286391D /* QRScannerView.swift */,
+				68E0FA4D481A7F3B30E73BAA /* RootView.swift */,
+				834035A780A7059852388915 /* SearchView.swift */,
+				4F22CD8814314566F8DB84CF /* SettingsView.swift */,
+				A9AEBB94FC83C0ACEF07D253 /* ShelfScreen.swift */,
+				E062BE61E1C327580501088E /* TogetherOverlay.swift */,
+				8724A902ADDF045295F89FD4 /* TogetherView.swift */,
+				22B93033C144343028EC85AF /* UpdatesView.swift */,
+				A65DC81DF61BA9F4D90F8577 /* VoiceButton.swift */,
+				165D39A76A9F6BC6E408E3FB /* EpisodeNotificationPlan.swift */,
+				EFAA14B13E28B254472B8960 /* EpisodeNotificationService.swift */,
+				0C7D64FD5940F767464C5402 /* EpisodeReleaseState.swift */,
+				A58DC98BD2B64C49188E9DBC /* BackgroundTransfers.swift */,
+				1C9A7ED6921C82C09BC7C50C /* DownloadManager.swift */,
+				03207C944AB55D7D633A204B /* DownloadedShelf.swift */,
+				DAEAB650B56467A1B4848F24 /* OfflineCatalog.swift */,
+				45B0CE2A9ABFCE520A37BF26 /* AniSkipClient.swift */,
+				F8C815D911F55E2AE5A6A209 /* NativePlayer.swift */,
+				A51657B3FC3070721AC020B6 /* PlaybackMediaControls.swift */,
+				A183BCBDB0508D1BCD6C3A2B /* PlaybackModel.swift */,
+				5F162BBA89BC4C04C2541E85 /* PlaybackPolicy.swift */,
+				AC10AD40125CD71990B110F5 /* PlayerGestures.swift */,
+				A2ABF76CC1C8963CE5A4CD89 /* AppModelTests.swift */,
+				BE7DB7F8A63C297452CF99D6 /* AppearanceTests.swift */,
+				C645EB1B8333AC3E16931218 /* CastCoreTests.swift */,
+				EAFF224ABD675BAA8E5B34BD /* CastManagerTests.swift */,
+				7C2B00631597937507CC2B89 /* ContinuationTests.swift */,
+				C550DCF995B9C3FA2D4A3AF9 /* DeepLinkTests.swift */,
+				B47C9A9CBA1B02291F5CC6A9 /* DomainTests.swift */,
+				F8EFEA32F66E6FE31A2495E9 /* DownloadedShelfTests.swift */,
+				3E576F323863A85184809867 /* KeychainTests.swift */,
+				5FC26160DC17356173C649D6 /* LiveServiceTests.swift */,
+				F82D7132F2D781C5354186D2 /* OfflineCoreTests.swift */,
+				BD2BE10C833690159A4565B1 /* PairingCoordinatorTests.swift */,
+				BCF1AC12A83DC6AAAD6EEDB6 /* PairingProtocolTests.swift */,
+				0AC4234477891137A8D5679B /* PlaybackParityTests.swift */,
+				D1BDDFA9E52847C30A6F0B58 /* PlayerGestureTests.swift */,
+				639B48337269148CCDFB13D7 /* ProgressStoreTests.swift */,
+				92C064C86133AA22792651AF /* ReleaseNotesTests.swift */,
+				09C0B305ED484EB2468080C0 /* ServiceFailureTests.swift */,
+				F0B6C4F7B59152C97C6AA843 /* TogetherConversationTests.swift */,
+				854C6AA5CB57440275763D53 /* TogetherManagerTests.swift */,
+				356FE8AD4EBB7DBBA18ADBEA /* TogetherProtocolTests.swift */,
+				806FB25171C6FD50F1DEEE95 /* TogetherReconnectTests.swift */,
+				D21A693D14E7B46679724710 /* TogetherSyncTests.swift */,
+				C58B9DD8518E8246AF603F3F /* UpdateModelTests.swift */,
+				9ACBE18DC2E04386A536E2F3 /* UpdateRepositoryTests.swift */,
+				4A60ECF4A910B0A1216644AF /* UpdateVersionTests.swift */,
+				3A19D887C63B6402808C533D /* NavigationTests.swift */,
+				73F998BC728BA8169C9A24A2 /* SeamTests.swift */,
+				350C7D217C57CB6A1B481E7F /* PlaybackTogetherAdapter.swift */,
+				D83819552D5319665B4B6A42 /* TogetherCodec.swift */,
+				EDF4D2297C86121867D29A1E /* TogetherConversation.swift */,
+				5151FA517AC38E448362A793 /* TogetherCopy.swift */,
+				2C87D121CE790BEB2568EE17 /* TogetherInvitation.swift */,
+				32A3D675A2977BBBFB380037 /* TogetherLANTransport.swift */,
+				4DC632E0D26B39C9F05D00FD /* TogetherManager.swift */,
+				DF90F1C415C759466E30570E /* TogetherPlayback.swift */,
+				D51661ED7CD1ACDA87129410 /* TogetherPolicy.swift */,
+				9332B7C48AF58E4CBA32E4D9 /* TogetherReconnect.swift */,
+				DDB6F82D5886F2C283D3FB7A /* TogetherRelayTransport.swift */,
+				FE5FB6CEA5CC39321DB1B5B5 /* VoiceRecorder.swift */,
+				C9DB84CE7BAF2C6DE3224B79 /* GitHubReleases.swift */,
+				413C12BB5265B0AAED7F2B2D /* ReleaseNotes.swift */,
+				631451E3E396595D964A1457 /* UpdateCopy.swift */,
+				A7E08867EBA8C76113E3FA3F /* UpdateModel.swift */,
+				BD8FFCA92ACA0C703555B6F3 /* UpdateModels.swift */,
+				D0DC86F6B08CEEA76D8F4C37 /* UpdateRepository.swift */,
+				706183FA5C573FAF20B1F90F /* Version.swift */,
 			);
 			name = Kaeru;
 			path = ..;
 			sourceTree = "<group>";
 		};
-		D79BBB7A0EA5494B3CADD7A5 /* Products */ = {
-			isa = PBXGroup;
-			children = (
-				1A2FE485DEC35704C2C1918C /* Kaeru.app */,
-				B6C6D81B2F02BF0E5925B244 /* KaeruTests.xctest */,
-				297A4A6A28A05C52A6570A54 /* KaeruUITests.xctest */,
-			);
-			name = Products;
-			sourceTree = "<group>";
-		};
-		DD0BC72BC0B2F58BCB123651 = {
-			isa = PBXGroup;
-			children = (
-				D79BBB7A0EA5494B3CADD7A5 /* Products */,
-				026A4234A7469C3C42F1BA1D /* Frameworks */,
-				C2EEC94E806436E6297D7A13 /* Kaeru */,
-			);
-			sourceTree = "<group>";
-		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		34F059B01C9B067B36B93DAD /* Kaeru */ = {
+		4E43B1AC12E342DB5F5E146E /* KaeruTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 43A4D8132D183E30EE57D3AC /* Build configuration list for PBXNativeTarget "Kaeru" */;
+			buildConfigurationList = 743A9EDD09AA87323E8A6B04 /* Build configuration list for PBXNativeTarget "KaeruTests" */;
 			buildPhases = (
-				BF1948D5F50DE9D59B009354 /* Build shared framework */,
-				7789A0BBD5CEE6D028F764D2 /* Sources */,
-				022B6BCC656FCCAF0016AFE2 /* Frameworks */,
-				CFAC08CF677FF3F0F821AC80 /* Resources */,
+				B2D9839C59C3FF78C594385C /* Sources */,
+				EDFFAB81629A1FC522E1B0FB /* Frameworks */,
+				4C1097D1E92BE842EF97559D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				55AA4EF5FFA60B36E07FC105 /* PBXTargetDependency */,
+			);
+			name = KaeruTests;
+			productName = KaeruTests;
+			productReference = E30537B41FFD04EBAE6A6674 /* KaeruTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		7031198ACDC9D5ACD3EE3729 /* KaeruUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 545B8E384F38ED116D614217 /* Build configuration list for PBXNativeTarget "KaeruUITests" */;
+			buildPhases = (
+				8E45AF7432C22D3E5AEA9FF4 /* Sources */,
+				A9CD2AFA960543BCFB994BA2 /* Frameworks */,
+				076259D43BC59C76075B7D2B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				319B51576669E4687855AB1E /* PBXTargetDependency */,
+			);
+			name = KaeruUITests;
+			productName = KaeruUITests;
+			productReference = 818604DF7696F83EACC755C3 /* KaeruUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		FDF8E4B4C5400A364D635538 /* Kaeru */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3DD0BD2F8BA5CC53B9915E5A /* Build configuration list for PBXNativeTarget "Kaeru" */;
+			buildPhases = (
+				D07646695B1CD046B824313A /* Build shared framework */,
+				5EC854EE18E4B9092EC0F4D8 /* Sources */,
+				F76F8258AB079264CBF72D82 /* Frameworks */,
+				C710E6A281CFFF4FB60D3985 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -429,58 +465,22 @@
 			);
 			name = Kaeru;
 			packageProductDependencies = (
-				87ACBDBCB0B3F949A00F13D5 /* GTMSessionFetcherCore */,
+				AEFA92E0CB75A3E7CD1C6E5D /* GTMSessionFetcherCore */,
 			);
 			productName = Kaeru;
-			productReference = 1A2FE485DEC35704C2C1918C /* Kaeru.app */;
+			productReference = D35F3C332123A656C33FD77B /* Kaeru.app */;
 			productType = "com.apple.product-type.application";
-		};
-		389D52FE85E2F99CD477DAA6 /* KaeruUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 1BA716FEC774132A9730C8EF /* Build configuration list for PBXNativeTarget "KaeruUITests" */;
-			buildPhases = (
-				D0994610880329427ABD9B0A /* Sources */,
-				44778927DC3B8892F1BB64BB /* Frameworks */,
-				B926B5A72B04910A62FC2275 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				0078DAC738CC1F07158ADC91 /* PBXTargetDependency */,
-			);
-			name = KaeruUITests;
-			productName = KaeruUITests;
-			productReference = 297A4A6A28A05C52A6570A54 /* KaeruUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
-		41DC7CDB0F56BCB3E1603C4A /* KaeruTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = CA46C1660681CF1D7DC26804 /* Build configuration list for PBXNativeTarget "KaeruTests" */;
-			buildPhases = (
-				609AC33D21B07A6771081A4F /* Sources */,
-				4711914EF84CA1720469D684 /* Frameworks */,
-				5876B5FCD990B82A37C73EDC /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				A1DEEA75B3702E451203DBE5 /* PBXTargetDependency */,
-			);
-			name = KaeruTests;
-			productName = KaeruTests;
-			productReference = B6C6D81B2F02BF0E5925B244 /* KaeruTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		7A195A2FBB18A26E0EAE74B7 /* Project object */ = {
+		CD1063AC168629B345804FC8 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
 				LastSwiftUpdateCheck = 1300;
 				LastUpgradeCheck = 1300;
 			};
-			buildConfigurationList = F81BC1AA1C3F24060E85C8C9 /* Build configuration list for PBXProject "Kaeru" */;
+			buildConfigurationList = 5A9455D077D07A7078500071 /* Build configuration list for PBXProject "Kaeru" */;
 			compatibilityVersion = "Xcode 3.2";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -488,49 +488,49 @@
 				en,
 				Base,
 			);
-			mainGroup = DD0BC72BC0B2F58BCB123651;
+			mainGroup = 02D02A67FDA2C6EDBEE46AB2;
 			packageReferences = (
-				A0C5ACA3DB6C057EA3C23C2E /* XCRemoteSwiftPackageReference "gtm-session-fetcher.git" */,
+				ACF64581B56B2C6F1E18C279 /* XCRemoteSwiftPackageReference "gtm-session-fetcher.git" */,
 			);
-			productRefGroup = D79BBB7A0EA5494B3CADD7A5 /* Products */;
+			productRefGroup = 1A08AC684C3B312FB2F7FBE1 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				34F059B01C9B067B36B93DAD /* Kaeru */,
-				41DC7CDB0F56BCB3E1603C4A /* KaeruTests */,
-				389D52FE85E2F99CD477DAA6 /* KaeruUITests */,
+				FDF8E4B4C5400A364D635538 /* Kaeru */,
+				4E43B1AC12E342DB5F5E146E /* KaeruTests */,
+				7031198ACDC9D5ACD3EE3729 /* KaeruUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		5876B5FCD990B82A37C73EDC /* Resources */ = {
+		076259D43BC59C76075B7D2B /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		B926B5A72B04910A62FC2275 /* Resources */ = {
+		4C1097D1E92BE842EF97559D /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		CFAC08CF677FF3F0F821AC80 /* Resources */ = {
+		C710E6A281CFFF4FB60D3985 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C64B286917C3DEFE8A6BCEED /* Configuration.plist in Resources */,
-				7CD912EB07D3AF02A073F9CD /* Assets.xcassets in Resources */,
+				65802AA912294DBA89508C4D /* Configuration.plist in Resources */,
+				A1447C85EA8878F33C6154C3 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		BF1948D5F50DE9D59B009354 /* Build shared framework */ = {
+		D07646695B1CD046B824313A /* Build shared framework */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -552,411 +552,144 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		609AC33D21B07A6771081A4F /* Sources */ = {
+		5EC854EE18E4B9092EC0F4D8 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				4C29C5BD1EA421BDD9D4F109 /* AppModelTests.swift in Sources */,
-				0EA310D42E75397ACAD5A696 /* AppearanceTests.swift in Sources */,
-				B16D83453616074710D4BBB6 /* CastCoreTests.swift in Sources */,
-				B4DFA800E99B7B4ABABDBE20 /* CastManagerTests.swift in Sources */,
-				03CE5A21DB56BE025FD22BAB /* ContinuationTests.swift in Sources */,
-				D67BF3A424311D7FC00FE22F /* DeepLinkTests.swift in Sources */,
-				0FF562A1A67431A151CDE77B /* DomainTests.swift in Sources */,
-				D9A27DB2E6B280CB203221C2 /* DownloadedShelfTests.swift in Sources */,
-				39D4B1DD580279DFA9BF3E40 /* KeychainTests.swift in Sources */,
-				DBA9EAA3DEDD311DFB530000 /* LiveServiceTests.swift in Sources */,
-				585599319874FA3991C129B1 /* OfflineCoreTests.swift in Sources */,
-				AB3D4C19AFB4189B1CC0AC90 /* PairingCoordinatorTests.swift in Sources */,
-				0D31ACBA42CA37D6576D9818 /* PairingProtocolTests.swift in Sources */,
-				CC1BCE4FBD237E313192A70E /* PlaybackParityTests.swift in Sources */,
-				A257FE7422146820FFCC5738 /* PlayerGestureTests.swift in Sources */,
-				5D599F683F12DA72175C25F9 /* ProgressStoreTests.swift in Sources */,
-				FEBC2ED4F47D6A2DB3A49D1E /* ReleaseNotesTests.swift in Sources */,
-				9634D676570DBE35D68FED6B /* ServiceFailureTests.swift in Sources */,
-				EE8C7F7CA5F581246B80C6F3 /* TogetherConversationTests.swift in Sources */,
-				4B4E9F489530BBDC2C24ACE4 /* TogetherManagerTests.swift in Sources */,
-				13E0E6C8FC00348EF8025B3A /* TogetherProtocolTests.swift in Sources */,
-				E14391EEE1EEFF300F617E72 /* TogetherReconnectTests.swift in Sources */,
-				4BEA14436C1635040DC8C725 /* TogetherSyncTests.swift in Sources */,
-				7F616F4B362376D28290377B /* UpdateModelTests.swift in Sources */,
-				869563D041FC5AC9FDFFB024 /* UpdateRepositoryTests.swift in Sources */,
-				2DF995F88D1D498A5A3E79A0 /* UpdateVersionTests.swift in Sources */,
+				0731AB5868AD99A897BE645E /* ApplicationRuntime.swift in Sources */,
+				E5D591ED6D699A2117407FCC /* KaeruApp.swift in Sources */,
+				FDB9F1D652BFDC52CAAC0BB5 /* CastManager.swift in Sources */,
+				FB48BD1C191E093BA5FCCEF2 /* CastPlaybackState.swift in Sources */,
+				7487D08D208C48F1762A31D9 /* CastViews.swift in Sources */,
+				9DB52E50581E93AA6D58CC87 /* GoogleCastTransport.swift in Sources */,
+				BF08733764AE297515DFACDC /* AppModel.swift in Sources */,
+				E1441B6BC6114BDF2CA2FE60 /* Authentication.swift in Sources */,
+				3238A39B702C02A569E9A24A /* ContinueTarget.swift in Sources */,
+				C94E6AAF01CAA927AC0A44B5 /* DeepLink.swift in Sources */,
+				31BBFF5F84F63A3DABA8983B /* LocalStore.swift in Sources */,
+				31CC4A03ACF4FEEECD7A57BC /* Models.swift in Sources */,
+				7F5948A403E5792BAA7C7A18 /* Palette.swift in Sources */,
+				5EFEC6218F5BCB42E774F360 /* Preferences.swift in Sources */,
+				3330A53222B8AF3C8F1B52B0 /* Service.swift in Sources */,
+				D0DB224C3E69479ED7B91FEB /* LANConnection.swift in Sources */,
+				DD31F2B42C41FE601D223A9A /* PairingCoordinator.swift in Sources */,
+				FB1E16FB77C1793D5F428B16 /* PairingProtocol.swift in Sources */,
+				3583C0087F00D6608EC835A9 /* TVPairingClient.swift in Sources */,
+				ED351516D77C487E50B0D1CE /* CatalogComponents.swift in Sources */,
+				5BCABE8F6FC40D4BFD1C399F /* CatalogPresentation.swift in Sources */,
+				FE3FC92FF2B3F90FCD8097D8 /* DetailView.swift in Sources */,
+				771DD90D494A7ACA3AB888C4 /* DevicePairingView.swift in Sources */,
+				BC149429B2E307F085C5EDCC /* DownloadsView.swift in Sources */,
+				30C93E9F130048FA55A1AFB5 /* HomeHero.swift in Sources */,
+				1014E39765FA42B146AE46F5 /* HomeView.swift in Sources */,
+				249BC86C7AE48B0E70D932E8 /* LibraryView.swift in Sources */,
+				2BC3103B0DED6277B1A250F0 /* MoreView.swift in Sources */,
+				700B9FEBF0CEE72EBD9FBE5C /* PlayerScreen.swift in Sources */,
+				AA52DCFD5073CDF855B65D28 /* QRScannerView.swift in Sources */,
+				5E57DE9870FA93239AC99759 /* RootView.swift in Sources */,
+				6E94991EBF4F943CC5C0E4A3 /* SearchView.swift in Sources */,
+				60C9BE74090B1BA0D5F790FA /* SettingsView.swift in Sources */,
+				6B2836B11D5E8F1053A3EF0C /* ShelfScreen.swift in Sources */,
+				7270954081A613C27F057FF2 /* TogetherOverlay.swift in Sources */,
+				82B2A22CBB1F1D8BB6AD3D89 /* TogetherView.swift in Sources */,
+				031EED271EC2EAE9FAE875DA /* UpdatesView.swift in Sources */,
+				22DCE4F58FB43838D4B30673 /* VoiceButton.swift in Sources */,
+				D1A571DB6B8CEE6AC72F704A /* EpisodeNotificationPlan.swift in Sources */,
+				3F7813BB3966B0515A4497F4 /* EpisodeNotificationService.swift in Sources */,
+				5CA3AFF4895C37D17328D2B4 /* EpisodeReleaseState.swift in Sources */,
+				F9EBD90A487C3CEF2E5E1073 /* BackgroundTransfers.swift in Sources */,
+				3A8AA647223BCA4A8B07541F /* DownloadManager.swift in Sources */,
+				BDE21108AE5CB1C98CC3080C /* DownloadedShelf.swift in Sources */,
+				FB94B0488960CC98DF194529 /* OfflineCatalog.swift in Sources */,
+				05653EE72C46B04EF7AA9C6E /* AniSkipClient.swift in Sources */,
+				A6E2F07E57AAEC0105F1BC88 /* NativePlayer.swift in Sources */,
+				F21ADC26C32F2039C590FA34 /* PlaybackMediaControls.swift in Sources */,
+				B1D43DED452818A880433ABC /* PlaybackModel.swift in Sources */,
+				5728B29D7A221C9E8B6D216A /* PlaybackPolicy.swift in Sources */,
+				0665324B91E9648631A36D7C /* PlayerGestures.swift in Sources */,
+				189B1CB7056D70C086D1C525 /* PlaybackTogetherAdapter.swift in Sources */,
+				B388AE63580F646ECBEA2BB6 /* TogetherCodec.swift in Sources */,
+				D001A7166A0B908B8F13E351 /* TogetherConversation.swift in Sources */,
+				37D21127397ABF6FE29BDB8A /* TogetherCopy.swift in Sources */,
+				0D6A9B96F9266EA9F1AC955F /* TogetherInvitation.swift in Sources */,
+				5A9E5D9F77887243A927B3EB /* TogetherLANTransport.swift in Sources */,
+				0B1D5D19C69BEA297CEE6C0A /* TogetherManager.swift in Sources */,
+				D16AC50942C7C0641867A22E /* TogetherPlayback.swift in Sources */,
+				A7647FC660EC741B722F85C2 /* TogetherPolicy.swift in Sources */,
+				48A8E82FCC441CAB06B8E54B /* TogetherReconnect.swift in Sources */,
+				A3EBE644386649B263838991 /* TogetherRelayTransport.swift in Sources */,
+				E88418CB75C4BE3C6F1911C5 /* VoiceRecorder.swift in Sources */,
+				9AAD996C3319DF1999DAE299 /* GitHubReleases.swift in Sources */,
+				840411544264BF489B8417CE /* ReleaseNotes.swift in Sources */,
+				3FE04D93845AA94CE7799C0A /* UpdateCopy.swift in Sources */,
+				21689180D87EE218D826F52A /* UpdateModel.swift in Sources */,
+				E7A93A6A124BD3DBA8A66FFD /* UpdateModels.swift in Sources */,
+				DC497F7BA66D06D8F794A22E /* UpdateRepository.swift in Sources */,
+				5ED4B7213C09084FDF3F56C4 /* Version.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		7789A0BBD5CEE6D028F764D2 /* Sources */ = {
+		8E45AF7432C22D3E5AEA9FF4 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				4252D44955D4B1709FA56CAA /* ApplicationRuntime.swift in Sources */,
-				8CB450896D2E44A6DE47593D /* KaeruApp.swift in Sources */,
-				50F0FB0BB0B41D9C3C30A6DA /* CastManager.swift in Sources */,
-				3A0BC880817C4BA109F5D004 /* CastPlaybackState.swift in Sources */,
-				E627B61BB75CA9D88B164880 /* CastViews.swift in Sources */,
-				A953F2CC761C3C3DDE78D462 /* GoogleCastTransport.swift in Sources */,
-				D0020FC67D0EA51E8455B366 /* AppModel.swift in Sources */,
-				EB5844BF88D34B5A5C1635EC /* Authentication.swift in Sources */,
-				58E92CE994D66EA431E0F184 /* ContinueTarget.swift in Sources */,
-				656FF5808AD7D79134B7A413 /* DeepLink.swift in Sources */,
-				F3A8FFF5E4FC2D5C5407D5F3 /* LocalStore.swift in Sources */,
-				7E1C29AA497F35D70B3A3B59 /* Models.swift in Sources */,
-				ABFDF25E625235925BC656CC /* Palette.swift in Sources */,
-				2ED03A7EA02CEE0AD003CC72 /* Preferences.swift in Sources */,
-				DBE8C31B9593441794C7F75D /* Service.swift in Sources */,
-				00D61972107C6D4F47602DFB /* LANConnection.swift in Sources */,
-				9D7A2E7D2A789EFC02F12438 /* PairingCoordinator.swift in Sources */,
-				A792C7A7FEDBEEF67A962B6F /* PairingProtocol.swift in Sources */,
-				7C8F97DD926059FB04152037 /* TVPairingClient.swift in Sources */,
-				96B631CD08567DA626D5093E /* CatalogComponents.swift in Sources */,
-				4150E89F22BC4E18374A2329 /* CatalogPresentation.swift in Sources */,
-				9E49F8ED8CBB2F76200C9138 /* DetailView.swift in Sources */,
-				1AD7D6AA7D311AC459FD551E /* DevicePairingView.swift in Sources */,
-				20919EEFF42A9075ABA88B6A /* DownloadsView.swift in Sources */,
-				D3BC3C8C3A4E852DBD603384 /* HomeHero.swift in Sources */,
-				1CC447CD0F37BDFCA8AD601A /* HomeView.swift in Sources */,
-				85B11FEF0A2D20A93F19AFFA /* LibraryView.swift in Sources */,
-				240194EC5E66775D04A05309 /* MoreView.swift in Sources */,
-				7E6C571E7D6B045AFD5206C9 /* PlayerScreen.swift in Sources */,
-				483B2E616104DBDF03655FCB /* QRScannerView.swift in Sources */,
-				54065BADBEF9FCFE04EB68F1 /* RootView.swift in Sources */,
-				0D7AC0B0BC5FB729E2978555 /* SearchView.swift in Sources */,
-				4CEC705F7CFEED8A9DCC5F7B /* SettingsView.swift in Sources */,
-				0DFA852987FB316ED2E9D9C8 /* ShelfScreen.swift in Sources */,
-				283731EA7DAB5490A554589A /* TogetherOverlay.swift in Sources */,
-				232AD080D1D5A624974B503E /* TogetherView.swift in Sources */,
-				1D90FB2FB49DBECFAD0313C7 /* UpdatesView.swift in Sources */,
-				2E368086B7177ABAA6A55DD6 /* VoiceButton.swift in Sources */,
-				F2393E85001FCE7DF9C02D26 /* EpisodeNotificationPlan.swift in Sources */,
-				EE258AD7CF0B04E9C375DAE4 /* EpisodeNotificationService.swift in Sources */,
-				E52929CE66E53A865BD9EE0F /* EpisodeReleaseState.swift in Sources */,
-				BD5C13BC32E83205AA41FF64 /* BackgroundTransfers.swift in Sources */,
-				72168B56EF3E0769024DCE25 /* DownloadManager.swift in Sources */,
-				A11351DE12AAACD83D37098F /* DownloadedShelf.swift in Sources */,
-				942C6D34A3DA0A2B794E97B6 /* OfflineCatalog.swift in Sources */,
-				C5314E412272850189803539 /* AniSkipClient.swift in Sources */,
-				41E38C56417CBD54E30B0713 /* NativePlayer.swift in Sources */,
-				BFCC48AA37D31F25C45121DD /* PlaybackMediaControls.swift in Sources */,
-				38DDEE4A47DD7E397999A9E5 /* PlaybackModel.swift in Sources */,
-				80DDDFBC63249C800655E176 /* PlaybackPolicy.swift in Sources */,
-				2D9DE65B34DB781203AB36B6 /* PlayerGestures.swift in Sources */,
-				71CEA71A0EC20A8DC1DCEC17 /* PlaybackTogetherAdapter.swift in Sources */,
-				E29AD6E55FCC32D8B6C24479 /* TogetherCodec.swift in Sources */,
-				DC6B3959CB0334D003FE83A7 /* TogetherConversation.swift in Sources */,
-				34D4FA01FC68B8D031412D7E /* TogetherCopy.swift in Sources */,
-				77FDB43580C4B982207DAB67 /* TogetherInvitation.swift in Sources */,
-				A13B6A1524879E7AAD98B7C7 /* TogetherLANTransport.swift in Sources */,
-				085FE0D772814D532EDF095D /* TogetherManager.swift in Sources */,
-				B8C1260775AB9E898B85849C /* TogetherPlayback.swift in Sources */,
-				601BC79666F7DEFB2B89D84B /* TogetherPolicy.swift in Sources */,
-				64985B8ECF8B89642F7FBE1D /* TogetherReconnect.swift in Sources */,
-				F3651AC0EF3E30662AB5CC57 /* TogetherRelayTransport.swift in Sources */,
-				118F1AC49988FFD635DB4476 /* VoiceRecorder.swift in Sources */,
-				54CE8A6FB1E6665CC021F6BE /* GitHubReleases.swift in Sources */,
-				100F78FB4D8DA03EF9EBDD3B /* ReleaseNotes.swift in Sources */,
-				4FB8B936F598B0DD2180B8EA /* UpdateCopy.swift in Sources */,
-				B011B97CA1C20B38A3C76529 /* UpdateModel.swift in Sources */,
-				83E32D4E49E7A659E47A374B /* UpdateModels.swift in Sources */,
-				44342BF04BC7B691ED73BCDA /* UpdateRepository.swift in Sources */,
-				70F375FD97996E6759B1461D /* Version.swift in Sources */,
+				E213F1D0D11ABF38B7231DF3 /* NavigationTests.swift in Sources */,
+				75B22ED06168473E4ED1FC23 /* SeamTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		D0994610880329427ABD9B0A /* Sources */ = {
+		B2D9839C59C3FF78C594385C /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A323B13C91AB719847AEC0E1 /* NavigationTests.swift in Sources */,
-				EC77DBF8A585B26BA6FE9E36 /* SeamTests.swift in Sources */,
+				10361DD52202644CE92A78BE /* AppModelTests.swift in Sources */,
+				EF973BE90CA0CF9C7B2A4CD3 /* AppearanceTests.swift in Sources */,
+				5E68F63DBE80024CD27F9844 /* CastCoreTests.swift in Sources */,
+				AA255DAF92512645EE9D6D3C /* CastManagerTests.swift in Sources */,
+				9FC43DA7A4194CF0E31A199F /* ContinuationTests.swift in Sources */,
+				863AA162C4CD6FF2656DA83D /* DeepLinkTests.swift in Sources */,
+				53839B2FC13BC8EE0B380451 /* DomainTests.swift in Sources */,
+				1AF80ADB1C6AD2CBA4D6FF86 /* DownloadedShelfTests.swift in Sources */,
+				C4D294A9D69F8B11978ADF90 /* KeychainTests.swift in Sources */,
+				8293D85D93F1DFCB5EA8722D /* LiveServiceTests.swift in Sources */,
+				FBC46C830F0541103B91AF52 /* OfflineCoreTests.swift in Sources */,
+				E6B367DC0EF607B887D96758 /* PairingCoordinatorTests.swift in Sources */,
+				2B3D04C93A2F87D8542A94B6 /* PairingProtocolTests.swift in Sources */,
+				2E4B76F29344B3094327D5C2 /* PlaybackParityTests.swift in Sources */,
+				0140C85D061DA3DA4B80206A /* PlayerGestureTests.swift in Sources */,
+				B7F19E2148D2F6B68379807A /* ProgressStoreTests.swift in Sources */,
+				FC661F926BDBA76529C6567D /* ReleaseNotesTests.swift in Sources */,
+				B7D8A3042E179EDB1D67BACE /* ServiceFailureTests.swift in Sources */,
+				F5706EF6AF8E544CF5D91262 /* TogetherConversationTests.swift in Sources */,
+				21DB48903DE65DFBC820B1AA /* TogetherManagerTests.swift in Sources */,
+				877154F80EBE7CD66B8FB1D3 /* TogetherProtocolTests.swift in Sources */,
+				9909372DA22E4CA86FA0F182 /* TogetherReconnectTests.swift in Sources */,
+				0C451A853B2B0D24C37ADB40 /* TogetherSyncTests.swift in Sources */,
+				87DB6019FCB68D7B187BC7F5 /* UpdateModelTests.swift in Sources */,
+				1DDD7473F6EA7F8C5543A185 /* UpdateRepositoryTests.swift in Sources */,
+				EFE126D1D49CBDB7E7B54B81 /* UpdateVersionTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		0078DAC738CC1F07158ADC91 /* PBXTargetDependency */ = {
+		319B51576669E4687855AB1E /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			name = Kaeru;
-			target = 34F059B01C9B067B36B93DAD /* Kaeru */;
-			targetProxy = FC8D3FDB45F702F0F007F7CF /* PBXContainerItemProxy */;
+			target = FDF8E4B4C5400A364D635538 /* Kaeru */;
+			targetProxy = 6DF5284B8DDB32F7B27EE79E /* PBXContainerItemProxy */;
 		};
-		A1DEEA75B3702E451203DBE5 /* PBXTargetDependency */ = {
+		55AA4EF5FFA60B36E07FC105 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			name = Kaeru;
-			target = 34F059B01C9B067B36B93DAD /* Kaeru */;
-			targetProxy = 9D547834A7A8F0A7B96D2EB0 /* PBXContainerItemProxy */;
+			target = FDF8E4B4C5400A364D635538 /* Kaeru */;
+			targetProxy = 9493A5713EE00E4E86365388 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		1297E851F814678B285FCD31 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ARCHS = arm64;
-				CLANG_ENABLE_OBJC_WEAK = NO;
-				CURRENT_PROJECT_VERSION = 1;
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(SRCROOT)/../../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)",
-				);
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 0.5.1;
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					"-framework",
-					KaeruShared,
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = app.kaeru.ios.kaeruuitests;
-				SDKROOT = iphoneos;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_STRICT_CONCURRENCY = complete;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = Kaeru;
-				VALIDATE_PRODUCT = YES;
-			};
-			name = Release;
-		};
-		91BA21C5AD031213834091D3 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ARCHS = arm64;
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CLANG_ENABLE_OBJC_WEAK = NO;
-				CODE_SIGN_ENTITLEMENTS = Kaeru.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = TXY49DW96F;
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(SRCROOT)/../../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)",
-					"$(SRCROOT)/../Dependencies/GoogleCastSDK-ios-4.8.6_static_xcframework/GoogleCast.xcframework",
-				);
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Kaeru;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 0.5.1;
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					"-ObjC",
-					"-lc++",
-					"-framework",
-					KaeruShared,
-					"-framework",
-					GoogleCast,
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = app.kaeru.ios;
-				SDKROOT = iphoneos;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_STRICT_CONCURRENCY = complete;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
-		};
-		BB1923009CC8C9BA9443C381 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
-				CLANG_CXX_LIBRARY = "libc++";
-				CLANG_ENABLE_MODULES = YES;
-				CLANG_ENABLE_OBJC_ARC = YES;
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
-				CLANG_WARN_BOOL_CONVERSION = YES;
-				CLANG_WARN_COMMA = YES;
-				CLANG_WARN_CONSTANT_CONVERSION = YES;
-				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
-				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
-				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
-				CLANG_WARN_EMPTY_BODY = YES;
-				CLANG_WARN_ENUM_CONVERSION = YES;
-				CLANG_WARN_INFINITE_RECURSION = YES;
-				CLANG_WARN_INT_CONVERSION = YES;
-				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
-				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
-				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
-				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
-				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
-				CLANG_WARN_STRICT_PROTOTYPES = YES;
-				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
-				CLANG_WARN_UNREACHABLE_CODE = YES;
-				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				COPY_PHASE_STRIP = NO;
-				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				ENABLE_NS_ASSERTIONS = NO;
-				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				GCC_C_LANGUAGE_STANDARD = gnu11;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
-				GCC_WARN_UNDECLARED_SELECTOR = YES;
-				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
-				GCC_WARN_UNUSED_FUNCTION = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
-				MTL_ENABLE_DEBUG_INFO = NO;
-				MTL_FAST_MATH = YES;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_COMPILATION_MODE = wholemodule;
-				SWIFT_OPTIMIZATION_LEVEL = "-O";
-				SWIFT_VERSION = 5.0;
-			};
-			name = Release;
-		};
-		C0B53C4779848363DC11842A /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ARCHS = arm64;
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CLANG_ENABLE_OBJC_WEAK = NO;
-				CODE_SIGN_ENTITLEMENTS = Kaeru.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = TXY49DW96F;
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(SRCROOT)/../../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)",
-					"$(SRCROOT)/../Dependencies/GoogleCastSDK-ios-4.8.6_static_xcframework/GoogleCast.xcframework",
-				);
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Kaeru;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 0.5.1;
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					"-ObjC",
-					"-lc++",
-					"-framework",
-					KaeruShared,
-					"-framework",
-					GoogleCast,
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = app.kaeru.ios;
-				SDKROOT = iphoneos;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_STRICT_CONCURRENCY = complete;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				VALIDATE_PRODUCT = YES;
-			};
-			name = Release;
-		};
-		D4156FB6333BB3F257E139ED /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ARCHS = arm64;
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CLANG_ENABLE_OBJC_WEAK = NO;
-				CURRENT_PROJECT_VERSION = 1;
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(SRCROOT)/../../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)",
-				);
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 0.5.1;
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					"-framework",
-					KaeruShared,
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = app.kaeru.ios.kaerutests;
-				SDKROOT = iphoneos;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_STRICT_CONCURRENCY = complete;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Kaeru.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Kaeru";
-				VALIDATE_PRODUCT = YES;
-			};
-			name = Release;
-		};
-		E74E60E521971D1B36DFF955 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ARCHS = arm64;
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CLANG_ENABLE_OBJC_WEAK = NO;
-				CURRENT_PROJECT_VERSION = 1;
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(SRCROOT)/../../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)",
-				);
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 0.5.1;
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					"-framework",
-					KaeruShared,
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = app.kaeru.ios.kaerutests;
-				SDKROOT = iphoneos;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_STRICT_CONCURRENCY = complete;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Kaeru.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Kaeru";
-			};
-			name = Debug;
-		};
-		FCC77FA3BC5190CAEFF31B30 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ARCHS = arm64;
-				CLANG_ENABLE_OBJC_WEAK = NO;
-				CURRENT_PROJECT_VERSION = 1;
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(SRCROOT)/../../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)",
-				);
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 0.5.1;
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					"-framework",
-					KaeruShared,
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = app.kaeru.ios.kaeruuitests;
-				SDKROOT = iphoneos;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_STRICT_CONCURRENCY = complete;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = Kaeru;
-			};
-			name = Debug;
-		};
-		FE932C396E11A008721E9F70 /* Debug */ = {
+		246F9564C3DAECB1D587A3CC /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -1017,41 +750,308 @@
 			};
 			name = Debug;
 		};
+		3C95817E1DE8B1B5D038C7B7 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/../../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 0.5.1;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					KaeruShared,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.kaeru.ios.kaerutests;
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Kaeru.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Kaeru";
+			};
+			name = Debug;
+		};
+		6579EEC738788EC94CBBC783 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/../../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 0.5.1;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					KaeruShared,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.kaeru.ios.kaerutests;
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Kaeru.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Kaeru";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		6D3E76586B9F08EC1EFCCB30 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = Kaeru.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TXY49DW96F;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/../../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)",
+					"$(SRCROOT)/../Dependencies/GoogleCastSDK-ios-4.8.6_static_xcframework/GoogleCast.xcframework",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Kaeru;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 0.5.1;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+					"-lc++",
+					"-framework",
+					KaeruShared,
+					"-framework",
+					GoogleCast,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.kaeru.ios;
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		77439CAE8EDD3108D204C32B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/../../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 0.5.1;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					KaeruShared,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.kaeru.ios.kaeruuitests;
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Kaeru;
+			};
+			name = Debug;
+		};
+		8829D071BD570C41F58C2CC6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/../../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 0.5.1;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					KaeruShared,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.kaeru.ios.kaeruuitests;
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Kaeru;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		90D093D050C7CD8642B63EF2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = Kaeru.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TXY49DW96F;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/../../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)",
+					"$(SRCROOT)/../Dependencies/GoogleCastSDK-ios-4.8.6_static_xcframework/GoogleCast.xcframework",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Kaeru;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 0.5.1;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+					"-lc++",
+					"-framework",
+					KaeruShared,
+					"-framework",
+					GoogleCast,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.kaeru.ios;
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		9E06F3722111546D0D51096C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		1BA716FEC774132A9730C8EF /* Build configuration list for PBXNativeTarget "KaeruUITests" */ = {
+		3DD0BD2F8BA5CC53B9915E5A /* Build configuration list for PBXNativeTarget "Kaeru" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				1297E851F814678B285FCD31 /* Release */,
-				FCC77FA3BC5190CAEFF31B30 /* Debug */,
+				90D093D050C7CD8642B63EF2 /* Release */,
+				6D3E76586B9F08EC1EFCCB30 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		43A4D8132D183E30EE57D3AC /* Build configuration list for PBXNativeTarget "Kaeru" */ = {
+		545B8E384F38ED116D614217 /* Build configuration list for PBXNativeTarget "KaeruUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				C0B53C4779848363DC11842A /* Release */,
-				91BA21C5AD031213834091D3 /* Debug */,
+				8829D071BD570C41F58C2CC6 /* Release */,
+				77439CAE8EDD3108D204C32B /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		CA46C1660681CF1D7DC26804 /* Build configuration list for PBXNativeTarget "KaeruTests" */ = {
+		5A9455D077D07A7078500071 /* Build configuration list for PBXProject "Kaeru" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				D4156FB6333BB3F257E139ED /* Release */,
-				E74E60E521971D1B36DFF955 /* Debug */,
+				246F9564C3DAECB1D587A3CC /* Debug */,
+				9E06F3722111546D0D51096C /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		F81BC1AA1C3F24060E85C8C9 /* Build configuration list for PBXProject "Kaeru" */ = {
+		743A9EDD09AA87323E8A6B04 /* Build configuration list for PBXNativeTarget "KaeruTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				FE932C396E11A008721E9F70 /* Debug */,
-				BB1923009CC8C9BA9443C381 /* Release */,
+				6579EEC738788EC94CBBC783 /* Release */,
+				3C95817E1DE8B1B5D038C7B7 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -1059,7 +1059,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		A0C5ACA3DB6C057EA3C23C2E /* XCRemoteSwiftPackageReference "gtm-session-fetcher.git" */ = {
+		ACF64581B56B2C6F1E18C279 /* XCRemoteSwiftPackageReference "gtm-session-fetcher.git" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/google/gtm-session-fetcher.git";
 			requirement = {
@@ -1070,12 +1070,12 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		87ACBDBCB0B3F949A00F13D5 /* GTMSessionFetcherCore */ = {
+		AEFA92E0CB75A3E7CD1C6E5D /* GTMSessionFetcherCore */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = A0C5ACA3DB6C057EA3C23C2E /* XCRemoteSwiftPackageReference "gtm-session-fetcher.git" */;
+			package = ACF64581B56B2C6F1E18C279 /* XCRemoteSwiftPackageReference "gtm-session-fetcher.git" */;
 			productName = GTMSessionFetcherCore;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
-	rootObject = 7A195A2FBB18A26E0EAE74B7 /* Project object */;
+	rootObject = CD1063AC168629B345804FC8 /* Project object */;
 }

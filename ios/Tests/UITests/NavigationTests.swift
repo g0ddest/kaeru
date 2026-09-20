@@ -19,7 +19,9 @@ final class NavigationTests: XCTestCase {
         XCTAssertTrue(play.waitForExistence(timeout: 15), app.debugDescription)
         capture("detail", app)
         play.tap()
-        let menu = app.buttons["Серия, озвучка и качество"]
+        // The player's one menu. It was «Серия, озвучка и качество» until the controls were
+        // reworked into AVKit's own; the test kept the old name and had been failing ever since.
+        let menu = app.buttons["Настройки воспроизведения"]
         XCTAssertTrue(menu.waitForExistence(timeout: 10))
         let ready = NSPredicate(format: "enabled == true")
         expectation(for: ready, evaluatedWith: menu)
@@ -37,9 +39,20 @@ final class NavigationTests: XCTestCase {
         XCTAssertTrue(play.waitForExistence(timeout: 10))
         app.navigationBars.buttons.firstMatch.tap()
         // Настройки живут в «Ещё»: на телефоне пять вкладок, и учётная запись — первая строка там.
-        app.buttons["Ещё"].firstMatch.tap()
+        // Именно вкладка, а не любая кнопка с этим словом: на главной у каждой карточки есть своё
+        // меню «Ещё: <тайтл>», и раньше тап уходил туда. Вкладки дожидаемся: после закрытия
+        // плеера панель возвращается не в том же кадре, и тап в пустоту раньше просто терялся.
+        // Поиск закрывается до перехода. Пока строка поиска активна, система держит над экраном
+        // свою затемняющую подложку, и тап по вкладке до неё просто не доходит — тест всё это
+        // время нажимал в пустоту и искал «Ещё» на экране поиска.
+        let cancel = app.navigationBars.buttons.matching(
+            NSPredicate(format: "label == 'Cancel' OR label == 'Отменить'")).firstMatch
+        if cancel.exists { cancel.tap() }
+        let more = app.tabBars.buttons["Ещё"]
+        XCTAssertTrue(more.waitForExistence(timeout: 15), app.debugDescription)
+        more.tap()
         let settings = app.buttons["Аккаунт и настройки"].firstMatch
-        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        XCTAssertTrue(settings.waitForExistence(timeout: 15), app.debugDescription)
         settings.tap()
         XCTAssertTrue(app.navigationBars["Настройки"].waitForExistence(timeout: 5))
         capture("settings", app)
