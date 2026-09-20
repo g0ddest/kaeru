@@ -31,6 +31,24 @@ import XCTest
         XCTAssertEqual(clock.offsetMs, 900)
     }
 
+    /// A phone that went to the background answers every ping it finds waiting when it comes
+    /// back, and each answer's trip is the whole of the freeze; half of that would land on the
+    /// offset, and three of them would carry the median. Android's `ClockOffset` refuses the same.
+    func testAnAnswerThatTookSecondsToComeBackIsNotAMeasurementOfTheClocks() {
+        var clock = TogetherClock()
+        for step in 0..<4 {
+            let sent = Int64(step) * 5_000
+            clock.record(sent: sent, peerReceived: sent + 800, peerSent: sent + 800, received: sent + 200)
+        }
+        XCTAssertEqual(clock.offsetMs, 700)
+        // Fifteen seconds asleep: three pings answered at once.
+        clock.record(sent: 20_000, peerReceived: 35_700, peerSent: 35_700, received: 35_000)
+        clock.record(sent: 25_000, peerReceived: 35_700, peerSent: 35_700, received: 35_000)
+        clock.record(sent: 30_000, peerReceived: 35_700, peerSent: 35_700, received: 35_000)
+        XCTAssertEqual(clock.offsetMs, 700)
+        XCTAssertEqual(clock.rttMs, 200)
+    }
+
     // MARK: - the policy
 
     func testDriftIsJudgedAgainstTheFriendsClockNotTheirNumber() {

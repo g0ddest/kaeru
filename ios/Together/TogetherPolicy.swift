@@ -32,7 +32,12 @@ struct TogetherClock {
     mutating func record(sent: Int64, peerReceived: Int64, peerSent: Int64, received: Int64) {
         guard received >= sent, peerSent >= peerReceived else { return }
         let rtt = (received - sent) - (peerSent - peerReceived)
-        guard (0...60_000).contains(rtt), abs(peerReceived - sent) <= 86_400_000 else { return }
+        // A trip that took seconds is not a measurement of the clocks. It is a ping that sat in a
+        // frozen phone — this one, in the background, answers every ping it finds waiting when it
+        // wakes — or in a socket being redialled, and half of that wait would land on the offset.
+        // Three such answers in a row outvote the median. An honest sample's error is at most half
+        // its trip, so the cap on the trip is a cap on the error.
+        guard (0...TogetherTiming.maxRttMs).contains(rtt), abs(peerReceived - sent) <= 86_400_000 else { return }
         samples.append((((peerReceived - sent) + (peerSent - received)) / 2, rtt))
         if samples.count > 5 { samples.removeFirst() }
     }
@@ -74,6 +79,12 @@ enum TogetherTiming {
     static let correctionQuietMs: Int64 = 3_000
     /// How long a friend whose socket went away has to walk back into the room.
     static let rejoinWindowMs: Int64 = 30_000
+    /// The longest round trip a clock sample may report and still count: far past any network on
+    /// which watching together works at all, and far short of the five seconds between pings, so
+    /// a ping answered after a freeze cannot pass for a slow packet. Android's `ClockOffset.MAX_RTT_MS`.
+    static let maxRttMs: Int64 = 3_000
+    /// How far a greeting is carried forward with no report to go on. Android's `HELLO_CARRY_MAX_MS`.
+    static let helloCarryMaxMs: Int64 = 60_000
     /// How long a socket may live and how long it may be quiet for — an evening, not a moment.
     /// Silence is the normal state of a room nobody has joined yet, so it must not be a failure.
     static let socketLifetimeSeconds: TimeInterval = 24 * 60 * 60

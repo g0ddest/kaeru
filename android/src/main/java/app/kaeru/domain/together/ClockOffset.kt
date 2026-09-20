@@ -35,6 +35,13 @@ class ClockOffset(private val window: Int = WINDOW) {
             offsetMs = ((peerReceived - sentAt) + (peerSent - receivedAt)) / 2,
             rttMs = (receivedAt - sentAt) - (peerSent - peerReceived),
         )
+        // A round trip that took seconds is not a measurement of the clocks, it is a measurement
+        // of something else: an answer that sat in a frozen phone — iOS stops the whole process
+        // in the background and the pings queue up — or in a socket that was being redialled.
+        // Half of that wait lands on the offset, and three such answers in a row would outvote
+        // the median. The error in an honest sample is at most half its round trip, so a cap on
+        // the trip is a cap on the error; past it the sample says nothing worth keeping.
+        if (sample.rttMs < 0 || sample.rttMs > MAX_RTT_MS) return
         synchronized(lock) {
             samples.addLast(sample)
             while (samples.size > window) samples.removeFirst()
@@ -58,5 +65,13 @@ class ClockOffset(private val window: Int = WINDOW) {
     companion object {
         /** Five is enough to outvote a single delayed packet and short enough to follow a change. */
         const val WINDOW = 5
+
+        /**
+         * The longest round trip a sample may report and still count. Three seconds is far past
+         * any mobile network on which watching together works at all, and far short of the five
+         * between pings — so a ping answered after a freeze, whose trip is the freeze itself,
+         * cannot pass for a slow packet. The same number as iOS's `TogetherTiming.maxRttMs`.
+         */
+        const val MAX_RTT_MS = 3_000L
     }
 }
