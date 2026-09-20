@@ -900,6 +900,16 @@ class TogetherSession(
             )
         } else {
             goLive(message.name)
+            // A greeting carries the host's whole state, and a host that opened another title
+            // greets again from it — its player says so the moment it attaches. A guest already
+            // in the room used to follow the host on `episode` and on nothing else, and this
+            // greeting went by with its title in it while the guest played on through the old
+            // one. The guest follows; the host never does (it is what the picture is measured
+            // against), and a greeting naming no title says nothing to follow.
+            val here = port.state.value
+            if (message.animeId > 0 && (message.animeId != here.animeId || message.episode != here.episode)) {
+                changed(TogetherMessage.Episode(message.episode, message.translationId, message.seq, animeId = message.animeId))
+            }
         }
         answerGreeting()
     }

@@ -151,8 +151,10 @@ struct TogetherJoinTarget: Equatable {
         // a friend already in the room changes episode on `episode` and on nothing else, and
         // Android's player announces its opening as one. Without this the two phones sat in one
         // room on two different titles.
+        // Not «ready»: a player attaches the moment its stream is resolved, a beat before the
+        // first frame, and waiting for the frame meant the change was never said at all.
         let here = playback.togetherSnapshot
-        if let animeID = here.animeID, let episode = here.episode, here.ready,
+        if let animeID = here.animeID, let episode = here.episode, animeID > 0, episode > 0,
            let known = announcedEpisode, known.animeID != animeID || known.episode != episode {
             TogetherLog.write("player opened \(animeID)/\(episode) over a live room; telling the friend")
             sendEpisode(.init(animeID: animeID, episode: episode, translationID: here.translationID, positionMs: here.positionMs))

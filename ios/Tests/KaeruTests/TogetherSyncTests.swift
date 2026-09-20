@@ -614,7 +614,8 @@ import XCTest
         // The player is closed and another opens on a different title, as from the home screen.
         manager.detach(first)
         let second = TogetherManagerTests.Playback()
-        second.togetherSnapshot = TogetherPlaybackSnapshot(animeID: 62391, episode: 7, positionMs: 0, playing: true, ready: true)
+        // Attached the moment the stream resolved, a beat before the first frame — not ready yet.
+        second.togetherSnapshot = TogetherPlaybackSnapshot(animeID: 62391, episode: 7, positionMs: 0, playing: true, ready: false)
         let before = transport.outgoing.count
         manager.attach(second)
         try await Task.sleep(for: .milliseconds(30))

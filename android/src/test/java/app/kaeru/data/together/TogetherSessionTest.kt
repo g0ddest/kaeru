@@ -1142,6 +1142,19 @@ class TogetherSessionTest {
         assertEquals(7, sent.episode)
     }
 
+    /** The host greeted again from another title — the guest follows the greeting, not only `episode`. */
+    @Test
+    fun `a guest follows a host who greets again from another title`() = sessionTest {
+        liveAsGuest()   // on anime 100, episode 4
+
+        transport.deliver(peerHello(episode = 7, translationId = 11, positionMs = 0, seq = 30L).copy(animeId = 62391))
+        runCurrent()
+
+        val opened = port.opened.last()
+        assertEquals(62391, opened.animeId)
+        assertEquals(7, opened.episode)
+    }
+
     // ---- what this viewer did ----
 
     @Test
