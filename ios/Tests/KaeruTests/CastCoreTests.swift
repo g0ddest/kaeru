@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import Kaeru
 
@@ -81,5 +82,36 @@ final class CastCoreTests: XCTestCase {
         XCTAssertNil(state.contentID)
         XCTAssertEqual(state.handoff?.selection.episode, 3)
         XCTAssertEqual(state.handoff?.selection.translation, 8)
+    }
+}
+
+/// The defect this glyph replaced was an empty draw: a control that was there, took the press, and
+/// showed nothing. A path with no area in it is exactly that failure, and it is cheap to notice.
+final class CastGlyphTests: XCTestCase {
+    private let box = CGRect(x: 0, y: 0, width: 24, height: 24)
+
+    func testTheGlyphDrawsInsideTheBoxItIsGiven() {
+        let path = CastGlyph(connected: false).path(in: box)
+        XCTAssertFalse(path.isEmpty)
+        XCTAssertTrue(box.insetBy(dx: -0.5, dy: -0.5).contains(path.boundingRect), "\(path.boundingRect)")
+        // Not a sliver: the mark fills most of what it is given, as Material's does.
+        XCTAssertGreaterThan(path.boundingRect.width, 18)
+        XCTAssertGreaterThan(path.boundingRect.height, 16)
+    }
+
+    func testConnectedIsADifferentMarkRatherThanADifferentColour() {
+        let resting = CastGlyph(connected: false).path(in: box)
+        let playing = CastGlyph(connected: true).path(in: box)
+        XCTAssertNotEqual(resting.description, playing.description)
+        // The screen fills in: a point in the middle of it is inside the connected mark only.
+        XCTAssertTrue(playing.contains(CGPoint(x: 10, y: 10)))
+        XCTAssertFalse(resting.contains(CGPoint(x: 10, y: 10)))
+    }
+
+    /// A control that is asked for at 44 points must draw at 44 points: the original was handed
+    /// zero width by the toolbar and vanished without a word.
+    func testTheGlyphScalesWithItsFrame() {
+        let large = CastGlyph(connected: false).path(in: CGRect(x: 0, y: 0, width: 88, height: 88))
+        XCTAssertGreaterThan(large.boundingRect.width, 70)
     }
 }

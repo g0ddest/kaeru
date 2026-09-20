@@ -85,7 +85,16 @@ extension CastLoadPayload {
         // true terminates the receiver application, including when the SDK dialog initiated it.
         if !context.sessionManager.endSessionAndStopCasting(true) { onFailure?(.commandFailed) }
     }
-    func presentDevices() { start(); context.presentCastDialog() }
+    /// Discovery is started here rather than left to the SDK.
+    ///
+    /// `startDiscoveryAfterFirstTapOnCastButton` keeps the local-network prompt away from launch,
+    /// and the SDK lifts it when somebody taps a `GCKUICastButton` — which this app no longer has.
+    /// Without this line the picker opens on an empty list for ever.
+    func presentDevices() {
+        start()
+        context.discoveryManager.startDiscovery()
+        context.presentCastDialog()
+    }
     func presentExpandedControls() { context.presentDefaultExpandedMediaControls() }
 
     private func command(_ request: GCKRequest) {
