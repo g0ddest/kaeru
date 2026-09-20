@@ -97,6 +97,14 @@ struct RootView: View {
             open(held)
         }
         .task { await model.start() }
+        // The invited side has no idea what it is joining until the host says so, and what it says
+        // is the only thing that opens a player over there. Nothing was listening: joining a room
+        // connected, synced and then sat on the join screen with the episode playing on one phone.
+        .task {
+            model.together.onOpenPlayback = { item in
+                Task { await openTogether(item) }
+            }
+        }
         .task { openPending() }
         .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await model.flush() } } }
     }
@@ -209,6 +217,16 @@ struct RootView: View {
         }
     }
 
+    /// What the friend is watching, opened here. A player that is already up is left alone: the
+    /// session is attached to it and it is told to change episode directly.
+    private func openTogether(_ item: TogetherEpisode) async {
+        guard model.playersOpen == 0, deepLinkRoute == nil else { return }
+        guard let anime = await model.anime(id: item.animeID) else { return }
+        settings = false
+        togetherOpen = false
+        model.beginPlayback(anime: anime)
+        deepLinkRoute = PlaybackRoute(anime: anime, episode: item.episode)
+    }
     private func openTitle(id: Int, episode: Int?) async {
         guard let anime = await model.anime(id: id) else { return }
         selection = .home
