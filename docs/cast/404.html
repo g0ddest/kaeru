@@ -84,7 +84,8 @@
   .actions { display: flex; flex-direction: column; gap: 12px; margin: 0 0 14px; }
 
   .room dd.room-note { margin: 10px 0 0; font-size: 14px; font-weight: 500; letter-spacing: 0; color: var(--muted); word-break: normal; }
-  a.button {
+  button.button { font: inherit; border: 0; cursor: pointer; width: 100%; }
+  a.button, button.button {
     display: block;
     text-align: center;
     text-decoration: none;
@@ -166,6 +167,15 @@
     <a class="button primary" id="open" href="https://github.com/g0ddest/kaeru/releases">Установить Kaeru</a>
     <p class="hint" id="hint">Если кнопка не сработала — нажмите ссылку в чате ещё раз: после установки Android откроет её в Kaeru.</p>
     <a class="button secondary" id="apk" href="https://github.com/g0ddest/kaeru/releases">Скачать APK</a>
+    <!--
+      For the phone where the button above cannot work: a browser inside a messenger that hands
+      custom schemes to nobody. Copying is the one thing every browser is allowed to do from a
+      tap, and Kaeru on iPhone reads the pasteboard when it comes to the front — so the whole of
+      the remaining path is «скопировать, открыть Kaeru». Shown only where there is something to
+      copy and only on an iPhone, because Android opens the app from the button.
+    -->
+    <button class="button secondary" id="copy" type="button" hidden>Скопировать приглашение</button>
+    <p class="hint" id="copied" hidden>Скопировано. Теперь откройте Kaeru — приглашение появится само.</p>
   </div>
   <p class="note">
     Приложения ещё нет? Скачайте APK, установите, подождите полминуты и откройте ссылку из
@@ -239,6 +249,16 @@
       // only aims it, and the tap that follows is the gesture WebKit was waiting for.
       open.href = 'kaeru://watch?r=' + room + '&k=' + key;
       open.textContent = 'Открыть в Kaeru';
+      var copy = document.getElementById('copy');
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        copy.hidden = false;
+        copy.addEventListener('click', function () {
+          // The address as it is, fragment included: the app parses exactly this.
+          navigator.clipboard.writeText(window.location.href).then(function () {
+            document.getElementById('copied').hidden = false;
+          });
+        });
+      }
       // A tap here can still do nothing, and not because Kaeru is missing: Telegram and WhatsApp
       // open a chat link in their own in-app browser, which — unlike Safari — has no standing
       // permission to hand a custom scheme to another app at all, tap or not. The one thing a

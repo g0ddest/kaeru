@@ -54,6 +54,8 @@ struct RootView: View {
     @State private var heldLink: DeepLink?
     /// What was agreed to on the join screen, opened once that screen has closed.
     @State private var pendingWatch: TogetherEpisode?
+    /// The pasteboard as it was last looked at, so the same contents are never asked about twice.
+    @State private var pasteboardSeen = -1
     var body: some View {
         Group {
             if sizeClass == .regular {
@@ -139,7 +141,7 @@ struct RootView: View {
             // that then looks stuck — a room gone quiet, an episode that never opens — is the
             // system freezing the app, not the app failing.
             TogetherLog.write("scene \(phase)")
-            if phase == .active { Task { await model.flush() } }
+            if phase == .active { Task { await model.flush(); await takeInvitationFromPasteboard() } }
         }
     }
 
@@ -262,6 +264,39 @@ struct RootView: View {
         model.beginPlayback(anime: anime)
         deepLinkRoute = PlaybackRoute(anime: anime, episode: item.episode)
     }
+    /// An invitation somebody copied, taken the moment the app is opened.
+    ///
+    /// Without a paid Apple team there are no universal links, so a link in a chat cannot open
+    /// this app by itself; the page it lands on offers a button, and a browser inside a messenger
+    /// may refuse even that. What every browser can do is copy. So the page offers to copy the
+    /// invitation, and this app, coming to the front, looks whether the pasteboard holds one —
+    /// and opens the join screen without anybody pasting anything anywhere.
+    ///
+    /// Looked at once per change of the pasteboard, and read only when the system says it holds
+    /// something URL-shaped: reading is what shows the «Kaeru вставило из Telegram» banner, and
+    /// a banner at every launch for a pasteboard full of somebody's shopping list is not on.
+    private func takeInvitationFromPasteboard() async {
+        let board = UIPasteboard.general
+        guard board.changeCount != pasteboardSeen, board.hasStrings || board.hasURLs else { return }
+        pasteboardSeen = board.changeCount
+        let urlShaped: Set<PartialKeyPath<UIPasteboard.DetectedValues>> = [\UIPasteboard.DetectedValues.probableWebURL]
+        // The completion form: the SDK on this machine offers no `async` one for this call.
+        let looksLikeURL: Bool = await withCheckedContinuation { continuation in
+            board.detectPatterns(for: urlShaped) { result in
+                let found = (try? result.get()) ?? []
+                continuation.resume(returning: found.contains(\UIPasteboard.DetectedValues.probableWebURL))
+            }
+        }
+        guard looksLikeURL else { return }
+        let text = (board.string ?? board.url?.absoluteString ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: text), let link = DeepLink.parse(url), case .watch(let invitation) = link else { return }
+        // Already in this room, on either side — a copied invitation still in the pasteboard is
+        // not a reason to leave it and come back.
+        guard model.together.invitation?.roomID != invitation.roomID else { return }
+        TogetherLog.write("invitation taken from the pasteboard")
+        open(link)
+    }
+
     private func openTitle(id: Int, episode: Int?) async {
         guard let anime = await model.anime(id: id) else { return }
         selection = .home
