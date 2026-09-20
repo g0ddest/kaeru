@@ -107,6 +107,9 @@ class TogetherCopyTest {
         assertEquals("Не удалось подключиться", TogetherCopy.lost(LostReason.WAIT_TIMEOUT))
         assertEquals("В этой сессии уже двое", TogetherCopy.lost(LostReason.ROOM_FULL))
         assertEquals("Сервер совместного просмотра не настроен", TogetherCopy.lost(LostReason.NOT_CONFIGURED))
+        // The relay's idle close is the room running out, not the connection dropping — and the
+        // same sentence as on the iPhone across the sofa.
+        assertEquals("Комната закрылась: в ней шесть часов ничего не происходило", TogetherCopy.lost(LostReason.EXPIRED))
         assertEquals("Сессия закончилась", TogetherCopy.ENDED)
     }
 

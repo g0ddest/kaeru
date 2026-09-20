@@ -524,6 +524,7 @@ class TogetherSession(
     private fun reasonOf(failure: Throwable?): LostReason = when {
         failure is RelayNotConfigured -> LostReason.NOT_CONFIGURED
         failure is TogetherFailed && failure.reason == TogetherFailureReason.ROOM_FULL -> LostReason.ROOM_FULL
+        failure is TogetherFailed && failure.reason == TogetherFailureReason.EXPIRED -> LostReason.EXPIRED
         else -> LostReason.CONNECTION
     }
 

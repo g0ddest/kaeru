@@ -156,6 +156,9 @@ enum class TogetherFailureReason {
      * viewer who followed one deserves to be told that rather than shown a network error.
      */
     ROOM_FULL,
+
+    /** The relay closed the room after hours with no frames in it. It is over, not lost. */
+    EXPIRED,
 }
 
 /** A shared viewing could not be opened, or could not be kept. */

@@ -120,7 +120,12 @@ object TogetherCopy {
         LostReason.WAIT_TIMEOUT -> UNREACHABLE
         LostReason.ROOM_FULL -> "В этой сессии уже двое"
         LostReason.NOT_CONFIGURED -> "Сервер совместного просмотра не настроен"
+        // The same two sentences as on iOS: one room, one story about why it stopped.
+        LostReason.EXPIRED -> ROOM_EXPIRED
     }
+
+    /** The relay's idle close, 4408. Not «связь потеряна»: nothing was lost, the room ran out. */
+    const val ROOM_EXPIRED = "Комната закрылась: в ней шесть часов ничего не происходило"
 
     /** The label under a wait. There is always one. */
     fun exitLabel(exit: WaitExit): String = when (exit) {

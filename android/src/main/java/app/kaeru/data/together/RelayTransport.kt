@@ -375,12 +375,14 @@ class RelayTransport @Inject constructor(
         private val control = Json { ignoreUnknownKeys = true }
 
         /**
-         * What to tell the viewer about a close that ends things. A room that expired after hours
-         * of silence gets nothing: it is over, and «связь потеряна» would be a lie about why.
+         * What to tell the viewer about a close that ends things. Each of the three is its own
+         * sentence: a room that expired after hours of silence is over, not lost, and used to fall
+         * through to «связь потеряна» — a lie about why.
          */
         private fun refusalOf(code: Int): TogetherFailureReason? = when (code) {
             CLOSE_ROOM_FULL -> TogetherFailureReason.ROOM_FULL
             CLOSE_FRAME_TOO_LARGE -> TogetherFailureReason.FRAME_TOO_LARGE
+            CLOSE_IDLE -> TogetherFailureReason.EXPIRED
             else -> null
         }
 

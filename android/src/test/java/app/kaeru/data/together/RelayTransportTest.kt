@@ -297,7 +297,7 @@ class RelayTransportTest {
     }
 
     @Test
-    fun `a room that sat empty for hours is simply over`() = runBlocking<Unit> {
+    fun `a room that sat empty for hours is over, and is said to be`() = runBlocking<Unit> {
         val relay = upgrade()
         repeat(3) { upgrade() }
         val heard = inbox()
@@ -305,8 +305,9 @@ class RelayTransportTest {
         soon { relay.sockets.receive() }.close(ROOM_IDLE, "idle")
 
         val emitted = soon { drain(heard) }
-        // Nothing to report: the room expired, and «связь потеряна» would be a lie.
-        assertTrue(emitted.none { it.isFailure })
+        // Its own reason, so the screen can say the room ran out rather than «связь потеряна» —
+        // which is what falling through to the default used to say, on Android alone.
+        assertEquals(TogetherFailureReason.EXPIRED, reasonOf(emitted.last()))
         assertEquals(ConnectionState.CLOSED, transport.state.first())
         assertEquals(1, server.requestCount)
     }

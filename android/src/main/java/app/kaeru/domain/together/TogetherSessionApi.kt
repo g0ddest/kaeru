@@ -29,6 +29,9 @@ enum class LostReason {
 
     /** This build has no relay, and the friend is not on this Wi-Fi. */
     NOT_CONFIGURED,
+
+    /** The relay closed the room after hours of silence. Over, not lost — the link is dead. */
+    EXPIRED,
 }
 
 /**
