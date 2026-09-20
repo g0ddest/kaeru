@@ -13,11 +13,18 @@ const ORIGIN = "https://relay.test";
 const MAX_FRAME_BYTES = 64 * 1024;
 
 let roomCounter = 0;
+let ipCounter = 0;
 
 /** A room id no other test uses, so no two tests share a Durable Object. */
 function freshRoom(): string {
   roomCounter += 1;
   return `test-room-${String(roomCounter).padStart(2, "0")}`;
+}
+
+/** An address no other test used, so no two tests share a rate-limit bucket. */
+function freshIp(): string {
+  ipCounter += 1;
+  return `203.0.113.${ipCounter}`;
 }
 
 interface Peer {
@@ -32,9 +39,9 @@ interface Join {
   readonly peer: Peer | null;
 }
 
-async function join(roomId: string): Promise<Join> {
+async function join(roomId: string, ip: string = freshIp()): Promise<Join> {
   const response = await SELF.fetch(`${ORIGIN}/w/${roomId}`, {
-    headers: { Upgrade: "websocket" },
+    headers: { Upgrade: "websocket", "CF-Connecting-IP": ip },
   });
   const socket = response.webSocket;
   if (socket === null) return { response, peer: null };
@@ -156,6 +163,43 @@ describe("room occupancy", () => {
     await runInDurableObject(roomStub(roomId), (_instance: RoomDO, state) => {
       expect(state.getWebSockets()).toHaveLength(2);
     });
+  });
+
+  it("lets one address open thirty rooms a minute and turns the thirty-first away", async () => {
+    const ip = freshIp();
+    for (let i = 0; i < 30; i += 1) {
+      const { response, peer } = await join(freshRoom(), ip);
+      expect(response.status, `upgrade ${i + 1}`).toBe(101);
+      peer?.socket.close(1000, "bye");
+    }
+
+    const refused = await join(freshRoom(), ip);
+
+    expect(refused.response.status).toBe(429);
+    expect(refused.peer).toBeNull();
+    const retryAfter = Number(refused.response.headers.get("retry-after"));
+    expect(retryAfter).toBeGreaterThanOrEqual(1);
+    expect(retryAfter).toBeLessThanOrEqual(60);
+    // Another address is another bucket.
+    expect((await join(freshRoom())).response.status).toBe(101);
+  });
+
+  it("keeps the room bucket apart from the token bucket", async () => {
+    const ip = freshIp();
+    for (let i = 0; i < 30; i += 1) (await join(freshRoom(), ip)).peer?.socket.close(1000, "bye");
+    expect((await join(freshRoom(), ip)).response.status).toBe(429);
+
+    // Sign-in from the same address is not spent: this form is refused for what it says, not
+    // for how often it was said.
+    const token = await SELF.fetch(`${ORIGIN}/oauth/token`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "CF-Connecting-IP": ip,
+      },
+      body: "grant_type=nonsense",
+    });
+    expect(token.status).toBe(400);
   });
 
   it("frees the slot once a peer leaves", async () => {
@@ -286,6 +330,18 @@ describe("peer departure", () => {
     // other one hears about it.
     expect([a.text.length, b.text.length].sort()).toEqual([0, 1]);
     expect([...a.text, ...b.text]).toEqual(['{"type":"peer-left"}']);
+  });
+
+  it("answers a peer's close frame with one of its own", async () => {
+    const roomId = freshRoom();
+    const a = await joinOrThrow(roomId);
+    await joinOrThrow(roomId);
+
+    a.socket.close(1000, "bye");
+    await settle();
+
+    // Both phones wait up to a second for exactly this before cutting the socket themselves.
+    expect(a.closes.map((close) => close.code)).toEqual([1000]);
   });
 
   it("says nothing to a peer that is already gone", async () => {

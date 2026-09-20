@@ -375,7 +375,7 @@ describe("rate limit", () => {
   it("throws a spent bucket away instead of storing it forever", async () => {
     const ip = freshIp();
     await post(codeExchange(), { ip });
-    const bucket = env.RATE.get(env.RATE.idFromName(ip));
+    const bucket = env.RATE.get(env.RATE.idFromName(`oauth:${ip}`));
     const stored = await runInDurableObject(bucket, async (_instance, state) =>
       (await state.storage.list()).size,
     );

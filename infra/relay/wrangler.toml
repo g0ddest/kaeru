@@ -6,6 +6,9 @@ main = "src/index.ts"
 # Pinned to the newest date the vitest pool's bundled workerd accepts, so tests and
 # production run the same runtime semantics.
 compatibility_date = "2026-08-22"
+# `web_socket_auto_reply_to_close` — the runtime answering a peer's Close frame by itself — is
+# on by this date (default since 2026-04-07), and workerd refuses a config that names a flag
+# its date already implies. `RoomDO.webSocketClose` replies explicitly all the same.
 
 # Workers Logs, so `npx wrangler tail` and the dashboard show the relay's events.
 [observability]

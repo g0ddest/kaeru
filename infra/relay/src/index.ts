@@ -75,7 +75,12 @@ const SHIKIMORI_TOKEN_URL = "https://shikimori.io/oauth/token";
 /** A token request is a few hundred bytes. Anything this size is not one. */
 const MAX_TOKEN_BODY_BYTES = 8 * 1024;
 
-/** What one address may ask of the token route inside [RATE_WINDOW_MS]. */
+/**
+ * What one address may ask of a rate-limited route inside [RATE_WINDOW_MS]. The token route and
+ * the room route each keep their own bucket per address: a flood of room upgrades must not take
+ * sign-in down with it. Thirty room upgrades a minute is far past two phones behind one router
+ * redialling on the client's own schedule — six dials in a bad half minute, each.
+ */
 const RATE_LIMIT = 30;
 const RATE_WINDOW_MS = 60 * 1000;
 
@@ -166,6 +171,13 @@ export default {
       return plain("expected websocket upgrade", 426);
     }
 
+    // Before the room's Durable Object is so much as addressed: the relay's address ships inside
+    // every build, so anybody with one can open rooms, and each upgrade is a wake and a storage
+    // write. The client's own reconnect schedule fits under this with room to spare; a script
+    // opening rooms as fast as it can does not.
+    const retryAfter = await rateLimit(request, env, "room");
+    if (retryAfter > 0) return tooManyRequests(retryAfter);
+
     return env.ROOM.get(env.ROOM.idFromName(roomId)).fetch(request);
   },
 } satisfies ExportedHandler<Env>;
@@ -195,16 +207,8 @@ async function proxyToken(request: Request, env: Env): Promise<Response> {
   }
 
   // Before the body is read, so a flood costs this Worker one storage read apiece.
-  const retryAfter = await rateLimit(request, env);
-  if (retryAfter > 0) {
-    return new Response("too many requests", {
-      status: 429,
-      headers: {
-        "content-type": "text/plain; charset=utf-8",
-        "retry-after": String(retryAfter),
-      },
-    });
-  }
+  const retryAfter = await rateLimit(request, env, "oauth");
+  if (retryAfter > 0) return tooManyRequests(retryAfter);
 
   // An honest Content-Length is required before a byte is read. Reading a body to find out how
   // big it is means buffering whatever the caller sends — Cloudflare's platform cap is 100 MB
@@ -288,21 +292,33 @@ function upstreamForm(form: URLSearchParams, grant: string, secret: string): URL
   return upstream;
 }
 
+function tooManyRequests(retryAfter: number): Response {
+  return new Response("too many requests", {
+    status: 429,
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "retry-after": String(retryAfter),
+    },
+  });
+}
+
 /**
- * Seconds the caller must wait, or 0 when this request is within its address's quota.
+ * Seconds the caller must wait, or 0 when this request is within its address's quota on the
+ * named route. One bucket per address per route, so the two routes cannot spend each other's.
  *
  * Fails open. A Durable Object can be overloaded, or its migration not yet applied, and a limiter
  * in that state must not take sign-in down with it: the route is still bounded by Cloudflare's own
  * limits, and letting the exception escape would answer a refresh with a 500.
  */
-async function rateLimit(request: Request, env: Env): Promise<number> {
+async function rateLimit(request: Request, env: Env, route: string): Promise<number> {
   const ip = request.headers.get("CF-Connecting-IP") ?? SHARED_BUCKET;
   try {
-    const response = await env.RATE.get(env.RATE.idFromName(ip)).fetch("https://rate.invalid/");
+    const bucket = env.RATE.get(env.RATE.idFromName(`${route}:${ip}`));
+    const response = await bucket.fetch("https://rate.invalid/");
     const { retryAfter } = (await response.json()) as { retryAfter: number };
     return retryAfter;
   } catch {
-    console.log("oauth rate unavailable");
+    console.log(`${route} rate unavailable`);
     return 0;
   }
 }
@@ -420,8 +436,14 @@ export class RoomDO implements DurableObject {
     await this.#armIdleAlarm(Date.now());
   }
 
-  async webSocketClose(ws: WebSocket, code: number, _reason: string, wasClean: boolean): Promise<void> {
+  async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean): Promise<void> {
     log(this.#roomOf(ws), "close", `code=${code} clean=${wasClean}`);
+    // The other half of the closing handshake. The runtime answers a Close frame by itself under
+    // `web_socket_auto_reply_to_close`; Cloudflare's own example for this handler still replies
+    // here, and calling it on a socket the runtime has already closed is documented as safe. A
+    // relay that never answered left both phones waiting out their goodbye grace to the last
+    // millisecond on every «Выйти».
+    tryClose(ws, code, reason);
     this.#tellPeerLeft(ws);
   }
 
