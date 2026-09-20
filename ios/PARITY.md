@@ -22,12 +22,19 @@ implementation scope; verification is recorded separately in `VERIFICATION.md`.
 | TV login pairing | `data/pairing`, mobile pairing | Native bounded LAN client and settings UI implemented |
 | Chromecast sender and media remote | `player/Cast*`, `MediaItemFactory.kt` | Official iOS SDK sender, player handoff and remote controls implemented |
 | Settings, studio order, source override, about | common/mobile settings | Native UI worker active |
+| «Обновления»: GitHub releases, 24h throttle, stripped notes, quiet home row | `domain/update`, `data/update`, `ui/*/update` | Native screen, repository and home row implemented; the install step is the one platform difference — see below |
 
 Not Android parity requirements: general catalog filtering, paginated search,
 related-title navigation, or a visible playback-speed setting (not exposed by the
 audited Android screens). Useful native playback controls may still include speed.
-Android APK self-updates and D-pad television navigation do not apply to the iOS
-binary; Chromecast and TV login interoperability do apply.
+D-pad television navigation does not apply to the iOS binary; Chromecast and TV
+login interoperability do apply. Android's APK self-update does apply, with the
+one step the platform forbids: an iOS app cannot install an IPA, so «Установить»
+opens an `itms-services://` over-the-air manifest when the newest release
+carries one, and otherwise offers the release page. Everything else — the rule
+for what is newer, the day-long throttle, the stripped release notes, the last
+known result shown offline, the stored answer filtered by the running build — is
+Android's, and the wording is Android's word for word.
 
 Protocol corrections from the source audit: Together has two symmetric peers,
 sequence ordering with host tie-break, AES-128-GCM frames, and no REST room API.
