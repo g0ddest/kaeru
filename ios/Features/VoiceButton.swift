@@ -36,10 +36,19 @@ struct VoiceButton: View {
     private let cancelDistance: CGFloat = 72
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
+        // The bar and the hint sit above the button in the stack's own flow now, not floated over
+        // it with `.offset` the way an earlier version of this button drew them. An offset view
+        // keeps its un-offset frame for every measurement the parent makes, so that `ZStack` still
+        // measured itself as wide as the bar even though the bar was pushed up and out of it — and
+        // the row this button sits in is a horizontal `ScrollView`, which clips anything drawn
+        // outside the frame it measured. That reproduced exactly the bug a phone found: pressing
+        // the microphone widened the row with nothing to see in the new space, because the one
+        // thing meant to fill it was being drawn somewhere the `ScrollView` had already cut away.
+        // Growing upward for real avoids both at once, the way Android's own `Column` already does.
+        VStack(alignment: .leading, spacing: 8) {
+            if holding { bar }
+            else if hinting { hint }
             button
-            if holding { bar.offset(y: -56) }
-            else if hinting { hint.offset(y: -52) }
         }
         .onChange(of: recorder.isRecording) { was, now in
             // The recorder closes itself at the ceiling. Noticing that is what sends the clip —
