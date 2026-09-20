@@ -26,7 +26,7 @@ class NativeApi internal constructor(
     constructor(clientId: String, proxyUrl: String) : this(clientId, proxyUrl, platformHttpClient())
 
     private val http = HttpTransport(client)
-    private val shikimori = ShikimoriClient(http, clientId, proxyUrl, limiter)
+    private val shikimori = ShikimoriFacade(ShikimoriClient(http, clientId, proxyUrl, limiter))
     private val kodik = KodikClient(http)
 
     @Throws(Exception::class)

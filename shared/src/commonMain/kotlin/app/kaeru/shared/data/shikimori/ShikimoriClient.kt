@@ -2,7 +2,6 @@ package app.kaeru.shared.data.shikimori
 
 import app.kaeru.shared.ApiException
 import app.kaeru.shared.data.network.*
-import app.kaeru.shared.domain.*
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.FormDataContent
 import io.ktor.http.*
@@ -10,20 +9,47 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.*
 
-internal class ShikimoriClient(
+/**
+ * Shikimori, one endpoint per method, with the token handed in per call.
+ *
+ * Every request goes through one process-wide rate limiter and repeats once after a 429, waiting
+ * as long as `Retry-After` says. Nothing here holds a session: Swift keeps its own, Android keeps
+ * its own, and both give this client the bearer to use — which is what lets a sign-in verify a
+ * candidate identity with a token that is not yet the account's.
+ *
+ * Posters come from GraphQL, in [posters]: REST's `image` is a legacy field that answers with a
+ * placeholder for anything added after the poster migration.
+ */
+class ShikimoriClient(
     private val http: HttpTransport,
     private val clientId: String,
-    private val proxyUrl: String,
-    private val limiter: ShikimoriRateLimiter,
+    proxyUrl: String,
+    private val limiter: ShikimoriRateLimiter = ShikimoriRateLimiter.shared,
+    private val userAgent: String = "Kaeru/1.0",
+    private val base: String = BASE_URL,
 ) {
-    private val base = "https://shikimori.io"
-    private val statuses = listOf("planned", "watching", "rewatching", "completed", "on_hold", "dropped")
+    /**
+     * The proxy's token endpoint, or null for a build assembled without a usable address. Nothing
+     * is sent there without one: the secret an exchange needs is the worker's, and a code sent to
+     * Shikimori directly would only earn an `invalid_client` and be burnt.
+     */
+    private val tokenEndpoint: String? = proxyUrl.trim().trimEnd('/')
+        // Spelled out: an address with no scheme is a host to Ktor's parser, and a bare
+        // `kaeru-relay.workers.dev` copied down from `TOGETHER_RELAY_URL` must not be dialled over
+        // plain http with a code in the body.
+        .takeIf { it.startsWith("http://", ignoreCase = true) || it.startsWith("https://", ignoreCase = true) }
+        ?.let { runCatching { Url("$it/oauth/token") }.getOrNull() }
+        ?.takeIf { it.host.isNotBlank() }
+        ?.toString()
+
+    /** Whether this build can sign anyone in at all. */
+    val oauthConfigured: Boolean get() = tokenEndpoint != null
 
     private suspend fun request(path: String, token: String = "", configure: HttpRequestBuilder.() -> Unit = {}): String {
         repeat(2) { attempt ->
             limiter.awaitSlot()
             val response = http.request("$base/$path") {
-                header(HttpHeaders.UserAgent, "Kaeru/1.0")
+                header(HttpHeaders.UserAgent, userAgent)
                 header(HttpHeaders.Accept, "application/json")
                 if (token.isNotBlank()) bearerAuth(token)
                 configure()
@@ -35,99 +61,118 @@ internal class ShikimoriClient(
         error("Unreachable")
     }
 
-    suspend fun search(query: String): List<Anime> = array(request("api/animes") {
-        parameter("search", query); parameter("limit", 30)
-    }).map(::anime).withRealPosters()
+    /** Who [token] belongs to. Sent without a bearer when it is blank, and answered 401 for it. */
+    suspend fun whoami(token: String): UserDto = decode(request("api/users/whoami", token))
 
-    suspend fun discover(): List<Anime> = catalogue { parameter("status", "ongoing") }
-
-    suspend fun seasonal(year: Int, season: String): List<Anime> {
-        require(year > 0 && season in listOf("winter", "spring", "summer", "autumn")) { "Invalid anime season." }
-        return catalogue { parameter("season", "${season}_$year") }
-    }
-
-    private suspend fun catalogue(filters: HttpRequestBuilder.() -> Unit): List<Anime> =
-        array(request("api/animes") {
-            parameter("order", "popularity"); parameter("limit", 20); parameter("censored", "true")
-            filters()
-        }).map(::anime).distinctBy { it.id }.withRealPosters()
-
-    suspend fun details(animeId: Int): Anime {
-        require(animeId > 0) { "Anime id must be positive." }
-        return listOf(anime(parseObject(request("api/animes/$animeId")))).withRealPosters().single()
-    }
-
-    suspend fun account(token: String): Account {
-        require(token.isNotBlank()) { "Authentication required (HTTP 401)." }
-        val user = parseObject(request("api/users/whoami", token))
-        val id = user.long("id")
-        check(id > 0) { "Invalid account response." }
-        return Account(id, user.string("nickname"), imageUrl(user.string("avatar")))
-    }
-
-    suspend fun library(userId: Long, token: String): List<LibraryItem> {
-        require(userId > 0) { "User id must be positive." }
-        require(token.isNotBlank()) { "Authentication required (HTTP 401)." }
-        val rates = mutableListOf<JsonObject>()
-        for (status in statuses) {
+    /** Every row of the viewer's list, all six statuses, a thousand rows a page. */
+    suspend fun libraryRates(userId: Long, token: String): List<UserRateDto> {
+        val rates = mutableListOf<UserRateDto>()
+        for (status in STATUSES) {
             var page = 1
             do {
-                val batch = array(request("api/v2/user_rates", token) {
+                val batch = decodeList<UserRateDto>(request("api/v2/user_rates", token) {
                     parameter("target_type", "Anime"); parameter("user_id", userId)
-                    parameter("status", status); parameter("page", page); parameter("limit", 1000)
+                    parameter("status", status); parameter("page", page); parameter("limit", RATES_PAGE)
                 })
                 rates += batch
                 page++
-            } while (batch.size == 1000)
+            } while (batch.size == RATES_PAGE)
         }
-        val cards = mutableMapOf<Int, Anime>()
-        rates.forEach { rate -> embedded(rate)?.let { card -> cards[card.id] = card } }
-        val missing = rates.map(::targetId).distinct().filter { it !in cards }
-        for (ids in missing.chunked(50)) {
-            array(request("api/animes") {
-                parameter("ids", ids.joinToString(",")); parameter("limit", 50)
-            }).map(::anime).forEach { cards[it.id] = it }
-        }
-        val enriched = cards.values.toList().withRealPosters().associateBy { it.id }
-        return rates.distinctBy { it.long("id") }.map { rate ->
-            val card = enriched[targetId(rate)] ?: throw Exception("Anime details are missing from the library response.")
-            rate(rate, card)
-        }
+        return rates
     }
 
-    suspend fun setRate(animeId: Int, userId: Long, rateId: Long, status: String, episodes: Int, token: String): LibraryItem {
-        require(userId > 0 && rateId >= 0 && episodes >= 0) { "Invalid library update." }
-        require(status in statuses) { "Unknown library status." }
-        require(token.isNotBlank()) { "Authentication required (HTTP 401)." }
-        // Fetch before the mutation so a failed card fetch cannot hide a successful write.
-        val card = details(animeId)
-        val payload = buildJsonObject {
-            put("status", status); put("episodes", episodes)
-            if (rateId == 0L) { put("user_id", userId); put("target_id", animeId); put("target_type", "Anime") }
+    /** The cards for [ids], fetched fifty at a time — Shikimori's ceiling for one `ids=` batch. */
+    suspend fun animesByIds(ids: List<Int>): List<AnimeDto> = ids.distinct().chunked(BATCH).flatMap { batch ->
+        decodeList<AnimeDto>(request("api/animes") { parameter("ids", batch.joinToString(",")); parameter("limit", BATCH) })
+    }
+
+    /**
+     * The catalogue itself rather than one viewer's list: what is airing now (`status`), or what a
+     * season held (`season`). Most popular first, enough to fill a row, and `censored=true` so a
+     * home screen is not where adult titles turn up.
+     */
+    suspend fun catalogue(status: String? = null, season: String? = null): List<AnimeDto> =
+        decodeList(request("api/animes") {
+            parameter("order", "popularity"); parameter("limit", ROW); parameter("censored", "true")
+            if (status != null) parameter("status", status)
+            if (season != null) parameter("season", season)
+        })
+
+    suspend fun anime(id: Int): AnimeDto = decode(request("api/animes/$id"))
+
+    suspend fun screenshots(id: Int): List<ScreenshotDto> = decodeList(request("api/animes/$id/screenshots"))
+
+    suspend fun search(query: String): List<AnimeDto> =
+        decodeList(request("api/animes") { parameter("search", query); parameter("limit", 30) })
+
+    /**
+     * The real posters of [ids], by id, from GraphQL — `originalUrl` first, because `mainUrl` is
+     * Shikimori's 225×318 thumbnail, which a card on a phone is already wider than and a hero
+     * stretched fourfold; the thumbnail stays as the fallback, because a small poster beats none.
+     *
+     * Posters are cosmetic, and this runs on the way to a screen that has already loaded: a batch
+     * that fails is simply missing from the answer, so a caller keeps whatever REST gave it rather
+     * than losing the row. Cancellation is not a failed batch and is rethrown.
+     */
+    suspend fun posters(ids: List<Int>): Map<Int, String> {
+        val posters = mutableMapOf<Int, String>()
+        for (batch in ids.distinct().chunked(BATCH)) {
+            try {
+                val query = "{ animes(ids: \"${batch.joinToString(",")}\", limit: $BATCH) { id poster { mainUrl originalUrl } } }"
+                val response = parseObject(request("api/graphql") {
+                    method = HttpMethod.Post
+                    contentType(ContentType.Application.Json)
+                    setBody(restJson.encodeToString(GraphqlRequest.serializer(), GraphqlRequest(query)))
+                })
+                val entries = (response["data"] as? JsonObject)?.get("animes") as? JsonArray
+                entries.orEmpty().forEach { entry ->
+                    val dto = entry as? JsonObject ?: return@forEach
+                    val id = dto.int("id").takeIf { it in batch } ?: return@forEach
+                    val poster = dto["poster"] as? JsonObject ?: return@forEach
+                    shikimoriUrl(poster.string("originalUrl").ifBlank { poster.string("mainUrl") })?.let { posters[id] = it }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // One bad batch costs one batch of posters, never the catalogue it decorates.
+            }
         }
-        val path = "api/v2/user_rates" + if (rateId == 0L) "" else "/$rateId"
-        val response = request(path, token) {
-            method = if (rateId == 0L) HttpMethod.Post else HttpMethod.Patch
+        return posters
+    }
+
+    suspend fun createUserRate(userId: Long, animeId: Int, status: String, episodes: Int? = null, token: String): UserRateDto =
+        write("api/v2/user_rates", HttpMethod.Post, token, UserRatePayload(userId, animeId, "Anime", status, episodes))
+
+    /** Names only the half it changes: Shikimori reads an absent field as «leave it». */
+    suspend fun updateUserRate(rateId: Long, status: String? = null, episodes: Int? = null, token: String): UserRateDto =
+        write("api/v2/user_rates/$rateId", HttpMethod.Patch, token, UserRatePayload(status = status, episodes = episodes))
+
+    private suspend fun write(path: String, verb: HttpMethod, token: String, payload: UserRatePayload): UserRateDto =
+        decode(request(path, token) {
+            method = verb
             contentType(ContentType.Application.Json)
-            setBody(buildJsonObject { put("user_rate", payload) }.toString())
-        }
-        return rate(parseObject(response), card)
-    }
+            setBody(restJson.encodeToString(UserRateRequest.serializer(), UserRateRequest(payload)))
+        })
 
-    suspend fun token(grant: String, value: String): String {
-        val url = runCatching { Url(proxyUrl.trim().trimEnd('/') + "/oauth/token") }.getOrNull()
-        require(proxyUrl.isNotBlank() && url != null && url.protocol.name in listOf("http", "https") && url.host.isNotBlank()) {
-            "OAuth proxy is not configured."
-        }
+    /**
+     * A code or a refresh token for a session, through Kaeru's proxy, which adds the client
+     * secret on the way.
+     *
+     * A 400 or 401 whose body names `invalid_grant` comes back as an [ApiException] carrying that
+     * one marker and nothing else: it is the single OAuth failure that means «sign in again», and
+     * the body beside it can carry credentials that must not reach a crash report.
+     */
+    suspend fun token(grant: String, value: String, redirectUri: String = MOBILE_REDIRECT): TokenResponseDto {
+        val url = requireNotNull(tokenEndpoint) { "OAuth proxy is not configured." }
         require(clientId.isNotBlank() && value.isNotBlank()) { "OAuth credentials are missing." }
         val form = Parameters.build {
             append("grant_type", grant); append("client_id", clientId)
-            if (grant == "authorization_code") { append("code", value); append("redirect_uri", "kaeru://oauth") }
+            if (grant == "authorization_code") { append("code", value); append("redirect_uri", redirectUri) }
             else append("refresh_token", value)
         }
-        val response = http.request(url.toString()) {
+        val response = http.request(url) {
             method = HttpMethod.Post
-            header(HttpHeaders.UserAgent, "Kaeru/1.0")
+            header(HttpHeaders.UserAgent, userAgent)
             // ByteArrayContent gives both Darwin and OkHttp a known Content-Length for the proxy.
             setBody(FormDataContent(form))
         }
@@ -135,96 +180,38 @@ internal class ShikimoriClient(
             val oauthError = runCatching {
                 (wireJson.parseToJsonElement(response.body) as? JsonObject)?.get("error") as? JsonPrimitive
             }.getOrNull()
-            // A fixed marker survives the NSError bridge without exposing the body or credentials.
             if (oauthError?.isString == true && oauthError.content == "invalid_grant") {
                 throw ApiException(response.status, oauthError = "invalid_grant")
             }
         }
-        val parsed = parseObject(response.successfulBody())
-        check(parsed.string("access_token").isNotBlank() && parsed.string("refresh_token").isNotBlank()) {
+        val body = response.successfulBody()
+        val tokens = runCatching { restJson.decodeFromString(TokenResponseDto.serializer(), body) }.getOrNull()
+        check(tokens != null && tokens.accessToken.isNotBlank() && tokens.refreshToken.isNotBlank()) {
             "Invalid OAuth token response."
         }
-        return parsed.toString()
+        return tokens
     }
 
-    /** GraphQL has current artwork; a failed batch keeps its REST posters without losing the catalogue. */
-    private suspend fun List<Anime>.withRealPosters(): List<Anime> {
-        val posters = mutableMapOf<Int, String>()
-        for (ids in map { it.id }.distinct().chunked(50)) {
-            try {
-                val response = parseObject(request("api/graphql") {
-                    method = HttpMethod.Post
-                    contentType(ContentType.Application.Json)
-                    setBody(buildJsonObject {
-                        put("query", "{ animes(ids: \"${ids.joinToString(",")}\", limit: 50) { id poster { mainUrl originalUrl } } }")
-                    }.toString())
-                })
-                val entries = (response["data"] as? JsonObject)?.get("animes") as? JsonArray
-                entries.orEmpty().forEach { entry ->
-                    val dto = entry as? JsonObject ?: return@forEach
-                    val id = dto.int("id").takeIf { it in ids } ?: return@forEach
-                    val poster = dto["poster"] as? JsonObject ?: return@forEach
-                    // `originalUrl` first: `mainUrl` is Shikimori's 225×318 thumbnail, which a
-                    // card on a phone is already wider than, and a hero stretched it fourfold.
-                    val url = poster.string("originalUrl").ifBlank { poster.string("mainUrl") }
-                    if (url.isNotBlank()) posters[id] = imageUrl(url)
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                // Cosmetic enrichment must not hide a successfully loaded REST catalogue.
-            }
-        }
-        return map { card -> posters[card.id]?.let { card.copy(poster = it) } ?: card }
-    }
+    private inline fun <reified T> decode(body: String): T = try {
+        restJson.decodeFromString<T>(body)
+    } catch (_: Exception) { throw Exception("Invalid API response.") }
 
-    private fun array(body: String): List<JsonObject> = try {
-        wireJson.parseToJsonElement(body).jsonArray.map { it.jsonObject }
+    private inline fun <reified T> decodeList(body: String): List<T> = try {
+        restJson.decodeFromString<List<T>>(body)
     } catch (_: Exception) { throw Exception("Invalid API list response.") }
 
-    private fun imageUrl(value: String): String = when {
-        value.isBlank() -> ""
-        value.startsWith("//") -> "https:$value"
-        value.startsWith("https://") || value.startsWith("http://") -> value
-        value.startsWith("/") -> base + value
-        else -> "$base/$value"
-    }
+    companion object {
+        const val BASE_URL = "https://shikimori.io"
+        const val MOBILE_REDIRECT = "kaeru://oauth"
 
-    private fun anime(dto: JsonObject): Anime {
-        val id = dto.int("id")
-        check(id > 0) { "Invalid anime response." }
-        val image = dto["image"] as? JsonObject
-        val poster = dto["poster"] as? JsonObject
-        return Anime(
-            id = id,
-            title = dto.string("russian").ifBlank { dto.string("name") },
-            originalTitle = dto.string("name"),
-            poster = imageUrl(poster?.string("originalUrl").orEmpty().ifBlank {
-                image?.string("original").orEmpty().ifBlank { image?.string("preview").orEmpty() }
-            }),
-            description = dto.string("description"),
-            episodes = dto.int("episodes").coerceAtLeast(0),
-            episodesAired = dto.int("episodes_aired").coerceAtLeast(0),
-            status = dto.string("status"), score = dto.string("score"),
-            year = dto.string("aired_on").take(4), nextEpisodeAt = dto.string("next_episode_at"),
-            kind = dto.string("kind").takeIf { it.isNotBlank() },
-            studios = (dto["studios"] as? JsonArray)?.mapNotNull {
-                (it as? JsonObject)?.string("name")?.takeIf { name -> name.isNotBlank() }
-            },
-        )
-    }
+        /** The six lists a viewer keeps, in the order the library is read. */
+        val STATUSES = listOf("planned", "watching", "rewatching", "completed", "on_hold", "dropped")
 
-    private fun embedded(dto: JsonObject): Anime? =
-        ((dto["target"] as? JsonObject) ?: (dto["anime"] as? JsonObject))?.takeIf { it.int("id") > 0 }?.let(::anime)
+        /** Shikimori's own ceiling for one `animes` GraphQL query, and for one `ids=` REST batch. */
+        const val BATCH = 50
+        private const val RATES_PAGE = 1000
 
-    private fun targetId(dto: JsonObject): Int = dto.int("target_id").takeIf { it > 0 }
-        ?: embedded(dto)?.id ?: throw Exception("Library rate has no anime id.")
-
-    private fun rate(dto: JsonObject, card: Anime): LibraryItem {
-        check(dto.long("id") > 0) { "Invalid library rate response." }
-        return LibraryItem(
-            dto.long("id"), card, dto.string("status"), dto.int("episodes").coerceAtLeast(0),
-            updatedAt = dto.string("updated_at").takeIf { it.isNotBlank() },
-        )
+        /** Enough to fill a row and a good scroll past it, and one request against the rate limit. */
+        private const val ROW = 20
     }
 }

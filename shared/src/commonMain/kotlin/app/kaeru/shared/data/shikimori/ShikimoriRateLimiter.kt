@@ -7,8 +7,8 @@ import kotlin.time.TimeSource
 
 private val origin = TimeSource.Monotonic.markNow()
 
-/** One process-wide quota across facade instances. Time is monotonic; waiting is cancellable. */
-internal class ShikimoriRateLimiter(
+/** One process-wide quota across every client in the process. Time is monotonic; waiting is cancellable. */
+class ShikimoriRateLimiter(
     private val nowMillis: () -> Long = { origin.elapsedNow().inWholeMilliseconds },
 ) {
     private val lock = Mutex()
