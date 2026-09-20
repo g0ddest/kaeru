@@ -140,6 +140,9 @@ enum TogetherTiming {
     /// application's own ping every five seconds measures the clocks; this one is for a socket
     /// that went quiet without a close, which on a phone is a cell handover or a NAT that forgot.
     static let socketPingSeconds: TimeInterval = 20
+    /// How long a goodbye and the close frame behind it are given to reach the wire before the
+    /// session is invalidated under them. Android's `GOODBYE_GRACE_MS`.
+    static let goodbyeGraceSeconds: TimeInterval = 1
 }
 
 enum TogetherSync {

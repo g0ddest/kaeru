@@ -95,6 +95,23 @@ import XCTest
         XCTAssertEqual(dead, 0)
     }
 
+    // MARK: - the polite close
+
+    func testTheGoodbyeGraceIsAndroidsSecond() {
+        XCTAssertEqual(TogetherTiming.goodbyeGraceSeconds, 1)
+    }
+
+    func testWaitingUntilSomethingIsTrueStopsEarlyAndGivesUpOnTime() async {
+        var polls = 0
+        let early = await togetherWaitUntil({ polls += 1; return polls >= 3 }, seconds: 5, stepMs: 1)
+        XCTAssertTrue(early)
+        XCTAssertEqual(polls, 3)
+        let started = Date()
+        let late = await togetherWaitUntil({ false }, seconds: 0.05, stepMs: 5)
+        XCTAssertFalse(late)
+        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(started), 0.05)
+    }
+
     func testThreeOfTheRelaysCloseCodesAreAnswersRatherThanAccidents() {
         XCTAssertEqual(TogetherRelayClose.refusal(for: 4409), .roomFull)
         XCTAssertEqual(TogetherRelayClose.refusal(for: 4408), .expired)

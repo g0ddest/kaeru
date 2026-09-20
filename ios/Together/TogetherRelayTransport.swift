@@ -202,6 +202,25 @@ import Foundation
         dropSocket()
     }
 
+    /// The polite close, for a goodbye that has just been written. `send` completing means the
+    /// task took the frame, not that the wire did, and `invalidateAndCancel` cuts whatever is
+    /// still in flight — so the close frame is queued behind the goodbye and the session is
+    /// invalidated only once the socket has finished, or after the grace, whichever comes first.
+    /// Android waits the same second in `RelayTransport.close()`; without it a friend who pressed
+    /// «Выйти» on a slow network was shown as a connection that dropped, half a minute later.
+    func closeAfterGoodbye() async {
+        closed = true
+        buffer.clear()
+        endpoint = nil
+        watchdog?.cancel(); watchdog = nil
+        guard let socket, let session else { return }
+        self.socket = nil; self.session = nil
+        socket.cancel(with: .normalClosure, reason: nil)
+        let answered = await togetherWaitUntil({ socket.state == .completed }, seconds: TogetherTiming.goodbyeGraceSeconds)
+        TogetherLog.write(answered ? "closed politely" : "close not finished in \(Int(TogetherTiming.goodbyeGraceSeconds))s; cutting")
+        session.invalidateAndCancel()
+    }
+
     private func dropSocket() {
         watchdog?.cancel(); watchdog = nil
         socket?.cancel(with: .normalClosure, reason: nil)

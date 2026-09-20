@@ -219,7 +219,8 @@ struct TogetherJoinTarget: Equatable {
         }
         generation = UUID()
         heartbeat?.cancel(); heartbeat = nil
-        transport?.close(); transport = nil; playback?.togetherSetRate(1); playback?.togetherDuck(false)
+        let closing = transport
+        transport = nil; playback?.togetherSetRate(1); playback?.togetherDuck(false)
         correcting = false; report = nil; rejoinBy = nil
         error = nil; peerName = nil
         // The room goes with it. Leaving used to keep the invitation, so «Завершить комнату» left
@@ -227,9 +228,13 @@ struct TogetherJoinTarget: Equatable {
         // go away.
         invitation = nil
         joining = nil
-        if declining { enter(.idle); return }
+        if declining { closing?.close(); enter(.idle); return }
         conversation.message = TogetherCopy.leftSession
         enter(.ended)
+        // Last, and after the screen has been told: the goodbye is on the wire or nearly, and
+        // what is left is the socket's own closing handshake, waited for up to a second so the
+        // frame is not cut off behind it. Nothing above waits for this.
+        await closing?.closeAfterGoodbye()
     }
 
     /// Said out loud by this viewer, and on screen here rather than waited for as an echo from the

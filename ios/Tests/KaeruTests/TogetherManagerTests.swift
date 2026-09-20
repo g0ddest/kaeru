@@ -50,8 +50,17 @@ private final class TransportEvents: @unchecked Sendable {
             return event
         }
         var closes = 0
-        func send(_ frame: Data) async throws { outgoing.append(frame) }
-        func close() { closes += 1; continuation.finish() }
+        var goodbyes = 0
+        /// What happened to this transport, in order: every frame written, the polite close, the cut.
+        var order: [String] = []
+        func send(_ frame: Data) async throws { outgoing.append(frame); order.append("send") }
+        func close() { closes += 1; order.append("close"); continuation.finish() }
+        /// A real socket takes a moment to see its close frame answered; this one takes 60 ms.
+        func closeAfterGoodbye() async {
+            goodbyes += 1; order.append("goodbye")
+            try? await Task.sleep(for: .milliseconds(60))
+            close()
+        }
         func deliver(_ message: TogetherMessage, link: TogetherInvitation, side: TogetherSide) throws {
             continuation.yield(.frame(try TogetherCodec.encode(message, invitation: link, from: side)))
         }
@@ -74,6 +83,27 @@ private final class TransportEvents: @unchecked Sendable {
         try transport.deliver(TogetherMessage(t: .pause, seq: 99, positionMs: 0), link: link, side: .guest)
         await settle(); XCTAssertEqual(player.pauses, 1)
         await manager.leave(); XCTAssertEqual(manager.phase, .ended); XCTAssertEqual(player.rate, 1)
+    }
+    /// `send` completing means the socket task took the goodbye, not that the wire did, and cutting
+    /// the session straight after could take the frame with it — the friend then saw a bare drop
+    /// and waited half a minute to be told the connection was lost. Android waits a second in
+    /// `RelayTransport.close()`; this side now does the same, and the screen does not wait with it.
+    func testLeavingWaitsForTheGoodbyeToLeaveButTheScreenDoesNot() async throws {
+        let transport = Transport(); let player = Playback()
+        let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Host", transportFactory: { _, _ in transport })
+        manager.attach(player); await manager.create(); await settle()
+        let link = try XCTUnwrap(manager.invitation)
+        let leaving = Task { await manager.leave() }
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(manager.phase, .ended, "the screen is told at once")
+        XCTAssertEqual(transport.goodbyes, 1)
+        XCTAssertEqual(transport.closes, 0, "the socket is still finishing its handshake")
+        await leaving.value
+        XCTAssertEqual(transport.closes, 1)
+        let said = transport.outgoing.compactMap { try? TogetherCodec.decode($0, invitation: link, from: .host) }
+        XCTAssertEqual(said.last?.t, .bye)
+        XCTAssertLessThan(try XCTUnwrap(transport.order.lastIndex(of: "send")), try XCTUnwrap(transport.order.firstIndex(of: "goodbye")),
+                          "the goodbye is written before the close that waits for it")
     }
     func testLeaveFencesLateFrames() async throws {
         let transport = Transport(); let player = Playback()

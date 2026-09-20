@@ -39,5 +39,12 @@ enum TogetherTransportEvent: Sendable { case frame(Data), peerLeft, reconnecting
     func connect(_ invitation: TogetherInvitation, asHost: Bool) async throws
     func receive() async throws -> TogetherTransportEvent
     func send(_ frame: Data) async throws
+    /// Cuts the connection now. For a session that has failed or is being replaced.
     func close()
+    /// Closes behind a goodbye that has just been written: whatever it takes to see that frame and
+    /// the transport's own close onto the wire, inside a bounded wait — and only then the cut.
+    func closeAfterGoodbye() async
+}
+extension TogetherTransport {
+    func closeAfterGoodbye() async { close() }
 }

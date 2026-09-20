@@ -99,6 +99,16 @@ struct TogetherSocketWatchdog {
     }
 }
 
+/// Polls `done` every `stepMs` until it says so or the time is up. Whether it was the former.
+@MainActor func togetherWaitUntil(_ done: @MainActor () -> Bool, seconds: TimeInterval, stepMs: Int = 50) async -> Bool {
+    let deadline = Date().addingTimeInterval(seconds)
+    while !done() {
+        guard Date() < deadline else { return false }
+        try? await Task.sleep(for: .milliseconds(stepMs))
+    }
+    return true
+}
+
 /// The relay's own close codes are its HTTP status plus 4000, and three of them are answers rather
 /// than accidents: dialling again would only get the same one back.
 enum TogetherRelayClose {
