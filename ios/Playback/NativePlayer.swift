@@ -24,6 +24,10 @@ struct NativePlayer<Overlay: View>: UIViewControllerRepresentable {
         controller.updatesNowPlayingInfoCenter = false // PlaybackMediaControls owns its session.
         // Forces the view to load, because everything below hangs off the content overlay.
         _ = controller.view
+        // A video window is black before its first frame and in its letterbox, whatever the rest
+        // of the app is wearing: without this the empty picture area comes up the colour of the
+        // system background — a white band across a dark screen while the episode resolves.
+        controller.view.backgroundColor = .black
         // On `contentOverlayView` — the layer AVKit puts between the picture and its own controls —
         // and deliberately not cancelling the touches it sees: the system's single tap, which is
         // what brings the transport bar back, has to go on working. The first tap of a double tap
