@@ -634,7 +634,8 @@ class TogetherSession(
     private suspend fun report() {
         if (_state.value !is SessionState.Live) return
         val now = port.state.value
-        send(TogetherMessage.State(now.positionMs, now.playing, now.buffering, clock.millis(), nextSeq()))
+        send(TogetherMessage.State(now.positionMs, now.playing, now.buffering, clock.millis(), nextSeq(),
+            animeId = now.animeId, episode = now.episode))
     }
 
     private suspend fun corrections() {
@@ -943,8 +944,18 @@ class TogetherSession(
     }
 
     private suspend fun reported(message: TogetherMessage.State) {
-        peer = PeerReport(message.positionMs, message.playing, message.sentAt, clock.millis())
         val here = port.state.value
+        // A report from another episode is not a position this picture can be measured against,
+        // and not a stall it should wait for. A build without the episode on its reports is taken
+        // as it always was.
+        val theirs = message.episode
+        if (theirs != null && (theirs != here.episode || (message.animeId != null && message.animeId != here.animeId))) {
+            TogetherLog.write("state in from another episode ($theirs); ignored")
+            peer = null
+            peerIsLoading(false)
+            return
+        }
+        peer = PeerReport(message.positionMs, message.playing, message.sentAt, clock.millis())
         TogetherLog.write(
             "state in pos=${message.positionMs} playing=${message.playing} buffering=${message.buffering} " +
                 "here=${here.positionMs}/${here.playing}",

@@ -89,6 +89,14 @@ sealed interface TogetherMessage {
         val buffering: Boolean,
         val sentAt: Long,
         override val seq: Long,
+        /**
+         * What the position is a position *in*. Optional, because a report used to be a position
+         * and nothing else — and a guest followed it whatever episode it came from, so a friend
+         * who had moved on dragged this side's picture through the wrong one. A build without
+         * these fields is followed as it always was.
+         */
+        val animeId: Int? = null,
+        val episode: Int? = null,
     ) : TogetherMessage
 
     @Serializable

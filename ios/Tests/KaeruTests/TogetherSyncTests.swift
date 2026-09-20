@@ -538,3 +538,57 @@ import XCTest
         await manager.leave()
     }
 }
+
+
+/// A report names the episode it is a position in.
+///
+/// It used to be a position and nothing else, and a guest followed it whatever it was a position
+/// *in*: a friend who had moved to the next episode while this side stayed dragged this side's
+/// picture through the wrong one — «другая серия листает старую».
+@MainActor final class TogetherReportEpisodeTests: XCTestCase {
+    func testAReportFromAnotherEpisodeIsNeitherFollowedNorWaitedFor() async throws {
+        let transport = TogetherManagerTests.Transport()
+        let player = TogetherManagerTests.Playback()   // episode 1 by default
+        let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Guest", transportFactory: { _, _ in transport })
+        let link = try TogetherInvitation(roomID: "AAAAAAAAAAA", key: Data(repeating: 0, count: 16))
+        await manager.join(link)
+        try await Task.sleep(for: .milliseconds(20))
+        try transport.deliver(TogetherMessage(t: .hello, seq: 1, name: "Host", animeId: 7, episode: 1, positionMs: 0, playing: true),
+                              link: link, side: .host)
+        try await Task.sleep(for: .milliseconds(20))
+        manager.acceptJoin(); manager.attach(player)
+        try await Task.sleep(for: .milliseconds(20))
+        player.seeks.removeAll()
+        // The host is fifteen seconds away — in episode 2. Nothing here is episode 2.
+        try transport.deliver(TogetherMessage(t: .state, seq: 2, animeId: 7, episode: 2, positionMs: 16_000, playing: true, buffering: true, sentAt: 1),
+                              link: link, side: .host)
+        try await Task.sleep(for: .milliseconds(20))
+        manager.correct()
+        XCTAssertTrue(player.seeks.isEmpty, "по чужой серии не подстраиваемся")
+        XCTAssertEqual(player.pauses, 0, "и не ждём её загрузки")
+        // The same report without an episode on it — an older build — is followed as before.
+        try transport.deliver(TogetherMessage(t: .state, seq: 3, positionMs: 16_000, playing: true, buffering: false, sentAt: 2),
+                              link: link, side: .host)
+        try await Task.sleep(for: .milliseconds(20))
+        manager.correct()
+        XCTAssertFalse(player.seeks.isEmpty, "отчёт старой сборки без серии — как раньше")
+        await manager.leave()
+    }
+    func testThisSidesReportCarriesItsEpisode() async throws {
+        let transport = TogetherManagerTests.Transport()
+        let player = TogetherManagerTests.Playback()
+        let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Host", transportFactory: { _, _ in transport })
+        await manager.create(); manager.attach(player)
+        try await Task.sleep(for: .milliseconds(20))
+        let link = try XCTUnwrap(manager.invitation)
+        try transport.deliver(TogetherMessage(t: .hello, seq: 1, name: "Guest", animeId: 7, episode: 1, positionMs: 0, playing: true),
+                              link: link, side: .guest)
+        try await Task.sleep(for: .milliseconds(20))
+        manager.beat()
+        try await Task.sleep(for: .milliseconds(20))
+        let states = transport.outgoing.compactMap { try? TogetherCodec.decode($0, invitation: link, from: .host) }.filter { $0.t == .state }
+        XCTAssertEqual(states.last?.episode, 1)
+        XCTAssertEqual(states.last?.animeId, 7)
+        await manager.leave()
+    }
+}

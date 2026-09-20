@@ -379,7 +379,11 @@ struct TogetherJoinTarget: Equatable {
     private func sendState() {
         guard let snapshot = playback?.togetherSnapshot else { return }
         reportedBuffering = snapshot.buffering
-        sendMessage(.init(t: .state, seq: 1, positionMs: snapshot.positionMs, playing: snapshot.playing,
+        // With the episode on it. A report used to be a position and nothing else, and a guest
+        // followed it whatever it was a position *in* — so a friend who had moved on to the next
+        // episode, or stayed on the last one, dragged this side's picture through the wrong one.
+        sendMessage(.init(t: .state, seq: 1, animeId: snapshot.animeID, episode: snapshot.episode,
+                          positionMs: snapshot.positionMs, playing: snapshot.playing,
                           buffering: snapshot.buffering, sentAt: now()))
     }
 
@@ -669,6 +673,16 @@ struct TogetherJoinTarget: Equatable {
             // Recorded, not acted on: the gap is judged on its own beat, against a report that has
             // been carried forward to the moment of judging.
             guard let positionMs = message.positionMs, let playing = message.playing, let sentAt = message.sentAt else { return }
+            // A report from another episode is not a position this picture can be measured
+            // against, and not a stall this picture should wait for. An older build sends no
+            // episode at all; that report is taken as it always was.
+            if let theirs = message.episode, let here = playback?.togetherSnapshot,
+               theirs != here.episode || (message.animeId != nil && message.animeId != here.animeID) {
+                TogetherLog.write("state in from another episode (\(theirs)); ignored")
+                report = nil
+                peerIsLoading(false)
+                return
+            }
             report = PeerReport(positionMs: positionMs, playing: playing, sentAt: sentAt, at: now())
             TogetherLog.write("state in pos=\(positionMs) playing=\(playing) buffering=\(message.buffering == true) here=\(playback?.togetherSnapshot.positionMs ?? -1)/\(playback?.togetherSnapshot.playing ?? false)")
             // Only a friend who means to be playing. One who is paused and buffering is simply

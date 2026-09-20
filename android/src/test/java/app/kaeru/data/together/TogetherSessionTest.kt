@@ -1080,6 +1080,42 @@ class TogetherSessionTest {
         assertEquals("а его «готов» — запускает", 1, port.plays)
     }
 
+    /**
+     * A report names the episode it is a position in.
+     *
+     * It used to be a position and nothing else, and a guest followed it whatever it was a
+     * position *in*: a friend who had moved to the next episode while this side stayed dragged
+     * this side's picture through the wrong one.
+     */
+    @Test
+    fun `a report from another episode is neither followed nor waited for`() = sessionTest {
+        liveAsGuest()   // the port shows episode 4 of anime 100
+
+        advanceTimeBy(TogetherSession.SYNC_INTERVAL_MS - 1)
+        runCurrent()
+        transport.deliver(
+            TogetherMessage.State(75_000, playing = true, buffering = true, sentAt = clock.millis(), seq = 20L, animeId = 100, episode = 5),
+        )
+        runCurrent()
+        advanceTimeBy(2)
+        runCurrent()
+
+        assertTrue("по чужой серии не подстраиваемся", port.seeks.isEmpty())
+        assertTrue(port.rates.isEmpty())
+        assertEquals("и не ждём её загрузки", 0, port.pauses)
+    }
+
+    @Test
+    fun `this side's report carries its episode`() = sessionTest {
+        live()
+        transport.sent.clear()
+        advanceTimeBy(TogetherSession.STATE_INTERVAL_MS + 1)
+        runCurrent()
+        val report = transport.sentOf<TogetherMessage.State>().last()
+        assertEquals(4, report.episode)
+        assertEquals(100, report.animeId)
+    }
+
     // ---- what this viewer did ----
 
     @Test
