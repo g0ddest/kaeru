@@ -1,0 +1,7 @@
+{
+  "name": "kaeru-together-probe",
+  "private": true,
+  "description": "Два телефона из одного процесса против живого релея: рукопожатие, отчёты, ожидание друга, прощание.",
+  "engines": { "node": ">=22" },
+  "scripts": { "probe": "node probe.js" }
+}
