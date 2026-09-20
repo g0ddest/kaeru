@@ -53,6 +53,9 @@ struct TogetherJoinTarget: Equatable {
     /// The invitation this phone was given, kept past a failure so «Повторить» has something to
     /// knock on.
     @ObservationIgnored private var lastJoin: TogetherInvitation?
+    /// What the room was last told this side is watching — by a greeting, an `episode` this side
+    /// sent, or one it followed. A player that attaches on something else is a change of episode.
+    @ObservationIgnored private var announcedEpisode: TogetherEpisode?
     /// A greeting that arrived before a player did, replayed the moment one attaches.
     @ObservationIgnored private var pendingGreeting: TogetherMessage?
     /// Frames in a row that would not open. A key that does not match never starts matching.
@@ -142,6 +145,18 @@ struct TogetherJoinTarget: Equatable {
             apply(greeting)
         }
         guard phase == .live, let invitation else { return }
+        // A player that opened on something else — another episode, another title picked from
+        // the catalogue while the room was live — is a change of episode for the friend, exactly
+        // as if it had been picked from the player's own menu. A greeting alone does not say so:
+        // a friend already in the room changes episode on `episode` and on nothing else, and
+        // Android's player announces its opening as one. Without this the two phones sat in one
+        // room on two different titles.
+        let here = playback.togetherSnapshot
+        if let animeID = here.animeID, let episode = here.episode, here.ready,
+           let known = announcedEpisode, known.animeID != animeID || known.episode != episode {
+            TogetherLog.write("player opened \(animeID)/\(episode) over a live room; telling the friend")
+            sendEpisode(.init(animeID: animeID, episode: episode, translationID: here.translationID, positionMs: here.positionMs))
+        }
         Task { [weak self] in await self?.sendHello(invitation: invitation) }
     }
 
@@ -262,6 +277,7 @@ struct TogetherJoinTarget: Equatable {
     func sendPause() { sendAction(.pause(position: currentPosition)) }
     func sendSeek(_ positionMs: Int64) { sendAction(.seek(position: max(0, positionMs))) }
     func sendEpisode(_ episode: TogetherEpisode) {
+        announcedEpisode = episode
         // The friend's last report is about the episode this side is leaving, and judged against
         // the start of the next one it is a twenty-minute gap and a seek to close it.
         report = nil
@@ -527,6 +543,9 @@ struct TogetherJoinTarget: Equatable {
     }
 
     private func sendHello(invitation: TogetherInvitation) async {
+        if let snapshot = playback?.togetherSnapshot, let animeID = snapshot.animeID, let episode = snapshot.episode, animeID > 0 {
+            announcedEpisode = TogetherEpisode(animeID: animeID, episode: episode, translationID: snapshot.translationID, positionMs: snapshot.positionMs)
+        }
         TogetherLog.write("hello out anime=\(playback?.togetherSnapshot.animeID ?? 0) episode=\(playback?.togetherSnapshot.episode ?? 0)")
         guard let transport else { return }
         let snapshot = playback?.togetherSnapshot ?? TogetherPlaybackSnapshot()
@@ -793,6 +812,8 @@ struct TogetherJoinTarget: Equatable {
             guard let episode = message.episode else { return }
             let item = TogetherEpisode(animeID: message.animeId ?? playback.togetherSnapshot.animeID ?? 0,
                                        episode: episode, translationID: message.translationId, positionMs: message.positionMs ?? 0)
+            // Followed, so the room and this side now agree on what is playing.
+            announcedEpisode = item
             dropHold()
             // Their last report is about the episode they have just left. Judged against the start
             // of the new one, it is a twenty-minute gap and a seek to close it — the same reason a

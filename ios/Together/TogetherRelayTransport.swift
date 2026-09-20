@@ -196,6 +196,7 @@ import Foundation
     }
 
     func close() {
+        TogetherLog.write("transport closed by this side")
         closed = true
         buffer.clear()
         endpoint = nil

@@ -592,3 +592,54 @@ import XCTest
         await manager.leave()
     }
 }
+
+
+/// A player that opens on another title over a live room is a change of episode for the friend.
+///
+/// Picked from the catalogue rather than from the player's menu, the new player attached to the
+/// room and said hello — and a friend already in the room changes episode on `episode` and on
+/// nothing else. The two phones then sat in one room on two different titles until the socket
+/// went, and the friend was told the connection was lost.
+@MainActor final class TogetherNewPlayerOverLiveRoomTests: XCTestCase {
+    func testAPlayerAttachingOnAnotherTitleTellsTheFriend() async throws {
+        let transport = TogetherManagerTests.Transport()
+        let first = TogetherManagerTests.Playback()      // anime 7, episode 1
+        let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Host", transportFactory: { _, _ in transport })
+        await manager.create(); manager.attach(first)
+        try await Task.sleep(for: .milliseconds(20))
+        let link = try XCTUnwrap(manager.invitation)
+        try transport.deliver(TogetherMessage(t: .hello, seq: 1, name: "Guest", animeId: 7, episode: 1, positionMs: 0, playing: true),
+                              link: link, side: .guest)
+        try await Task.sleep(for: .milliseconds(20))
+        // The player is closed and another opens on a different title, as from the home screen.
+        manager.detach(first)
+        let second = TogetherManagerTests.Playback()
+        second.togetherSnapshot = TogetherPlaybackSnapshot(animeID: 62391, episode: 7, positionMs: 0, playing: true, ready: true)
+        let before = transport.outgoing.count
+        manager.attach(second)
+        try await Task.sleep(for: .milliseconds(30))
+        let sent = transport.outgoing.dropFirst(before).compactMap { try? TogetherCodec.decode($0, invitation: link, from: .host) }
+        let change = sent.first { $0.t == .episode }
+        XCTAssertEqual(change?.animeId, 62391, "другу сказано, что играет другой тайтл")
+        XCTAssertEqual(change?.episode, 7)
+        await manager.leave()
+    }
+    func testAPlayerAttachingOnTheSameEpisodeSaysNothingNew() async throws {
+        let transport = TogetherManagerTests.Transport()
+        let first = TogetherManagerTests.Playback()
+        let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Host", transportFactory: { _, _ in transport })
+        await manager.create(); manager.attach(first)
+        try await Task.sleep(for: .milliseconds(20))
+        let link = try XCTUnwrap(manager.invitation)
+        try transport.deliver(TogetherMessage(t: .hello, seq: 1, name: "Guest", animeId: 7, episode: 1, positionMs: 0, playing: true),
+                              link: link, side: .guest)
+        try await Task.sleep(for: .milliseconds(20))
+        manager.detach(first)
+        let before = transport.outgoing.count
+        manager.attach(TogetherManagerTests.Playback())
+        try await Task.sleep(for: .milliseconds(30))
+        let sent = transport.outgoing.dropFirst(before).compactMap { try? TogetherCodec.decode($0, invitation: link, from: .host) }
+        XCTAssertFalse(sent.contains { $0.t == .episode }, "та же серия — не смена серии")
+        await manager.leave()
+    }
+}
