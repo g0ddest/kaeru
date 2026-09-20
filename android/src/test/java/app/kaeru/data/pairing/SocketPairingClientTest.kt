@@ -1,6 +1,6 @@
 package app.kaeru.data.pairing
 
-import app.kaeru.data.shikimori.shikimoriJson
+import app.kaeru.di.NetworkModule
 import app.kaeru.di.PairingModule
 import app.kaeru.domain.error.PairingFailed
 import app.kaeru.domain.error.PairingFailureReason
@@ -27,7 +27,7 @@ class SocketPairingClientTest {
      */
     private val timeouts = PairingTimeouts(connectMs = 1_000, requestMs = 1_000)
     private val client = SocketPairingClient(
-        shikimoriJson(),
+        NetworkModule.json(),
         timeouts,
         { InetSocketAddress("127.0.0.1", server.port) },
         Dispatchers.IO,

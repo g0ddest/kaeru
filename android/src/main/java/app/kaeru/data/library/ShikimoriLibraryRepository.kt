@@ -11,8 +11,6 @@ import app.kaeru.data.local.WatchStateDao
 import app.kaeru.data.local.mergeShort
 import app.kaeru.data.local.toEntity
 import app.kaeru.data.shikimori.ShikimoriApi
-import app.kaeru.data.shikimori.UserRatePayload
-import app.kaeru.data.shikimori.UserRateRequest
 import app.kaeru.data.shikimori.toDomain
 import app.kaeru.data.shikimori.toDomainFailure
 import app.kaeru.di.IoDispatcher
@@ -20,12 +18,12 @@ import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
-import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.sync.OutboxSyncer
 import app.kaeru.domain.sync.RateOpKind
 import app.kaeru.domain.sync.RateOutboxRepository
 import app.kaeru.domain.sync.ReplayRequest
+import app.kaeru.shared.data.network.NetworkException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -37,7 +35,6 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.withContext
-import java.io.IOException
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -132,12 +129,11 @@ class ShikimoriLibraryRepository @Inject constructor(
         // in flight is no longer pending by the time the merge runs, and the list in hand was
         // written before the value that drain produced.
         val pendingBefore = outbox.pendingAnimeIds()
-        val rates = ListStatus.entries.flatMap { fetchRates(userId, it) }
+        val rates = api.libraryRates(userId).map { it.toDomain() }
         val ids = rates.map { it.animeId }.distinct()
+        // Fifty at a time for SQLite's sake; the network side batches itself the same way.
         val cached = ids.chunked(50).flatMap { animeDao.getByIds(it) }.associateBy { it.id }
-        val fresh = ids.chunked(50).flatMap { batch ->
-            api.animesByIds(batch.joinToString(","), limit = 50).map { it.toDomain() }
-        }.withRealPosters()
+        val fresh = api.animesByIds(ids).map { it.toDomain() }.withRealPosters()
         animeDao.upsertAll(fresh.map { anime ->
             cached[anime.id]?.mergeShort(anime) ?: anime.toEntity(detailsFetchedAt = null)
         })
@@ -172,16 +168,6 @@ class ShikimoriLibraryRepository @Inject constructor(
         prefs.setLastFullSync(clock.instant())
     }
 
-    private suspend fun fetchRates(userId: Long, status: ListStatus): List<UserRate> {
-        val rates = mutableListOf<UserRate>()
-        var page = 1
-        do {
-            val batch = api.userRates(userId, status.apiValue, page = page++, limit = 1000)
-            rates += batch.map { it.toDomain() }
-        } while (batch.size == 1000)
-        return rates
-    }
-
     override suspend fun refreshAnime(id: Int): Result<Unit> = accountWrite {
         fetchDetails(id)
     }
@@ -208,19 +194,17 @@ class ShikimoriLibraryRepository @Inject constructor(
         }
         // Resolve the card first: a remote create must not succeed with no displayable anime.
         val missingAnime = if (animeDao.getById(animeId) == null) {
-            api.animesByIds(animeId.toString()).firstOrNull { it.id == animeId }
+            api.animesByIds(listOf(animeId)).firstOrNull { it.id == animeId }
                 ?.toDomain()?.toEntity(detailsFetchedAt = null)
                 ?: error("No anime $animeId returned by Shikimori")
         } else null
         val dto = try {
             if (existing == null) {
-                api.createUserRate(UserRateRequest(UserRatePayload(
-                    userId = userId, targetId = animeId, targetType = "Anime", status = status.apiValue,
-                )))
+                api.createUserRate(userId, animeId, status.apiValue)
             } else {
-                api.updateUserRate(existing.id, UserRateRequest(UserRatePayload(status = status.apiValue)))
+                api.updateUserRate(existing.id, status = status.apiValue)
             }
-        } catch (offline: IOException) {
+        } catch (offline: NetworkException) {
             // The card came off the network a moment ago; without it the queued rate would name a
             // title the library cannot draw, and the change would be invisible until a refresh.
             if (missingAnime != null) animeDao.upsertAll(listOf(missingAnime))
@@ -240,8 +224,8 @@ class ShikimoriLibraryRepository @Inject constructor(
             return@accountWrite
         }
         val dto = try {
-            api.updateUserRate(existing.id, UserRateRequest(UserRatePayload(episodes = episodes)))
-        } catch (offline: IOException) {
+            api.updateUserRate(existing.id, episodes = episodes)
+        } catch (offline: NetworkException) {
             queue(existing.copy(episodes = episodes), RateOpKind.EPISODES, episodes.toString())
             return@accountWrite
         }

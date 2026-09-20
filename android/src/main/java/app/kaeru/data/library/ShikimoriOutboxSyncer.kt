@@ -8,9 +8,6 @@ import app.kaeru.data.local.RateOutboxEntity
 import app.kaeru.data.local.UserRateDao
 import app.kaeru.data.local.UserRateEntity
 import app.kaeru.data.shikimori.ShikimoriApi
-import app.kaeru.data.shikimori.UserRateDto
-import app.kaeru.data.shikimori.UserRatePayload
-import app.kaeru.data.shikimori.UserRateRequest
 import app.kaeru.data.shikimori.toDomainFailure
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.sync.OutboxReplayPlan
@@ -18,11 +15,12 @@ import app.kaeru.domain.sync.OutboxSyncer
 import app.kaeru.domain.sync.RateOp
 import app.kaeru.domain.sync.RateOpKind
 import app.kaeru.domain.sync.ReplayOutcome
+import app.kaeru.shared.ApiException
+import app.kaeru.shared.data.network.NetworkException
+import app.kaeru.shared.data.shikimori.UserRateDto
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import retrofit2.HttpException
-import java.io.IOException
 import java.time.Clock
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -33,7 +31,7 @@ private const val TAG = "OutboxSyncer"
 private const val DELETE_CHUNK = 500
 
 /** Shikimori answers 4xx when it has looked at the write and refused it; 5xx means ask again later. */
-private val HttpException.isRejection: Boolean get() = code() in 400..499
+private val ApiException.isRejection: Boolean get() = status in 400..499
 
 /**
  * Sends the writes a viewer made without a network, in the order they made them.
@@ -109,10 +107,10 @@ class ShikimoriOutboxSyncer @Inject constructor(
             }
             val dto = try {
                 send(op, local, account)
-            } catch (offline: IOException) {
+            } catch (offline: NetworkException) {
                 // Gone again. Everything from here on keeps its place.
                 break
-            } catch (http: HttpException) {
+            } catch (http: ApiException) {
                 if (!http.isRejection) break
                 // Shikimori read the write and said no. Keeping it would mean sending it forever,
                 // so it goes, and the caller re-reads the title to show what the server does hold.
@@ -141,18 +139,10 @@ class ShikimoriOutboxSyncer @Inject constructor(
 
     private suspend fun send(op: RateOp, local: UserRateEntity?, userId: Long): UserRateDto = when (op.kind) {
         RateOpKind.STATUS ->
-            if (local.hasNoServerRate) {
-                api.createUserRate(UserRateRequest(UserRatePayload(
-                    userId = userId, targetId = op.animeId, targetType = "Anime", status = op.value,
-                )))
-            } else {
-                api.updateUserRate(requireNotNull(local).id, UserRateRequest(UserRatePayload(status = op.value)))
-            }
+            if (local.hasNoServerRate) api.createUserRate(userId, op.animeId, op.value)
+            else api.updateUserRate(requireNotNull(local).id, status = op.value)
 
-        RateOpKind.EPISODES -> api.updateUserRate(
-            requireNotNull(local).id,
-            UserRateRequest(UserRatePayload(episodes = op.value.toInt())),
-        )
+        RateOpKind.EPISODES -> api.updateUserRate(requireNotNull(local).id, episodes = op.value.toInt())
     }
 
     private fun merge(

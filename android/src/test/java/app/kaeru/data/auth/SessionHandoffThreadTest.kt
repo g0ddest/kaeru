@@ -9,9 +9,9 @@ import app.kaeru.data.library.ShikimoriLibraryRepository
 import app.kaeru.data.library.PosterEnricher
 import app.kaeru.data.local.KaeruDatabase
 import app.kaeru.data.local.toEntity
-import app.kaeru.data.shikimori.ShikimoriOAuthApi
-import app.kaeru.data.shikimori.TokenResponseDto
+import app.kaeru.data.shikimori.oauthClient
 import app.kaeru.data.shikimori.toDomain
+import app.kaeru.shared.data.shikimori.TokenResponseDto
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.repository.MOBILE_REDIRECT
@@ -54,10 +54,7 @@ class SessionHandoffThreadTest {
     private lateinit var prefs: AppPreferences
     private val api = FakeShikimoriApi()
     private val clock = Clock.systemUTC()
-    private val oauth = object : ShikimoriOAuthApi {
-        override suspend fun token(grantType: String, clientId: String,
-            code: String?, redirectUri: String?, refreshToken: String?) = TokenResponseDto("new", refreshToken = "new-r")
-    }
+    private val oauth = oauthClient { TokenResponseDto("new", refreshToken = "new-r") }
 
     @Before
     fun setUp() {

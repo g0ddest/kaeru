@@ -1,5 +1,6 @@
 package app.kaeru.shared.data.kodik
 
+import app.kaeru.shared.TestFixtures
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertFailsWith
@@ -9,7 +10,7 @@ import kotlin.test.Test
 class KodikHtmlParserTest {
 
     private fun fixture(name: String): String =
-        KodikFixtures.text(name)
+        TestFixtures.text("kodik/$name")
 
     @Test
     fun `parse extracts signing params from real player page`() {

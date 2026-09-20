@@ -2,8 +2,7 @@ package app.kaeru.data.auth
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import app.kaeru.data.library.AppPreferences
-import app.kaeru.data.shikimori.ShikimoriApi
-import app.kaeru.data.shikimori.shikimoriJson
+import app.kaeru.data.shikimori.serverApi
 import app.kaeru.domain.model.Account
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -11,7 +10,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
@@ -24,8 +22,6 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import retrofit2.Retrofit
-import retrofit2.converter.kotlinx.serialization.asConverterFactory
 
 /**
  * The nickname and the face beside it, and the one rule that matters: a cached name is worth more
@@ -45,10 +41,7 @@ class PreferencesAccountRepositoryTest {
         prefs = AppPreferences(
             PreferenceDataStoreFactory.create(scope = storeScope) { tmp.root.resolve("prefs.preferences_pb") },
         )
-        val api = Retrofit.Builder().baseUrl(server.url("/"))
-            .addConverterFactory(shikimoriJson().asConverterFactory("application/json".toMediaType()))
-            .build().create(ShikimoriApi::class.java)
-        repo = PreferencesAccountRepository(prefs, api)
+        repo = PreferencesAccountRepository(prefs, serverApi(server))
     }
 
     @After

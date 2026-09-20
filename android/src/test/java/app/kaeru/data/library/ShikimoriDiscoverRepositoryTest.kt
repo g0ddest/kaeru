@@ -1,15 +1,13 @@
 package app.kaeru.data.library
 
 import app.kaeru.data.shikimori.ShikimoriApi
-import app.kaeru.data.shikimori.shikimoriJson
+import app.kaeru.data.shikimori.serverApi
 import app.kaeru.domain.discover.Season
 import app.kaeru.domain.discover.SeasonKind
 import app.kaeru.domain.error.HttpError
 import app.kaeru.test.MutableClock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
@@ -18,8 +16,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import retrofit2.Retrofit
-import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.time.Duration
 import java.time.Instant
 
@@ -39,12 +35,7 @@ class ShikimoriDiscoverRepositoryTest {
     @Before
     fun setUp() {
         server.start()
-        api = Retrofit.Builder()
-            .baseUrl(server.url("/"))
-            .client(OkHttpClient())
-            .addConverterFactory(shikimoriJson().asConverterFactory("application/json".toMediaType()))
-            .build()
-            .create(ShikimoriApi::class.java)
+        api = serverApi(server, clock)
         repo = ShikimoriDiscoverRepository(api, PosterEnricher(api), Dispatchers.Unconfined, clock)
     }
 

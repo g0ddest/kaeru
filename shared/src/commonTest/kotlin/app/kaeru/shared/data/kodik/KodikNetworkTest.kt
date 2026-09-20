@@ -1,5 +1,6 @@
 package app.kaeru.shared.data.kodik
 
+import app.kaeru.shared.TestFixtures
 import app.kaeru.shared.NativeApi
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.*
@@ -16,7 +17,7 @@ import kotlin.test.*
 class KodikNetworkTest {
     private val jsonHeaders = headersOf(HttpHeaders.ContentType, "application/json")
     private fun String.obj() = Json.parseToJsonElement(this).jsonObject
-    private fun fixture(name: String) = KodikFixtures.text(name)
+    private fun fixture(name: String) = TestFixtures.text("kodik/$name")
 
     @Test fun resolutionSelectsEpisodeOnChosenTrackAndAlwaysObtainsFreshSignatures() = runTest {
         var scripts = 0
@@ -101,7 +102,8 @@ class KodikNetworkTest {
             assertEquals(923, tracks.single().jsonObject["id"]!!.jsonPrimitive.int)
             val stream = api.resolve(42, 0, 4).obj()
             assertEquals(1, stream["episode"]!!.jsonPrimitive.int)
-            assertTrue(paths.count { it.startsWith("/video/") } >= 3)
+            // The catalogue page once, then the track's own page: the second resolve reuses the catalogue.
+            assertEquals(2, paths.count { it.startsWith("/video/") })
         } finally { api.close() }
     }
 
@@ -170,16 +172,17 @@ class KodikNetworkTest {
             }
         }))
         try {
+            // The catalogue is dropped before every listing: each one has to reach get-player.
             api.translations(42)
             api.configureKodikToken("  private-first  ")
-            api.translations(42)
+            api.forgetTranslations(42); api.translations(42)
             api.configureKodikToken("private-second")
-            api.translations(42)
+            api.forgetTranslations(42); api.translations(42)
             api.configureKodikToken(" ")
-            api.translations(42)
-            api.translations(42)
+            api.forgetTranslations(42); api.translations(42)
+            api.forgetTranslations(42); api.translations(42)
             api.configureKodikToken("")
-            api.translations(42)
+            api.forgetTranslations(42); api.translations(42)
             assertEquals(listOf("public1", "private-first", "private-second", "public2", "public2", "public3"), sent)
             assertEquals(3, scripts)
         } finally { api.close() }
@@ -230,6 +233,7 @@ class KodikNetworkTest {
                 if (reset) api.configureKodikToken("")
                 release.complete(Unit)
                 pending.await()
+                api.forgetTranslations(42)
                 api.translations(42)
                 assertEquals(if (reset) listOf("public2", "public2") else listOf("private-key", "private-key"), sent)
                 assertEquals(if (reset) 2 else 1, scripts)
@@ -262,6 +266,7 @@ class KodikNetworkTest {
                 val pending = async { api.translations(42) }
                 started.await()
                 api.configureKodikToken("new-private")
+                api.forgetTranslations(42)
                 api.translations(42)
                 release.complete(Unit)
                 pending.await()

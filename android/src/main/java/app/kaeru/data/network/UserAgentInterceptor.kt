@@ -1,8 +1,9 @@
-package app.kaeru.data.shikimori
+package app.kaeru.data.network
 
 import okhttp3.Interceptor
 import okhttp3.Response
 
+/** The app's own name on every request of an OkHttp client: GitHub, AniSkip, the relay, images. */
 class UserAgentInterceptor(
     private val userAgent: String,
 ) : Interceptor {

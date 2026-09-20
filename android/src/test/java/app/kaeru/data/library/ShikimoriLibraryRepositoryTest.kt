@@ -14,10 +14,12 @@ import app.kaeru.data.auth.InMemoryTokenStore
 import app.kaeru.data.local.EpisodeProgressEntity
 import app.kaeru.data.local.KaeruDatabase
 import app.kaeru.data.local.WatchStateEntity
-import app.kaeru.data.shikimori.AnimeDetailsDto
-import app.kaeru.data.shikimori.ImageDto
-import app.kaeru.data.shikimori.ScreenshotDto
-import app.kaeru.data.shikimori.StudioDto
+import app.kaeru.shared.ApiException
+import app.kaeru.shared.data.network.NetworkException
+import app.kaeru.shared.data.shikimori.AnimeDto
+import app.kaeru.shared.data.shikimori.ImageDto
+import app.kaeru.shared.data.shikimori.ScreenshotDto
+import app.kaeru.shared.data.shikimori.StudioDto
 import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.ListStatus
 import kotlinx.coroutines.CancellationException
@@ -39,17 +41,10 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.io.File
-import java.io.IOException
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
 import app.kaeru.domain.sync.OutboxSyncer
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.Protocol
-import okhttp3.Request
-import okhttp3.Response
-import okhttp3.ResponseBody.Companion.toResponseBody
-import retrofit2.HttpException
 import app.kaeru.domain.sync.ReplayOutcome
 import app.kaeru.domain.sync.ReplayRequest
 
@@ -98,7 +93,7 @@ class ShikimoriLibraryRepositoryTest {
         api.animes[100] = api.short(100, "ongoing", episodes = 0, aired = 4)
         api.animes[200] = api.short(200)
         api.animes[300] = api.short(300)
-        api.details[100] = AnimeDetailsDto(
+        api.details[100] = AnimeDto(
             100, "Name 100", "Имя 100", ImageDto("/o.jpg", "/p.jpg"), "7.0", "ongoing", 0, 4, "2026-01-01",
             description = "desc", nextEpisodeAt = "2026-09-14T17:00:00.000+03:00",
             studios = listOf(StudioDto("MAPPA")), screenshots = listOf(ScreenshotDto("/ignored.jpg")),
@@ -109,7 +104,7 @@ class ShikimoriLibraryRepositoryTest {
     /** One ongoing title in «Смотрю», with a detail row to fetch. */
     private fun seedOngoing(id: Int) {
         api.animes[id] = api.short(id, "ongoing", episodes = 0, aired = 4)
-        api.details[id] = AnimeDetailsDto(
+        api.details[id] = AnimeDto(
             id, "Name $id", "Имя $id", ImageDto("/o.jpg", "/p.jpg"), "7.0", "ongoing", 0, 4, "2026-01-01",
             description = "desc", nextEpisodeAt = null, studios = emptyList(), screenshots = emptyList(),
         )
@@ -126,11 +121,11 @@ class ShikimoriLibraryRepositoryTest {
 
         assertEquals(25, api.calls.count { it.startsWith("anime:") })
         assertEquals(25, api.calls.count { it.startsWith("screenshots:") })
-        // What one run costs, all of it: six status pages, one batch of fifty ids and two calls
-        // per capped detail fetch over REST, plus one GraphQL poster query for the list and one
-        // more for each detail fetch. Eighty-three requests for a forty-title list.
+        // What one run costs, all of it: six status pages, one card batch and two calls per
+        // capped detail fetch over REST, plus one poster lookup for the list and one more for
+        // each detail fetch. Eighty-three requests for a forty-title list.
         assertEquals(6 + 1 + 50, api.calls.size)
-        assertEquals(1 + 25, api.graphqlQueries.size)
+        assertEquals(1 + 25, api.posterQueries.size)
     }
 
     @Test
@@ -158,7 +153,7 @@ class ShikimoriLibraryRepositoryTest {
         repo.refresh().getOrThrow()
         val entry = repo.observeLibrary().first().single()
         assertEquals("https://shikimori.io/uploads/poster/animes/500/main-abc.webp", entry.anime.posterUrl)
-        assertEquals(1, api.graphqlQueries.size)
+        assertEquals(1, api.posterQueries.size)
     }
 
     @Test
@@ -191,9 +186,9 @@ class ShikimoriLibraryRepositoryTest {
         val lib = repo.observeLibrary().first()
         assertEquals(1006, lib.size)
         assertEquals(setOf(ListStatus.WATCHING, ListStatus.PLANNED, ListStatus.COMPLETED, ListStatus.ON_HOLD, ListStatus.DROPPED, ListStatus.REWATCHING), lib.map { it.rate.status }.toSet())
-        assertEquals(listOf(1, 2), api.ratePages.filter { it.first == "watching" }.map { it.second })
+        // Paging the statuses and batching the cards in fifties are the shared client's, and
+        // are checked there; what this repository owes is every id, exactly once.
         assertEquals(1006, api.animeBatches.flatten().distinct().size)
-        assertTrue(api.animeBatches.all { it.size <= 50 })
     }
 
     @Test
@@ -297,7 +292,7 @@ class ShikimoriLibraryRepositoryTest {
         val cached = repo.observeLibrary().first()
         api.rates["planned"]!!.clear()
         for (failure in listOf("rates:completed", "animes:100,200")) {
-            api.beforeCall = { if (it == failure) throw IOException("offline") }
+            api.beforeCall = { if (it == failure) throw NetworkException() }
             assertTrue(repositoryAt(now.plusSeconds(60)).refresh().isFailure)
             assertEquals(cached, repo.observeLibrary().first())
             assertEquals(now, prefs.lastFullSync())
@@ -309,7 +304,7 @@ class ShikimoriLibraryRepositoryTest {
         seedWatching()
         repo.refresh().getOrThrow()
         api.rates["watching"]!![0] = api.rate(1, 100, "watching", 4)
-        api.beforeCall = { if (it == "screenshots:100") throw IOException("offline") }
+        api.beforeCall = { if (it == "screenshots:100") throw NetworkException() }
         assertTrue(repositoryAt(now.plusSeconds(21600)).refresh().isFailure)
         assertEquals(4, db.userRateDao().getByAnimeId(100)!!.episodes)
         assertEquals("desc", db.animeDao().getById(100)!!.description)
@@ -351,7 +346,7 @@ class ShikimoriLibraryRepositoryTest {
         repo.refresh().getOrThrow()
         val cached = db.animeDao().getById(100)
         api.details[100] = api.details.getValue(100).copy(description = "changed")
-        api.beforeCall = { if (it == "screenshots:100") throw IOException("offline") }
+        api.beforeCall = { if (it == "screenshots:100") throw NetworkException() }
         assertTrue(repo.refreshAnime(100).isFailure)
         assertEquals(cached, db.animeDao().getById(100))
     }
@@ -361,12 +356,10 @@ class ShikimoriLibraryRepositoryTest {
         seedWatching()
         repo.refresh().getOrThrow()
         repo.setEpisodes(200, 6).getOrThrow()
-        val (id, request) = api.updates.single()
-        assertEquals(2L, id)
-        assertEquals(6, request.userRate.episodes)
-        assertNull(request.userRate.status)
-        assertNull(request.userRate.targetId)
-        assertNull(request.userRate.targetType)
+        val update = api.updates.single()
+        assertEquals(2L, update.id)
+        assertEquals(6, update.episodes)
+        assertNull(update.status)
         val cached = db.userRateDao().getByAnimeId(200)!!
         assertEquals(6, cached.episodes)
         assertEquals(2L, cached.id)
@@ -380,13 +373,10 @@ class ShikimoriLibraryRepositoryTest {
         seedWatching()
         repo.refresh().getOrThrow()
         repo.setStatus(200, ListStatus.ON_HOLD).getOrThrow()
-        val (id, request) = api.updates.single()
-        assertEquals(2L, id)
-        assertEquals("on_hold", request.userRate.status)
-        assertNull(request.userRate.targetId)
-        assertNull(request.userRate.targetType)
-        assertNull(request.userRate.userId)
-        assertNull(request.userRate.episodes)
+        val update = api.updates.single()
+        assertEquals(2L, update.id)
+        assertEquals("on_hold", update.status)
+        assertNull(update.episodes)
         assertTrue(api.creates.isEmpty())
         val entry = repo.observeAnime(200).first()!!
         assertEquals(ListStatus.ON_HOLD, entry.rate.status)
@@ -400,11 +390,10 @@ class ShikimoriLibraryRepositoryTest {
         assertEquals(listOf(400), repo.search("Name 4").getOrThrow().map { it.id })
         assertNull(db.animeDao().getById(400))
         repo.setStatus(400, ListStatus.PLANNED).getOrThrow()
-        val payload = api.creates.single().userRate
-        assertEquals(400, payload.targetId)
-        assertEquals("planned", payload.status)
-        assertEquals("Anime", payload.targetType)
-        assertEquals(42L, payload.userId)
+        val create = api.creates.single()
+        assertEquals(400, create.animeId)
+        assertEquals("planned", create.status)
+        assertEquals(42L, create.userId)
         val entry = repo.observeAnime(400).first()!!
         assertEquals(ListStatus.PLANNED, entry.rate.status)
         assertEquals("Имя 400", entry.anime.nameRu)
@@ -417,7 +406,7 @@ class ShikimoriLibraryRepositoryTest {
         assertTrue(repo.setStatus(400, ListStatus.PLANNED).isFailure)
         assertNull(db.userRateDao().getByAnimeId(400))
         assertTrue(api.creates.isEmpty())
-        api.beforeCall = { if (it.startsWith("animes:")) throw IOException("offline") }
+        api.beforeCall = { if (it.startsWith("animes:")) throw NetworkException() }
         assertTrue(repo.setStatus(400, ListStatus.PLANNED).isFailure)
         assertTrue(api.creates.isEmpty())
     }
@@ -431,7 +420,7 @@ class ShikimoriLibraryRepositoryTest {
         seedWatching()
         repo.refresh().getOrThrow()
         val cached = db.userRateDao().getByAnimeId(200)
-        api.beforeCall = { if (it.startsWith("update:")) throw httpException(422) }
+        api.beforeCall = { if (it.startsWith("update:")) throw ApiException(422) }
         assertTrue(repo.setEpisodes(200, 6).isFailure)
         assertTrue(repo.setStatus(200, ListStatus.COMPLETED).isFailure)
         assertEquals(cached, db.userRateDao().getByAnimeId(200))
@@ -439,16 +428,9 @@ class ShikimoriLibraryRepositoryTest {
         assertTrue(repo.setEpisodes(999, 1).isFailure)
         assertTrue(api.calls.isEmpty())
         api.animes[400] = api.short(400)
-        api.beforeCall = { if (it == "create") throw httpException(422) }
+        api.beforeCall = { if (it == "create") throw ApiException(422) }
         assertTrue(repo.setStatus(400, ListStatus.PLANNED).isFailure)
         assertNull(db.userRateDao().getByAnimeId(400))
-    }
-
-    private fun httpException(code: Int): HttpException {
-        val raw = Response.Builder()
-            .request(Request.Builder().url("https://shikimori.io/api/v2/user_rates").build())
-            .protocol(Protocol.HTTP_1_1).code(code).message("error").build()
-        return HttpException(retrofit2.Response.error<Unit>("".toResponseBody("application/json".toMediaType()), raw))
     }
 
     @Test
@@ -458,7 +440,7 @@ class ShikimoriLibraryRepositoryTest {
         assertEquals(listOf(100), results.map { it.id })
         assertEquals("https://shikimori.io/o100.jpg", results.single().posterUrl)
         assertNull(db.animeDao().getById(100))
-        api.beforeCall = { throw IOException("offline") }
+        api.beforeCall = { throw NetworkException() }
         assertTrue(repo.search("name 1").isFailure)
         assertTrue(repo.observeLibrary().first().isEmpty())
     }

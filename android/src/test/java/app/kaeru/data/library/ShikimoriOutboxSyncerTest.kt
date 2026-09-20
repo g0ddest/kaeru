@@ -5,8 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import app.kaeru.data.local.KaeruDatabase
 import app.kaeru.data.local.UserRateEntity
-import app.kaeru.data.shikimori.ShikimoriApi
-import app.kaeru.data.shikimori.shikimoriJson
+import app.kaeru.data.shikimori.serverApi
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.sync.RateOp
 import app.kaeru.domain.sync.RateOpKind
@@ -16,8 +15,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.SocketPolicy
@@ -30,8 +27,6 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import retrofit2.Retrofit
-import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -71,11 +66,8 @@ class ShikimoriOutboxSyncerTest {
         )
         prefs.setUserId(42)
         session = AccountSession(InMemoryTokenStore(AuthTokens("access", "refresh", 9_999_999_999, 42)), prefs, db)
-        val api = Retrofit.Builder().baseUrl(server.url("/"))
-            .client(OkHttpClient())
-            .addConverterFactory(shikimoriJson().asConverterFactory("application/json".toMediaType()))
-            .build().create(ShikimoriApi::class.java)
         val clock = Clock.fixed(now, ZoneOffset.UTC)
+        val api = serverApi(server, clock)
         outbox = RoomRateOutboxRepository(db.rateOutboxDao(), clock)
         syncer = ShikimoriOutboxSyncer(api, db, db.userRateDao(), db.rateOutboxDao(), prefs, clock)
     }

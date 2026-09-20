@@ -4,7 +4,6 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.SimpleCache
 import app.kaeru.data.download.DownloadCache
-import app.kaeru.data.kodik.KodikConstants
 import app.kaeru.data.library.AppPreferences
 import app.kaeru.data.playback.RoomEpisodeProgressRepository
 import app.kaeru.data.playback.RoomPlaybackSampleRepository
@@ -28,6 +27,7 @@ import app.kaeru.domain.repository.PlaybackSampleRepository
 import app.kaeru.domain.repository.WatchStateRepository
 import app.kaeru.domain.settings.SettingsStore
 import app.kaeru.domain.source.EpisodeSourceProvider
+import app.kaeru.shared.data.kodik.KodikClient
 import app.kaeru.player.CastFramework
 import app.kaeru.player.DefaultPlaybackController
 import app.kaeru.player.ExoPlaybackEngine
@@ -124,8 +124,8 @@ object PlaybackModule {
     @Provides
     @Singleton
     fun streamHeaders(): StreamHeaders = StreamHeaders(
-        userAgent = KodikConstants.BROWSER_UA,
-        referer = KodikConstants.PLAYER_HOST + "/",
+        userAgent = KodikClient.BROWSER_UA,
+        referer = KodikClient.PLAYER_HOST + "/",
     )
 
     /**

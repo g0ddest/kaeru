@@ -98,6 +98,16 @@ ksp {
 }
 
 dependencies {
+    constraints {
+        // Ktor 3.6 asks for OkHttp 5.5, whose Android artifact insists on compileSdk 37 — a step
+        // past the AGP this project is pinned to. The app keeps the OkHttp it already ships, and
+        // Ktor's engine is happy with any 5.x. All three artifacts, because OkHttp 5 is one module
+        // published as a root plus a jvm and an android half, and Ktor names the jvm half directly.
+        for (artifact in listOf("okhttp", "okhttp-jvm", "okhttp-android")) {
+            implementation("com.squareup.okhttp3:$artifact") { version { strictly(libs.versions.okhttp.get()) } }
+        }
+    }
+
     implementation(libs.core.ktx)
     implementation(libs.core.splashscreen)
     implementation(libs.activity.compose)
@@ -137,6 +147,12 @@ dependencies {
     // the application scope is not: the process is not running at four in the morning.
     implementation(libs.work.runtime)
 
+    // Shikimori and Kodik live in the shared module, over Ktor; the OkHttp engine is what puts
+    // them on the same connection pool and the same logging as the rest of this app's traffic.
+    implementation(project(":shared"))
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.okhttp)
+    // Retrofit stays for what is Android's alone: GitHub releases and AniSkip.
     implementation(libs.retrofit)
     implementation(libs.retrofit.serialization)
     implementation(libs.okhttp)
@@ -156,6 +172,7 @@ dependencies {
     testImplementation(libs.turbine)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.ktor.client.mock)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     // Composition tests under Robolectric: the focus a television screen starts on, and whether a

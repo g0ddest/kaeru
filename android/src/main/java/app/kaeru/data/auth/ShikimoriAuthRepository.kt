@@ -1,17 +1,17 @@
 package app.kaeru.data.auth
 
 import app.kaeru.data.library.AppPreferences
-import app.kaeru.data.shikimori.SHIKIMORI_BASE_URL
-import app.kaeru.data.shikimori.ShikimoriOAuthApi
 import app.kaeru.data.shikimori.ShikimoriApi
-import app.kaeru.data.shikimori.UserDto
-import app.kaeru.data.shikimori.absolute
 import app.kaeru.data.shikimori.toDomainFailure
 import app.kaeru.domain.error.AuthCallbackRejected
+import app.kaeru.domain.error.SignInUnavailable
 import app.kaeru.domain.repository.AuthRepository
 import app.kaeru.domain.repository.MOBILE_REDIRECT
 import app.kaeru.domain.repository.OOB_REDIRECT
 import app.kaeru.domain.repository.PairingAuthorization
+import app.kaeru.shared.data.shikimori.ShikimoriClient
+import app.kaeru.shared.data.shikimori.UserDto
+import app.kaeru.shared.data.shikimori.shikimoriUrl
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -26,9 +26,15 @@ import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
 
+/**
+ * Sign-in and sign-out, over two halves of the shared client: the code exchange goes to Kaeru's
+ * proxy through [client] directly — there is no session yet to speak of — and the `whoami` that
+ * verifies the identity goes through [api] with the candidate token named explicitly, so it is
+ * never swapped for the account's and never refreshed.
+ */
 @Singleton
 class ShikimoriAuthRepository @Inject constructor(
-    private val oauthApi: ShikimoriOAuthApi,
+    private val client: ShikimoriClient,
     private val api: ShikimoriApi,
     private val session: AccountSession,
     private val prefs: AppPreferences,
@@ -66,7 +72,7 @@ class ShikimoriAuthRepository @Inject constructor(
     private fun authorizePage(redirectUri: String, state: String): String {
         val redirect = URLEncoder.encode(redirectUri, "UTF-8")
         val client = URLEncoder.encode(clientId, "UTF-8")
-        return "${SHIKIMORI_BASE_URL}oauth/authorize?client_id=$client&redirect_uri=$redirect" +
+        return "${ShikimoriClient.BASE_URL}/oauth/authorize?client_id=$client&redirect_uri=$redirect" +
             "&response_type=code&scope=user_rates&state=${URLEncoder.encode(state, "UTF-8")}"
     }
 
@@ -113,13 +119,12 @@ class ShikimoriAuthRepository @Inject constructor(
         var profile: UserDto? = null
         val signedIn = try {
             session.login {
-                val tokens = oauthApi.token(
-                    grantType = "authorization_code",
-                    clientId = clientId,
-                    code = code,
-                    redirectUri = redirectUri,
-                )
-                val user = api.whoami("Bearer ${tokens.accessToken}")
+                // A build assembled without the worker's address has nowhere to send the code,
+                // and sending it to Shikimori regardless would earn an `invalid_client` and burn
+                // it. Failing first keeps the code on the device.
+                if (!client.oauthConfigured) throw SignInUnavailable()
+                val tokens = client.token("authorization_code", code, redirectUri)
+                val user = api.whoami(accessToken = tokens.accessToken)
                 profile = user
                 AuthTokens(
                     tokens.accessToken,
@@ -150,7 +155,7 @@ class ShikimoriAuthRepository @Inject constructor(
     private suspend fun rememberProfile(profile: UserDto?) {
         if (profile == null) return
         try {
-            prefs.setAccountProfile(profile.nickname, absolute(profile.avatar))
+            prefs.setAccountProfile(profile.nickname, shikimoriUrl(profile.avatar))
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {

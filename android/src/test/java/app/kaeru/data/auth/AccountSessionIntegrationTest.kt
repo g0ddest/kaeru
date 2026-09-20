@@ -17,11 +17,11 @@ import app.kaeru.data.library.RoomRateOutboxRepository
 import app.kaeru.data.local.KaeruDatabase
 import app.kaeru.data.local.WatchStateEntity
 import app.kaeru.data.local.toEntity
-import app.kaeru.data.shikimori.ShikimoriOAuthApi
-import app.kaeru.data.shikimori.AnimeDetailsDto
-import app.kaeru.data.shikimori.ImageDto
-import app.kaeru.data.shikimori.TokenResponseDto
+import app.kaeru.data.shikimori.oauthClient
 import app.kaeru.data.shikimori.toDomain
+import app.kaeru.shared.data.shikimori.AnimeDto
+import app.kaeru.shared.data.shikimori.ImageDto
+import app.kaeru.shared.data.shikimori.TokenResponseDto
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.repository.MOBILE_REDIRECT
@@ -75,10 +75,7 @@ class AccountSessionIntegrationTest {
     private val now = Instant.parse("2026-09-12T12:00:00Z")
     private val clock = Clock.fixed(now, ZoneOffset.UTC)
     private var exchange: suspend () -> TokenResponseDto = { TokenResponseDto("new", refreshToken = "new-refresh") }
-    private val oauth = object : ShikimoriOAuthApi {
-        override suspend fun token(grantType: String, clientId: String,
-            code: String?, redirectUri: String?, refreshToken: String?): TokenResponseDto = exchange()
-    }
+    private val oauth = oauthClient { exchange() }
 
     @Before
     fun setUp() {
@@ -109,7 +106,7 @@ class AccountSessionIntegrationTest {
         prefs.setLastFullSync(now)
         prefsStore.edit { it[floatPreferencesKey("watched_threshold")] = 0.8f }
         api.animes[100] = api.short(100)
-        api.details[100] = AnimeDetailsDto(100, "Name", "Имя", ImageDto("/o.jpg", "/p.jpg"), "7.0", "released", 12, 12, "2026-01-01")
+        api.details[100] = AnimeDto(100, "Name", "Имя", ImageDto("/o.jpg", "/p.jpg"), "7.0", "released", 12, 12, "2026-01-01")
         api.rates["watching"] = mutableListOf(api.rate(1, 100, "watching", 3))
         db.animeDao().upsertAll(listOf(api.short(100).toDomain().toEntity(null)))
         db.userRateDao().upsertAll(listOf(api.rate(1, 100, "watching", 3).toDomain().toEntity()))
@@ -153,16 +150,16 @@ class AccountSessionIntegrationTest {
         auth.isLoggedIn.test {
             assertFalse(awaitItem())
             val login = async { auth.exchangeCode("code", MOBILE_REDIRECT) }
-            runCurrent()
-            assertTrue("Identity must be requested before login completes", entered.isCompleted)
-            assertFalse(login.isCompleted)
+            // The exchange crosses a real engine thread, so it is awaited rather than ticked.
+            entered.await()
+            assertFalse("Identity must be requested before login completes", login.isCompleted)
             assertNull(tokens.get())
             expectNoEvents()
             release.complete(Unit)
             login.await().getOrThrow()
             assertTrue(awaitItem())
             assertACache()
-            assertEquals(listOf("Bearer new"), api.identityBearers)
+            assertEquals(listOf("new"), api.identityBearers)
         }
     }
 
@@ -181,7 +178,7 @@ class AccountSessionIntegrationTest {
         library.refresh().getOrThrow()
         assertEquals(List(6) { 84L }, api.requestedUserIds)
         library.setStatus(100, ListStatus.PLANNED).getOrThrow()
-        assertEquals(84L, api.creates.single().userRate.userId)
+        assertEquals(84L, api.creates.single().userId)
     }
 
     @Test
@@ -297,7 +294,7 @@ class AccountSessionIntegrationTest {
         api.userId = 84
         auth.exchangeCode("code-b", MOBILE_REDIRECT).getOrThrow()
         library.setStatus(100, ListStatus.PLANNED).getOrThrow()
-        assertEquals(84L, api.creates.single().userRate.userId)
+        assertEquals(84L, api.creates.single().userId)
     }
 
     @Test

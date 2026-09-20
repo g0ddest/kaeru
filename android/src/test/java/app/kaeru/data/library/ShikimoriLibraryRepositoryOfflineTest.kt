@@ -12,7 +12,7 @@ import app.kaeru.data.local.UserRateEntity
 import app.kaeru.data.playback.RoomEpisodeProgressRepository
 import app.kaeru.data.playback.RoomPlaybackSampleRepository
 import app.kaeru.data.shikimori.ShikimoriApi
-import app.kaeru.data.shikimori.shikimoriJson
+import app.kaeru.data.shikimori.serverApi
 import app.kaeru.domain.download.FakeDeferredRemovals
 import app.kaeru.domain.error.HttpError
 import app.kaeru.domain.error.NetworkUnavailable
@@ -32,8 +32,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -49,8 +47,6 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import retrofit2.Retrofit
-import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -91,11 +87,8 @@ class ShikimoriLibraryRepositoryOfflineTest {
         )
         prefs.setUserId(42)
         session = AccountSession(InMemoryTokenStore(AuthTokens("access", "refresh", 9_999_999_999, 42)), prefs, db)
-        api = Retrofit.Builder().baseUrl(server.url("/"))
-            .client(OkHttpClient())
-            .addConverterFactory(shikimoriJson().asConverterFactory("application/json".toMediaType()))
-            .build().create(ShikimoriApi::class.java)
         clock = Clock.fixed(now, ZoneOffset.UTC)
+        api = serverApi(server, clock)
         outbox = RoomRateOutboxRepository(db.rateOutboxDao(), clock)
         repo = repositoryWith(OutboxSyncer { replays++; Result.success(ReplayOutcome(0, emptySet())) })
     }
