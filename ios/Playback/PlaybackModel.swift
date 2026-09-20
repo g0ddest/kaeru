@@ -415,13 +415,21 @@ enum PlaybackLocalAction {
         isLocal = false
         do {
             if translations.isEmpty {
-                let available = try await model.service.translations(anime.id)
+                let available = try await deadline(20, "Список озвучек") { [model, anime] in
+                    try await model.service.translations(anime.id)
+                }
                 guard isCurrent(fence) else { return }
                 translations = available
             }
             let selected = explicitTranslation ?? model.preferredTranslation(for: anime.id, available: translations, episode: episode)
             guard selected > 0 else { throw AppError.message("Для этой серии нет доступной озвучки.") }
-            let result = try await model.service.resolve(anime.id, translation: selected, episode: episode)
+            // The chain behind this is four requests to somebody else's player: a token, a page,
+            // a decode and a playlist. Any of them can simply never answer, and «Открываем
+            // серию…» with nothing behind it is the worst thing a player can show — it looks
+            // exactly like an episode that is about to start.
+            let result = try await deadline(25, "Источник") { [model, anime, episode] in
+                try await model.service.resolve(anime.id, translation: selected, episode: episode)
+            }
             guard isCurrent(fence) else { return }
             guard result.episode == episode else { throw AppError.message("Источник вернул другую серию.") }
             stream = result; translation = result.translation.id
@@ -434,6 +442,21 @@ enum PlaybackLocalAction {
         }
     }
     private func isCurrent(_ fence: UUID) -> Bool { fence == request && !closed && !Task.isCancelled && account == model.accountKey }
+    /// Whichever finishes first: the work, or the wait. Named, because «не ответил вовремя» about
+    /// nothing in particular tells somebody neither what failed nor whether to try again.
+    private func deadline<T: Sendable>(_ seconds: Double, _ what: String,
+                                       _ operation: @escaping @Sendable () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await operation() }
+            group.addTask {
+                try await Task.sleep(for: .seconds(seconds))
+                throw AppError.message("\(what) не ответил вовремя. Попробуйте ещё раз.")
+            }
+            defer { group.cancelAll() }
+            guard let first = try await group.next() else { throw AppError.message("\(what) не ответил.") }
+            return first
+        }
+    }
     private func install(_ stream: Stream, position: Double, fence: UUID) {
         guard let chosen = PlaybackPolicy.quality(preferred: selectedQuality, available: stream.urls.map(\.quality)),
               let selected = stream.urls.first(where: { $0.quality == chosen }),

@@ -86,6 +86,7 @@ enum TogetherCopy {
     static func lost(_ error: TogetherError?) -> String {
         switch error {
         case .roomFull: return "В этой сессии уже двое"
+        case .sameSide: return "Ссылку открыли оба — комнату держит тот, кто её создал"
         case .notConfigured: return "Сервер совместного просмотра не настроен"
         case .timeout, .expired: return unreachable
         default: return "Связь с другом потеряна"

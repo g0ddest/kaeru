@@ -242,3 +242,37 @@ private final class TransportEvents: @unchecked Sendable {
         await manager.leave()
     }
 }
+
+/// Both phones opened the link.
+///
+/// A frame is sealed against the side that sent it, so two guests exchange bytes neither can read.
+/// From the relay the room is alive; from inside it is silent, and the screen used to say
+/// «Подключаемся…» until the half-minute ran out.
+@MainActor final class TogetherSameSideTests: XCTestCase {
+    func testTwoGuestsAreToldWhatIsWrong() async throws {
+        let transport = TogetherManagerTests.Transport()
+        let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Guest", transportFactory: { _, _ in transport })
+        let link = try TogetherInvitation(roomID: "AAAAAAAAAAA", key: Data(repeating: 0, count: 16))
+        await manager.join(link)
+        try await Task.sleep(for: .milliseconds(20))
+        // The other phone joined as a guest too, so its frames carry the guest's own seal.
+        try transport.deliver(TogetherMessage(t: .hello, seq: 1, name: "Тоже гость", animeId: 7, episode: 1, positionMs: 0, playing: false),
+                              link: link, side: .guest)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(manager.error, .sameSide)
+        XCTAssertEqual(manager.joining?.failure, TogetherError.sameSide.errorDescription)
+    }
+    func testAHostIgnoresAnInvitationToItsOwnRoom() async throws {
+        let transport = TogetherManagerTests.Transport()
+        let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Host", transportFactory: { _, _ in transport })
+        await manager.create()
+        try await Task.sleep(for: .milliseconds(20))
+        let own = try XCTUnwrap(manager.invitation)
+        await manager.join(own)
+        try await Task.sleep(for: .milliseconds(20))
+        // Still the host of the room it made, and no join screen over it.
+        XCTAssertNil(manager.joining)
+        XCTAssertEqual(manager.phase, .live)
+        await manager.leave()
+    }
+}

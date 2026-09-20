@@ -138,6 +138,14 @@ struct TogetherJoinTarget: Equatable {
     }
 
     func join(_ invitation: TogetherInvitation) async {
+        // The room this phone is already keeping. Opening one's own invitation — from the share
+        // sheet, from a chat with oneself — used to dial back in as the guest, which left the
+        // room with two guests in it and no host at all.
+        if let current = self.invitation, current.roomID == invitation.roomID, side == .host,
+           phase == .live || phase == .connecting || phase == .reconnecting {
+            TogetherLog.write("ignored an invitation to the room this phone is hosting")
+            return
+        }
         joining = TogetherJoinTarget()
         lastJoin = invitation
         do { try await connect(invitation, asHost: false) }
@@ -390,6 +398,15 @@ struct TogetherJoinTarget: Equatable {
         // that never comes alive looks identical from the screen whether the greeting never
         // arrived, would not authenticate, or was refused as a replay.
         guard let message = try? TogetherCodec.decode(frame, invitation: invitation, from: remoteSide) else {
+            // One refusal has an answer, and it is the only one worth telling somebody about: a
+            // frame that opens under this side's own key was sent by another guest. Both phones
+            // opened the link, nobody is keeping the room, and the two of them will sit there
+            // exchanging bytes neither can read until one of them gives up.
+            if (try? TogetherCodec.decode(frame, invitation: invitation, from: side)) != nil {
+                TogetherLog.write("frame refused: the other phone also joined as \(side)")
+                fail(.sameSide)
+                return
+            }
             TogetherLog.write("frame refused: did not authenticate as \(remoteSide)")
             return
         }

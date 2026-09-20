@@ -5,6 +5,10 @@ import CryptoKit
 enum TogetherError: LocalizedError, Equatable {
     case invalidInvitation, invalidMessage, frameTooLarge, authentication, notConfigured
     case disconnected, roomFull, expired, timeout, playbackUnavailable, unsupportedVoice
+    /// Both phones opened the link, so both sealed their frames as the guest — and a frame is
+    /// sealed against the side that sent it, which means neither could read a word of the other.
+    /// The room looks alive from the relay's side and says nothing at all from inside.
+    case sameSide
     var errorDescription: String? {
         switch self {
         case .invalidInvitation: "Некорректная ссылка приглашения."
@@ -17,6 +21,7 @@ enum TogetherError: LocalizedError, Equatable {
         case .timeout: "Время ожидания истекло."
         case .playbackUnavailable: "Сначала откройте серию в плеере."
         case .unsupportedVoice: "Этот формат голосового сообщения не поддерживается устройством."
+        case .sameSide: "Ссылку открыли оба. Комнату держит тот, кто её создал, — второму надо выйти и остаться в своей."
         }
     }
 }
