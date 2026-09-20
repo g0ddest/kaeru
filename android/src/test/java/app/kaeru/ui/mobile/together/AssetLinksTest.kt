@@ -162,6 +162,19 @@ class AssetLinksTest {
         )
     }
 
+    /**
+     * On an iPhone the key rides in the fragment: nothing takes the `#` of a plain scheme URL the
+     * way the intent syntax does, the app reads the fragment before the query, and a fragment is
+     * the one part of an address that neither a request nor a browser's history carries along.
+     */
+    @Test
+    fun `the iphone address keeps the key in the fragment`() {
+        val page = File(site, "w/index.html").readText()
+        val script = page.substringAfter("<script>").substringBefore("</script>")
+        assertTrue(script.contains("'${RoomLink.SCHEME}://${RoomLink.AUTHORITY}?${RoomLink.ROOM_PARAM}=' + room + '#' + key"))
+        assertFalse("the query is the intent uri's carrier, not the iPhone's", script.contains("'kaeru://watch?r=' + room + '&"))
+    }
+
     /** The key is read once, checked, and written into the addresses that open the app. */
     @Test
     fun `the hash is used only to build the addresses that open the app`() {

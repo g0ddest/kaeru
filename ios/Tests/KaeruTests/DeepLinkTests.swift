@@ -53,6 +53,14 @@ final class DeepLinkTests: XCTestCase {
         XCTAssertEqual(DeepLink.parse(keyInQuery), .watch(invitation))
     }
 
+    /// What the landing page hands an iPhone: the key in the fragment, where the app reads it first.
+    /// The query form stays for links already out there; the page no longer builds one.
+    func testTheLandingPagesSchemeAddressCarriesTheKeyInTheFragment() throws {
+        let invitation = try TogetherInvitation.random()
+        let fromThePage = URL(string: "kaeru://watch?r=\(invitation.roomID)#\(invitation.key.togetherBase64)")!
+        XCTAssertEqual(DeepLink.parse(fromThePage), .watch(invitation))
+    }
+
     func testHostileInvitationsAreRefused() throws {
         let invitation = try TogetherInvitation.random()
         for raw in [
