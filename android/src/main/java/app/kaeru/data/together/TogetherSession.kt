@@ -488,6 +488,7 @@ class TogetherSession(
     private suspend fun lose(reason: LostReason) {
         val now = _state.value
         if (now is SessionState.Ended || now is SessionState.Idle || now is SessionState.Lost) return
+        TogetherLog.write("failed $reason state=${now::class.simpleName} peer=${peerName.ifEmpty { "-" }}")
         // Before anything else. A correction in force when the channel died would otherwise play
         // the rest of somebody's episode three percent slow for ever: there is no speed control
         // anywhere in this app, and nothing else ever writes the rate back.
@@ -524,8 +525,10 @@ class TogetherSession(
             return
         }
         refused += 1
+        TogetherLog.write("frame refused: did not authenticate ($refused in a row)")
         if (refused < GARBLED_LIMIT) return
         Log.w(TAG, "$refused frames in a row would not decode; giving up on this room", failure)
+        TogetherLog.write("giving up: $refused frames in a row would not decode")
         lose(LostReason.CONNECTION)
     }
 
@@ -637,7 +640,10 @@ class TogetherSession(
     private suspend fun corrections() {
         while (channel != null) {
             delay(SYNC_INTERVAL_MS)
-            if (heldForPeer && holdUntil > 0 && clock.millis() >= holdUntil) releaseHold()
+            if (heldForPeer && holdUntil > 0 && clock.millis() >= holdUntil) {
+                TogetherLog.write("waited ${PEER_LOADING_HOLD_MS / 1000}s for the friend to load; going on")
+                releaseHold()
+            }
             correct()
         }
     }
@@ -770,7 +776,10 @@ class TogetherSession(
                     lastControl = Control(0, byHost = false)
                     peerSeq = 0
                 }
-                if (message.seq <= peerSeq) return
+                if (message.seq <= peerSeq) {
+                    TogetherLog.write("frame refused: ${label(message)} seq=${message.seq} out of order")
+                    return
+                }
                 if (greeting != null) rejoining = false
                 peerSeq = message.seq
             }
@@ -778,6 +787,7 @@ class TogetherSession(
             // what makes «later» mean the same thing on both phones, so neither side can be
             // outvoted for ever merely by being the quieter one.
             seq = maxOf(seq, message.seq)
+            TogetherLog.write("frame in ${label(message)} seq=${message.seq}")
         }
         when (message) {
             is TogetherMessage.Hello -> arrived(message)
@@ -929,6 +939,11 @@ class TogetherSession(
 
     private suspend fun reported(message: TogetherMessage.State) {
         peer = PeerReport(message.positionMs, message.playing, message.sentAt, clock.millis())
+        val here = port.state.value
+        TogetherLog.write(
+            "state in pos=${message.positionMs} playing=${message.playing} buffering=${message.buffering} " +
+                "here=${here.positionMs}/${here.playing}",
+        )
         // Only a friend who means to be playing. One who is paused and buffering is simply
         // paused — and that reaches this side as a Pause, never as a report.
         peerIsLoading(message.buffering && message.playing)
@@ -970,6 +985,7 @@ class TogetherSession(
             heldForPeer = true
             holdUntil = clock.millis() + PEER_LOADING_HOLD_MS
             if (correcting) forceNormalSpeed()
+            TogetherLog.write("holding: the friend is loading")
             port.pause()
             announce(TogetherEvent.Notice(NoticeKind.CATCHING_UP, peerName))
         } else if (heldForPeer) {
@@ -986,6 +1002,7 @@ class TogetherSession(
      * held picture with nothing on screen explaining it is worse than being out of step.
      */
     private suspend fun releaseHold() {
+        TogetherLog.write("hold released")
         dropHold()
         // Nothing is corrected against a report taken while the picture stood still.
         peer = null
@@ -1003,6 +1020,7 @@ class TogetherSession(
      * which is about how long a train takes to leave a tunnel.
      */
     private suspend fun departed(deliberate: Boolean) {
+        TogetherLog.write(if (deliberate) "peer said goodbye" else "peer left, holding the seat for ${REJOIN_WINDOW_MS / 1000}s")
         if (peerName.isNotEmpty()) announce(TogetherEvent.Notice(NoticeKind.LEFT, peerName))
         rejoin?.cancel()
         rejoin = null
@@ -1184,6 +1202,11 @@ class TogetherSession(
      */
     private suspend fun send(message: TogetherMessage) {
         val open = channel ?: return
+        when (message) {
+            is TogetherMessage.Hello -> TogetherLog.write("hello out anime=${message.animeId} episode=${message.episode}")
+            is TogetherMessage.Bye -> TogetherLog.write("bye out")
+            else -> Unit
+        }
         try {
             open.send(message)
         } catch (dropped: TogetherFailed) {
@@ -1198,6 +1221,9 @@ class TogetherSession(
     }
 
     private fun nextSeq(): Long = ++seq
+
+    /** The wire name of a message, for the journal: `hello`, `seek`, `state`… */
+    private fun label(message: TogetherMessage): String = message::class.simpleName.orEmpty().lowercase()
 
     private fun nextEventId(): Long = ++eventIds
 
