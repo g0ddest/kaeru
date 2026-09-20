@@ -416,7 +416,7 @@ struct TogetherJoinTarget: Equatable {
         }
         // The same two seconds the policy uses as the line between pulling with playback speed and
         // jumping: under it the gap is being closed silently and there is nothing left to say.
-        if abs(here.positionMs - (there + clock.offsetMs)) < 2_000 { conversation.caughtUp() }
+        if abs(here.positionMs - (there + clock.offsetMs)) < TogetherSync.seekMs { conversation.caughtUp() }
     }
 
     private func sendHello(invitation: TogetherInvitation) async {
