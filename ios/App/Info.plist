@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>CFBundleURLTypes</key><array><dict>
+        <key>CFBundleURLName</key><string>app.kaeru.oauth</string>
+        <key>CFBundleURLSchemes</key><array><string>kaeru</string></array>
+    </dict></array>
+    <key>NSAppTransportSecurity</key><dict>
+        <key>NSAllowsArbitraryLoadsForMedia</key><true/>
+        <key>NSAllowsLocalNetworking</key><true/>
+    </dict>
+    <key>NSBonjourServices</key>
+    <array>
+        <!-- Cast discovery: the receiver's own service plus the generic one the SDK also probes.
+             Without these iOS 14+ answers every browse with silence, and no television is ever found. -->
+        <string>_googlecast._tcp</string>
+        <string>_0EEA38FE._googlecast._tcp</string>
+        <!-- The app's own pairing and watch-together sockets on the local network. -->
+        <string>_kaeru._tcp</string>
+    </array>
+    <key>NSCameraUsageDescription</key><string>Камера нужна, чтобы прочитать QR-код с экрана телевизора и войти на нём в Shikimori.</string>
+    <key>NSLocalNetworkUsageDescription</key><string>Kaeru ищет телевизоры для трансляции, входа по QR-коду и совместного просмотра в вашей сети.</string>
+    <key>NSMicrophoneUsageDescription</key><string>Микрофон используется только при записи голосового сообщения в совместном просмотре.</string>
+    <key>UIBackgroundModes</key><array><string>audio</string><string>fetch</string></array>
+    <key>BGTaskSchedulerPermittedIdentifiers</key><array><string>app.kaeru.ios.new-episodes</string></array>
+</dict></plist>

@@ -1,0 +1,12 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["TXY49DW96F.app.kaeru.ios"],
+        "components": [
+          { "/": "/w/*", "comment": "Приглашение в совместный просмотр открывается в приложении" }
+        ]
+      }
+    ]
+  }
+}

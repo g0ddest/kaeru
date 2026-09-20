@@ -4,7 +4,13 @@
 /.idea/
 .DS_Store
 /build/
-/app/build/
+/android/build/
+/shared/build/
+/ios/build/
+/ios/build-device/
+/ios/App/Local.xcconfig
+/ios/App/Configuration.plist
+xcuserdata/
 /captures
 .externalNativeBuild
 .cxx
@@ -18,3 +24,10 @@
 *.jks
 *.keystore
 release.properties
+
+# Проект Xcode генерируется `ruby ios/App/generate_project.rb`: он целиком выводится из
+# исходников и local.properties, а генератор выдаёт новые идентификаторы на каждый прогон —
+# в истории от него один шум и гарантированные конфликты при любом переносе файлов.
+/ios/App/Kaeru.xcodeproj/
+/ios/App/Configuration.plist
+/ios/Dependencies/

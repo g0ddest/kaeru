@@ -1,4 +1,5 @@
 [versions]
+ktor = "3.6.0"
 agp = "8.13.2"
 kotlin = "2.3.21"
 ksp = "2.3.12"
@@ -34,6 +35,11 @@ robolectric = "4.17"
 androidxTestCore = "1.7.0"
 
 [libraries]
+ktor-client-core = { group = "io.ktor", name = "ktor-client-core", version.ref = "ktor" }
+ktor-client-darwin = { group = "io.ktor", name = "ktor-client-darwin", version.ref = "ktor" }
+ktor-client-okhttp = { group = "io.ktor", name = "ktor-client-okhttp", version.ref = "ktor" }
+ktor-client-mock = { group = "io.ktor", name = "ktor-client-mock", version.ref = "ktor" }
+coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
 core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "splashscreen" }
 activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
@@ -95,6 +101,8 @@ robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "
 androidx-test-core = { group = "androidx.test", name = "core-ktx", version.ref = "androidxTestCore" }
 
 [plugins]
+android-library = { id = "com.android.library", version.ref = "agp" }
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

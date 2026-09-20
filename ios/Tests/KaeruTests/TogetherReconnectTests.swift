@@ -1,0 +1,103 @@
+import XCTest
+@testable import Kaeru
+
+/// What happens to a room when the network goes away for a minute: the waits, what is kept to be
+/// said afterwards, which of the relay's answers are final, and the seat a friend can walk back into.
+@MainActor final class TogetherReconnectTests: XCTestCase {
+
+    func testTheScheduleIsOneTwoFourEightAndThenWhatIsLeftOfTheHalfMinute() {
+        var backoff = TogetherRelayBackoff()
+        var waits: [Int64] = []
+        while let wait = backoff.next() { waits.append(wait) }
+        XCTAssertEqual(waits, [1_000, 2_000, 4_000, 8_000, 15_000])
+        // Exactly the budget, not a millisecond more, and nothing after it.
+        XCTAssertEqual(waits.reduce(0, +), TogetherRelayBackoff.budgetMs)
+        XCTAssertNil(backoff.next())
+    }
+
+    func testASocketThatCameBackGetsTheWholeHalfMinuteAgain() {
+        var backoff = TogetherRelayBackoff()
+        _ = backoff.next(); _ = backoff.next()
+        XCTAssertEqual(backoff.waitedMs, 3_000)
+        // A long evening would run out of the budget if it were spent once for the whole session.
+        backoff.reset()
+        XCTAssertEqual(backoff.waitedMs, 0)
+        XCTAssertEqual(backoff.next(), 1_000)
+    }
+
+    func testWhatCouldNotBeSentIsKeptNewestFirstToSurvive() {
+        var buffer = TogetherSendBuffer()
+        for value in 0..<(TogetherSendBuffer.maximum + 3) { buffer.append(Data([UInt8(value % 251)])) }
+        XCTAssertEqual(buffer.frames.count, TogetherSendBuffer.maximum)
+        // The last action is the one that counts, so it is the oldest that go.
+        XCTAssertEqual(buffer.frames.first, Data([3]))
+        XCTAssertEqual(buffer.frames.last, Data([UInt8((TogetherSendBuffer.maximum + 2) % 251)]))
+        let drained = buffer.drain()
+        XCTAssertEqual(drained.count, TogetherSendBuffer.maximum)
+        XCTAssertTrue(buffer.frames.isEmpty, "a flush that fails must not send everything twice")
+    }
+
+    func testThreeOfTheRelaysCloseCodesAreAnswersRatherThanAccidents() {
+        XCTAssertEqual(TogetherRelayClose.refusal(for: 4409), .roomFull)
+        XCTAssertEqual(TogetherRelayClose.refusal(for: 4408), .expired)
+        XCTAssertEqual(TogetherRelayClose.refusal(for: 4413), .frameTooLarge)
+        // An ordinary close is an accident, and an accident is worth another attempt.
+        XCTAssertNil(TogetherRelayClose.refusal(for: 1000))
+        XCTAssertNil(TogetherRelayClose.refusal(for: 1006))
+        XCTAssertTrue(TogetherRelayClose.refuses(.roomFull))
+        XCTAssertFalse(TogetherRelayClose.refuses(.disconnected))
+    }
+
+    func testADroppedSocketIsSaidOutLoudAndThenTakenBack() async throws {
+        let bench = try await TogetherSyncTests.Bench.live()
+        bench.transport.continuation.yield(.reconnecting)
+        await bench.settle()
+        XCTAssertEqual(bench.manager.phase, .reconnecting)
+        bench.transport.continuation.yield(.reconnected)
+        await bench.settle()
+        XCTAssertEqual(bench.manager.phase, .live)
+        // The friend's room carried on meanwhile and has no other way of learning where this side
+        // got to, so the greeting goes out again — and a ping, because the path may be a new one.
+        XCTAssertEqual(bench.sent().filter { $0.t == .hello }.count, 2)
+        XCTAssertEqual(bench.pings(), 2)
+    }
+
+    func testTheSeatIsHeldForHalfAMinuteAndAReturningFriendMayCountFromOneAgain() async throws {
+        let bench = try await TogetherSyncTests.Bench.live()
+        bench.clock.value = 1_000
+        try bench.deliver(.init(t: .seek, seq: 40, positionMs: 4_000))
+        await bench.settle()
+        XCTAssertEqual(bench.player.seeks, [4_000])
+
+        bench.transport.continuation.yield(.peerLeft)
+        await bench.settle()
+        XCTAssertEqual(bench.manager.phase, .reconnecting, "the room is not over — the seat is being held")
+
+        // Anything but a greeting stays gated by the old mark, or the window would be thirty
+        // seconds in which a captured frame plays again.
+        try bench.deliver(.init(t: .seek, seq: 2, positionMs: 9_000))
+        await bench.settle()
+        XCTAssertEqual(bench.player.seeks, [4_000])
+
+        // The friend walks back in, counting from one as a fresh session does.
+        try bench.deliver(.init(t: .hello, seq: 1, name: "Хозяин", animeId: 7, episode: 1, positionMs: 4_000, playing: false))
+        await bench.settle()
+        XCTAssertEqual(bench.manager.phase, .live)
+        XCTAssertEqual(bench.manager.peerName, "Хозяин")
+    }
+
+    func testNobodyWalksBackInAndTheEveningIsCalledOver() async throws {
+        let bench = try await TogetherSyncTests.Bench.live()
+        bench.clock.value = 1_000
+        bench.transport.continuation.yield(.peerLeft)
+        await bench.settle()
+        XCTAssertEqual(bench.manager.phase, .reconnecting)
+        bench.manager.beat()
+        XCTAssertEqual(bench.manager.phase, .reconnecting, "half a minute, not one beat")
+        bench.clock.value = 1_000 + TogetherTiming.rejoinWindowMs
+        bench.manager.beat()
+        await bench.settle()
+        XCTAssertEqual(bench.manager.phase, .failed)
+        XCTAssertEqual(bench.manager.error, .disconnected)
+    }
+}

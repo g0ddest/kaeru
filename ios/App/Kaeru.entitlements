@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Приглашение вида https://kaeru.vitaliy.velikodniy.name/w/<комната> открывается приложением,
+         а не Safari. Домен раздаёт .well-known/apple-app-site-association с этим же appID. -->
+    <key>com.apple.developer.associated-domains</key>
+    <array>
+        <string>applinks:kaeru.vitaliy.velikodniy.name</string>
+    </array>
+</dict>
+</plist>
