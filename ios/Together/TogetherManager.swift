@@ -57,6 +57,8 @@ struct TogetherJoinTarget: Equatable {
     @ObservationIgnored private var pendingGreeting: TogetherMessage?
     /// Frames in a row that would not open. A key that does not match never starts matching.
     @ObservationIgnored private var refused = 0
+    /// When this side last answered a greeting with its own, for the guest's once-in-three-seconds.
+    @ObservationIgnored private var greetingAnsweredAt: Int64?
     private var ordering = TogetherOrdering(isHost: false)
     private var clock = TogetherClock()
     /// Where the friend said they were, and when that arrived here.
@@ -207,6 +209,7 @@ struct TogetherJoinTarget: Equatable {
             // Goodbye waits for the wire: everything after this line tears the session down, and a
             // frame handed to a cancelled transport is a friend left staring at a paused picture.
             var bye = TogetherMessage(t: .bye, seq: 1)
+            TogetherLog.write("bye out")
             if let seq = try? ordering.next(control: true) {
                 bye.seq = seq
                 if let frame = try? TogetherCodec.encode(bye, invitation: invitation, from: side) {
@@ -301,7 +304,7 @@ struct TogetherJoinTarget: Equatable {
         // the last room died would otherwise let go with `play` on the next friend's first report.
         peerLoading = false; dropHold(); correctionSettledAt = 0
         reportedBuffering = nil; pendingGreetingAt = 0
-        refused = 0
+        refused = 0; greetingAnsweredAt = nil
         try await value.connect(invitation, asHost: asHost)
         let fence = generation
         enter(.live)
@@ -410,6 +413,7 @@ struct TogetherJoinTarget: Equatable {
             heldForPeer = true
             holdUntil = now() + TogetherTiming.peerLoadingHoldMs
             if correcting { playback.togetherSetRate(1); correcting = false }
+            TogetherLog.write("holding: the friend is loading")
             playback.togetherPause()
             conversation.notice(.catchingUp, peerName: peerName)
         } else if heldForPeer {
@@ -423,6 +427,7 @@ struct TogetherJoinTarget: Equatable {
     /// Let go of a hold — because the friend is ready, or because they have taken too long and a
     /// held picture with nothing on screen explaining it is worse than being out of step.
     private func releaseHold() {
+        TogetherLog.write("hold released")
         dropHold()
         // Nothing is corrected against a report taken while the picture was standing still.
         report = nil
@@ -589,13 +594,30 @@ struct TogetherJoinTarget: Equatable {
             peerName = message.name; rejoinBy = nil
             enter(.live)
             if !already { conversation.notice(.joined, peerName: peerName) }
-            // The host answers a greeting with its own, every time, the way Android's host does.
-            // Its own was said when the room opened and repeated only while nobody had answered;
-            // a guest who walks in a second after the last repeat never hears it, waits for the
-            // greeting that is not coming, and gives up with «Не удалось подключиться».
-            if side == .host { Task { [weak self] in await self?.sendHello(invitation: invitation); self?.sendPing() } }
+            answerGreeting(invitation)
         }
         apply(message)
+    }
+
+    /// Either side answers a greeting with its own.
+    ///
+    /// The host every time, the way Android's host does: its own was said when the room opened
+    /// and repeated only while nobody had answered, and a guest who walks in a second after the
+    /// last repeat would otherwise wait for a greeting that is not coming.
+    ///
+    /// The guest too, because a handshake can be lost one way round. The host's socket dies
+    /// while the host is in the background and is dialled again; the guest's only greeting
+    /// landed in the gap. The guest hears the host — who repeats until answered — and so stops
+    /// repeating; the host never hears the guest, keeps greeting an empty room for the rest of
+    /// the evening, and applies the guest's reports all the same. A one-sided acquaintance.
+    /// At most once in `helloRetryMs`, or the two would greet each other for ever: an answer is
+    /// itself a greeting, and the host answers every one.
+    private func answerGreeting(_ invitation: TogetherInvitation) {
+        if side == .guest {
+            if let last = greetingAnsweredAt, now() - last < TogetherTiming.helloRetryMs { return }
+            greetingAnsweredAt = now()
+        }
+        Task { [weak self] in await self?.sendHello(invitation: invitation); self?.sendPing() }
     }
 
     /// The friend's socket went away, and it is not the end: a room keeps the seat for half a
@@ -643,6 +665,7 @@ struct TogetherJoinTarget: Equatable {
             // been carried forward to the moment of judging.
             guard let positionMs = message.positionMs, let playing = message.playing, let sentAt = message.sentAt else { return }
             report = PeerReport(positionMs: positionMs, playing: playing, sentAt: sentAt, at: now())
+            TogetherLog.write("state in pos=\(positionMs) playing=\(playing) buffering=\(message.buffering == true) here=\(playback?.togetherSnapshot.positionMs ?? -1)/\(playback?.togetherSnapshot.playing ?? false)")
             // Only a friend who means to be playing. One who is paused and buffering is simply
             // paused — and that reaches this side as a `pause`, never as a report.
             peerIsLoading(message.buffering == true && playing)

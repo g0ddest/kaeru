@@ -223,6 +223,28 @@ import XCTest
         XCTAssertTrue(bench.player.togetherSnapshot.playing)
     }
 
+    /// A handshake can be lost one way round: the guest's only greeting lands while the host's
+    /// socket is being dialled again, the guest hears the host (who repeats until answered) and
+    /// stops repeating, and the host never hears the guest — greeting an empty room all evening
+    /// while applying the guest's reports. So the guest answers a greeting too, at most once in
+    /// three seconds, or the two would greet each other for ever.
+    func testAGuestAnswersTheHostsGreetingButNotMoreThanOnceInThreeSeconds() async throws {
+        let bench = try await Bench.live()
+        bench.clock.value = 10_000
+        let before = bench.sent().filter { $0.t == .hello }.count
+        try bench.deliver(.init(t: .hello, seq: 1, name: "Хозяин", animeId: 7, episode: 1, positionMs: 1_000, playing: true, epoch: 5))
+        await bench.settle()
+        XCTAssertEqual(bench.sent().filter { $0.t == .hello }.count, before + 1, "a greeting is answered with one")
+        bench.clock.value = 11_000
+        try bench.deliver(.init(t: .hello, seq: 2, name: "Хозяин", animeId: 7, episode: 1, positionMs: 1_000, playing: true, epoch: 5))
+        await bench.settle()
+        XCTAssertEqual(bench.sent().filter { $0.t == .hello }.count, before + 1, "not twice in a second")
+        bench.clock.value = 13_000
+        try bench.deliver(.init(t: .hello, seq: 3, name: "Хозяин", animeId: 7, episode: 1, positionMs: 1_000, playing: true, epoch: 5))
+        await bench.settle()
+        XCTAssertEqual(bench.sent().filter { $0.t == .hello }.count, before + 2)
+    }
+
     /// The friend's last report is about the episode they have just left. Judged against the
     /// start of the new one it was a twenty-minute gap, and a seek to close it on a player that
     /// had barely opened — the same reason a correcting seek forgets the report it acted on.

@@ -189,6 +189,9 @@ class TogetherSession(
     /** When the friend's hello arrived, on this clock, for carrying its position forward. */
     private var helloAt = 0L
 
+    /** When this side last answered a greeting with its own — the guest's once in [HELLO_RETRY_MS]. */
+    private var greetingAnsweredAt: Long? = null
+
     /**
      * Whether the friend's next report should be looked at the moment it arrives.
      *
@@ -420,6 +423,7 @@ class TogetherSession(
         refused = 0
         hello = CompletableDeferred()
         helloAt = 0
+        greetingAnsweredAt = null
         syncOnReport = false
         animeId = port.state.value.animeId ?: 0
         running = scope.launch(failures) {
@@ -881,6 +885,26 @@ class TogetherSession(
         } else {
             goLive(message.name)
         }
+        answerGreeting()
+    }
+
+    /**
+     * The guest answers a greeting too, because a handshake can be lost one way round.
+     *
+     * The host's socket dies while the host is in the background and is dialled again; the
+     * guest's only greeting landed in the gap. The guest hears the host — who repeats until
+     * answered — and so stops repeating; the host never hears the guest, keeps greeting an empty
+     * room for the rest of the evening, and applies the guest's reports all the same. At most
+     * once in [HELLO_RETRY_MS], or the two would greet each other for ever: an answer is itself
+     * a greeting, and the host answers every one.
+     */
+    private suspend fun answerGreeting() {
+        val now = clock.millis()
+        val last = greetingAnsweredAt
+        if (last != null && now - last < HELLO_RETRY_MS) return
+        greetingAnsweredAt = now
+        send(greeting())
+        send(TogetherMessage.Ping(clock.millis(), nextSeq()))
     }
 
     /**

@@ -264,6 +264,31 @@ class TogetherSessionTest {
         assertEquals("после ответа приветствие не повторяется", answered, transport.sentOf<TogetherMessage.Hello>().size)
     }
 
+    /**
+     * A handshake can be lost one way round: the guest's only greeting lands while the host's
+     * socket is being dialled again, the guest hears the host (who repeats until answered) and
+     * stops repeating, and the host never hears the guest — greeting an empty room all evening
+     * while applying the guest's reports. So the guest answers a greeting too, at most once in
+     * three seconds, or the two would greet each other for ever.
+     */
+    @Test
+    fun `a guest answers the host's greeting, and not more than once in three seconds`() = sessionTest {
+        liveAsGuest()
+        // Its own on joining, and one in answer to the host's.
+        val answered = transport.sentOf<TogetherMessage.Hello>().size
+        assertEquals(2, answered)
+
+        transport.deliver(peerHello(seq = 30))
+        runCurrent()
+        assertEquals("not twice in a second", answered, transport.sentOf<TogetherMessage.Hello>().size)
+
+        advanceTimeBy(TogetherSession.HELLO_RETRY_MS + 1)
+        runCurrent()
+        transport.deliver(peerHello(seq = 31))
+        runCurrent()
+        assertEquals(answered + 1, transport.sentOf<TogetherMessage.Hello>().size)
+    }
+
     /** The side that made the room says it again too: a guest may have greeted before the host's socket was up. */
     @Test
     fun `a host whose room stays silent greets it again until somebody is there`() = sessionTest {
