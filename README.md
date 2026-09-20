@@ -47,7 +47,7 @@ cp local.properties.example local.properties
 JAVA_HOME="$(/usr/libexec/java_home -v 21)" ./gradlew :android:testDebugUnitTest :android:lintDebug :android:assembleDebug
 ```
 
-APK: `android/build/outputs/apk/debug/app-debug.apk`.
+APK: `android/build/outputs/apk/debug/android-debug.apk`.
 
 ### Релизная сборка
 
@@ -57,7 +57,7 @@ APK: `android/build/outputs/apk/debug/app-debug.apk`.
 
 ```bash
 JAVA_HOME="$(/usr/libexec/java_home -v 21)" ./gradlew :android:assembleRelease
-# android/build/outputs/apk/release/app-release.apk
+# android/build/outputs/apk/release/android-release.apk
 ```
 
 Chromecast: приложение запускает собственный Styled Media Receiver (`0EEA38FE`); его оформление
@@ -66,7 +66,7 @@ Chromecast: приложение запускает собственный Style
 ## Запуск
 
 ```bash
-adb install -r android/build/outputs/apk/debug/app-debug.apk
+adb install -r android/build/outputs/apk/debug/android-debug.apk
 adb shell am start -n app.kaeru/.MainActivity   # телефон
 adb shell am start -n app.kaeru/.TvActivity     # Android TV
 ```
