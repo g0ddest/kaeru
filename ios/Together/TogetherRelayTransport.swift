@@ -16,7 +16,7 @@ import Foundation
     private var session: URLSession?
     private var socket: URLSessionWebSocketTask?
     private var backoff = TogetherRelayBackoff()
-    private var buffer = TogetherSendBuffer()
+    private let buffer = TogetherSendBuffer()
     private var reconnecting = false
     private var closed = false
 
@@ -123,8 +123,18 @@ import Foundation
                 // A socket that worked is a fresh start: the half minute is per outage, not per
                 // evening, or a long one would run out of it.
                 backoff.reset()
+                // What was said while the socket was away goes out first, oldest first, and
+                // `reconnecting` stays set until it has — anything said meanwhile queues behind
+                // it rather than in front of actions the viewer took first. A socket that dies
+                // under the backlog keeps the rest, in order, and is dialled again rather than
+                // reported as back.
+                guard let socket else { continue }
+                let emptied = await buffer.flush { try await socket.send(.data($0)) }
+                guard emptied else {
+                    TogetherLog.write("the new socket died under the backlog; \(buffer.frames.count) frames kept for the next")
+                    continue
+                }
                 reconnecting = false
-                for frame in buffer.drain() { try? await socket?.send(.data(frame)) }
                 return .reconnected
             } catch is CancellationError {
                 throw CancellationError()

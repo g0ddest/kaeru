@@ -40,24 +40,37 @@ struct TogetherRelayBackoff {
 /// leaves two phones disagreeing about whether the episode is running. Bounded, because a long
 /// outage must not fill memory; past the bound the oldest go, since the protocol's own rule is that
 /// the last action wins and replaying a stale seek on reconnect would undo what came after it.
-struct TogetherSendBuffer {
+///
+/// A reference rather than a value, because a flush is written one frame at a time across as many
+/// suspensions, and what the session says meanwhile has to land in the same buffer, behind it.
+@MainActor final class TogetherSendBuffer {
     /// Enough for everything a viewer can do in half a minute of scrubbing. Android's number.
     static let maximum = 64
 
     private(set) var frames: [Data] = []
 
-    mutating func append(_ frame: Data) {
+    func append(_ frame: Data) {
         frames.append(frame)
         if frames.count > Self.maximum { frames.removeFirst(frames.count - Self.maximum) }
     }
 
-    /// Hands over everything held and empties the buffer, so a failed flush cannot send twice.
-    mutating func drain() -> [Data] {
-        defer { frames = [] }
-        return frames
+    /// Writes what is held, oldest first, taking each frame off only once it has been written.
+    /// A write that fails is a socket on its way out: that frame and everything after it stay, in
+    /// order, for the next socket. Whether the buffer was emptied.
+    ///
+    /// Used to hand everything over in one go and forget it, so a socket that died the moment it
+    /// opened took half a minute of a viewer's scrubbing with it, silently.
+    func flush(_ write: (Data) async throws -> Void) async -> Bool {
+        while let frame = frames.first {
+            do { try await write(frame) } catch { return false }
+            // Still at the front: appends go to the back, and nothing else takes from the front
+            // but `clear`, after which the transport is closed and appends nothing.
+            if frames.first == frame { frames.removeFirst() }
+        }
+        return true
     }
 
-    mutating func clear() { frames = [] }
+    func clear() { frames = [] }
 }
 
 /// The relay's own close codes are its HTTP status plus 4000, and three of them are answers rather

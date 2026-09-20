@@ -26,15 +26,44 @@ import XCTest
     }
 
     func testWhatCouldNotBeSentIsKeptNewestFirstToSurvive() {
-        var buffer = TogetherSendBuffer()
+        let buffer = TogetherSendBuffer()
         for value in 0..<(TogetherSendBuffer.maximum + 3) { buffer.append(Data([UInt8(value % 251)])) }
         XCTAssertEqual(buffer.frames.count, TogetherSendBuffer.maximum)
         // The last action is the one that counts, so it is the oldest that go.
         XCTAssertEqual(buffer.frames.first, Data([3]))
         XCTAssertEqual(buffer.frames.last, Data([UInt8((TogetherSendBuffer.maximum + 2) % 251)]))
-        let drained = buffer.drain()
-        XCTAssertEqual(drained.count, TogetherSendBuffer.maximum)
-        XCTAssertTrue(buffer.frames.isEmpty, "a flush that fails must not send everything twice")
+    }
+
+    /// A socket that died the moment it opened used to take the whole backlog with it: everything
+    /// was handed over at once and forgotten, whether or not the socket took it.
+    func testAFlushTheSocketWouldNotTakeKeepsTheRestInOrderForTheNextOne() async {
+        let buffer = TogetherSendBuffer()
+        for value in 1...3 { buffer.append(Data([UInt8(value)])) }
+        var written: [UInt8] = []
+        let emptied = await buffer.flush { frame in
+            if frame == Data([2]) { throw TogetherError.disconnected }
+            written.append(frame[0])
+        }
+        XCTAssertFalse(emptied)
+        XCTAssertEqual(written, [1])
+        XCTAssertEqual(buffer.frames, [Data([2]), Data([3])], "the frame that failed and everything after it, in order")
+        let again = await buffer.flush { frame in written.append(frame[0]) }
+        XCTAssertTrue(again)
+        XCTAssertEqual(written, [1, 2, 3])
+        XCTAssertTrue(buffer.frames.isEmpty)
+    }
+
+    func testWhatIsSaidDuringAFlushQueuesBehindIt() async {
+        let buffer = TogetherSendBuffer()
+        buffer.append(Data([1])); buffer.append(Data([2]))
+        var written: [UInt8] = []
+        let emptied = await buffer.flush { frame in
+            written.append(frame[0])
+            // A pause pressed while the backlog is being written.
+            if frame == Data([1]) { buffer.append(Data([3])) }
+        }
+        XCTAssertTrue(emptied)
+        XCTAssertEqual(written, [1, 2, 3])
     }
 
     func testThreeOfTheRelaysCloseCodesAreAnswersRatherThanAccidents() {
