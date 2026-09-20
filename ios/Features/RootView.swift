@@ -164,6 +164,7 @@ struct RootView: View {
             .navigationTitle(section.title)
             .navigationDestination(for: Anime.self) { DetailView(initial: $0) }
             .navigationDestination(for: ShelfRoute.self) { ShelfScreen(route: $0) }
+            .navigationDestination(for: UpdatesRoute.self) { _ in UpdatesView() }
         }
     }
 

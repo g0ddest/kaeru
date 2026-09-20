@@ -46,6 +46,9 @@ struct HomeView: View {
     /// The phone has said it has no network. Not «has not said yet»: `isConnected` is false until
     /// the monitor first speaks, and a strip drawn on that would flash on every cold start.
     private var offline: Bool { model.downloads.connectivityKnown && !model.downloads.isConnected }
+    /// Whether anything is pinned above the shelves. The hero runs under the navigation bar only
+    /// when nothing is: a strip drawn over artwork would be a line of type on a poster.
+    private var notices: Bool { offline || model.availableUpdate != nil }
     private var planned: [Anime] {
         let inProgress = Set(continuing.map(\.id))
         return model.library.filter { $0.status == "planned" && !inProgress.contains($0.anime.id) }
@@ -91,8 +94,17 @@ struct HomeView: View {
                 .frame(maxWidth: Metrics.contentWidth).frame(maxWidth: .infinity)
             }
             .background(Palette.canvas)
-            .safeAreaInset(edge: .top, spacing: 0) { if offline { OfflineStrip() } }
-            .ignoresSafeArea(edges: hero.isEmpty || offline ? [] : .top)
+            // Above the shelves rather than inside them, so it is on every state this screen has
+            // rather than only on the one with rows. The update sits under the offline strip when
+            // both are up: no network is the more useful of the two facts, and the update is not
+            // going anywhere.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                VStack(spacing: 0) {
+                    if offline { OfflineStrip() }
+                    if let update = model.availableUpdate { UpdateStrip(version: update.version) }
+                }
+            }
+            .ignoresSafeArea(edges: hero.isEmpty || notices ? [] : .top)
             // The artwork runs under the navigation bar rather than below it; the bar keeps its
             // buttons — on iPad the sidebar toggle lives there — but loses its background and its
             // title, which the hero says better.

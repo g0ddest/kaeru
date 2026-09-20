@@ -13,7 +13,7 @@ struct KaeruApp: App {
                     ContentUnavailableView("Не удалось открыть Kaeru", systemImage: "externaldrive.badge.exclamationmark", description: Text(startupError))
                 } else { ProgressView().task { initialize() } }
             }
-            .tint(.indigo)
+            .tint(Palette.accent)
         }
     }
     @MainActor private func initialize() {

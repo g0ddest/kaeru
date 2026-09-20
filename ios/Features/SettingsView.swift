@@ -112,7 +112,18 @@ struct SettingsView: View {
                 } header: { Text("Оформление") } footer: {
                     Text("«Как в системе» следует настройке iOS, включая расписание автоматической тёмной темы.")
                 }
-                Section("О приложении") { LabeledContent("Kaeru", value: version).textSelection(.enabled) }
+                Section("О приложении") {
+                    LabeledContent("Kaeru", value: version).textSelection(.enabled)
+                    NavigationLink { UpdatesView() } label: {
+                        LabeledContent {
+                            // The same sentence the home row says, so the two read as one piece of
+                            // news about one release rather than two.
+                            Text(model.availableUpdate.map { UpdateCopy.available($0.version) } ?? "")
+                        } label: {
+                            Label(UpdateCopy.title, systemImage: "arrow.down.app")
+                        }
+                    }
+                }
             }
             .navigationTitle("Настройки").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } }

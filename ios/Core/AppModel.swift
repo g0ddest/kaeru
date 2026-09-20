@@ -11,6 +11,7 @@ import AuthenticationServices
     @ObservationIgnored private var castManager: CastManager?
     @ObservationIgnored private var togetherManager: TogetherManager?
     @ObservationIgnored private var pairingCoordinator: PairingCoordinator?
+    @ObservationIgnored private var updates: GitHubUpdateRepository?
     var notifications: EpisodeNotificationService {
         if let notificationService { return notificationService }
         let value = EpisodeNotificationService()
@@ -45,6 +46,29 @@ import AuthenticationServices
         })
         pairingCoordinator = value
         return value
+    }
+    /// What GitHub says about releases of this app, and what this device remembers of the answer.
+    /// One instance, because the screen and the launch-time check share a throttle and a record.
+    var updateRepository: GitHubUpdateRepository {
+        if let updates { return updates }
+        let value = GitHubUpdateRepository(source: GitHubReleaseSource(), store: store,
+                                           installedVersion: installedAppVersion())
+        updates = value
+        return value
+    }
+    /// The newer release this device knows about, as the quiet row on the home screen says it.
+    /// Nil until something is known, which on a fresh install is until the first check lands.
+    private(set) var availableUpdate: UpdateRelease?
+    func refreshAvailableUpdate() { availableUpdate = updateRepository.lastResult?.release }
+    /// The quiet check: once per launch, and at most once a day.
+    ///
+    /// Deliberately the smallest thing it could be. Nothing waits for it, nothing is shown while
+    /// it runs, and a failure is not reported anywhere — the result is written down and the home
+    /// screen picks it up from there whenever it lands, which may well be after it is on screen.
+    func checkForUpdates() async {
+        refreshAvailableUpdate()
+        _ = await updateRepository.check(force: false)
+        refreshAvailableUpdate()
     }
     var together: TogetherManager {
         if let togetherManager { return togetherManager }
@@ -115,6 +139,9 @@ import AuthenticationServices
         await notifications.refreshAuthorization()
         await notifications.registerActions()
         EpisodeBackgroundRefresh.schedule(enabled: session != nil && notifications.isEnabled)
+        // Nothing here waits on GitHub: an app that blocked its first frame on a question about
+        // whether a newer build exists would start slowly on the one network where it matters least.
+        Task { await checkForUpdates() }
         await reload()
     }
     func reload() async {

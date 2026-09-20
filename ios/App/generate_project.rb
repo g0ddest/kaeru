@@ -16,6 +16,10 @@ group = project.new_group('Kaeru', '..')
 properties_path = ARGV.first || File.join(root, '..', 'local.properties')
 properties = File.exist?(properties_path) ? File.readlines(properties_path).filter_map { |line| line.strip.split('=', 2) if line.include?('=') && !line.start_with?('#') }.to_h : {}
 configuration = %w[SHIKIMORI_CLIENT_ID AUTH_PROXY_URL TOGETHER_RELAY_URL].to_h { |key| [key, ENV[key] || properties[key] || ''] }
+# The version the app compares GitHub's releases against, taken from the Android client so the two
+# never drift: one repository publishes both, and a release is named once.
+gradle = File.join(root, '..', 'app', 'build.gradle.kts')
+version_name = (File.exist?(gradle) && File.read(gradle)[/versionName\s*=\s*"([^"]+)"/, 1]) || '0.0.0'
 Xcodeproj::Plist.write_to_path(configuration, File.join(__dir__, 'Configuration.plist'))
 app.resources_build_phase.add_file_reference(group.new_file('App/Configuration.plist'))
 app.resources_build_phase.add_file_reference(group.new_file('App/Assets.xcassets'))
@@ -58,7 +62,9 @@ app.build_phases.unshift(phase)
       'FRAMEWORK_SEARCH_PATHS' => ['$(inherited)', '$(SRCROOT)/../../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)'],
       'OTHER_LDFLAGS' => ['$(inherited)', '-framework', 'KaeruShared'],
       'LD_RUNPATH_SEARCH_PATHS' => ['$(inherited)', '@executable_path/Frameworks'],
-      'SWIFT_EMIT_LOC_STRINGS' => 'YES'
+      'SWIFT_EMIT_LOC_STRINGS' => 'YES',
+      'MARKETING_VERSION' => version_name,
+      'CURRENT_PROJECT_VERSION' => '1'
     })
     if target == app
       config.build_settings['FRAMEWORK_SEARCH_PATHS'] = ['$(inherited)', '$(SRCROOT)/../../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)', '$(SRCROOT)/../Dependencies/GoogleCastSDK-ios-4.8.6_static_xcframework/GoogleCast.xcframework']
