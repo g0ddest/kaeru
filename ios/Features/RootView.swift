@@ -52,6 +52,8 @@ struct RootView: View {
     @State private var togetherOpen = false
     /// An invitation that arrived with nobody signed in. Opened as soon as somebody is.
     @State private var heldLink: DeepLink?
+    /// What was agreed to on the join screen, opened once that screen has closed.
+    @State private var pendingWatch: TogetherEpisode?
     var body: some View {
         Group {
             if sizeClass == .regular {
@@ -86,10 +88,21 @@ struct RootView: View {
         // over everything, because it arrived from outside the app and there is nothing else to
         // do with it until it is answered.
         .fullScreenCover(isPresented: Binding(get: { model.together.joining != nil },
-                                              set: { if !$0 { model.together.acceptJoin() } })) {
+                                              set: { if !$0 { model.together.acceptJoin() } }),
+                         onDismiss: {
+            // Once this screen is actually gone, and not a moment before.
+            guard let episode = pendingWatch else { return }
+            pendingWatch = nil
+            Task { await openTogether(episode) }
+        }) {
             TogetherJoinView(manager: model.together) { episode in
+                // Remembered rather than opened here. Two full-screen covers cannot be on screen
+                // at once: raising the player in the same breath as dismissing this screen had
+                // SwiftUI put the player up and take it straight back down again, which closed
+                // the playback model — and a closed model never starts a second time. That was
+                // «Открываем серию…» with nothing behind it and no way out.
+                pendingWatch = episode
                 model.together.acceptJoin()
-                Task { await openTogether(episode) }
             } onRetry: {
                 Task { await model.together.retryJoin() }
             } onDismiss: {

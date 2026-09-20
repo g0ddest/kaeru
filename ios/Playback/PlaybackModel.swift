@@ -95,6 +95,9 @@ enum PlaybackLocalAction {
     private var observations: [NSObjectProtocol] = []
     private var loadTask: Task<Void, Never>?
     private var timeoutTask: Task<Void, Never>?
+    /// The watchdog behind «Открываем серию…»: the last resort when every other deadline has been
+    /// cancelled along with the work it was guarding.
+    private var stallTask: Task<Void, Never>?
     private var marksTask: Task<Void, Never>?
     private var installedEpisode: Int?
     private var readyItem: AVPlayerItem?
@@ -151,6 +154,13 @@ enum PlaybackLocalAction {
     }
 
     func start() async {
+        // A model that has been closed cannot open anything, and saying so beats a spinner that
+        // never stops: the screen keeps its «Повторить», and whoever is watching learns that
+        // something went wrong rather than that the episode is slow.
+        if closed, loading {
+            fail("Плеер закрылся до того, как серия открылась. Откройте её заново.")
+            return
+        }
         guard !started, !closed else { return }; started = true
         do {
             try activateAudio()
@@ -302,7 +312,7 @@ enum PlaybackLocalAction {
     func close() {
         guard !closed else { return }
         save(); closed = true; request = UUID()
-        loadTask?.cancel(); timeoutTask?.cancel(); marksTask?.cancel()
+        loadTask?.cancel(); timeoutTask?.cancel(); marksTask?.cancel(); stallTask?.cancel()
         player.pause(); itemObservation = nil; statusObservation = nil
         if let timer { player.removeTimeObserver(timer); self.timer = nil }
         observations.forEach { NotificationCenter.default.removeObserver($0) }; observations = []
@@ -386,6 +396,17 @@ enum PlaybackLocalAction {
         player.replaceCurrentItem(with: nil)
         marksAsked = false; marks = SkipMarks(); skipOffer = nil; nextEpisode = NextEpisodeState()
         policy.didSeek(to: requestedPosition); lastSavedPosition = -1
+        // Behind every other deadline: whatever goes wrong — a request cancelled and never
+        // replaced, a model closed under the screen's feet — «Открываем серию…» has to become
+        // something a person can act on.
+        let fence = request
+        stallTask?.cancel()
+        stallTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(40))
+            guard !Task.isCancelled, let self, self.loading, self.error == nil, self.request == fence else { return }
+            TogetherLog.write("stalled: still loading 40s after the request began")
+            self.fail("Серия не открылась. Попробуйте ещё раз.")
+        }
         return request
     }
     private func resolve(position: Double, play: Bool, explicitTranslation: Int? = nil, fence suppliedFence: UUID? = nil) async {
