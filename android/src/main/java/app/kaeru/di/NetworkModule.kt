@@ -19,12 +19,15 @@ import app.kaeru.data.shikimori.UnconfiguredOAuthApi
 import app.kaeru.data.shikimori.UserAgentInterceptor
 import app.kaeru.data.shikimori.shikimoriJson
 import app.kaeru.domain.repository.AuthRepository
+import app.kaeru.shared.data.network.HttpTransport
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.okhttp.OkHttp
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -94,6 +97,20 @@ object NetworkModule {
         .addInterceptor(UserAgentInterceptor(USER_AGENT))
         .addInterceptor(logging())
         .build()
+
+    /**
+     * What the shared module's clients talk through: Ktor over OkHttp, on the same logging as
+     * the rest of this app's traffic.
+     *
+     * Not the plain client. That one forces the app's `User-Agent` onto every request, and the
+     * shared clients set their own per request — `Kaeru/<version>` for Shikimori, a desktop
+     * browser's for Kodik, which serves its pages to nothing else.
+     */
+    @Provides
+    @Singleton
+    fun sharedTransport(): HttpTransport = HttpTransport(HttpClient(OkHttp) {
+        engine { preconfigured = OkHttpClient.Builder().addInterceptor(logging()).build() }
+    })
 
     /**
      * The one call that does not go to Shikimori.

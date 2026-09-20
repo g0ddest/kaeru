@@ -43,6 +43,17 @@ android {
     }
 }
 
+// Ktor 3.6 asks for OkHttp 5.5, whose Android artifact insists on compileSdk 37 — a step past the
+// AGP this project is pinned to. Every OkHttp artifact stays at the version the app ships;
+// Ktor's engine is happy with any 5.x.
+configurations.all {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "com.squareup.okhttp3" && requested.name.startsWith("okhttp")) {
+            useVersion(libs.versions.okhttp.get())
+        }
+    }
+}
+
 // Compile the Android test fixtures into common test strings: native has no JVM classloader.
 // Both modules read the same files, so a captured page or payload is fixed in one place.
 val generateTestFixtures by tasks.registering {
