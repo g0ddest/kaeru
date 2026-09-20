@@ -104,21 +104,21 @@ enum PlaybackLocalAction {
             let status = player.timeControlStatus
             Task { @MainActor in self?.statusChanged(status) }
         }
-        observe(.AVPlayerItemDidPlayToEndTime) { playback, notification in
-            guard let item = notification.object as? AVPlayerItem, playback.player.currentItem === item else { return }
+        observe(.AVPlayerItemDidPlayToEndTime, reading: { PlaybackModel.item($0) }) { playback, item in
+            guard let item, playback.currentItemID == item else { return }
             playback.tick(ended: true); playback.save()
         }
-        observe(.AVPlayerItemTimeJumped) { playback, notification in
-            guard let item = notification.object as? AVPlayerItem, playback.player.currentItem === item, !playback.restoring else { return }
+        observe(.AVPlayerItemTimeJumped, reading: { PlaybackModel.item($0) }) { playback, item in
+            guard let item, playback.currentItemID == item, !playback.restoring else { return }
             playback.policy.didSeek(to: playback.safePosition)
             if !playback.seeking { playback.onLocalAction?(.seek(playback.safePosition)) }
         }
-        observe(AVAudioSession.interruptionNotification) { playback, notification in
-            playback.handleInterruption(notification)
+        observe(AVAudioSession.interruptionNotification, reading: { AudioInterruption($0) }) { playback, interruption in
+            playback.handleInterruption(interruption)
         }
-        observe(AVAudioSession.routeChangeNotification) { playback, notification in
-            guard let reason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
-                  reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue else { return }
+        observe(AVAudioSession.routeChangeNotification,
+                reading: { $0.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt }) { playback, reason in
+            guard reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue else { return }
             playback.setPlaying(false)
         }
     }
@@ -471,22 +471,59 @@ enum PlaybackLocalAction {
         loading = false; restoring = false; timeoutTask?.cancel()
         error = message; player.pause(); policy.cancelAutoplay()
     }
-    private func observe(_ name: Notification.Name, handler: @escaping @MainActor (PlaybackModel, Notification) -> Void) {
+    /// One notification, read into a value and then handled on the main actor.
+    ///
+    /// `queue: .main` is the guarantee the rest of this rests on: the block is delivered on the
+    /// main thread, so the work is done in place rather than hopped onto a task. That means an
+    /// interruption is dealt with before the next notification arrives instead of some turns
+    /// later — and it is what lets `reading` run where the notification is.
+    ///
+    /// A `Notification` is not `Sendable`, and it should not be: its `object` is whatever posted
+    /// it and its `userInfo` is a dictionary of anything. So it never leaves this block. What the
+    /// handler gets is the two or three numbers the app actually wanted out of it — or, for a
+    /// player item, its identity, which is all the two item notifications ever ask about.
+    private func observe<Value: Sendable>(_ name: Notification.Name,
+                                          reading: @escaping @Sendable (Notification) -> Value,
+                                          handler: @escaping @Sendable @MainActor (PlaybackModel, Value) -> Void) {
         observations.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
-            Task { @MainActor in guard let self, !self.closed else { return }; handler(self, notification) }
+            let value = reading(notification)
+            MainActor.assumeIsolated {
+                guard let self, !self.closed else { return }
+                handler(self, value)
+            }
         })
     }
-    private func handleInterruption(_ notification: Notification) {
-        guard let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
-              let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+
+    /// Which item a player-item notification is about, as an identity rather than as the object.
+    private nonisolated static func item(_ notification: Notification) -> ObjectIdentifier? {
+        (notification.object as? AVPlayerItem).map(ObjectIdentifier.init)
+    }
+    private var currentItemID: ObjectIdentifier? { player.currentItem.map(ObjectIdentifier.init) }
+    private func handleInterruption(_ interruption: AudioInterruption) {
+        guard let type = interruption.type else { return }
         if type == .began { interruptionPaused = true; save(); player.pause() }
         else {
             interruptionPaused = false
-            let options = (notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt).map(AVAudioSession.InterruptionOptions.init(rawValue:)) ?? []
-            if options.contains(.shouldResume), intent.shouldPlay, !loading {
+            if interruption.options.contains(.shouldResume), intent.shouldPlay, !loading {
                 do { try activateAudio(); player.play() } catch { self.error = error.localizedDescription }
             }
         }
     }
     private func updateMediaControls() { mediaControls?.update(snapshot: snapshot, title: anime.title, skipSeconds: skipSeconds, hasNext: hasNext) }
+}
+
+/// What an audio-interruption notification says, as the two flags this app reads out of one.
+///
+/// A value rather than the notification, so the answer can cross onto the main actor: the call has
+/// come in, or it has ended and the system is saying whether to pick the episode back up.
+private struct AudioInterruption: Sendable {
+    var type: AVAudioSession.InterruptionType?
+    var options: AVAudioSession.InterruptionOptions
+
+    init(_ notification: Notification) {
+        type = (notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt)
+            .flatMap(AVAudioSession.InterruptionType.init(rawValue:))
+        options = (notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt)
+            .map(AVAudioSession.InterruptionOptions.init(rawValue:)) ?? []
+    }
 }

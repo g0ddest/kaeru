@@ -9,7 +9,8 @@ import Foundation
         var response = Data()
         while response.count <= PairingWire.maximumBytes {
             if let expected = try PairingWire.expectedLength(response), response.count >= expected {
-                try PairingWire.response(response.prefix(expected))
+                // Throws on anything that is not the television saying yes; there is no value.
+                _ = try PairingWire.response(response.prefix(expected))
                 return
             }
             let remaining = PairingWire.maximumBytes - response.count

@@ -1,6 +1,19 @@
 import XCTest
 @testable import Kaeru
 
+/// The stream's iterator, in a box of its own so it can be advanced in place.
+///
+/// It used to be copied out of a stored property, advanced, and put back — which across an
+/// `await` is a race, and the compiler says so. What makes one consumer safe is the manager's
+/// receive loop: one call at a time, and nothing in this stub used to say so. At file scope
+/// rather than nested, because a type inside a `@MainActor` test case is `@MainActor` too, and an
+/// iterator cannot be advanced through an actor-isolated property at all.
+private final class TransportEvents: @unchecked Sendable {
+    private var iterator: AsyncThrowingStream<TogetherTransportEvent, Error>.Iterator
+    init(_ stream: AsyncThrowingStream<TogetherTransportEvent, Error>) { iterator = stream.makeAsyncIterator() }
+    func next() async throws -> TogetherTransportEvent? { try await iterator.next() }
+}
+
 @MainActor final class TogetherManagerTests: XCTestCase {
     final class Playback: TogetherPlayback {
         var togetherSnapshot = TogetherPlaybackSnapshot(animeID: 7, episode: 1, positionMs: 1000, playing: true, ready: true)
@@ -21,13 +34,12 @@ import XCTest
         var outgoing: [Data] = []
         var continuation: AsyncThrowingStream<TogetherTransportEvent, Error>.Continuation!
         var stream: AsyncThrowingStream<TogetherTransportEvent, Error>!
-        var iterator: AsyncThrowingStream<TogetherTransportEvent, Error>.Iterator!
-        init() { stream = AsyncThrowingStream { continuation = $0 }; iterator = stream.makeAsyncIterator() }
+        private var events: TransportEvents!
+        init() { stream = AsyncThrowingStream { continuation = $0 }; events = TransportEvents(stream) }
         func connect(_ invitation: TogetherInvitation, asHost: Bool) async throws {}
         func receive() async throws -> TogetherTransportEvent {
-            // Iteration is serialized by the manager receive loop.
-            var current = iterator!; let event = try await current.next(); iterator = current
-            guard let event else { throw TogetherError.disconnected }; return event
+            guard let event = try await events.next() else { throw TogetherError.disconnected }
+            return event
         }
         func send(_ frame: Data) async throws { outgoing.append(frame) }
         func close() { continuation.finish() }

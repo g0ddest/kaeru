@@ -97,7 +97,12 @@ private final class CaptureBox: @unchecked Sendable {
         let output = AVCaptureMetadataOutput()
         guard session.canAddOutput(output) else { return }
         session.addOutput(output)
-        let sink = QRCodeSink { [weak self] value in self?.read(value) }
+        // The hop is arranged here, where the main actor already is, rather than inside the sink:
+        // a `@MainActor` closure handed to a capture-queue callback is a value crossing an
+        // isolation boundary, and this is the same two lines with nothing crossing.
+        let sink = QRCodeSink { [weak self] value in
+            Task { @MainActor in self?.read(value) }
+        }
         self.sink = sink
         output.setMetadataObjectsDelegate(sink, queue: queue)
         output.metadataObjectTypes = output.availableMetadataObjectTypes.contains(.qr) ? [.qr] : []
@@ -135,16 +140,16 @@ private final class CaptureBox: @unchecked Sendable {
     }
 }
 
-/// AVFoundation calls back on its own queue; everything the app does with the value happens on the
-/// main actor, so the hop is made here rather than left to the caller.
+/// AVFoundation calls back on its own queue. Everything this reads out of a frame is a `String`,
+/// and the hop onto the main actor is the caller's — which is what keeps this class free of any
+/// state that would have to cross a queue.
 private final class QRCodeSink: NSObject, AVCaptureMetadataOutputObjectsDelegate {
-    private let onCode: @MainActor (String) -> Void
-    init(onCode: @escaping @MainActor (String) -> Void) { self.onCode = onCode }
+    private let onCode: @Sendable (String) -> Void
+    init(onCode: @escaping @Sendable (String) -> Void) { self.onCode = onCode }
 
     func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput metadataObjects: [AVMetadataObject], from connection: AVCaptureConnection) {
         guard let object = metadataObjects.compactMap({ $0 as? AVMetadataMachineReadableCodeObject }).first(where: { $0.type == .qr }),
               let value = object.stringValue else { return }
-        let handler = onCode
-        Task { @MainActor in handler(value) }
+        onCode(value)
     }
 }

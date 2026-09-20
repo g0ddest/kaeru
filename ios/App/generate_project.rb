@@ -63,6 +63,10 @@ app.build_phases.unshift(phase)
       'OTHER_LDFLAGS' => ['$(inherited)', '-framework', 'KaeruShared'],
       'LD_RUNPATH_SEARCH_PATHS' => ['$(inherited)', '@executable_path/Frameworks'],
       'SWIFT_EMIT_LOC_STRINGS' => 'YES',
+      # Swift 6's full data-race checking, on Swift 5 language mode: the discipline was already
+      # being kept by hand — every model is `@MainActor`, every transport hands its callbacks back
+      # to it — and this is what stops the next file from quietly not keeping it.
+      'SWIFT_STRICT_CONCURRENCY' => 'complete',
       'MARKETING_VERSION' => version_name,
       'CURRENT_PROJECT_VERSION' => '1'
     })

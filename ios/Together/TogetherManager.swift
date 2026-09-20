@@ -128,7 +128,7 @@ enum TogetherPhase: Equatable {
         let fence = generation
         receiveTask?.cancel(); receiveTask = nil
         if let transport, let invitation {
-            try? await send(.init(t: .bye, seq: 1), invitation: invitation, transport: transport, fence: fence)
+            await send(.init(t: .bye, seq: 1), invitation: invitation, transport: transport, fence: fence)
         }
         generation = UUID()
         heartbeat?.cancel(); heartbeat = nil

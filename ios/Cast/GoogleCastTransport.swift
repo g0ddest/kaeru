@@ -32,8 +32,8 @@ extension CastLoadPayload {
     }
 }
 
-@MainActor final class GoogleCastTransport: NSObject, CastTransport, GCKSessionManagerListener,
-                                                 GCKRemoteMediaClientListener, GCKRequestDelegate {
+@MainActor final class GoogleCastTransport: NSObject, CastTransport, @preconcurrency GCKSessionManagerListener,
+                                             @preconcurrency GCKRemoteMediaClientListener, @preconcurrency GCKRequestDelegate {
     static let receiverID = "0EEA38FE"
     var onConnection: ((CastConnection) -> Void)?
     var onStatus: ((CastRemoteStatus) -> Void)?

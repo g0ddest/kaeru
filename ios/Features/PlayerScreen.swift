@@ -196,10 +196,12 @@ struct PlayerScreen: View {
                 Button { playback.seek(by: 85) } label: { Label("Вперёд на 85 с", systemImage: "forward.end.alt") }
             }
             Section {
-                Toggle("Следующая серия автоматически", isOn: Binding(get: { playback.autoNext }, set: playback.setAutoNext))
-                Toggle("Пропускать эндинг", isOn: Binding(get: { playback.autoSkipEnding }, set: playback.setAutoSkipEnding))
-                Toggle("Картинка в картинке при выходе", isOn: Binding(get: { playback.pipOnLeave }, set: playback.setPiPOnLeave))
-                Toggle("Фоновое воспроизведение", isOn: Binding(get: { playback.backgroundPlayback }, set: playback.setBackgroundPlayback))
+                // Closures rather than bare method references: a reference to a main-actor method
+                // is not a `@Sendable` function value, and `Binding`'s setter wants one.
+                Toggle("Следующая серия автоматически", isOn: Binding(get: { playback.autoNext }, set: { playback.setAutoNext($0) }))
+                Toggle("Пропускать эндинг", isOn: Binding(get: { playback.autoSkipEnding }, set: { playback.setAutoSkipEnding($0) }))
+                Toggle("Картинка в картинке при выходе", isOn: Binding(get: { playback.pipOnLeave }, set: { playback.setPiPOnLeave($0) }))
+                Toggle("Фоновое воспроизведение", isOn: Binding(get: { playback.backgroundPlayback }, set: { playback.setBackgroundPlayback($0) }))
             }
             Section {
                 if playback.isLocal { Label("Скачанная серия", systemImage: "checkmark.circle") }

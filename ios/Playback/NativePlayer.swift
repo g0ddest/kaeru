@@ -57,7 +57,7 @@ struct NativePlayer<Overlay: View>: UIViewControllerRepresentable {
         controller.canStartPictureInPictureAutomaticallyFromInline = playback.pipOnLeave
         (context.coordinator.host as? UIHostingController<Overlay>)?.rootView = overlay()
     }
-    @MainActor final class Coordinator: NSObject, AVPlayerViewControllerDelegate {
+    @MainActor final class Coordinator: NSObject, @preconcurrency AVPlayerViewControllerDelegate {
         private let playback: PlaybackModel
         private let onDoubleTap: (PlayerTapZone) -> Void
         var host: UIViewController?
