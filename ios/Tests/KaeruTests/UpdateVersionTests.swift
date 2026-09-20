@@ -71,3 +71,22 @@ final class UpdatePolicyTests: XCTestCase {
         XCTAssertTrue(policy.due(lastCheckedAt: epoch.addingTimeInterval(3600), now: epoch))
     }
 }
+
+/// The date inside a Russian sentence. It was following the device's locale, which on a phone set
+/// to English printed «19 September 2026» in the middle of «Проверено …».
+final class UpdateDateTests: XCTestCase {
+    private var calendar: Calendar {
+        var value = Calendar(identifier: .gregorian)
+        value.timeZone = TimeZone(identifier: "Europe/Chisinau") ?? .gmt
+        return value
+    }
+    private func date(_ year: Int, _ month: Int, _ day: Int) -> Date {
+        calendar.date(from: DateComponents(timeZone: calendar.timeZone, year: year, month: month, day: day, hour: 12))!
+    }
+
+    func testTheMonthIsSpelledOutInRussian() {
+        XCTAssertEqual(UpdateCopy.date(date(2026, 9, 19), calendar: calendar), "19 сентября 2026")
+        XCTAssertEqual(UpdateCopy.date(date(2026, 1, 1), calendar: calendar), "1 января 2026")
+        XCTAssertEqual(UpdateCopy.date(date(2025, 12, 31), calendar: calendar), "31 декабря 2025")
+    }
+}

@@ -20,6 +20,10 @@ enum Palette {
     static let inkSoft = adaptive(dark: 0x9AA0AA, light: 0x5C636E)
     /// Kaeru's amber. Darkened in light mode, where the dark value cannot hold a legible edge.
     static let accent = adaptive(dark: 0xF5A524, light: 0x9A5B00)
+    /// What is written on the amber. Android's `KaeruOnAccent` in the dark, where white on
+    /// `#F5A524` is under two to one and reads as a smudge; white in the light, where the amber is
+    /// dark enough to carry it.
+    static let onAccent = adaptive(dark: 0x1A1200, light: 0xFFFFFF)
 
     /// What lies over artwork so type can sit on it. Always black, in both appearances: it is a
     /// shadow cast on the picture, not a colour of the page.

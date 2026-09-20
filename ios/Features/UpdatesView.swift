@@ -90,6 +90,7 @@ struct UpdatesView: View {
                 note(release.install != nil ? UpdateCopy.installNote : UpdateCopy.pageNote)
                 Button(release.install != nil ? UpdateCopy.install : UpdateCopy.openPage) { updates.install() }
                     .buttonStyle(.borderedProminent).tint(Palette.accent)
+                    .foregroundStyle(Palette.onAccent)
                     .accessibilityIdentifier("update-install")
             }
         }

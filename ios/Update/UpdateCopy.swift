@@ -75,7 +75,19 @@ enum UpdateCopy {
         (error as? UpdateFailed).map { failure($0.reason) } ?? failure(.unknown)
     }
 
-    private static func date(_ value: Date) -> String {
-        value.formatted(.dateTime.day().month(.wide).year())
+    /// `16 сентября 2026` — the months spelled out, in the genitive, as Android's `shortDate` does.
+    ///
+    /// Written out here rather than left to `Date.FormatStyle`, which follows the device's locale:
+    /// this line sits inside a Russian sentence, and a phone set to English was printing
+    /// «19 September 2026» in the middle of it. The calendar and the time zone are still the
+    /// viewer's — only the words are the app's.
+    private static let months = ["января", "февраля", "марта", "апреля", "мая", "июня",
+                                 "июля", "августа", "сентября", "октября", "ноября", "декабря"]
+
+    static func date(_ value: Date, calendar: Calendar = .current) -> String {
+        let parts = calendar.dateComponents([.day, .month, .year], from: value)
+        guard let day = parts.day, let month = parts.month, let year = parts.year,
+              months.indices.contains(month - 1) else { return "" }
+        return "\(day) \(months[month - 1]) \(year)"
     }
 }
