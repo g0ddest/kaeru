@@ -122,6 +122,7 @@ object TogetherCopy {
         LostReason.NOT_CONFIGURED -> "Сервер совместного просмотра не настроен"
         // The same two sentences as on iOS: one room, one story about why it stopped.
         LostReason.EXPIRED -> ROOM_EXPIRED
+        LostReason.SAME_SIDE -> "Ссылку открыли оба — комнату держит тот, кто её создал"
     }
 
     /** The relay's idle close, 4408. Not «связь потеряна»: nothing was lost, the room ran out. */

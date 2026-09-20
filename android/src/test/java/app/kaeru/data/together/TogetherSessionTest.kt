@@ -1844,6 +1844,23 @@ class TogetherSessionTest {
         assertEquals(SessionState.Lost(LostReason.CONNECTION), session.state.value)
     }
 
+    /**
+     * The one refusal with an answer: a frame that opened under this side's own seal came from
+     * another guest. iOS says so at once; Android used to wait for two more and say «связь потеряна».
+     */
+    @Test
+    fun `a frame from another guest ends the wait at once, with the reason`() = sessionTest {
+        val link = RoomLink("room", ByteArray(16), null)
+        val joining = launch { session.join(link, "Костя") }
+        runCurrent()
+
+        transport.deliver(TogetherFailed(TogetherFailureReason.SAME_SIDE))
+        runCurrent()
+
+        assertEquals(SessionState.Lost(LostReason.SAME_SIDE), session.state.value)
+        joining.cancel()
+    }
+
     @Test
     fun `a run of bad frames broken by a good one starts counting again`() = sessionTest {
         live()

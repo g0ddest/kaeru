@@ -447,7 +447,7 @@ class LanSocketTransport @Inject constructor(
             }
             val frame = ByteArray(length)
             if (fill(input, frame, timeouts.idleMs) != Filled.DONE) return
-            emit(TogetherCodec.decode(frame, link, from))
+            emit(TogetherCodec.decodeFromPeer(frame, link, from.other))
         }
     }
 

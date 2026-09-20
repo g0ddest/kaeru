@@ -510,6 +510,15 @@ class TogetherSession(
      * who is already connected and shouting through the wrong door, in silence, for ever.
      */
     private suspend fun garbled(failure: Throwable) {
+        // One refusal has an answer, and it is the only one worth telling somebody about at once:
+        // a frame that opened under this side's own seal was sent by another guest. Both phones
+        // followed the link, nobody is keeping the room, and waiting for two more would only be
+        // waiting to say something less true. What iOS has said since it learnt to tell.
+        if ((failure as? TogetherFailed)?.reason == TogetherFailureReason.SAME_SIDE) {
+            Log.w(TAG, "A frame opened under this side's own seal: the other phone joined as the same side")
+            lose(LostReason.SAME_SIDE)
+            return
+        }
         refused += 1
         if (refused < GARBLED_LIMIT) return
         Log.w(TAG, "$refused frames in a row would not decode; giving up on this room", failure)
@@ -525,6 +534,7 @@ class TogetherSession(
         failure is RelayNotConfigured -> LostReason.NOT_CONFIGURED
         failure is TogetherFailed && failure.reason == TogetherFailureReason.ROOM_FULL -> LostReason.ROOM_FULL
         failure is TogetherFailed && failure.reason == TogetherFailureReason.EXPIRED -> LostReason.EXPIRED
+        failure is TogetherFailed && failure.reason == TogetherFailureReason.SAME_SIDE -> LostReason.SAME_SIDE
         else -> LostReason.CONNECTION
     }
 

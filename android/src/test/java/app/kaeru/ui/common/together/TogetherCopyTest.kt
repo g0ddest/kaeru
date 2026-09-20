@@ -110,6 +110,7 @@ class TogetherCopyTest {
         // The relay's idle close is the room running out, not the connection dropping — and the
         // same sentence as on the iPhone across the sofa.
         assertEquals("Комната закрылась: в ней шесть часов ничего не происходило", TogetherCopy.lost(LostReason.EXPIRED))
+        assertEquals("Ссылку открыли оба — комнату держит тот, кто её создал", TogetherCopy.lost(LostReason.SAME_SIDE))
         assertEquals("Сессия закончилась", TogetherCopy.ENDED)
     }
 

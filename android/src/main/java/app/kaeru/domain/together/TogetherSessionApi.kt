@@ -32,6 +32,9 @@ enum class LostReason {
 
     /** The relay closed the room after hours of silence. Over, not lost — the link is dead. */
     EXPIRED,
+
+    /** Both phones opened the link, so both are guests of a room nobody is keeping. */
+    SAME_SIDE,
 }
 
 /**

@@ -316,7 +316,7 @@ class RelayTransport @Inject constructor(
                 out.trySend(Result.failure(TogetherFailed(TogetherFailureReason.FRAME_TOO_LARGE)))
                 return
             }
-            out.trySend(TogetherCodec.decode(bytes.toByteArray(), link, from))
+            out.trySend(TogetherCodec.decodeFromPeer(bytes.toByteArray(), link, from.other))
         }
 
         /**

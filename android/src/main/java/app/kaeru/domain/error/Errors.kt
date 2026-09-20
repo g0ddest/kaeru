@@ -159,6 +159,13 @@ enum class TogetherFailureReason {
 
     /** The relay closed the room after hours with no frames in it. It is over, not lost. */
     EXPIRED,
+
+    /**
+     * A frame that would not open under the friend's seal opened under this side's own: both
+     * phones followed the link, both sealed as the guest, and neither can read a word of the other.
+     * From the relay the room is alive; from inside it is silent.
+     */
+    SAME_SIDE,
 }
 
 /** A shared viewing could not be opened, or could not be kept. */

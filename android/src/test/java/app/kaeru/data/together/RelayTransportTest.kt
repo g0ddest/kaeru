@@ -312,6 +312,19 @@ class RelayTransportTest {
         assertEquals(1, server.requestCount)
     }
 
+    /** Both phones opened the link: the frames that arrive are sealed as this side's own. */
+    @Test
+    fun `a frame sealed by another guest is reported as such, not as a mangled one`() = runBlocking<Unit> {
+        val relay = upgrade()
+        val heard = inbox()
+
+        val socket = soon { relay.sockets.receive() }
+        socket.send(TogetherCodec.encode(TogetherMessage.Chat("тоже гость", seq = 1), link, Side.GUEST, TogetherCodec.newNonce(random)).toByteString())
+
+        assertEquals(TogetherFailureReason.SAME_SIDE, reasonOf(soon { heard.receive() }))
+        assertEquals(ConnectionState.CONNECTED, transport.state.first())
+    }
+
     @Test
     fun `the relay saying the friend left is not the connection dropping`() = runBlocking<Unit> {
         val relay = upgrade()

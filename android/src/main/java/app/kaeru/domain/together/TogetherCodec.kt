@@ -118,6 +118,25 @@ object TogetherCodec {
             )
     }
 
+    /**
+     * [decode] as a receiver uses it: under the friend's seal, which is the other side from [mine].
+     *
+     * With one difference, for the one refusal that has an answer. A frame that will not open under
+     * the friend's seal but opens under this side's own was sealed by another guest: both phones
+     * followed the link, nobody is keeping the room, and the two will sit exchanging bytes neither
+     * can read until one of them gives up. That is [TogetherFailureReason.SAME_SIDE] rather than
+     * [TogetherFailureReason.TAMPERED], so the screen can say what is wrong instead of «связь
+     * потеряна» after three of them. Not an oracle: the second attempt is under the same room key,
+     * only with this side's own byte in the associated data, and its result never leaves the phone.
+     */
+    fun decodeFromPeer(frame: ByteArray, link: RoomLink, mine: Side): Result<TogetherMessage> {
+        val opened = decode(frame, link, mine.other)
+        val reason = (opened.exceptionOrNull() as? TogetherFailed)?.reason
+        if (reason != TogetherFailureReason.TAMPERED) return opened
+        if (decode(frame, link, mine).isSuccess) return failure(TogetherFailureReason.SAME_SIDE)
+        return opened
+    }
+
     private fun cipher(mode: Int, link: RoomLink, from: Side, nonce: ByteArray): Cipher =
         Cipher.getInstance(TRANSFORMATION).apply {
             init(mode, SecretKeySpec(link.key, ALGORITHM), GCMParameterSpec(TAG_BITS, nonce))

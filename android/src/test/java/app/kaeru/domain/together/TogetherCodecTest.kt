@@ -39,6 +39,24 @@ class TogetherCodecTest {
     private fun reasonOf(result: Result<*>): TogetherFailureReason? =
         (result.exceptionOrNull() as? TogetherFailed)?.reason
 
+    /**
+     * Both phones opened the link. Each seals as the guest and each reads under the host's seal,
+     * so nothing opens — and, told apart from a mangled frame, that has a sentence of its own.
+     * Not an oracle: the second attempt is under the same key, and its result stays on the phone.
+     */
+    @Test
+    fun `a frame sealed by another guest is told apart from a mangled one`() {
+        val fromAnotherGuest = encode(TogetherMessage.Chat("тоже гость", seq = 1), from = Side.GUEST)
+        assertEquals(TogetherFailureReason.SAME_SIDE, reasonOf(TogetherCodec.decodeFromPeer(fromAnotherGuest, room, mine = Side.GUEST)))
+        // The host reading the same frame is simply reading its guest.
+        assertEquals(TogetherMessage.Chat("тоже гость", seq = 1), TogetherCodec.decodeFromPeer(fromAnotherGuest, room, mine = Side.HOST).getOrThrow())
+        // Garbage is garbage under either seal.
+        assertEquals(TogetherFailureReason.TAMPERED, reasonOf(TogetherCodec.decodeFromPeer(ByteArray(64) { it.toByte() }, room, mine = Side.GUEST)))
+        // And a frame from another room's key is not this room's business under either.
+        val elsewhere = TogetherCodec.encode(TogetherMessage.Bye(seq = 2), RoomLink.random(random), Side.GUEST, TogetherCodec.newNonce(random))
+        assertEquals(TogetherFailureReason.TAMPERED, reasonOf(TogetherCodec.decodeFromPeer(elsewhere, room, mine = Side.GUEST)))
+    }
+
     @Test
     fun `every message comes back off the wire as itself`() {
         everyMessage.forEach { message ->
