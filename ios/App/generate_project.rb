@@ -18,7 +18,7 @@ properties = File.exist?(properties_path) ? File.readlines(properties_path).filt
 configuration = %w[SHIKIMORI_CLIENT_ID AUTH_PROXY_URL TOGETHER_RELAY_URL].to_h { |key| [key, ENV[key] || properties[key] || ''] }
 # The version the app compares GitHub's releases against, taken from the Android client so the two
 # never drift: one repository publishes both, and a release is named once.
-gradle = File.join(root, '..', 'app', 'build.gradle.kts')
+gradle = File.join(root, '..', 'android', 'build.gradle.kts')
 version_name = (File.exist?(gradle) && File.read(gradle)[/versionName\s*=\s*"([^"]+)"/, 1]) || '0.0.0'
 Xcodeproj::Plist.write_to_path(configuration, File.join(__dir__, 'Configuration.plist'))
 app.resources_build_phase.add_file_reference(group.new_file('App/Configuration.plist'))

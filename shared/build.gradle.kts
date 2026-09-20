@@ -45,7 +45,7 @@ android {
 
 // Compile the existing Android fixtures into common test strings: native has no JVM classloader.
 val generateKodikFixtures by tasks.registering {
-    val fixtures = rootProject.layout.projectDirectory.dir("app/src/test/resources/kodik")
+    val fixtures = rootProject.layout.projectDirectory.dir("android/src/test/resources/kodik")
     val output = layout.buildDirectory.dir("generated/kodikFixtures")
     inputs.dir(fixtures)
     outputs.dir(output)

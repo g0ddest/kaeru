@@ -4,6 +4,18 @@ Android- и Android TV-клиент для запуска следующей с�
 нажатием. Списки и прогресс синхронизируются с Shikimori; источник видео —
 Kodik, воспроизведение — Media3 с поддержкой Chromecast на телефоне.
 
+
+## Структура
+
+| Папка | Что там |
+|---|---|
+| `android/` | Приложение для телефона и Android TV (Kotlin, Compose, media3) |
+| `ios/` | Приложение для iPhone и iPad (SwiftUI, AVKit) — собирается `ruby ios/App/generate_project.rb`, см. `ios/README.md` |
+| `shared/` | Общий модуль Kotlin Multiplatform: цепочка Kodik и правила, которые обеим платформам незачем писать дважды |
+| `infra/relay/` | Воркер Cloudflare: комнаты совместного просмотра и обмен токенов Shikimori |
+| `docs/` | Спецификации, планы и скин приёмника Chromecast (`docs/cast/` раздаётся с GitHub Pages) |
+| `tools/` | Фикстуры и вспомогательные скрипты |
+
 ## Требования
 
 - Android Studio с Android SDK 36
@@ -32,10 +44,10 @@ Kodik, воспроизведение — Media3 с поддержкой Chromec
 cp local.properties.example local.properties
 # заполнить sdk.dir, SHIKIMORI_CLIENT_ID и AUTH_PROXY_URL (client secret живёт в воркере,
 # см. infra/relay/README.md)
-JAVA_HOME="$(/usr/libexec/java_home -v 21)" ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+JAVA_HOME="$(/usr/libexec/java_home -v 21)" ./gradlew :android:testDebugUnitTest :android:lintDebug :android:assembleDebug
 ```
 
-APK: `app/build/outputs/apk/debug/app-debug.apk`.
+APK: `android/build/outputs/apk/debug/app-debug.apk`.
 
 ### Релизная сборка
 
@@ -44,8 +56,8 @@ APK: `app/build/outputs/apk/debug/app-debug.apk`.
 `KAERU_KEY_ALIAS`, `KAERU_KEY_PASSWORD`. Без него `assembleRelease` собирает неподписанный APK.
 
 ```bash
-JAVA_HOME="$(/usr/libexec/java_home -v 21)" ./gradlew :app:assembleRelease
-# app/build/outputs/apk/release/app-release.apk
+JAVA_HOME="$(/usr/libexec/java_home -v 21)" ./gradlew :android:assembleRelease
+# android/build/outputs/apk/release/app-release.apk
 ```
 
 Chromecast: приложение запускает собственный Styled Media Receiver (`0EEA38FE`); его оформление
@@ -54,7 +66,7 @@ Chromecast: приложение запускает собственный Style
 ## Запуск
 
 ```bash
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r android/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n app.kaeru/.MainActivity   # телефон
 adb shell am start -n app.kaeru/.TvActivity     # Android TV
 ```
