@@ -12,6 +12,7 @@ Kodik, воспроизведение — Media3 с поддержкой Chromec
 | `android/` | Приложение для телефона и Android TV (Kotlin, Compose, media3) |
 | `ios/` | Приложение для iPhone и iPad (SwiftUI, AVKit) — собирается `ruby ios/App/generate_project.rb`, см. `ios/README.md` |
 | `shared/` | Общий модуль Kotlin Multiplatform (Ktor): клиент Shikimori и цепочка Kodik для обеих платформ — Android ходит в него напрямую, iOS через `NativeApi`; см. `docs/dev/android-shared-plan.md` |
+| `docs/dev/together-protocol.md` | Протокол совместного просмотра: ссылка, кадр, сообщения, рукопожатие, синхронизация, ожидание, обрывы, голос, тайминги обеих платформ |
 | `infra/relay/` | Воркер Cloudflare: комнаты совместного просмотра и обмен токенов Shikimori |
 | `docs/` | Спецификации, планы и скин приёмника Chromecast (`docs/cast/` раздаётся с GitHub Pages) |
 | `tools/` | Фикстуры и вспомогательные скрипты |
