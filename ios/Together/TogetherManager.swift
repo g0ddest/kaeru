@@ -768,7 +768,11 @@ struct TogetherJoinTarget: Equatable {
             playback.togetherPause()
             conversation.notice(.paused, peerName: peerName, positionMs: message.positionMs ?? 0)
         case .seek:
-            dropHold()
+            // The hold stays. A seek says where the friend is, not whether they are ready: they
+            // have just jumped and are loading the new place, and this side is paused for exactly
+            // that reason. Taking the hold off here without starting the picture left this side
+            // standing until somebody pressed play — the friend's «buffering=false» a moment later
+            // found nothing to release. `play` and `pause` end the hold; a seek only moves it.
             if let positionMs = message.positionMs { playback.togetherSeek(toMilliseconds: positionMs) }
             conversation.notice(.seeked, peerName: peerName, positionMs: message.positionMs ?? 0)
         case .episode:

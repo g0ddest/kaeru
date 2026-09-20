@@ -157,7 +157,11 @@ enum PlaybackLocalAction {
             // session itself just asked for — and every one of those used to go out as a `seek`,
             // land on the other phone as «перемотал на», and come back as a correction. Anything
             // within a few seconds of a quiet seek is that seek, not a new one.
-            guard !playback.seeking, Date().timeIntervalSince(playback.quietSeekAt) > 3 else { return }
+            // …and the same for the seconds after the session paused or started this player for
+            // the friend's sake: AVPlayer re-anchors an HLS stream on resume and reports a jump,
+            // which went out as a `seek` the friend then honoured with a stall of their own.
+            guard !playback.seeking, Date().timeIntervalSince(playback.quietSeekAt) > 3,
+                  Date().timeIntervalSince(playback.quietPlayingChangeAt) > 3 else { return }
             playback.onLocalAction?(.seek(playback.safePosition))
         }
         observe(AVAudioSession.interruptionNotification, reading: { AudioInterruption($0) }) { playback, interruption in

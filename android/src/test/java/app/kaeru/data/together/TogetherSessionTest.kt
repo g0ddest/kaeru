@@ -1057,6 +1057,29 @@ class TogetherSessionTest {
         assertTrue(port.seeks.isEmpty())
     }
 
+    /**
+     * A seek from a friend who is loading moves the hold; it does not end it.
+     *
+     * Both journals showed it from both sides: one phone held its picture for the other, a seek
+     * arrived, the hold came off without anybody pressing play, and the «buffering=false» a moment
+     * later found nothing to release — that phone stood until a person pressed play.
+     */
+    @Test
+    fun `a seek while holding keeps the hold, and the friend's ready starts the picture`() = sessionTest {
+        live()
+
+        friendIsAt(60_000, playing = true, buffering = true, seq = 20L)
+        assertEquals(1, port.pauses)
+
+        transport.deliver(TogetherMessage.Seek(120_000, seq = 21L))
+        runCurrent()
+        assertEquals(120_000L, port.seeks.last())
+        assertEquals("перемотка друга, который ещё грузится, не запускает картинку", 0, port.plays)
+
+        friendIsAt(120_100, playing = true, buffering = false, seq = 22L)
+        assertEquals("а его «готов» — запускает", 1, port.plays)
+    }
+
     // ---- what this viewer did ----
 
     @Test

@@ -506,3 +506,35 @@ import XCTest
         await manager.leave()
     }
 }
+
+/// A seek from a friend who is loading moves the hold; it does not end it.
+///
+/// Both journals showed the same thing from both sides: one phone held its picture for the other,
+/// a `seek` arrived, the hold came off without anybody pressing play, and the «buffering=false»
+/// a moment later found nothing to release. That phone then stood until a person pressed play.
+@MainActor final class TogetherSeekDuringHoldTests: XCTestCase {
+    func testASeekWhileHoldingKeepsTheHoldAndTheReleaseStartsThePicture() async throws {
+        let transport = TogetherManagerTests.Transport()
+        let player = TogetherManagerTests.Playback()
+        let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Host", transportFactory: { _, _ in transport })
+        await manager.create()
+        manager.attach(player)
+        try await Task.sleep(for: .milliseconds(20))
+        let link = try XCTUnwrap(manager.invitation)
+        try transport.deliver(TogetherMessage(t: .hello, seq: 1, name: "Guest", animeId: 7, episode: 1, positionMs: 0, playing: true),
+                              link: link, side: .guest)
+        try transport.deliver(TogetherMessage(t: .state, seq: 2, positionMs: 1000, playing: true, buffering: true, sentAt: 1),
+                              link: link, side: .guest)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(player.pauses, 1, "держим паузу за друга")
+        try transport.deliver(TogetherMessage(t: .seek, seq: 3, positionMs: 60_000), link: link, side: .guest)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(player.seeks.last, 60_000)
+        XCTAssertFalse(player.togetherSnapshot.playing, "перемотка друга, который ещё грузится, не запускает картинку")
+        try transport.deliver(TogetherMessage(t: .state, seq: 4, positionMs: 60_100, playing: true, buffering: false, sentAt: 2),
+                              link: link, side: .guest)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertTrue(player.togetherSnapshot.playing, "а его «готов» — запускает")
+        await manager.leave()
+    }
+}

@@ -791,12 +791,21 @@ class TogetherSession(
         }
         when (message) {
             is TogetherMessage.Hello -> arrived(message)
+            // A play or a pause outranks a picture this side stopped for the friend: a pause pressed
+            // while this side was waiting is a pause, and a hold that later let go with `play`
+            // would overrule it. A seek is not that. A seek says where the friend is, not whether
+            // they are ready — they have just jumped and are loading the new place, which is the
+            // very reason this side is paused. Ending the hold on a seek, without starting the
+            // picture, left this phone standing until somebody pressed play: the friend's
+            // «buffering=false» a moment later found nothing to release. Both journals showed it.
             is TogetherMessage.Play -> control(message.seq) {
+                dropHold()
                 catchUpTo(message.positionMs)
                 port.play()
                 announce(TogetherEvent.Notice(NoticeKind.PLAYED, peerName, positionMs = message.positionMs))
             }
             is TogetherMessage.Pause -> control(message.seq) {
+                dropHold()
                 catchUpTo(message.positionMs)
                 port.pause()
                 announce(TogetherEvent.Notice(NoticeKind.PAUSED, peerName, positionMs = message.positionMs))
@@ -846,10 +855,6 @@ class TogetherSession(
         val theirs = Control(seq, byHost = !asHost)
         if (theirs <= lastControl) return
         lastControl = theirs
-        // Whatever the friend says next outranks a picture this side stopped for them: a pause
-        // pressed while this side was waiting is a pause, and a hold that later let go with
-        // `play` would overrule it — while the friend's own reports, being paused, said nothing.
-        dropHold()
         apply()
     }
 
