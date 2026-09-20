@@ -112,6 +112,15 @@ import XCTest
         XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(started), 0.05)
     }
 
+    /// The relay's idle close is the room running out after six hours of silence: not «не удалось
+    /// подключиться», which is what it said here — the room worked all evening — and not «связь
+    /// потеряна», which is what Android said. One sentence, the same on both phones.
+    func testARoomThatRanOutIsSaidToHaveRunOut() {
+        XCTAssertEqual(TogetherCopy.lost(.expired), "Комната закрылась: в ней шесть часов ничего не происходило")
+        XCTAssertNotEqual(TogetherCopy.lost(.expired), TogetherCopy.lost(.timeout))
+        XCTAssertNotEqual(TogetherCopy.lost(.expired), TogetherCopy.lost(.disconnected))
+    }
+
     func testThreeOfTheRelaysCloseCodesAreAnswersRatherThanAccidents() {
         XCTAssertEqual(TogetherRelayClose.refusal(for: 4409), .roomFull)
         XCTAssertEqual(TogetherRelayClose.refusal(for: 4408), .expired)

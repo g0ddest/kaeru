@@ -24,6 +24,9 @@ enum TogetherCopy {
     static let keepWatching = "Смотреть дальше"
     static let watchAlone = "Смотреть одному"
     static let unreachable = "Не удалось подключиться"
+    /// The relay's idle close, 4408. Not «не удалось подключиться» — the room worked for hours —
+    /// and not «связь потеряна»: nothing was lost, the room ran out. Android's `ROOM_EXPIRED`.
+    static let roomExpired = "Комната закрылась: в ней шесть часов ничего не происходило"
     // --- talking ----------------------------------------------------------------------------
     static let writePlaceholder = "Написать…"
     static let you = "Вы"
@@ -88,7 +91,8 @@ enum TogetherCopy {
         case .roomFull: return "В этой сессии уже двое"
         case .sameSide: return "Ссылку открыли оба — комнату держит тот, кто её создал"
         case .notConfigured: return "Сервер совместного просмотра не настроен"
-        case .timeout, .expired: return unreachable
+        case .timeout: return unreachable
+        case .expired: return roomExpired
         default: return "Связь с другом потеряна"
         }
     }
