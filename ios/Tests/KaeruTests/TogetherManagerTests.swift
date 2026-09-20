@@ -313,6 +313,51 @@ private final class TransportEvents: @unchecked Sendable {
     }
 }
 
+/// A guest with nobody answering, or with somebody in the other seat whose frames will not open.
+///
+/// Android has always ended both after a while — `WAIT_TIMEOUT_MS` and `GARBLED_LIMIT`. Here the
+/// screen said «Подключаемся…» for as long as anybody cared to look at it: a stale link, or a
+/// stranger who knocked on the room first, was a spinner with no way out but the home button.
+@MainActor final class TogetherGuestPatienceTests: XCTestCase {
+    func testAGuestNobodyGreetsInHalfAMinuteGivesUp() async throws {
+        let bench = try await TogetherSyncTests.Bench.joining()
+        for _ in 0..<(Int(TogetherTiming.waitTimeoutMs / TogetherTiming.stateMs) - 1) { bench.manager.beat() }
+        XCTAssertEqual(bench.manager.phase, .live, "twenty-nine seconds is still waiting")
+        bench.manager.beat()
+        await bench.settle()
+        XCTAssertEqual(bench.manager.phase, .failed)
+        XCTAssertEqual(bench.manager.error, .timeout)
+        XCTAssertEqual(bench.manager.joining?.failure, TogetherError.timeout.errorDescription)
+        XCTAssertEqual(bench.manager.joining?.retryable, true)
+    }
+
+    func testAHostWaitsForItsGuestAsLongAsItLikes() async throws {
+        let transport = TogetherManagerTests.Transport()
+        let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Host", transportFactory: { _, _ in transport })
+        await manager.create()
+        try await Task.sleep(for: .milliseconds(20))
+        for _ in 0..<100 { manager.beat() }
+        XCTAssertEqual(manager.phase, .live, "a room is open until somebody walks into it or the host says otherwise")
+        await manager.leave()
+    }
+
+    func testThreeFramesThatWillNotOpenInARowEndTheRoom() async throws {
+        let bench = try await TogetherSyncTests.Bench.joining()
+        for _ in 0..<(TogetherTiming.garbledLimit - 1) { bench.transport.continuation.yield(.frame(Data(repeating: 9, count: 64))) }
+        await bench.settle()
+        XCTAssertEqual(bench.manager.phase, .live, "one is a packet and two is bad luck")
+        // A frame that opens starts the count again.
+        try bench.deliver(.init(t: .ping, seq: 1, sentAt: 1))
+        for _ in 0..<(TogetherTiming.garbledLimit - 1) { bench.transport.continuation.yield(.frame(Data(repeating: 9, count: 64))) }
+        await bench.settle()
+        XCTAssertEqual(bench.manager.phase, .live)
+        bench.transport.continuation.yield(.frame(Data(repeating: 9, count: 64)))
+        await bench.settle()
+        XCTAssertEqual(bench.manager.phase, .failed)
+        XCTAssertEqual(bench.manager.error, .disconnected)
+    }
+}
+
 /// A greeting nobody heard is said again.
 ///
 /// The relay keeps nothing: whoever is in the room first greets an empty room, and a host whose

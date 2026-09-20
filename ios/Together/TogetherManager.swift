@@ -55,6 +55,8 @@ struct TogetherJoinTarget: Equatable {
     @ObservationIgnored private var lastJoin: TogetherInvitation?
     /// A greeting that arrived before a player did, replayed the moment one attaches.
     @ObservationIgnored private var pendingGreeting: TogetherMessage?
+    /// Frames in a row that would not open. A key that does not match never starts matching.
+    @ObservationIgnored private var refused = 0
     private var ordering = TogetherOrdering(isHost: false)
     private var clock = TogetherClock()
     /// Where the friend said they were, and when that arrived here.
@@ -299,6 +301,7 @@ struct TogetherJoinTarget: Equatable {
         // the last room died would otherwise let go with `play` on the next friend's first report.
         peerLoading = false; dropHold(); correctionSettledAt = 0
         reportedBuffering = nil; pendingGreetingAt = 0
+        refused = 0
         try await value.connect(invitation, asHost: asHost)
         let fence = generation
         enter(.live)
@@ -330,6 +333,14 @@ struct TogetherJoinTarget: Equatable {
     func beat() {
         guard phase == .live || phase == .reconnecting else { return }
         beats += 1
+        // A guest nobody has answered in half a minute is not going to be answered: the link was
+        // stale, or somebody who cannot read the room's frames is sitting in the other seat. The
+        // same half minute as Android's `WAIT_TIMEOUT_MS`, and the same ending.
+        if side == .guest, peerName == nil, beats >= TogetherTiming.waitTimeoutMs / TogetherTiming.stateMs {
+            TogetherLog.write("no greeting in \(TogetherTiming.waitTimeoutMs / 1000)s; giving up on this room")
+            fail(.timeout)
+            return
+        }
         // A report is only worth sending while there is something to report about — and only
         // once this viewer has said yes, or the friend would be measuring drift against whatever
         // this phone happened to be watching when the link arrived. A ping is worth sending
@@ -548,9 +559,17 @@ struct TogetherJoinTarget: Equatable {
                 fail(.sameSide)
                 return
             }
-            TogetherLog.write("frame refused: did not authenticate as \(remoteSide)")
+            refused += 1
+            TogetherLog.write("frame refused: did not authenticate as \(remoteSide) (\(refused) in a row)")
+            // One is a packet and two is bad luck. Three in a row from a peer that is sitting
+            // there is a key that does not match — a link truncated by a chat application, most
+            // often — and the alternative to saying so is waiting for a friend who is already
+            // connected and shouting through the wrong door, in silence, for ever. Android's
+            // `GARBLED_LIMIT`, and the same ending.
+            if refused >= TogetherTiming.garbledLimit { fail(.disconnected) }
             return
         }
+        refused = 0
         if message.t == .hello, message.epoch == nil {
             // A build older than the epoch. Its greeting after a drop is let in the old way — any
             // one greeting inside the window the relay's «peer-left» opens resets the count.
@@ -845,7 +864,12 @@ struct TogetherJoinTarget: Equatable {
     private func fail(_ value: TogetherError) {
         TogetherLog.write("failed \(value) phase=\(phase) peer=\(peerName ?? "-")")
         error = value
-        receiveTask?.cancel(); heartbeat?.cancel(); heartbeat = nil
+        // Fenced like the other two endings. Closing the transport wakes the receive loop with a
+        // throw, and without a new fence that throw came back here as a second failure — so a
+        // room given up on for want of a greeting was shown as a connection that dropped.
+        generation = UUID()
+        receiveTask?.cancel(); receiveTask = nil
+        heartbeat?.cancel(); heartbeat = nil
         transport?.close(); transport = nil
         if correcting { playback?.togetherSetRate(1); correcting = false }
         playback?.togetherDuck(false)

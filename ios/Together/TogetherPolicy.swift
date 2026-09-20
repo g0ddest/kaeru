@@ -118,6 +118,12 @@ enum TogetherTiming {
     static let correctionQuietMs: Int64 = 3_000
     /// How long a friend whose socket went away has to walk back into the room.
     static let rejoinWindowMs: Int64 = 30_000
+    /// How long a guest waits for a greeting before the room is called a dead one. Android's
+    /// `WAIT_TIMEOUT_MS`: the same half minute, and the same ending.
+    static let waitTimeoutMs: Int64 = 30_000
+    /// Frames in a row that would not open before the peer is given up on. Android's
+    /// `GARBLED_LIMIT`: three, because one is a packet and two is bad luck.
+    static let garbledLimit = 3
     /// The longest round trip a clock sample may report and still count: far past any network on
     /// which watching together works at all, and far short of the five seconds between pings, so
     /// a ping answered after a freeze cannot pass for a slow packet. Android's `ClockOffset.MAX_RTT_MS`.
