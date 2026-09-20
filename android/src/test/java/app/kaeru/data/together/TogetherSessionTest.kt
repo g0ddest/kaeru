@@ -1313,6 +1313,36 @@ class TogetherSessionTest {
         assertTrue(session.state.value is SessionState.Live)
     }
 
+    /**
+     * The relay tells the survivor `peer-left` the moment a socket drops, and the survivor then
+     * waits half a minute for a hello. A host whose socket blinked and redialled has to say one,
+     * or the friend — who is receiving its reports perfectly well — is told the connection was
+     * lost when the window runs out. iOS greets on every reconnect; this is the same rule.
+     */
+    @Test
+    fun `a host whose own socket came back greets the friend again`() = sessionTest {
+        live()
+        transport.sent.clear()
+
+        transport.blink()
+        runCurrent()
+
+        assertEquals(1, transport.sentOf<TogetherMessage.Hello>().size)
+        assertEquals("и заново меряет часы: путь мог смениться", 1, transport.sentOf<TogetherMessage.Ping>().size)
+    }
+
+    @Test
+    fun `a guest whose own socket came back greets the friend again`() = sessionTest {
+        liveAsGuest()
+        transport.sent.clear()
+
+        transport.blink()
+        runCurrent()
+
+        assertEquals(1, transport.sentOf<TogetherMessage.Hello>().size)
+        assertEquals(1, transport.sentOf<TogetherMessage.Ping>().size)
+    }
+
     @Test
     fun `nothing the host does reaches a guest still on its join screen`() = sessionTest {
         port.showing(animeId = 500, episode = 2, translationId = 11, positionMs = 120_000)

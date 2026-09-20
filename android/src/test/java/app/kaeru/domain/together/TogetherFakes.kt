@@ -89,6 +89,18 @@ class FakeTransport : WatchTogetherTransport {
 
     override fun hostEndpoint(): LanEndpoint? = endpoint
 
+    /**
+     * This side's own socket went away and came back, the way the relay transport reports it:
+     * a spell of reconnecting and then connected again, on the same channel.
+     */
+    suspend fun blink() {
+        _state.value = ConnectionState.RECONNECTING
+        // A state flow keeps only its latest value, so whoever is watching it has to be given a
+        // turn to see the outage before the recovery overwrites it.
+        yield()
+        _state.value = ConnectionState.CONNECTED
+    }
+
     /** The friend said something. */
     fun deliver(message: TogetherMessage) {
         inbound.trySend(Result.success(message))

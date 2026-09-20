@@ -492,19 +492,29 @@ class TogetherSession(
      */
     private suspend fun greetOnConnect(transport: WatchTogetherTransport) {
         var connected = false
+        var everConnected = false
         transport.state.collect { state ->
             val up = state == ConnectionState.CONNECTED
-            // The guest only. A host's channel comes up the moment the guest's first frame
-            // decrypts, by a different route than that frame itself, and nothing orders the two —
-            // so a host writing here would send a ping or its hello depending on the weather. A
-            // host answers where the answer belongs, on the inbound path.
-            if (up && !connected && !asHost) {
+            // The guest, and a host only on the way back. A host's channel first comes up the
+            // moment the guest's first frame decrypts, by a different route than that frame
+            // itself, and nothing orders the two — so a host writing here would send a ping or
+            // its hello depending on the weather. A host answers where the answer belongs, on
+            // the inbound path.
+            //
+            // A socket that dropped and redialled is a different matter. The relay told the
+            // friend `peer-left` the moment it went, and the friend is now holding the seat for
+            // half a minute and waiting for a hello — nothing else takes the wait off. A host
+            // that came back silently would keep receiving their reports right up to the moment
+            // they were told the connection was lost.
+            if (up && !connected && (!asHost || everConnected)) {
                 // Before anything else this side can possibly send: a host holds the slot open
                 // only until a first frame decrypts, and a ping arriving first is a frame that
-                // says nothing about who sent it.
+                // says nothing about who sent it. The ping goes again too, because the path may
+                // well be a different one now and the old offset was measured on the old one.
                 send(greeting())
                 send(TogetherMessage.Ping(clock.millis(), nextSeq()))
             }
+            if (up) everConnected = true
             connected = up
         }
     }
