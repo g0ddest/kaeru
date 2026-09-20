@@ -29,11 +29,10 @@ enum VoiceLimits {
 /// closes it and hands over what was said, `cancel` closes it and keeps nothing.
 ///
 /// AAC at 16 kHz mono in an MP4 container — about 3 KB a second, so thirty seconds crosses the
-/// channel in one breath. It is also the format Android's own pre-Opus path used and the one its
-/// `MediaPlayer` reads, which is what makes a clip recorded here playable there. (The other
-/// direction is the gap: Android records Ogg/Opus from API 29, and no Apple decoder reads an Ogg
-/// container. Such a clip arrives whole and is refused by the player with a sentence saying so
-/// rather than silence.)
+/// channel in one breath. Android records the same thing: it recorded Ogg/Opus until this client
+/// arrived, which no Apple decoder reads, so the Android app was moved to AAC — the format it had
+/// always played and the one every phone below API 29 already used. Both directions now play.
+/// A clip in any other container is still refused with a sentence rather than with silence.
 ///
 /// It records to a file because `AVAudioRecorder` has no other mode. The file lives in the
 /// caches directory and is deleted as soon as its bytes have been read.
@@ -169,8 +168,8 @@ enum VoiceLimits {
     /// Plays `data`, calling `onFinished` when the clip is over however it got there. Anything
     /// already playing is stopped first: two clips at once is two people talking over each other.
     ///
-    /// - Returns: false when nothing on this device can decode the clip — an Ogg/Opus recording
-    ///   from an Android phone, which no Apple decoder reads.
+    /// - Returns: false when nothing on this device can decode the clip — an old Android build
+    ///   recorded Ogg/Opus, which no Apple decoder reads.
     @discardableResult func play(_ data: Data, onFinished: @escaping () -> Void) -> Bool {
         stop()
         guard let value = try? AVAudioPlayer(data: data) else { onFinished(); return false }

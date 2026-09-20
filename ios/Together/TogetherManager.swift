@@ -128,7 +128,15 @@ enum TogetherPhase: Equatable {
         let fence = generation
         receiveTask?.cancel(); receiveTask = nil
         if let transport, let invitation {
-            await send(.init(t: .bye, seq: 1), invitation: invitation, transport: transport, fence: fence)
+            // Goodbye waits for the wire: everything after this line tears the session down, and a
+            // frame handed to a cancelled transport is a friend left staring at a paused picture.
+            var bye = TogetherMessage(t: .bye, seq: 1)
+            if let seq = try? ordering.next(control: true) {
+                bye.seq = seq
+                if let frame = try? TogetherCodec.encode(bye, invitation: invitation, from: side) {
+                    await deliver(frame, transport: transport, fence: fence)
+                }
+            }
         }
         generation = UUID()
         heartbeat?.cancel(); heartbeat = nil
@@ -458,15 +466,18 @@ enum TogetherPhase: Equatable {
     }
     private func sendMessage(_ message: TogetherMessage, invitation: TogetherInvitation? = nil, transport: TogetherTransport? = nil) {
         guard let invitation = invitation ?? self.invitation, let transport = transport ?? self.transport else { return }
-        let fence = generation
-        Task { [weak self] in await self?.send(message, invitation: invitation, transport: transport, fence: fence) }
-    }
-    private func send(_ message: TogetherMessage, invitation: TogetherInvitation, transport: TogetherTransport, fence: UUID) async {
-        guard generation == fence else { return }
+        // The number and the bytes are settled here, on this actor, in the order the caller wrote
+        // them. Doing it inside the task would let the language schedule two sends in either order,
+        // and a voice clip is up to eight frames whose reassembly depends on that order.
         var value = message
         guard let seq = try? ordering.next(control: message.isControl) else { return }
         value.seq = seq
         guard let frame = try? TogetherCodec.encode(value, invitation: invitation, from: side) else { return }
+        let fence = generation
+        Task { [weak self] in await self?.deliver(frame, transport: transport, fence: fence) }
+    }
+    private func deliver(_ frame: Data, transport: TogetherTransport, fence: UUID) async {
+        guard generation == fence else { return }
         try? await transport.send(frame)
     }
     private func fail(_ value: TogetherError) {

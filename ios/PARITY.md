@@ -18,7 +18,7 @@ implementation scope; verification is recorded separately in `VERIFICATION.md`.
 | Detail metadata/progress/unaired tiles/dub chooser/retry | mobile details | Native UI implemented |
 | Offline HLS, recovery, storage/Wi-Fi/deletion policy | `data/download`, `domain/download` | Native background transfer and settings implemented |
 | New-episode checks, deduplication and notification actions | `domain/notify`, `data/notify` | Native notifications and background scheduling implemented |
-| Watch Together relay/LAN, crypto, sync, chat/reactions | `domain/together`, `data/together` | Native protocol, manager, player adapter and settings UI implemented; voice capture remains device validation |
+| Watch Together relay/LAN, crypto, sync, chat/reactions | `domain/together`, `data/together` | Native protocol, manager, player adapter, in-player overlay and voice messages implemented; both directions play since Android moved to AAC |
 | TV login pairing | `data/pairing`, mobile pairing | Native bounded LAN client and settings UI implemented |
 | Chromecast sender and media remote | `player/Cast*`, `MediaItemFactory.kt` | Official iOS SDK sender, player handoff and remote controls implemented |
 | Settings, studio order, source override, about | common/mobile settings | Native UI worker active |
