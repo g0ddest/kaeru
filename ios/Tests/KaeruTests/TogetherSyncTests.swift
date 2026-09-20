@@ -223,6 +223,46 @@ import XCTest
         XCTAssertTrue(bench.player.togetherSnapshot.playing)
     }
 
+    /// The friend's last report is about the episode they have just left. Judged against the
+    /// start of the new one it was a twenty-minute gap, and a seek to close it on a player that
+    /// had barely opened — the same reason a correcting seek forgets the report it acted on.
+    func testAReportFromTheEpisodeBeforeIsNotCorrectedAgainstAfterAnEpisodeChange() async throws {
+        let bench = try await Bench.live()
+        bench.player.togetherSnapshot.positionMs = 1_200_000
+        bench.clock.value = 10_000
+        try bench.deliver(.init(t: .state, seq: 10, positionMs: 1_200_000, playing: true, buffering: false, sentAt: 10_000))
+        try bench.deliver(.init(t: .episode, seq: 11, episode: 2))
+        await bench.settle()
+        XCTAssertEqual(bench.player.opened.last?.episode, 2)
+        XCTAssertEqual(bench.player.togetherSnapshot.positionMs, 0)
+        bench.manager.beat(); bench.manager.beat()
+        await bench.settle()
+        XCTAssertTrue(bench.player.seeks.isEmpty, "nothing to judge the new episode against until they report from it")
+        // Their first report from the new episode is what the gap is measured against.
+        bench.clock.value = 12_000
+        try bench.deliver(.init(t: .state, seq: 12, positionMs: 30_000, playing: true, buffering: false, sentAt: 12_000))
+        await bench.settle()
+        bench.manager.beat(); bench.manager.beat()
+        await bench.settle()
+        XCTAssertEqual(bench.player.seeks, [30_000])
+    }
+
+    /// And the same the other way round: this viewer's own episode change forgets the friend's
+    /// report about the episode before, rather than seeking the new one to where they were in it.
+    func testThisSidesEpisodeChangeForgetsTheFriendsReportToo() async throws {
+        let bench = try await Bench.live()
+        bench.player.togetherSnapshot.positionMs = 1_200_000
+        bench.clock.value = 10_000
+        try bench.deliver(.init(t: .state, seq: 10, positionMs: 1_200_000, playing: true, buffering: false, sentAt: 10_000))
+        await bench.settle()
+        bench.manager.sendEpisode(TogetherEpisode(animeID: 7, episode: 2))
+        bench.player.togetherSnapshot.episode = 2
+        bench.player.togetherSnapshot.positionMs = 0
+        bench.manager.beat(); bench.manager.beat()
+        await bench.settle()
+        XCTAssertTrue(bench.player.seeks.isEmpty)
+    }
+
     /// A friend who pressed «выйти» is gone, and the room is over here and now — not half a
     /// minute of «Восстанавливаем связь» and then «Связь прервалась».
     func testAFriendsGoodbyeEndsTheRoomHereAndNow() async throws {

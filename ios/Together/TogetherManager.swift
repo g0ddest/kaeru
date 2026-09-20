@@ -251,7 +251,12 @@ struct TogetherJoinTarget: Equatable {
     func sendPlay() { sendAction(.play(position: currentPosition)) }
     func sendPause() { sendAction(.pause(position: currentPosition)) }
     func sendSeek(_ positionMs: Int64) { sendAction(.seek(position: max(0, positionMs))) }
-    func sendEpisode(_ episode: TogetherEpisode) { sendAction(.episode(episode)) }
+    func sendEpisode(_ episode: TogetherEpisode) {
+        // The friend's last report is about the episode this side is leaving, and judged against
+        // the start of the next one it is a twenty-minute gap and a seek to close it.
+        report = nil
+        sendAction(.episode(episode))
+    }
     func sendChat(_ text: String) {
         let value = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(4096))
         guard !value.isEmpty else { return }
@@ -724,6 +729,10 @@ struct TogetherJoinTarget: Equatable {
             let item = TogetherEpisode(animeID: message.animeId ?? playback.togetherSnapshot.animeID ?? 0,
                                        episode: episode, translationID: message.translationId, positionMs: message.positionMs ?? 0)
             dropHold()
+            // Their last report is about the episode they have just left. Judged against the start
+            // of the new one, it is a twenty-minute gap and a seek to close it — the same reason a
+            // correcting seek forgets the report it acted on.
+            report = nil
             // A correction running when the episode changes would be inherited by one it was
             // never about; and an episode a friend opened is one they are playing — on both
             // phones opening one starts it — so this side plays it too rather than sitting on
