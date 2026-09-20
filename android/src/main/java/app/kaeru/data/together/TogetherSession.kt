@@ -35,7 +35,10 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import java.security.SecureRandom
@@ -409,6 +412,7 @@ class TogetherSession(
             }
         }
     }
+                    launch { stallReports() }
 
     /** Ends whatever was running, quietly. Nothing after this belongs to the session that was. */
     private suspend fun stop() {
@@ -552,9 +556,7 @@ class TogetherSession(
             // Before the guard, not after it: half a clip is thirty seconds' worth of memory
             // whether or not this side has finished joining.
             forgetStaleVoice()
-            if (_state.value !is SessionState.Live) continue
-            val now = port.state.value
-            send(TogetherMessage.State(now.positionMs, now.playing, now.buffering, clock.millis(), nextSeq()))
+            report()
         }
     }
 
@@ -581,6 +583,25 @@ class TogetherSession(
         // the room is the one the picture is measured against.
         if (asHost) {
             if (correcting) forceNormalSpeed()
+    /**
+     * A stall is said the moment it starts and the moment it ends, not on the next beat.
+     *
+     * The friend stops for a picture that is loading and starts again when it is not, and both
+     * happen when the report saying so lands. Off the beat alone that is up to a second late each
+     * way, and the two delays are different — so after every stall the two pictures stood a
+     * random fraction of a second apart, which is what the corrector then spent half a minute
+     * nudging out. Said at once, both delays shrink to a trip through the relay and cancel.
+     */
+    private suspend fun stallReports() {
+        port.state.map { it.buffering }.distinctUntilChanged().drop(1).collect { report() }
+    }
+
+    private suspend fun report() {
+        if (_state.value !is SessionState.Live) return
+        val now = port.state.value
+        send(TogetherMessage.State(now.positionMs, now.playing, now.buffering, clock.millis(), nextSeq()))
+    }
+
             return
         }
         // Nobody is corrected while either player is filling its buffer, and nothing is corrected

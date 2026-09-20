@@ -1041,6 +1041,40 @@ class TogetherSessionTest {
     fun `a gap too big to play out of is jumped, and a huge one is jumped and mentioned`() = sessionTest {
         liveAsGuest()
         val seen = mutableListOf<TogetherEvent>()
+    /**
+     * The friend stops for this picture while it loads and starts again when it does not, and
+     * both happen when the report saying so lands. Off the beat alone that is up to a second
+     * late each way, and the two lateness are different — a random fraction of a second apart
+     * after every stall. Said at once, both are a trip through the relay and cancel out.
+     */
+    @Test
+    fun `a stall is reported the moment it starts and the moment it ends`() = sessionTest {
+        live()
+        transport.sent.clear()
+
+        port.buffering(true)
+        runCurrent()
+        val stalled = transport.sentOf<TogetherMessage.State>().single()
+        assertTrue(stalled.buffering)
+
+        advanceTimeBy(200)
+        port.buffering(false)
+        runCurrent()
+        val moving = transport.sentOf<TogetherMessage.State>().last()
+        assertEquals(2, transport.sentOf<TogetherMessage.State>().size)
+        assertFalse(moving.buffering)
+    }
+
+    /** But not to a friend who has not said hello: a report to a room with nobody in it is noise. */
+    @Test
+    fun `a stall before the room is live is not reported`() = sessionTest {
+        session.host("Костя")
+        runCurrent()
+        port.buffering(true)
+        runCurrent()
+        assertTrue(transport.sentOf<TogetherMessage.State>().isEmpty())
+    }
+
         val watching = launch { session.events.toList(seen) }
         runCurrent()
 

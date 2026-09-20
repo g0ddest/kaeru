@@ -64,6 +64,10 @@ struct TogetherJoinTarget: Equatable {
     @ObservationIgnored private var heldForPeer = false
     /// When waiting stops being kindness and starts being a frozen picture.
     @ObservationIgnored private var holdUntil: Int64 = 0
+    /// What the last report said about the buffer, so a change can be said before the next beat.
+    @ObservationIgnored private var reportedBuffering: Bool?
+    /// When the greeting being read on the join screen arrived, for carrying its position forward.
+    @ObservationIgnored private var pendingGreetingAt: Int64 = 0
     /// Nothing is corrected before this instant — the quiet after a jump.
     @ObservationIgnored private var correctionSettledAt: Int64 = 0
     @ObservationIgnored private var heartbeat: Task<Void, Never>?
@@ -100,6 +104,7 @@ struct TogetherJoinTarget: Equatable {
                 try? await Task.sleep(for: .milliseconds(100))
                 guard !Task.isCancelled, let self else { return }
                 self.conversation.sweep()
+                self.reportStallIfChanged()
             }
         }
     }
@@ -122,6 +127,9 @@ struct TogetherJoinTarget: Equatable {
 
     func attach(_ playback: any TogetherPlayback) {
         self.playback = playback
+        // The buffer as it stands, before the greeting below moves the picture: the stall that
+        // seek costs is then a change, and is said at once rather than on the next beat.
+        reportedBuffering = playback.togetherSnapshot.buffering
         if let greeting = pendingGreeting {
             pendingGreeting = nil
             apply(greeting)
@@ -334,10 +342,25 @@ struct TogetherJoinTarget: Equatable {
                           buffering: snapshot.buffering, sentAt: now()))
     }
 
+        reportedBuffering = snapshot.buffering
     /// One look at the gap, and usually nothing to do about it.
     ///
     /// The friend's last report is carried forward to now before it is judged: a report that is a
     /// second and a half old says where they were, and half a second is the whole width of the
+    /// A stall is said the moment it starts and the moment it ends, not on the next beat.
+    ///
+    /// The friend stops for a picture that is loading and starts again when it is not, and both
+    /// happen when the report saying so lands. Off the beat alone that is up to a second late each
+    /// way, and the two delays are different — so after every stall the two pictures stood a
+    /// random fraction of a second apart, which the corrector then spent half a minute nudging out.
+    /// Said at once, both delays shrink to a trip through the relay, and cancel. Ten times a
+    /// second, off the sweeper: the same clock the corner's lines fade on.
+    func reportStallIfChanged() {
+        guard phase == .live, let reported = reportedBuffering,
+              let buffering = playback?.togetherSnapshot.buffering, buffering != reported else { return }
+        sendState()
+    }
+
     /// band that means «leave it alone».
     /// The friend's player is filling its buffer, so this one waits instead of running ahead.
     ///

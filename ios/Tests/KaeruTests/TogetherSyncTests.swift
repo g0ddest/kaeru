@@ -125,6 +125,29 @@ import XCTest
         XCTAssertEqual(bench.pings(), 2)
     }
 
+    /// A stall is said the moment it starts and the moment it ends, not on the next beat: the
+    /// friend's wait is then a trip through the relay late, the same on both ends, and cancels.
+    func testAStallIsReportedTheMomentItStartsAndTheMomentItEnds() async throws {
+        let bench = try await Bench.live()
+        bench.manager.beat()
+        await bench.settle()
+        let reports = bench.sent().filter { $0.t == .state }.count
+        bench.player.togetherSnapshot.buffering = true
+        bench.manager.reportStallIfChanged()
+        await bench.settle()
+        XCTAssertEqual(bench.sent().filter { $0.t == .state }.count, reports + 1)
+        XCTAssertEqual(bench.sent().last { $0.t == .state }?.buffering, true)
+        // Nothing changed: nothing more to say until the beat.
+        bench.manager.reportStallIfChanged()
+        await bench.settle()
+        XCTAssertEqual(bench.sent().filter { $0.t == .state }.count, reports + 1)
+        bench.player.togetherSnapshot.buffering = false
+        bench.manager.reportStallIfChanged()
+        await bench.settle()
+        XCTAssertEqual(bench.sent().filter { $0.t == .state }.count, reports + 2)
+        XCTAssertEqual(bench.sent().last { $0.t == .state }?.buffering, false)
+    }
+
     func testTheFriendsReportIsCarriedForwardToNowBeforeItIsJudged() async throws {
         let bench = try await Bench.live()
         bench.player.togetherSnapshot.positionMs = 10_000
