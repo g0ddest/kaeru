@@ -52,8 +52,10 @@ struct PlayerScreen: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Готово") { playback.close(); dismiss() }
                 }
+                // Trailing, beside the menu: «Готово» owns the left of a modal, and the cast
+                // control sits where the Android client puts it — at the other end of the bar.
+                ToolbarItem(placement: .topBarTrailing) { CastButton(manager: playback.castManager) }
                 ToolbarItem(placement: .primaryAction) { options }
-                ToolbarItem(placement: .topBarLeading) { CastButton(manager: playback.castManager) }
                 ToolbarItem(placement: .principal) { TogetherChip(manager: model.together, invitation: invitation) }
             }
             .toolbarBackground(.visible, for: .navigationBar)
