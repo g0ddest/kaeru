@@ -19,6 +19,8 @@ import Foundation
     private let buffer = TogetherSendBuffer()
     private var reconnecting = false
     private var closed = false
+    /// The socket's own pulse, started when a dial succeeds and cancelled with the socket.
+    private var watchdog: Task<Void, Never>?
 
     init(baseURL: String) { self.baseURL = baseURL }
 
@@ -72,6 +74,41 @@ import Foundation
             throw error
         }
         TogetherLog.write("dial ok")
+        startWatchdog(socket)
+    }
+
+    /// A WebSocket ping every `TogetherTiming.socketPingSeconds`, its pong owed within the same
+    /// again. None, and the socket is cancelled — which is what makes `receive()` see a dead
+    /// socket as `.reconnecting` instead of waiting on it for the rest of the evening.
+    private func startWatchdog(_ socket: URLSessionWebSocketTask) {
+        watchdog?.cancel()
+        let seconds = TogetherTiming.socketPingSeconds
+        watchdog = Task {
+            await TogetherSocketWatchdog(intervalSeconds: seconds).run(
+                ping: { await Self.pong(socket, within: seconds) },
+                dead: {
+                    TogetherLog.write("no pong in \(Int(seconds))s; the socket is presumed dead")
+                    socket.cancel(with: .abnormalClosure, reason: nil)
+                })
+        }
+    }
+
+    /// One protocol-level ping, and whether its pong came back in time. The socket is cancelled
+    /// when it does not: the wait is a task group, and its child holds a continuation only the
+    /// pong handler resumes — which fires, with an error, once the socket is gone.
+    private static func pong(_ socket: URLSessionWebSocketTask, within seconds: TimeInterval) async -> Bool {
+        do {
+            try await togetherTimeout(seconds) {
+                try await withTaskCancellationHandler {
+                    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                        socket.sendPing { error in
+                            if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+                        }
+                    }
+                } onCancel: { socket.cancel(with: .abnormalClosure, reason: nil) }
+            }
+            return true
+        } catch { return false }
     }
 
     func receive() async throws -> TogetherTransportEvent {
@@ -166,6 +203,7 @@ import Foundation
     }
 
     private func dropSocket() {
+        watchdog?.cancel(); watchdog = nil
         socket?.cancel(with: .normalClosure, reason: nil)
         session?.invalidateAndCancel()
         socket = nil; session = nil

@@ -66,6 +66,35 @@ import XCTest
         XCTAssertEqual(written, [1, 2, 3])
     }
 
+    // MARK: - the watchdog
+
+    /// Android gets a socket watchdog for free from OkHttp's `pingInterval(20 s)`; this side has to
+    /// keep one by hand, and it has to be the same twenty seconds.
+    func testTheSocketPingIsAndroidsTwentySeconds() {
+        XCTAssertEqual(TogetherTiming.socketPingSeconds, 20)
+    }
+
+    func testTheWatchdogPingsOnItsIntervalAndCallsASocketDeadWhenAPongDoesNotComeBack() async {
+        let watchdog = TogetherSocketWatchdog(intervalSeconds: 0.005)
+        var pings = 0
+        var dead = 0
+        await watchdog.run(ping: { pings += 1; return pings < 3 }, dead: { dead += 1 })
+        XCTAssertEqual(pings, 3, "two pongs came back; the third did not")
+        XCTAssertEqual(dead, 1)
+    }
+
+    func testACancelledWatchdogCallsNothingDead() async {
+        let watchdog = TogetherSocketWatchdog(intervalSeconds: 10)
+        var dead = 0
+        var pings = 0
+        let running = Task { await watchdog.run(ping: { pings += 1; return false }, dead: { dead += 1 }) }
+        try? await Task.sleep(for: .milliseconds(20))
+        running.cancel()
+        await running.value
+        XCTAssertEqual(pings, 0)
+        XCTAssertEqual(dead, 0)
+    }
+
     func testThreeOfTheRelaysCloseCodesAreAnswersRatherThanAccidents() {
         XCTAssertEqual(TogetherRelayClose.refusal(for: 4409), .roomFull)
         XCTAssertEqual(TogetherRelayClose.refusal(for: 4408), .expired)

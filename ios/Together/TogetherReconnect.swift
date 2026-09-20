@@ -73,6 +73,32 @@ struct TogetherRelayBackoff {
     func clear() { frames = [] }
 }
 
+/// A protocol-level ping on a schedule, and a socket called dead when its pong does not come back.
+///
+/// Both clients take the read deadline off the relay socket, because a room with one person in it
+/// is silent for as long as somebody is copying the link. The cost is that a socket which stops
+/// carrying anything without ever closing — a cell handover, a NAT that forgot the connection — is
+/// noticed by nobody: writes are buffered by the kernel and the read simply never returns. Android
+/// gets this from OkHttp's `pingInterval`; here it has to be done by hand. Separate from the
+/// application's own ping, which measures the clocks and is not answered by a socket that is
+/// merely alive.
+struct TogetherSocketWatchdog {
+    let intervalSeconds: TimeInterval
+
+    /// Waits the interval, asks `ping` for a pong, and goes round again for as long as one comes.
+    /// The first time none does, `dead` — once — and done. A cancelled watchdog calls nothing.
+    @MainActor func run(ping: @MainActor () async -> Bool, dead: @MainActor () -> Void) async {
+        while true {
+            do { try await Task.sleep(for: .seconds(intervalSeconds)) } catch { return }
+            if Task.isCancelled { return }
+            if await ping() { continue }
+            if Task.isCancelled { return }
+            dead()
+            return
+        }
+    }
+}
+
 /// The relay's own close codes are its HTTP status plus 4000, and three of them are answers rather
 /// than accidents: dialling again would only get the same one back.
 enum TogetherRelayClose {

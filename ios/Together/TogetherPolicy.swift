@@ -135,6 +135,11 @@ enum TogetherTiming {
     static let socketLifetimeSeconds: TimeInterval = 24 * 60 * 60
     /// What the first dial gets before it is reported as unreachable. Only the handshake.
     static let dialSeconds: TimeInterval = 10
+    /// A protocol-level ping on the relay socket this often, and a pong owed within the same
+    /// again — OkHttp's `pingInterval(20 s)` on Android, which fails the socket the same way. The
+    /// application's own ping every five seconds measures the clocks; this one is for a socket
+    /// that went quiet without a close, which on a phone is a cell handover or a NAT that forgot.
+    static let socketPingSeconds: TimeInterval = 20
 }
 
 enum TogetherSync {
