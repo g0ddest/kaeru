@@ -413,6 +413,7 @@ enum PlaybackLocalAction {
             return
         }
         isLocal = false
+        TogetherLog.write("resolve start anime=\(anime.id) episode=\(episode) translation=\(explicitTranslation ?? 0)")
         do {
             if translations.isEmpty {
                 let available = try await deadline(20, "Список озвучек") { [model, anime] in
@@ -427,9 +428,11 @@ enum PlaybackLocalAction {
             // a decode and a playlist. Any of them can simply never answer, and «Открываем
             // серию…» with nothing behind it is the worst thing a player can show — it looks
             // exactly like an episode that is about to start.
+            TogetherLog.write("resolve: asking the source for translation=\(selected)")
             let result = try await deadline(25, "Источник") { [model, anime, episode] in
                 try await model.service.resolve(anime.id, translation: selected, episode: episode)
             }
+            TogetherLog.write("resolve: source answered with \(result.urls.count) qualities")
             guard isCurrent(fence) else { return }
             guard result.episode == episode else { throw AppError.message("Источник вернул другую серию.") }
             stream = result; translation = result.translation.id
@@ -437,6 +440,7 @@ enum PlaybackLocalAction {
             if let explicitTranslation, result.translation.id == explicitTranslation { model.rememberTranslation(explicitTranslation, for: anime.id) }
             install(result, position: position, fence: fence)
         } catch {
+            TogetherLog.write("resolve failed: \(error.localizedDescription)")
             guard isCurrent(fence) else { return }
             fail(error.localizedDescription)
         }
@@ -467,6 +471,7 @@ enum PlaybackLocalAction {
         install(url: url, headers: stream.headers, position: position, fence: fence)
     }
     private func install(url: URL, headers: [String: String], position: Double, fence: UUID) {
+        TogetherLog.write("install \(url.host ?? "?") position=\(Int(position))s")
         // Existing app's measured header propagation covers HLS manifests and segments.
         let asset = AVURLAsset(url: url, options: headers.isEmpty ? nil : ["AVURLAssetHTTPHeaderFieldsKey": headers])
         let item = AVPlayerItem(asset: asset)
@@ -487,6 +492,7 @@ enum PlaybackLocalAction {
         switch item.status {
         case .readyToPlay:
             guard readyItem !== item else { return }; readyItem = item
+            TogetherLog.write("player ready")
             let length = item.duration.seconds
             let target = PlaybackPolicy.clampSeek(position, duration: length.isFinite ? max(0, length - 0.1) : length)
             let success = await player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)

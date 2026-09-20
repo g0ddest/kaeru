@@ -121,7 +121,13 @@ struct RootView: View {
             }
         }
         .task { openPending() }
-        .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await model.flush() } } }
+        .onChange(of: scenePhase) { _, phase in
+            // In the journal too: a phone that went into a pocket stops running, and everything
+            // that then looks stuck — a room gone quiet, an episode that never opens — is the
+            // system freezing the app, not the app failing.
+            TogetherLog.write("scene \(phase)")
+            if phase == .active { Task { await model.flush() } }
+        }
     }
 
     /// The sidebar: groups with their own headings, and the viewer pinned to the bottom of it.
