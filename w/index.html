@@ -164,7 +164,7 @@
       still there, and Android now knows whose it is.
     -->
     <a class="button primary" id="open" href="https://github.com/g0ddest/kaeru/releases">Установить Kaeru</a>
-    <p class="hint">Если кнопка не сработала — нажмите ссылку в чате ещё раз: после установки Android откроет её в Kaeru.</p>
+    <p class="hint" id="hint">Если кнопка не сработала — нажмите ссылку в чате ещё раз: после установки Android откроет её в Kaeru.</p>
     <a class="button secondary" id="apk" href="https://github.com/g0ddest/kaeru/releases">Скачать APK</a>
   </div>
   <p class="note">
@@ -218,23 +218,26 @@
       // does nothing at all when there is none — which is why the page under the button still
       // says how to get one, and why the key rides in the query: a scheme URL has its own
       // fragment and this one is already taken.
-      var scheme = 'kaeru://watch?r=' + room + '&k=' + key;
-      open.href = scheme;
+      //
+      // This used to also fire the same address on its own, a moment after the page loaded, on
+      // the theory that a phone with Kaeru would leave before anyone noticed the attempt. It
+      // never actually did anything: WebKit only lets a page hand a custom scheme to an app from
+      // a real tap, and a page finishing loading is not one — Apple's own developer forums say
+      // as much, and the timer callback was silently dropped every time, app installed or not.
+      // So the button is now the whole mechanism, exactly as a plain link: setting `href` here
+      // only aims it, and the tap that follows is the gesture WebKit was waiting for.
+      open.href = 'kaeru://watch?r=' + room + '&k=' + key;
       open.textContent = 'Открыть в Kaeru';
-      // Tried once, without being asked to. There is no way to ask iOS whether an app is
-      // installed — the only test is the attempt, and the answer is whether this page is still
-      // being looked at a moment later. A phone with Kaeru goes straight to the room; a phone
-      // without it stays here, on the page that says how to get one, and the attempt leaves
-      // nothing behind. `iframe` is what this used to be done with and modern Safari ignores it,
-      // so this is the visible navigation — undone by the app taking over the screen.
-      var left = false;
-      var gone = function () { left = true; };
-      window.addEventListener('pagehide', gone);
-      document.addEventListener('visibilitychange', function () { if (document.hidden) gone(); });
-      setTimeout(function () {
-        if (left || document.hidden) { return; }
-        window.location.href = scheme;
-      }, 60);
+      // A tap here can still do nothing, and not because Kaeru is missing: Telegram and WhatsApp
+      // open a chat link in their own in-app browser, which — unlike Safari — has no standing
+      // permission to hand a custom scheme to another app at all, tap or not. The one thing a
+      // person can actually do about that is leave it for Safari, so the hint now says so.
+      var hint = document.getElementById('hint');
+      if (hint) {
+        hint.textContent = 'Если кнопка не сработала — ссылка, скорее всего, открыта внутри ' +
+          'Telegram или WhatsApp: откройте её в Safari (значок «···» или «Поделиться» вверху) ' +
+          'и нажмите кнопку ещё раз.';
+      }
     }
 
     // «latest» on GitHub means «latest full release», and every Kaeru build so far is a
