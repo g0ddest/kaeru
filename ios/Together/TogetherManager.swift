@@ -379,6 +379,7 @@ struct TogetherJoinTarget: Equatable {
         guard let playback else { return }
         if loading {
             guard playback.togetherSnapshot.playing else { return }
+            TogetherLog.write("holding: the friend is loading")
             heldForPeer = true
             holdUntil = now() + TogetherTiming.peerLoadingHoldMs
             if correcting { playback.togetherSetRate(1); correcting = false }
@@ -395,6 +396,7 @@ struct TogetherJoinTarget: Equatable {
     /// Let go of a hold — because the friend is ready, or because they have taken too long and a
     /// held picture with nothing on screen explaining it is worse than being out of step.
     private func releaseHold() {
+        TogetherLog.write("hold released: the friend is ready")
         dropHold()
         // Nothing is corrected against a report taken while the picture was standing still.
         report = nil
@@ -600,6 +602,7 @@ struct TogetherJoinTarget: Equatable {
             // been carried forward to the moment of judging.
             guard let positionMs = message.positionMs, let playing = message.playing, let sentAt = message.sentAt else { return }
             report = PeerReport(positionMs: positionMs, playing: playing, sentAt: sentAt, at: now())
+            TogetherLog.write("state in pos=\(positionMs) playing=\(playing) buffering=\(message.buffering == true) here=\(playback?.togetherSnapshot.positionMs ?? -1)/\(playback?.togetherSnapshot.playing ?? false)")
             // Only a friend who means to be playing. One who is paused and buffering is simply
             // paused — and that reaches this side as a `pause`, never as a report.
             peerIsLoading(message.buffering == true && playing)
