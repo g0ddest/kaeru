@@ -82,6 +82,21 @@ struct RootView: View {
             NavigationStack { TogetherView(manager: model.together) }
         }
         .fullScreenCover(item: $deepLinkRoute) { PlayerScreen(anime: $0.anime, episode: $0.episode, model: model) }
+        // An invitation is not a player: it is somebody asking, and the answer is given here —
+        // over everything, because it arrived from outside the app and there is nothing else to
+        // do with it until it is answered.
+        .fullScreenCover(isPresented: Binding(get: { model.together.joining != nil },
+                                              set: { if !$0 { model.together.acceptJoin() } })) {
+            TogetherJoinView(manager: model.together) { episode in
+                model.together.acceptJoin()
+                Task { await openTogether(episode) }
+            } onRetry: {
+                Task { await model.together.retryJoin() }
+            } onDismiss: {
+                Task { await model.together.leave() }
+            }
+            .environment(model)
+        }
         .onOpenURL { open($0) }
         // A universal link is not a URL the app is opened with — it arrives as a browsing activity,
         // and `onOpenURL` never sees it. Without this line an invitation tapped in a messenger went
@@ -207,7 +222,6 @@ struct RootView: View {
             // behind it — so a tapped invitation brought the app to the front and then did
             // nothing visible at all, for as long as the relay took to answer or to give up. The
             // screen has a state for every part of that; it could not show any of them.
-            togetherOpen = true
             Task { await model.together.join(invitation) }
         case .pair(let invitation):
             settings = false
@@ -220,6 +234,8 @@ struct RootView: View {
     /// What the friend is watching, opened here. A player that is already up is left alone: the
     /// session is attached to it and it is told to change episode directly.
     private func openTogether(_ item: TogetherEpisode) async {
+        // The join screen is showing this very episode and has its own button for it.
+        guard model.together.joining == nil else { return }
         guard model.playersOpen == 0, deepLinkRoute == nil else { return }
         guard let anime = await model.anime(id: item.animeID) else { return }
         settings = false

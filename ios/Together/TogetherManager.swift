@@ -7,12 +7,30 @@ enum TogetherPhase: Equatable {
     case idle, connecting, live, reconnecting, ended, failed
 }
 
+/// What a link in a messenger turns into before there is a player.
+///
+/// The invited side knows a room id and nothing else until the other phone answers, so this starts
+/// as «подключаемся» with no title on it and fills in when the greeting lands. The screen that
+/// draws it is the one place a person agrees to join something — the player opens after that, not
+/// before, which is also why a failure here is a state and not a dismissal.
+struct TogetherJoinTarget: Equatable {
+    var peerName: String?
+    var episode: TogetherEpisode?
+    var failure: String?
+    /// False for a link that was never a room: nothing to knock on again.
+    var retryable = true
+    var isWaiting: Bool { episode == nil && failure == nil }
+}
+
 /// Owns one two-person Together room. Transport and playback are deliberately injected so the
 /// relay/LAN paths and the native AVPlayer can be tested without a network or an AVAudioSession.
 @MainActor @Observable final class TogetherManager {
     private(set) var phase: TogetherPhase = .idle
     private(set) var invitation: TogetherInvitation?
     private(set) var peerName: String?
+    /// Set from the moment an invitation is accepted until the viewer has agreed to what it turned
+    /// out to be — or walked away from it. Nil for the side that made the room.
+    private(set) var joining: TogetherJoinTarget?
     private(set) var error: TogetherError?
     private(set) var messages: [TogetherMessage] = []
     /// What is on screen over the video, and everything about it that ends by itself.
@@ -29,6 +47,9 @@ enum TogetherPhase: Equatable {
     @ObservationIgnored private var receiveTask: Task<Void, Never>?
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var side: TogetherSide = .guest
+    /// The invitation this phone was given, kept past a failure so «Повторить» has something to
+    /// knock on.
+    @ObservationIgnored private var lastJoin: TogetherInvitation?
     /// A greeting that arrived before a player did, replayed the moment one attaches.
     @ObservationIgnored private var pendingGreeting: TogetherMessage?
     private var ordering = TogetherOrdering(isHost: false)
@@ -117,10 +138,21 @@ enum TogetherPhase: Equatable {
     }
 
     func join(_ invitation: TogetherInvitation) async {
+        joining = TogetherJoinTarget()
+        lastJoin = invitation
         do { try await connect(invitation, asHost: false) }
-        catch is CancellationError {
-        } catch let error as TogetherError { fail(error) }
+        catch is CancellationError { joining = nil }
+        catch let error as TogetherError { fail(error) }
         catch { fail(.disconnected) }
+    }
+    /// «Смотреть вместе» on the join screen: the room stays, the screen goes, and the player the
+    /// caller opens next is the one this session attaches to.
+    func acceptJoin() { joining = nil }
+    /// «Повторить» after a room that would not open. The invitation is kept for exactly this: it
+    /// is cleared when a room fails, because a dead link is not one to share.
+    func retryJoin() async {
+        guard let lastJoin else { return }
+        await join(lastJoin)
     }
 
     func leave() async {
@@ -147,6 +179,7 @@ enum TogetherPhase: Equatable {
         // the link, the share button and itself on screen — a room that had ended and would not
         // go away.
         invitation = nil
+        joining = nil
         conversation.message = TogetherCopy.leftSession
         enter(.ended)
     }
@@ -417,6 +450,7 @@ enum TogetherPhase: Equatable {
                 let item = TogetherEpisode(animeID: animeID, episode: episode,
                                            translationID: message.translationId, positionMs: message.positionMs ?? 0)
                 pendingGreeting = message
+                joining = TogetherJoinTarget(peerName: peerName, episode: item)
                 onOpenPlayback?(item)
             }
             return
@@ -494,6 +528,13 @@ enum TogetherPhase: Equatable {
         // Nothing here dials again, so the link this invitation carries is a link to a room that
         // never opened. Keeping it on screen only offers people a way to share a dead one.
         invitation = nil
+        // Whoever is still on the join screen is told there, where they can try again: a screen
+        // that dismissed itself would leave the tap on the invitation looking like nothing at all.
+        if joining != nil {
+            joining = TogetherJoinTarget(peerName: peerName,
+                                         failure: value.errorDescription,
+                                         retryable: value != .invalidInvitation)
+        }
         enter(.failed)
     }
 }

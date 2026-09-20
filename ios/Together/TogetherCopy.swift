@@ -51,6 +51,18 @@ enum TogetherCopy {
     static func episodeNominative(_ episode: Int) -> String { "\(episode) серия" }
     static func episodeAccusative(_ episode: Int) -> String { "\(episode) серию" }
 
+    // --- being invited -----------------------------------------------------------------------
+    static let join = "Присоединиться"
+    static let notNow = "Не сейчас"
+    static let retry = "Повторить"
+    static let micNote = "Микрофон включается только пока держите кнопку."
+    /// «Вася зовёт смотреть вместе»
+    static func invites(_ peerName: String?) -> String { "\(name(peerName)) зовёт смотреть вместе" }
+    /// «Вася смотрит «Проводы в последний путь», 7 серия, 12:04»
+    static func joinLine(peerName: String?, title: String, episode: Int, positionMs: Int64) -> String {
+        "\(name(peerName)) смотрит «\(title)», \(episodeNominative(episode)), \(time(positionMs))"
+    }
+
     /// «Смотрим «Проводы в последний путь», 7 серию. Открой в Kaeru: …»
     static func shareText(title: String, episode: Int, link: String) -> String {
         "Смотрим «\(title)», \(episodeAccusative(episode)). Открой в Kaeru: \(link)"
