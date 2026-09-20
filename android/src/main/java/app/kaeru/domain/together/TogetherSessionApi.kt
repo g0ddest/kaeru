@@ -153,6 +153,16 @@ interface TogetherSessionApi {
     fun watchAlone()
 
     /**
+     * Whether [link] names the room this phone is keeping right now.
+     *
+     * For the screen an invitation lands on: a host who taps their own link — in the chat they
+     * sent it to, from the share sheet — must not walk into their own room as its guest. Doing so
+     * would tear the room down under the friend in it and then wait half a minute for a host who
+     * is, of course, not coming.
+     */
+    fun isHosting(link: RoomLink): Boolean
+
+    /**
      * Where the friend is at this moment, as a position in the episode: their last report carried
      * forward on this device's clock, or the hello carried forward until they have reported. Null
      * while there is nobody to ask about.

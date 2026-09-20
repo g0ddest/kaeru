@@ -33,15 +33,41 @@ import Foundation
         // is a report the friend will settle a quarter of a second — or a second — away from.
         let live = value.player.currentTime().seconds
         let position = value.snapshot.ready && live.isFinite && live >= 0 ? live : value.snapshot.position
+        // `playing` on the wire is what the viewer asked for, not what the engine is managing.
+        // `isPlaying` follows `timeControlStatus`, which is `.waitingToPlayAtSpecifiedRate` for as
+        // long as a segment is on its way — so a stall went out as «paused, buffering», which is
+        // exactly what the friend takes for a pause with an empty buffer and never waits for.
+        // AVPlayer's `rate` is the rate that was asked for and stays non-zero through the wait;
+        // it is the intent, and a picture stalling on its way to playing is playing, and buffering.
+        let playing = value.snapshot.isPlaying || (value.snapshot.buffering && value.player.rate > 0)
         return .init(animeID: value.snapshot.animeID, episode: value.snapshot.episode,
                      translationID: value.snapshot.translation, positionMs: Int64(max(0, position) * 1000),
-                     playing: value.snapshot.isPlaying, buffering: value.snapshot.buffering, ready: value.snapshot.ready)
+                     playing: playing, buffering: value.snapshot.buffering, ready: value.snapshot.ready)
     }
     var togetherSupportsRate: Bool { true }
     func togetherPlay() { playback?.setPlaying(true, notify: false) }
     func togetherPause() { playback?.setPlaying(false, notify: false) }
     func togetherSeek(toMilliseconds position: Int64) { playback?.seek(to: Double(max(0, position)) / 1000, notify: false) }
-    func togetherSetRate(_ factor: Float) { playback?.player.rate = factor }
+    /// A nudge of three percent, on a player that will actually make one.
+    ///
+    /// Two things about AVPlayer that the first version of this did not know. The audio pitch
+    /// algorithm an item comes with snaps the rate to a handful of values — 0.5, 0.8, 1.0, 1.25,
+    /// 1.5 and so on — so 0.97 and 1.03 were both played as 1.0 and a gap under two seconds was
+    /// never closed at all: that is the second or two the guest sat behind the host for the whole
+    /// evening. `timeDomain` takes any rate and keeps the pitch, and is the one meant for voice.
+    /// And a non-zero rate is a play command: normal speed handed to a paused picture starts it,
+    /// which used to undo a pause a beat after a correction ended. The rate is only ever touched
+    /// while the viewer wants the picture moving — a paused player takes its speed from
+    /// `defaultRate` when it is next played, which is the viewer's own.
+    func togetherSetRate(_ factor: Float) {
+        guard let playback else { return }
+        let player = playback.player
+        if let item = player.currentItem, item.audioTimePitchAlgorithm != .timeDomain {
+            item.audioTimePitchAlgorithm = .timeDomain
+        }
+        guard player.rate > 0 else { return }
+        player.rate = Float(playback.speed) * factor
+    }
     func togetherDuck(_ on: Bool) { playback?.setDucked(on) }
     func togetherOpen(_ episode: TogetherEpisode) async throws {
         guard let playback else { throw TogetherError.playbackUnavailable }

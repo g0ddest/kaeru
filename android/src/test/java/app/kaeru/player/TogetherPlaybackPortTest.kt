@@ -23,6 +23,9 @@ import app.kaeru.domain.playback.WatchProgress
 import app.kaeru.domain.settings.FakeSettingsStore
 import app.kaeru.domain.together.LocalAction
 import app.kaeru.test.MutableClock
+import androidx.media3.common.Player
+import io.mockk.every
+import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -118,6 +121,48 @@ class TogetherPlaybackPortTest {
         assertEquals(65_000L, state.positionMs)
         assertTrue(state.playing)
         assertFalse(state.buffering)
+    }
+
+    /**
+     * `playing` on the wire is the viewer's intent, not the engine's word. Media3 says a player is
+     * not playing while it buffers, and a friend reading that would take a stall for a pause —
+     * never waiting for it, and dragging the stalled phone forward the moment it fell far enough
+     * behind. A picture that is filling its buffer on the way to playing is reported as both.
+     */
+    @Test
+    fun `a stall on the way to playing is reported as playing and buffering`() = runTest(dispatcher) {
+        val player = mockk<Player>()
+        every { player.playWhenReady } returns true
+        engine.videoPlayer.value = player
+        controller.play(target())
+        engine.ready(durationMs = 1_440_000)
+        advanceUntilIdle()
+
+        engine.stall()
+        advanceUntilIdle()
+
+        val state = port.state.value
+        assertTrue(state.buffering)
+        assertTrue("стоп на пути к воспроизведению — не пауза", state.playing)
+    }
+
+    /** Whereas a buffer filling under a paused picture is simply a paused picture. */
+    @Test
+    fun `a paused picture that is buffering is reported as paused`() = runTest(dispatcher) {
+        val player = mockk<Player>()
+        every { player.playWhenReady } returns false
+        engine.videoPlayer.value = player
+        controller.play(target())
+        engine.ready(durationMs = 1_440_000)
+        advanceUntilIdle()
+
+        controller.setPlaying(false)
+        engine.stall()
+        advanceUntilIdle()
+
+        val state = port.state.value
+        assertTrue(state.buffering)
+        assertFalse(state.playing)
     }
 
     @Test

@@ -63,6 +63,35 @@ class ClockOffsetTest {
         assertEquals(50, offset.rttMs)
     }
 
+    /**
+     * A phone that went to the background answers every ping it finds waiting when it comes back,
+     * and each answer's trip is the whole of the freeze. Half of that would land on the offset.
+     */
+    @Test
+    fun `an answer that took seconds to come back is not a measurement of the clocks`() {
+        repeat(4) { offset.exchange(offsetMs = 700, rttMs = 200) }
+        // Fifteen seconds asleep: three pings answered at once, each seven seconds off.
+        offset.exchange(offsetMs = 700 + 7_500, rttMs = 15_000)
+        offset.exchange(offsetMs = 700 + 5_000, rttMs = 10_000)
+        offset.exchange(offsetMs = 700 + 2_500, rttMs = 5_000)
+
+        assertEquals(700, offset.offsetMs)
+        assertEquals(200, offset.rttMs)
+
+        // Right up to the line a slow packet is still a packet.
+        offset.exchange(offsetMs = 700, rttMs = ClockOffset.MAX_RTT_MS)
+        assertEquals(700, offset.offsetMs)
+    }
+
+    /** Clocks that only ever run forward cannot produce a negative trip; one that does is noise. */
+    @Test
+    fun `a trip that comes out negative is not believed either`() {
+        offset.exchange(offsetMs = 100, rttMs = 40)
+        offset.record(sentAt = 1_000, peerReceived = 5_000, peerSent = 6_000, receivedAt = 1_100)
+
+        assertEquals(100, offset.offsetMs)
+    }
+
     @Test
     fun `a clock behind this one gives a negative offset rather than a wrapped one`() {
         offset.exchange(offsetMs = -250, rttMs = 40)

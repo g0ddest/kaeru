@@ -32,7 +32,12 @@ struct TogetherClock {
     mutating func record(sent: Int64, peerReceived: Int64, peerSent: Int64, received: Int64) {
         guard received >= sent, peerSent >= peerReceived else { return }
         let rtt = (received - sent) - (peerSent - peerReceived)
-        guard (0...60_000).contains(rtt), abs(peerReceived - sent) <= 86_400_000 else { return }
+        // A trip that took seconds is not a measurement of the clocks. It is a ping that sat in a
+        // frozen phone — this one, in the background, answers every ping it finds waiting when it
+        // wakes — or in a socket being redialled, and half of that wait would land on the offset.
+        // Three such answers in a row outvote the median. An honest sample's error is at most half
+        // its trip, so the cap on the trip is a cap on the error.
+        guard (0...TogetherTiming.maxRttMs).contains(rtt), abs(peerReceived - sent) <= 86_400_000 else { return }
         samples.append((((peerReceived - sent) + (peerSent - received)) / 2, rtt))
         if samples.count > 5 { samples.removeFirst() }
     }
@@ -74,6 +79,12 @@ enum TogetherTiming {
     static let correctionQuietMs: Int64 = 3_000
     /// How long a friend whose socket went away has to walk back into the room.
     static let rejoinWindowMs: Int64 = 30_000
+    /// The longest round trip a clock sample may report and still count: far past any network on
+    /// which watching together works at all, and far short of the five seconds between pings, so
+    /// a ping answered after a freeze cannot pass for a slow packet. Android's `ClockOffset.MAX_RTT_MS`.
+    static let maxRttMs: Int64 = 3_000
+    /// How far a greeting is carried forward with no report to go on. Android's `HELLO_CARRY_MAX_MS`.
+    static let helloCarryMaxMs: Int64 = 60_000
     /// How long a socket may live and how long it may be quiet for — an evening, not a moment.
     /// Silence is the normal state of a room nobody has joined yet, so it must not be a failure.
     static let socketLifetimeSeconds: TimeInterval = 24 * 60 * 60
@@ -82,6 +93,19 @@ enum TogetherTiming {
 }
 
 enum TogetherSync {
+    /// Android's `SyncPolicy` bands, to the millisecond: under half a second nothing, because two
+    /// HLS players never agree more closely than that and chasing it would mean correcting for
+    /// ever; up to two seconds a nudge in speed; past that a seek, and past ten a seek with a
+    /// sentence next to it. A correction that is running stops at a fifth of a second, so that it
+    /// does not re-arm at once.
+    static let ignoreMs: Int64 = 500
+    static let convergedMs: Int64 = 200
+    static let seekMs: Int64 = 2_000
+    static let notifyMs: Int64 = 10_000
+    /// A player with no speed control is jumped instead — but not under a second, where the jump
+    /// costs more than it buys. Android's `RATELESS_SEEK_MS`.
+    static let ratelessSeekMs: Int64 = 1_000
+
     /// - Parameter offsetMs: how far the friend's clock is from this one, so `remote + offsetMs`
     ///   is where they are on this device's clock. Without it the two sides chase each other's
     ///   clock error instead of the drift, which is a steady seek every couple of seconds between
@@ -92,13 +116,13 @@ enum TogetherSync {
         let target = remote + offsetMs
         let drift = local - target
         let gap = abs(drift)
-        if gap < 200 { return settled }
-        if gap < 500 && !correcting { return .none }
-        if gap < 2000 {
-            if !supportsRate { return gap > 1000 ? .seek(target, notify: false) : settled }
+        if gap < convergedMs { return settled }
+        if gap < ignoreMs && !correcting { return .none }
+        if gap < seekMs {
+            if !supportsRate { return gap > ratelessSeekMs ? .seek(target, notify: false) : settled }
             return .rate(drift > 0 ? 0.97 : 1.03)
         }
-        return .seek(target, notify: gap > 10_000)
+        return .seek(target, notify: gap > notifyMs)
     }
 }
 

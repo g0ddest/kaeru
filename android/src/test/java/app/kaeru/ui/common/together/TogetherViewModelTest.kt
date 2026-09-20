@@ -95,6 +95,7 @@ class TogetherViewModelTest {
         override suspend fun sendVoice(bytes: ByteArray, durationMs: Int) { voices += bytes to durationMs }
         override fun watchAlone() { alone++ }
         override fun peerPositionNow(): Long? = peerPosition
+        override fun isHosting(link: RoomLink): Boolean = hosted != null && link.roomId == hostLink.roomId
     }
 
     private class FakeAccounts(nickname: String?) : AccountRepository {
@@ -669,6 +670,22 @@ class TogetherViewModelTest {
         assertTrue(join!!.loading)
         assertNull(join.line)
         assertNull(join.error)
+    }
+
+    /**
+     * A host who taps their own link — in the chat they sent it to — must not become a guest of
+     * their own room: that tears the room down under the friend in it and then knocks on the
+     * empty one for half a minute. Nothing to join and nothing to draw.
+     */
+    @Test
+    fun `this phone's own invitation is not knocked on and opens no screen`() = runTest {
+        val vm = viewModel()
+        vm.share("Фрирен", 4)
+        runCurrent()
+        vm.open(session.hostLink.toHttps())
+        runCurrent()
+        assertTrue(session.joins.isEmpty())
+        assertNull(vm.uiState.value.join)
     }
 
     @Test

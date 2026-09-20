@@ -233,6 +233,53 @@ class TogetherSessionTest {
         joining.cancel()
     }
 
+    /**
+     * A greeting is one frame through a relay that keeps nothing: whoever is in the room first
+     * greets an empty room. Said again every three seconds until somebody answers, and not once
+     * more after that — the same beat iOS keeps, so the order the two phones arrive in stops
+     * mattering.
+     */
+    @Test
+    fun `a greeting nobody answered is said again every three seconds, and stops once it is`() = sessionTest {
+        port.showing(animeId = null, episode = null, translationId = null, positionMs = 0, playing = false)
+        val joining = launch { session.join(RoomLink("room", ByteArray(16), null), "Костя") }
+        runCurrent()
+        assertEquals(1, transport.sentOf<TogetherMessage.Hello>().size)
+
+        advanceTimeBy(TogetherSession.HELLO_RETRY_MS + 1)
+        runCurrent()
+        assertEquals(2, transport.sentOf<TogetherMessage.Hello>().size)
+        advanceTimeBy(TogetherSession.HELLO_RETRY_MS)
+        runCurrent()
+        assertEquals(3, transport.sentOf<TogetherMessage.Hello>().size)
+
+        transport.deliver(peerHello(name = "Аня"))
+        runCurrent()
+        joining.join()
+        val answered = transport.sentOf<TogetherMessage.Hello>().size
+        advanceTimeBy(TogetherSession.HELLO_RETRY_MS * 3)
+        runCurrent()
+
+        assertEquals("после ответа приветствие не повторяется", answered, transport.sentOf<TogetherMessage.Hello>().size)
+    }
+
+    /** The side that made the room says it again too: a guest may have greeted before the host's socket was up. */
+    @Test
+    fun `a host whose room stays silent greets it again until somebody is there`() = sessionTest {
+        session.host("Костя")
+        advanceTimeBy(TogetherSession.HELLO_RETRY_MS * 2 + 1)
+        runCurrent()
+        assertEquals(2, transport.sentOf<TogetherMessage.Hello>().size)
+
+        transport.deliver(peerHello(name = "Аня"))
+        runCurrent()
+        val answered = transport.sentOf<TogetherMessage.Hello>().size
+        advanceTimeBy(TogetherSession.HELLO_RETRY_MS * 3)
+        runCurrent()
+
+        assertEquals(answered, transport.sentOf<TogetherMessage.Hello>().size)
+    }
+
     @Test
     fun `it goes live when the viewer's own screen opens the episode`() = sessionTest {
         port.showing(animeId = null, episode = null, translationId = null, positionMs = 0, playing = false)
@@ -881,6 +928,57 @@ class TogetherSessionTest {
         assertEquals(1, port.plays)
     }
 
+    /**
+     * A hold is a wait for a friend who wants to play, and the friend's own word ends it. Their
+     * pause used to be applied and then undone: the pause paused this side, their next report —
+     * paused, so no longer «loading» — let the hold go, and letting go meant play.
+     */
+    @Test
+    fun `a friend who pauses while this side waits for them stays paused`() = sessionTest {
+        live()
+        friendIsAt(60_000, playing = true, buffering = true, seq = 20L)
+        assertEquals(1, port.pauses)
+
+        transport.deliver(TogetherMessage.Pause(positionMs = 60_000, seq = 21))
+        runCurrent()
+        friendIsAt(60_000, playing = false, buffering = false, seq = 22L)
+
+        assertEquals("после их паузы никто не жмёт play", 0, port.plays)
+        assertFalse(port.state.value.playing)
+    }
+
+    /**
+     * Two phones stalling at once each stop for the other, and a friend who stopped for this side
+     * reports «paused» without ever sending a Pause. The first report to say «not loading» has to
+     * start this side again, or both sit paused for good, each waiting for the other to move.
+     */
+    @Test
+    fun `two pictures that stopped for each other both start again`() = sessionTest {
+        live()
+        friendIsAt(60_000, playing = true, buffering = true, seq = 20L)
+        assertEquals(1, port.pauses)
+
+        // Their next word: not loading, and stopped — for this side's sake, since no Pause came.
+        friendIsAt(60_000, playing = false, buffering = false, seq = 21L)
+
+        assertEquals(1, port.plays)
+    }
+
+    /** This viewer's own pause during a wait is a pause, not a wait that ends in play. */
+    @Test
+    fun `this viewer pausing during a wait is not overruled when the friend is ready`() = sessionTest {
+        live()
+        friendIsAt(60_000, playing = true, buffering = true, seq = 20L)
+        assertEquals(1, port.pauses)
+
+        port.did(LocalAction.Pause(60_000))
+        runCurrent()
+        friendIsAt(60_500, playing = true, buffering = false, seq = 21L)
+
+        assertEquals(0, port.plays)
+        assertTrue(transport.sentOf<TogetherMessage.Pause>().isNotEmpty())
+    }
+
     /** The side that made the room is what the picture is measured against; it never moves. */
     @Test
     fun `the host never corrects itself`() = sessionTest {
@@ -941,6 +1039,40 @@ class TogetherSessionTest {
 
         assertEquals(3, transport.sentOf<TogetherMessage.State>().size)
         assertEquals(60_000L, transport.sentOf<TogetherMessage.State>().first().positionMs)
+    }
+
+    /**
+     * The friend stops for this picture while it loads and starts again when it does not, and
+     * both happen when the report saying so lands. Off the beat alone that is up to a second
+     * late each way, and the two lateness are different — a random fraction of a second apart
+     * after every stall. Said at once, both are a trip through the relay and cancel out.
+     */
+    @Test
+    fun `a stall is reported the moment it starts and the moment it ends`() = sessionTest {
+        live()
+        transport.sent.clear()
+
+        port.buffering(true)
+        runCurrent()
+        val stalled = transport.sentOf<TogetherMessage.State>().single()
+        assertTrue(stalled.buffering)
+
+        advanceTimeBy(200)
+        port.buffering(false)
+        runCurrent()
+        val moving = transport.sentOf<TogetherMessage.State>().last()
+        assertEquals(2, transport.sentOf<TogetherMessage.State>().size)
+        assertFalse(moving.buffering)
+    }
+
+    /** But not to a friend who has not said hello: a report to a room with nobody in it is noise. */
+    @Test
+    fun `a stall before the room is live is not reported`() = sessionTest {
+        session.host("Костя")
+        runCurrent()
+        port.buffering(true)
+        runCurrent()
+        assertTrue(transport.sentOf<TogetherMessage.State>().isEmpty())
     }
 
     @Test
@@ -1266,6 +1398,36 @@ class TogetherSessionTest {
         assertTrue(session.state.value is SessionState.Live)
     }
 
+    /**
+     * The relay tells the survivor `peer-left` the moment a socket drops, and the survivor then
+     * waits half a minute for a hello. A host whose socket blinked and redialled has to say one,
+     * or the friend — who is receiving its reports perfectly well — is told the connection was
+     * lost when the window runs out. iOS greets on every reconnect; this is the same rule.
+     */
+    @Test
+    fun `a host whose own socket came back greets the friend again`() = sessionTest {
+        live()
+        transport.sent.clear()
+
+        transport.blink()
+        runCurrent()
+
+        assertEquals(1, transport.sentOf<TogetherMessage.Hello>().size)
+        assertEquals("и заново меряет часы: путь мог смениться", 1, transport.sentOf<TogetherMessage.Ping>().size)
+    }
+
+    @Test
+    fun `a guest whose own socket came back greets the friend again`() = sessionTest {
+        liveAsGuest()
+        transport.sent.clear()
+
+        transport.blink()
+        runCurrent()
+
+        assertEquals(1, transport.sentOf<TogetherMessage.Hello>().size)
+        assertEquals(1, transport.sentOf<TogetherMessage.Ping>().size)
+    }
+
     @Test
     fun `nothing the host does reaches a guest still on its join screen`() = sessionTest {
         port.showing(animeId = 500, episode = 2, translationId = 11, positionMs = 120_000)
@@ -1381,6 +1543,21 @@ class TogetherSessionTest {
         assertEquals(1, transport.closes)
         assertEquals(SessionState.Ended, session.state.value)
         assertEquals(listOf(SyncPolicy.NORMAL), port.rates)
+    }
+
+    /** Its own invitation, opened on the phone that made it, changes nothing about the room. */
+    @Test
+    fun `a host does not walk into its own room as a guest`() = sessionTest {
+        val link = live()
+        assertTrue(session.isHosting(link))
+        assertFalse(session.isHosting(link.copy(roomId = "another")))
+
+        session.join(link, "Костя")
+        runCurrent()
+
+        assertEquals(SessionState.Live("Аня", 0, 0), session.state.value)
+        assertEquals(0, transport.closes)
+        assertEquals(true, transport.connectedAsHost)
     }
 
     @Test
