@@ -26,6 +26,19 @@ import Security
         container = try ModelContainer(for: CachedValue.self, configurations: ModelConfiguration(isStoredInMemoryOnly: inMemory))
         context = ModelContext(container)
     }
+
+    /// Throws the cache away and opens a fresh one.
+    ///
+    /// Everything this store holds is a copy of something Shikimori and Kodik can answer again, so
+    /// a file that will not open is worth less than an application that will. Sessions live in the
+    /// Keychain and downloads on disk: neither is touched here, and the viewer stays signed in.
+    static func discardingCache() throws -> LocalStore {
+        let store = URL.applicationSupportDirectory.appending(path: "default.store")
+        for suffix in ["", "-shm", "-wal"] {
+            try? FileManager.default.removeItem(at: URL(fileURLWithPath: store.path() + suffix))
+        }
+        return try LocalStore()
+    }
     func read<T: Decodable>(_ type: T.Type, key: String) throws -> T? {
         let query = FetchDescriptor<CachedValue>(predicate: #Predicate { $0.key == key })
         guard let record = try context.fetch(query).first else { return nil }

@@ -8,10 +8,11 @@ import UserNotifications
     private(set) var model: AppModel?
     var pendingURL: URL?
 
-    func loadModel() throws -> AppModel {
-        if let model { return model }
+    func loadModel(discardingCache: Bool = false) throws -> AppModel {
+        if let model, !discardingCache { return model }
         let configuration = AppConfiguration.bundled
-        let value = AppModel(service: SharedService(configuration: configuration), store: try LocalStore(), configuration: configuration, session: try KeychainSession.read())
+        let store = discardingCache ? try LocalStore.discardingCache() : try LocalStore()
+        let value = AppModel(service: SharedService(configuration: configuration), store: store, configuration: configuration, session: try KeychainSession.read())
         model = value
         _ = value.downloads
         _ = value.cast
