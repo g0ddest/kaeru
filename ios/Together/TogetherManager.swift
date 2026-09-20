@@ -58,6 +58,14 @@ struct TogetherJoinTarget: Equatable {
     @ObservationIgnored private var report: PeerReport?
     /// Whether a rate correction other than normal speed is in force right now.
     @ObservationIgnored private var correcting = false
+    /// The friend's player said it is filling its buffer.
+    @ObservationIgnored private var peerLoading = false
+    /// This side paused itself to wait for them, and will start again when they are ready.
+    @ObservationIgnored private var heldForPeer = false
+    /// When waiting stops being kindness and starts being a frozen picture.
+    @ObservationIgnored private var holdUntil: Int64 = 0
+    /// Nothing is corrected before this instant — the quiet after a jump.
+    @ObservationIgnored private var correctionSettledAt: Int64 = 0
     @ObservationIgnored private var heartbeat: Task<Void, Never>?
     /// Ten times a second, which is what takes the lines out of the corner. Separate from the
     /// session's own beat: the conversation's clocks are tenths of a second and the room's are
@@ -312,6 +320,10 @@ struct TogetherJoinTarget: Equatable {
         }
         if beats % (TogetherTiming.syncMs / TogetherTiming.stateMs) == 0 { correct() }
         if let deadline = rejoinBy, now() >= deadline { rejoinBy = nil; fail(.disconnected) }
+        if heldForPeer, holdUntil > 0, now() >= holdUntil {
+            TogetherLog.write("waited \(TogetherTiming.peerLoadingHoldMs / 1000)s for the friend to load; going on")
+            releaseHold(play: true)
+        }
     }
 
     private func sendPing() { sendMessage(.init(t: .ping, seq: 1, sentAt: now())) }
@@ -327,10 +339,46 @@ struct TogetherJoinTarget: Equatable {
     /// The friend's last report is carried forward to now before it is judged: a report that is a
     /// second and a half old says where they were, and half a second is the whole width of the
     /// band that means «leave it alone».
+    /// The friend's player is filling its buffer, so this one waits instead of running ahead.
+    ///
+    /// Both sides have always reported it and neither has ever read it. What that looked like: one
+    /// phone stalls on a segment, the other plays on, the gap passes ten seconds, and the rule
+    /// says seek — so the stalled phone is dragged forward, stalls again on the segment it has not
+    /// got, and is dragged again. «Перемотал на» every few seconds, for as long as the network
+    /// was slow. Waiting is what a person would do.
+    private func peerIsLoading(_ loading: Bool) {
+        guard loading != peerLoading else { return }
+        peerLoading = loading
+        guard let playback else { return }
+        if loading {
+            guard playback.togetherSnapshot.playing else { return }
+            heldForPeer = true
+            holdUntil = now() + TogetherTiming.peerLoadingHoldMs
+            if correcting { playback.togetherSetRate(1); correcting = false }
+            playback.togetherPause()
+            conversation.notice(.catchingUp, peerName: peerName)
+        } else if heldForPeer {
+            releaseHold(play: true)
+        }
+    }
+    /// Let go of a hold — because the friend is ready, or because they have taken too long and a
+    /// held picture with nothing on screen explaining it is worse than being out of step.
+    private func releaseHold(play: Bool) {
+        heldForPeer = false
+        holdUntil = 0
+        // Nothing is corrected against a report taken while the picture was standing still.
+        report = nil
+        if play { playback?.togetherPlay() }
+    }
     func correct() {
         guard phase == .live, let playback else { return }
         // A correction the player can no longer honour is one nothing will ever take off again.
         if correcting && !playback.togetherSupportsRate { playback.togetherSetRate(1); correcting = false }
+        // Nobody is corrected while either player is filling its buffer, and nothing is corrected
+        // in the seconds right after a seek: a jump costs an HLS player a stall, and a rule that
+        // judges the stall it caused will order another jump.
+        guard !peerLoading, !heldForPeer, !playback.togetherSnapshot.buffering,
+              now() >= correctionSettledAt else { return }
         guard let report else { return }
         let now = self.now()
         guard now - report.at <= TogetherTiming.staleStateMs else { return }
@@ -351,6 +399,9 @@ struct TogetherJoinTarget: Equatable {
             // would carry into an episode it was never about.
             if correcting { playback.togetherSetRate(1); correcting = false }
             playback.togetherSeek(toMilliseconds: position)
+            // The stall this jump is about to cause is not evidence of anything.
+            correctionSettledAt = now + TogetherTiming.correctionQuietMs
+            self.report = nil
             // Ten seconds or more apart is a jump the viewer can see, and a jump they did not ask
             // for needs a reason on screen. «Догоняет» has no clock: it ends when the gap does.
             if notify { conversation.notice(.catchingUp, peerName: peerName) }
@@ -473,6 +524,9 @@ struct TogetherJoinTarget: Equatable {
             // been carried forward to the moment of judging.
             guard let positionMs = message.positionMs, let playing = message.playing, let sentAt = message.sentAt else { return }
             report = PeerReport(positionMs: positionMs, playing: playing, sentAt: sentAt, at: now())
+            // Only a friend who means to be playing. One who is paused and buffering is simply
+            // paused — and that reaches this side as a `pause`, never as a report.
+            peerIsLoading(message.buffering == true && playing)
             return
         // What was said belongs to the room rather than to whatever is on screen: a guest still on
         // its join screen has a conversation to keep too, and the corner of the player picks it up

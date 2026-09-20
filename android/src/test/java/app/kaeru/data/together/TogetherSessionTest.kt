@@ -837,6 +837,28 @@ class TogetherSessionTest {
         assertTrue(port.rates.isEmpty())
     }
 
+    /**
+     * A friend who means to be playing but is still filling their buffer.
+     *
+     * Both sides always reported it and neither ever read it, so one phone stalling on a segment
+     * left the other playing on — and once the gap passed ten seconds the rule said seek, which
+     * dragged the stalled phone forward onto a segment it did not have. «Перемотал на» every few
+     * seconds for as long as the network was slow.
+     */
+    @Test
+    fun `this picture waits for a friend who is still loading`() = sessionTest {
+        live()
+
+        friendIsAt(60_000, playing = true, buffering = true, seq = 20L)
+
+        assertEquals(1, port.pauses)
+        assertTrue("никаких перемоток, пока друг подгружает", port.seeks.isEmpty())
+
+        friendIsAt(60_500, playing = true, buffering = false, seq = 21L)
+
+        assertEquals(1, port.plays)
+    }
+
     // ---- what this viewer did ----
 
     @Test

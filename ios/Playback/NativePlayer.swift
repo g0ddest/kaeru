@@ -35,14 +35,17 @@ struct NativePlayer<Overlay: View>: UIViewControllerRepresentable {
         let double = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.doubleTapped))
         double.numberOfTapsRequired = 2
         double.cancelsTouchesInView = false
+        double.delegate = context.coordinator
         controller.contentOverlayView?.addGestureRecognizer(double)
         // The same single tap AVKit reads to raise and lower its transport bar, read again here so
-        // this app's own controls come and go with it. Nothing is cancelled and nothing is
-        // required to fail: AVKit still sees every touch, and the first tap of a double tap
-        // raising the bar is what every player on this phone does anyway.
+        // this app's own controls come and go with it. Read *alongside* it, which is what the
+        // delegate is for: a recognizer on a subview wins the touch outright unless it agrees to
+        // share, and for a while this one did not — AVKit never saw a tap, and the transport bar
+        // could not be brought up at all.
         let single = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.singleTapped))
         single.numberOfTapsRequired = 1
         single.cancelsTouchesInView = false
+        single.delegate = context.coordinator
         controller.contentOverlayView?.addGestureRecognizer(single)
         controller.contentOverlayView?.isUserInteractionEnabled = true
         if let container = controller.contentOverlayView {
@@ -69,7 +72,7 @@ struct NativePlayer<Overlay: View>: UIViewControllerRepresentable {
         controller.canStartPictureInPictureAutomaticallyFromInline = playback.pipOnLeave
         (context.coordinator.host as? UIHostingController<Overlay>)?.rootView = overlay()
     }
-    @MainActor final class Coordinator: NSObject, @preconcurrency AVPlayerViewControllerDelegate {
+    @MainActor final class Coordinator: NSObject, @preconcurrency AVPlayerViewControllerDelegate, UIGestureRecognizerDelegate {
         private let playback: PlaybackModel
         private let onDoubleTap: (PlayerTapZone) -> Void
         var host: UIViewController?
@@ -79,6 +82,9 @@ struct NativePlayer<Overlay: View>: UIViewControllerRepresentable {
         /// Ten seconds either way, by which third of the picture the finger landed on — the same
         /// rule as Android's `GestureMath.doubleTapZone`.
         @objc func singleTapped(_ recognizer: UITapGestureRecognizer) { playback.toggleChrome() }
+        /// Every touch here is AVKit's as much as ours. Its own recognizers must keep winning.
+        nonisolated func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                                           shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
         @objc func doubleTapped(_ recognizer: UITapGestureRecognizer) {
             guard let view = recognizer.view else { return }
             let zone = PlayerGestures.zone(x: recognizer.location(in: view).x, width: view.bounds.width)

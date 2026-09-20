@@ -127,6 +127,18 @@ class TogetherSession(
     private var peer: PeerReport? = null
     private var drift = 0L
     private var correcting = false
+
+    /** The friend's player said it is filling its buffer. */
+    private var peerLoading = false
+
+    /** This side paused itself to wait for them, and starts again when they are ready. */
+    private var heldForPeer = false
+
+    /** When waiting stops being kindness and becomes a frozen picture nobody explained. */
+    private var holdUntil = 0L
+
+    /** Nothing is corrected before this instant — the quiet after a jump. */
+    private var correctionSettledAt = 0L
     private var voice: VoiceBuffer? = null
 
     /**
@@ -533,6 +545,7 @@ class TogetherSession(
     private suspend fun corrections() {
         while (channel != null) {
             delay(SYNC_INTERVAL_MS)
+            if (heldForPeer && holdUntil > 0 && clock.millis() >= holdUntil) releaseHold()
             correct()
         }
     }
@@ -546,6 +559,12 @@ class TogetherSession(
      */
     private suspend fun correct() {
         if (_state.value !is SessionState.Live) return
+        // Nobody is corrected while either player is filling its buffer, and nothing is corrected
+        // in the seconds right after a jump: a seek costs an HLS player a stall, and a rule that
+        // judges the stall it caused will order another jump. That is the loop.
+        if (peerLoading || heldForPeer) return
+        if (port.state.value.buffering) return
+        if (clock.millis() < correctionSettledAt) return
         // A correction the player can no longer honour is one nothing will ever take off again:
         // casting started mid-nudge, every later `setRate` reaches a receiver that ignores it, and
         // the three percent stays on the engine this phone will use next.
@@ -581,11 +600,13 @@ class TogetherSession(
             is SyncAction.SeekTo -> {
                 normalSpeed()
                 port.seekTo(action.positionMs)
+                settleAfterSeek()
             }
             is SyncAction.SeekAndNotify -> {
                 normalSpeed()
                 port.seekTo(action.positionMs)
                 announce(TogetherEvent.Notice(NoticeKind.CATCHING_UP, peerName, positionMs = action.positionMs))
+                settleAfterSeek()
             }
         }
     }
@@ -760,6 +781,9 @@ class TogetherSession(
 
     private suspend fun reported(message: TogetherMessage.State) {
         peer = PeerReport(message.positionMs, message.playing, message.sentAt, clock.millis())
+        // Only a friend who means to be playing. One who is paused and buffering is simply
+        // paused — and that reaches this side as a Pause, never as a report.
+        peerIsLoading(message.buffering && message.playing)
         // Whatever episode they are in, this is where they are in it: a stashed episode change is
         // no longer the last word on their position.
         movedSinceReport = false
@@ -773,6 +797,48 @@ class TogetherSession(
             syncOnReport = false
             correct()
         }
+    }
+
+    /**
+     * The friend's player is filling its buffer, so this one waits instead of running ahead.
+     *
+     * Both sides have always reported it and neither has ever read it. What that looked like: one
+     * phone stalls on a segment, the other plays on, the gap passes ten seconds, and the rule says
+     * seek — so the stalled phone is dragged forward, stalls again on the segment it has not got,
+     * and is dragged again. «Перемотал на» every few seconds for as long as the network is slow.
+     * Waiting is what a person would do.
+     */
+    /** The stall this jump is about to cause is not evidence of anything. */
+    private fun settleAfterSeek() {
+        correctionSettledAt = clock.millis() + CORRECTION_QUIET_MS
+        peer = null
+    }
+
+    private suspend fun peerIsLoading(loading: Boolean) {
+        if (loading == peerLoading) return
+        peerLoading = loading
+        if (loading) {
+            if (!port.state.value.playing) return
+            heldForPeer = true
+            holdUntil = clock.millis() + PEER_LOADING_HOLD_MS
+            if (correcting) forceNormalSpeed()
+            port.pause()
+            announce(TogetherEvent.Notice(NoticeKind.CATCHING_UP, peerName))
+        } else if (heldForPeer) {
+            releaseHold()
+        }
+    }
+
+    /**
+     * Let go of a hold — because the friend is ready, or because they have taken so long that a
+     * held picture with nothing on screen explaining it is worse than being out of step.
+     */
+    private suspend fun releaseHold() {
+        heldForPeer = false
+        holdUntil = 0
+        // Nothing is corrected against a report taken while the picture stood still.
+        peer = null
+        port.play()
     }
 
     /**
@@ -982,6 +1048,15 @@ class TogetherSession(
 
         /** How often an unanswered greeting is said again — the same three seconds as on iOS. */
         const val HELLO_RETRY_MS = 3_000L
+
+        /**
+         * The longest this side holds a paused picture for a friend who is still loading. Past it,
+         * waiting has become a frozen screen with no explanation, and being out of step is better.
+         */
+        const val PEER_LOADING_HOLD_MS = 20_000L
+
+        /** The quiet after a jump, during which nothing is corrected. */
+        const val CORRECTION_QUIET_MS = 3_000L
 
         /** Where this side is, often enough for the other to measure drift against. */
         const val STATE_INTERVAL_MS = 1_000L

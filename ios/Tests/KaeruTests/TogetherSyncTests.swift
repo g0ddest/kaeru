@@ -211,3 +211,55 @@ import XCTest
         func settle() async { for _ in 0..<30 { await Task.yield() } }
     }
 }
+
+/// Waiting for a friend whose player is still loading.
+///
+/// Both sides always reported `buffering` and neither ever read it: one phone stalled on a
+/// segment, the other played on, the gap passed ten seconds, and the rule said seek — so the
+/// stalled phone was dragged forward, stalled again on the segment it did not have, and was
+/// dragged again. «Перемотал на» every few seconds for as long as the network was slow.
+@MainActor final class TogetherBufferingHoldTests: XCTestCase {
+    /// A room this side made, with the player attached the way one opens after somebody joins.
+    /// The invitation is the room's own: a host seals under the key it generated, and a frame
+    /// sealed under any other is dropped without a word — as it should be.
+    private func room() async throws -> (TogetherManagerTests.Transport, TogetherManagerTests.Playback, TogetherManager, TogetherInvitation) {
+        let transport = TogetherManagerTests.Transport()
+        let player = TogetherManagerTests.Playback()
+        let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Host", transportFactory: { _, _ in transport })
+        await manager.create()
+        manager.attach(player)
+        try await Task.sleep(for: .milliseconds(20))
+        return (transport, player, manager, try XCTUnwrap(manager.invitation))
+    }
+    func testAPlayerThatIsLoadingHoldsTheOtherOne() async throws {
+        let (transport, player, manager, link) = try await room()
+        try transport.deliver(TogetherMessage(t: .hello, seq: 1, name: "Guest", animeId: 7, episode: 1, positionMs: 0, playing: true),
+                              link: link, side: .guest)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(manager.peerName, "Guest")
+        XCTAssertTrue(player.togetherSnapshot.playing)
+        try transport.deliver(TogetherMessage(t: .state, seq: 2, positionMs: 1000, playing: true, buffering: true, sentAt: 1),
+                              link: link, side: .guest)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(player.pauses, 1, "пока друг грузится, эта сторона ждёт")
+        try transport.deliver(TogetherMessage(t: .state, seq: 3, positionMs: 1200, playing: true, buffering: false, sentAt: 2),
+                              link: link, side: .guest)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertTrue(player.togetherSnapshot.playing, "и продолжает, когда друг готов")
+        await manager.leave()
+    }
+    func testNothingIsCorrectedWhileTheFriendLoads() async throws {
+        let (transport, player, manager, link) = try await room()
+        try transport.deliver(TogetherMessage(t: .hello, seq: 1, name: "Guest", animeId: 7, episode: 1, positionMs: 0, playing: true),
+                              link: link, side: .guest)
+        try transport.deliver(TogetherMessage(t: .state, seq: 2, positionMs: 0, playing: true, buffering: true, sentAt: 1),
+                              link: link, side: .guest)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(manager.peerName, "Guest")
+        player.seeks.removeAll()
+        // A gap that would normally be a seek and a sentence about it.
+        manager.correct()
+        XCTAssertTrue(player.seeks.isEmpty, "никаких перемоток, пока друг подгружает")
+        await manager.leave()
+    }
+}
