@@ -206,6 +206,13 @@ class TogetherViewModel @Inject constructor(
             }
             return
         }
+        // This phone's own invitation, tapped in the chat it was sent to. Nothing to join and
+        // nothing to draw: the room is already here, with the friend in it or on their way.
+        if (session.isHosting(link)) {
+            room = null
+            _uiState.update { it.copy(join = null) }
+            return
+        }
         room = link
         _uiState.update { it.copy(join = JoinUiState(loading = true)) }
         viewModelScope.launch { session.join(link, displayName()) }

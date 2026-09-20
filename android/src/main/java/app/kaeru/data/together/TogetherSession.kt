@@ -120,6 +120,9 @@ class TogetherSession(
     /** The five loops and collectors of one session, so losing it stops all of them at once. */
     private var ticks: Job? = null
     private var asHost = false
+
+    /** The room this phone made and is keeping, so its own invitation can be recognised. */
+    private var hostedRoom: String? = null
     private var myName = ""
     private var peerName = ""
     private var animeId = 0
@@ -209,6 +212,12 @@ class TogetherSession(
     }
 
     override suspend fun join(link: RoomLink, name: String) {
+        // Its own invitation, opened on the phone that made it. Joining would close the room on
+        // whoever is in it and then knock on the empty one for half a minute.
+        if (isHosting(link)) {
+            Log.i(TAG, "Ignored an invitation to the room this phone is hosting")
+            return
+        }
         stop()
         begin(name, link, transports.forLink(link), asHost = false)
         _state.value = SessionState.Joining(link, hello = null)
@@ -348,6 +357,12 @@ class TogetherSession(
      * A host who stops watching the door has not closed it: the room stays open and a friend who
      * arrives later still walks in. A guest who says no is done — there is nothing to keep.
      */
+    override fun isHosting(link: RoomLink): Boolean {
+        val running = _state.value
+        val open = running is SessionState.Hosting || running is SessionState.Live
+        return open && asHost && channel != null && hostedRoom == link.roomId
+    }
+
     override fun watchAlone() {
         when (val now = _state.value) {
             is SessionState.Hosting -> _state.value = now.copy(waiting = false)
@@ -365,6 +380,7 @@ class TogetherSession(
         myName = name
         peerName = ""
         this.asHost = asHost
+        hostedRoom = if (asHost) link.roomId else null
         channel = transport
         seq = 0
         peerSeq = 0
@@ -372,6 +388,13 @@ class TogetherSession(
         peer = null
         drift = 0
         correcting = false
+        currentRate = SyncPolicy.NORMAL
+        // A wait belongs to the room it was made in. Carried over, a hold left by a friend who
+        // was loading when the last room died would let go with `play` on the next friend's
+        // first report, and a quiet period would keep the next room uncorrected for a while.
+        peerLoading = false
+        dropHold()
+        correctionSettledAt = 0
         voice = null
         rejoining = false
         pendingEpisode = null
@@ -388,14 +411,8 @@ class TogetherSession(
                     launch { greetOnConnect(transport) }
                     launch { pings() }
                     launch { greetings() }
-        currentRate = SyncPolicy.NORMAL
-        // A wait belongs to the room it was made in. Carried over, a hold left by a friend who
-        // was loading when the last room died would let go with `play` on the next friend's
-        // first report, and a quiet period would keep the next room uncorrected for a while.
-        peerLoading = false
-        dropHold()
-        correctionSettledAt = 0
                     launch { reports() }
+                    launch { stallReports() }
                     launch { corrections() }
                     launch { port.localActions.collect { forward(it) } }
                 }
@@ -419,7 +436,6 @@ class TogetherSession(
             }
         }
     }
-                    launch { stallReports() }
 
     /** Ends whatever was running, quietly. Nothing after this belongs to the session that was. */
     private suspend fun stop() {
@@ -567,6 +583,25 @@ class TogetherSession(
         }
     }
 
+    /**
+     * A stall is said the moment it starts and the moment it ends, not on the next beat.
+     *
+     * The friend stops for a picture that is loading and starts again when it is not, and both
+     * happen when the report saying so lands. Off the beat alone that is up to a second late each
+     * way, and the two delays are different — so after every stall the two pictures stood a
+     * random fraction of a second apart, which is what the corrector then spent half a minute
+     * nudging out. Said at once, both delays shrink to a trip through the relay and cancel.
+     */
+    private suspend fun stallReports() {
+        port.state.map { it.buffering }.distinctUntilChanged().drop(1).collect { report() }
+    }
+
+    private suspend fun report() {
+        if (_state.value !is SessionState.Live) return
+        val now = port.state.value
+        send(TogetherMessage.State(now.positionMs, now.playing, now.buffering, clock.millis(), nextSeq()))
+    }
+
     private suspend fun corrections() {
         while (channel != null) {
             delay(SYNC_INTERVAL_MS)
@@ -590,25 +625,6 @@ class TogetherSession(
         // the room is the one the picture is measured against.
         if (asHost) {
             if (correcting) forceNormalSpeed()
-    /**
-     * A stall is said the moment it starts and the moment it ends, not on the next beat.
-     *
-     * The friend stops for a picture that is loading and starts again when it is not, and both
-     * happen when the report saying so lands. Off the beat alone that is up to a second late each
-     * way, and the two delays are different — so after every stall the two pictures stood a
-     * random fraction of a second apart, which is what the corrector then spent half a minute
-     * nudging out. Said at once, both delays shrink to a trip through the relay and cancel.
-     */
-    private suspend fun stallReports() {
-        port.state.map { it.buffering }.distinctUntilChanged().drop(1).collect { report() }
-    }
-
-    private suspend fun report() {
-        if (_state.value !is SessionState.Live) return
-        val now = port.state.value
-        send(TogetherMessage.State(now.positionMs, now.playing, now.buffering, clock.millis(), nextSeq()))
-    }
-
             return
         }
         // Nobody is corrected while either player is filling its buffer, and nothing is corrected
@@ -772,6 +788,10 @@ class TogetherSession(
         val theirs = Control(seq, byHost = !asHost)
         if (theirs <= lastControl) return
         lastControl = theirs
+        // Whatever the friend says next outranks a picture this side stopped for them: a pause
+        // pressed while this side was waiting is a pause, and a hold that later let go with
+        // `play` would overrule it — while the friend's own reports, being paused, said nothing.
+        dropHold()
         apply()
     }
 
@@ -788,10 +808,6 @@ class TogetherSession(
         // would open it under the title this phone was on before.
         if (animeId == 0 || !asHost) animeId = message.animeId
         rejoin?.cancel()
-        // Whatever the friend says next outranks a picture this side stopped for them: a pause
-        // pressed while this side was waiting is a pause, and a hold that later let go with
-        // `play` would overrule it — while the friend's own reports, being paused, said nothing.
-        dropHold()
         rejoin = null
         if (asHost) {
             // The answer first, and only then the round trip the clocks need — for the same
@@ -885,6 +901,10 @@ class TogetherSession(
             port.pause()
             announce(TogetherEvent.Notice(NoticeKind.CATCHING_UP, peerName))
         } else if (heldForPeer) {
+            // Whether their loading ended in a picture that moves or in one they stopped for
+            // this side's sake — two phones stalling at once each wait for the other, and the
+            // first report to say «not loading» is what breaks that. A pause the friend chose is
+            // not this case: it arrives as a Pause, ahead of any report, and takes the hold off.
             releaseHold()
         }
     }
@@ -900,10 +920,12 @@ class TogetherSession(
         port.play()
     }
 
-            // Whether their loading ended in a picture that moves or in one they stopped for
-            // this side's sake — two phones stalling at once each wait for the other, and the
-            // first report to say «not loading» is what breaks that. A pause the friend chose is
-            // not this case: it arrives as a Pause, ahead of any report, and takes the hold off.
+    /** The wait is over without anybody being started: somebody said what they wanted instead. */
+    private fun dropHold() {
+        heldForPeer = false
+        holdUntil = 0
+    }
+
     /**
      * The friend's socket went away. It is not the end: a room keeps the seat for half a minute,
      * which is about how long a train takes to leave a tunnel.
@@ -920,12 +942,6 @@ class TogetherSession(
             forceNormalSpeed()
             // Settled before the channel is taken down, not after. `stop()` cancels the job this
             // is running on, so anything written after it survives only because something further
-    /** The wait is over without anybody being started: somebody said what they wanted instead. */
-    private fun dropHold() {
-        heldForPeer = false
-        holdUntil = 0
-    }
-
             // down swallows the cancellation — which is a `runCatching` that exists for an
             // entirely different reason and could be tightened at any time.
             _state.value = SessionState.Ended
@@ -981,6 +997,7 @@ class TogetherSession(
             }
             is LocalAction.Seek -> TogetherMessage.Seek(action.positionMs, nextSeq())
             is LocalAction.Episode -> {
+                dropHold()
                 animeId = action.animeId
                 TogetherMessage.Episode(action.episode, action.translationId, nextSeq())
             }
@@ -997,7 +1014,6 @@ class TogetherSession(
         send(TogetherMessage.Chat(line, nextSeq()))
         announce(TogetherEvent.ChatItem(nextEventId(), fromPeer = false, text = line, at = clock.millis()))
     }
-                dropHold()
 
     override suspend fun sendReaction(kind: ReactionKind) {
         if (channel == null) return
