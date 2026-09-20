@@ -291,6 +291,17 @@ struct TogetherJoinTarget: Equatable {
         // from idling out.
         if phase == .live { sendState() }
         if beats % (TogetherTiming.pingMs / TogetherTiming.stateMs) == 0 { sendPing() }
+        // Said again until somebody answers it.
+        //
+        // A greeting is one frame, sent once, through a relay that keeps nothing: whoever is in
+        // the room first says hello to an empty room, and the one who arrives second never hears
+        // it. The host answers a guest's hello, so the usual order works — but a host whose socket
+        // blinked and redialled has already spent its guest's only greeting, and then both sides
+        // sit in the same room saying nothing at all. This is what «Подключаемся…» for ever was.
+        if peerName == nil, beats % (TogetherTiming.helloRetryMs / TogetherTiming.stateMs) == 0,
+           let invitation {
+            Task { [weak self] in await self?.sendHello(invitation: invitation) }
+        }
         if beats % (TogetherTiming.syncMs / TogetherTiming.stateMs) == 0 { correct() }
         if let deadline = rejoinBy, now() >= deadline { rejoinBy = nil; fail(.disconnected) }
     }
@@ -342,6 +353,7 @@ struct TogetherJoinTarget: Equatable {
     }
 
     private func sendHello(invitation: TogetherInvitation) async {
+        TogetherLog.write("hello out anime=\(playback?.togetherSnapshot.animeID ?? 0) episode=\(playback?.togetherSnapshot.episode ?? 0)")
         guard let transport else { return }
         let snapshot = playback?.togetherSnapshot ?? TogetherPlaybackSnapshot()
         let message = TogetherMessage(t: .hello, seq: 1, name: displayName,
@@ -373,8 +385,19 @@ struct TogetherJoinTarget: Equatable {
     private func receive(_ frame: Data, invitation: TogetherInvitation, transport: TogetherTransport, fence: UUID) async {
         guard generation == fence else { return }
         let remoteSide = side.other
-        guard let message = try? TogetherCodec.decode(frame, invitation: invitation, from: remoteSide),
-              ordering.accept(seq: message.seq, control: message.isControl, hello: message.t == .hello) else { return }
+        // Both ways of dropping a frame are silent by design — a relay is untrusted and a bad
+        // frame is simply not a message. Silent is not the same as unexplainable, though: a room
+        // that never comes alive looks identical from the screen whether the greeting never
+        // arrived, would not authenticate, or was refused as a replay.
+        guard let message = try? TogetherCodec.decode(frame, invitation: invitation, from: remoteSide) else {
+            TogetherLog.write("frame refused: did not authenticate as \(remoteSide)")
+            return
+        }
+        guard ordering.accept(seq: message.seq, control: message.isControl, hello: message.t == .hello) else {
+            TogetherLog.write("frame refused: \(message.t) seq=\(message.seq) out of order")
+            return
+        }
+        TogetherLog.write("frame in \(message.t) seq=\(message.seq)")
         if messages.count >= 100 { messages.removeFirst(messages.count - 99) }
         messages.append(message)
         if message.t == .hello {
@@ -394,6 +417,7 @@ struct TogetherJoinTarget: Equatable {
     /// greeting below the mark it holds — and only a greeting, or the window would be thirty
     /// seconds in which any captured frame plays again.
     private func peerLeft() {
+        TogetherLog.write("peer left, holding the seat for \(TogetherTiming.rejoinWindowMs / 1000)s")
         guard phase == .live || phase == .reconnecting else { return }
         ordering.allowRejoin()
         report = nil
@@ -540,6 +564,7 @@ struct TogetherJoinTarget: Equatable {
         try? await transport.send(frame)
     }
     private func fail(_ value: TogetherError) {
+        TogetherLog.write("failed \(value) phase=\(phase) peer=\(peerName ?? "-")")
         error = value
         receiveTask?.cancel(); heartbeat?.cancel(); heartbeat = nil
         transport?.close(); transport = nil

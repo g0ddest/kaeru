@@ -369,6 +369,7 @@ class TogetherSession(
                 ticks = launch {
                     launch { greetOnConnect(transport) }
                     launch { pings() }
+                    launch { greetings() }
                     launch { reports() }
                     launch { corrections() }
                     launch { port.localActions.collect { forward(it) } }
@@ -497,6 +498,23 @@ class TogetherSession(
         while (channel != null) {
             delay(PING_INTERVAL_MS)
             send(TogetherMessage.Ping(clock.millis(), nextSeq()))
+        }
+    }
+
+    /**
+     * A greeting is said again until somebody answers it.
+     *
+     * One frame, sent once, through a relay that keeps nothing: whoever is in the room first says
+     * hello to an empty room, and whoever arrives second never hears it. The host answering a
+     * guest's hello covers the usual order — but not a socket that blinked and redialled, which
+     * has already spent the other side's only greeting. Both phones then sit in one room saying
+     * nothing, which is what «Подключаемся…» for ever looked like.
+     */
+    private suspend fun greetings() {
+        while (channel != null) {
+            delay(HELLO_RETRY_MS)
+            if (peerName != null) continue
+            send(greeting())
         }
     }
 
@@ -961,6 +979,9 @@ class TogetherSession(
 
         /** One round trip for the clocks, and what keeps a quiet LAN socket from idling out. */
         const val PING_INTERVAL_MS = 5_000L
+
+        /** How often an unanswered greeting is said again — the same three seconds as on iOS. */
+        const val HELLO_RETRY_MS = 3_000L
 
         /** Where this side is, often enough for the other to measure drift against. */
         const val STATE_INTERVAL_MS = 1_000L

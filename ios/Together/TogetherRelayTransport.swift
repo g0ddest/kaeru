@@ -29,6 +29,7 @@ import Foundation
         guard let endpoint = url.url else { throw TogetherError.notConfigured }
         self.endpoint = endpoint
         closed = false; reconnecting = false; backoff.reset(); buffer.clear()
+        TogetherLog.write("connect room=\(invitation.roomID) as=\(asHost ? "host" : "guest") host=\(url.host ?? "?")")
         // The first dial answers for itself rather than going into the backoff: somebody who has
         // just pressed «создать комнату» with no network deserves to be told so now, not after
         // half a minute of a spinner. Everything after this one is an outage, and outages wait.
@@ -66,9 +67,11 @@ import Foundation
             }
         } catch {
             // A relay that refuses the room says so in the close code, not in the error.
+            TogetherLog.write("dial failed close=\(socket.closeCode.rawValue) error=\(String(describing: error))")
             if let refusal = TogetherRelayClose.refusal(for: socket.closeCode.rawValue) { throw refusal }
             throw error
         }
+        TogetherLog.write("dial ok")
     }
 
     func receive() async throws -> TogetherTransportEvent {
@@ -82,6 +85,7 @@ import Foundation
             guard !closed else { throw TogetherError.disconnected }
             // Said before the waiting starts, so the screen can stop claiming the friend is there
             // while this side dials. The wait itself happens in the next call.
+            TogetherLog.write("socket lost close=\(socket.closeCode.rawValue) error=\(String(describing: error)); reconnecting")
             reconnecting = true
             return .reconnecting
         }
@@ -99,7 +103,11 @@ import Foundation
                 guard value.utf8.count <= 1024 else { throw TogetherError.frameTooLarge }
                 struct Control: Decodable { let type: String }
                 // Binary is the friend, text is the relay, and the relay has one thing to say.
-                if (try? JSONDecoder().decode(Control.self, from: Data(value.utf8)).type) == "peer-left" { return .peerLeft }
+                if (try? JSONDecoder().decode(Control.self, from: Data(value.utf8)).type) == "peer-left" {
+                    TogetherLog.write("relay says peer-left")
+                    return .peerLeft
+                }
+                TogetherLog.write("relay text \(value.prefix(120))")
             @unknown default: break
             }
         }

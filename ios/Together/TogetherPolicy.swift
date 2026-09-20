@@ -63,6 +63,9 @@ enum TogetherTiming {
     static let pingMs: Int64 = 5_000
     /// Past this, the friend's last report is too old to carry forward from.
     static let staleStateMs: Int64 = 5_000
+    /// How often a greeting nobody has answered is said again. Both sides do it, so the order the
+    /// two phones entered the room stops mattering — and so does a greeting lost to a redial.
+    static let helloRetryMs: Int64 = 3_000
     /// How long a friend whose socket went away has to walk back into the room.
     static let rejoinWindowMs: Int64 = 30_000
     /// How long a socket may live and how long it may be quiet for — an evening, not a moment.

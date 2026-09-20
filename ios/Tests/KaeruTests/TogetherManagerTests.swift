@@ -206,3 +206,39 @@ private final class TransportEvents: @unchecked Sendable {
         await manager.leave()
     }
 }
+
+/// A greeting nobody heard is said again.
+///
+/// The relay keeps nothing: whoever is in the room first greets an empty room, and a host whose
+/// socket blinked has already spent its guest's only hello. Both sides then sit there silently.
+@MainActor final class TogetherGreetingRetryTests: XCTestCase {
+    func testAnUnansweredGreetingIsRepeated() async throws {
+        let transport = TogetherManagerTests.Transport()
+        let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Host", transportFactory: { _, _ in transport })
+        await manager.create()
+        try await Task.sleep(for: .milliseconds(30))
+        let afterJoining = transport.outgoing.count
+        // Three seconds of beats with nobody answering.
+        for _ in 0..<3 { manager.beat() }
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertGreaterThan(transport.outgoing.count, afterJoining)
+        await manager.leave()
+    }
+    func testOnceSomebodyAnsweredTheGreetingStops() async throws {
+        let transport = TogetherManagerTests.Transport()
+        let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Host", transportFactory: { _, _ in transport })
+        await manager.create()
+        try await Task.sleep(for: .milliseconds(30))
+        let link = try XCTUnwrap(manager.invitation)
+        try transport.deliver(TogetherMessage(t: .hello, seq: 1, name: "Guest", animeId: 0, episode: 0, positionMs: 0, playing: false),
+                              link: link, side: .guest)
+        try await Task.sleep(for: .milliseconds(30))
+        let settled = transport.outgoing.count
+        for _ in 0..<3 { manager.beat() }
+        try await Task.sleep(for: .milliseconds(30))
+        // State and pings still go; a greeting does not — the whole point is that it is answered.
+        XCTAssertEqual(manager.peerName, "Guest")
+        XCTAssertLessThanOrEqual(transport.outgoing.count - settled, 3)
+        await manager.leave()
+    }
+}
