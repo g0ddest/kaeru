@@ -9,16 +9,13 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import app.kaeru.data.library.AppPreferences
 import app.kaeru.data.local.KaeruDatabase
+import app.kaeru.data.shikimori.SessionShikimoriApi
 import app.kaeru.data.shikimori.ShikimoriApi
-import app.kaeru.data.shikimori.AuthInterceptor
+import app.kaeru.data.shikimori.serverClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import okhttp3.OkHttpClient
-import app.kaeru.data.shikimori.ShikimoriOAuthApi
-import app.kaeru.data.shikimori.UnconfiguredOAuthApi
-import app.kaeru.data.shikimori.shikimoriJson
 import app.kaeru.domain.error.AuthCallbackRejected
 import app.kaeru.domain.error.SignInUnavailable
 import app.kaeru.domain.model.Account
@@ -28,7 +25,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
@@ -42,8 +38,7 @@ import org.junit.Rule
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import retrofit2.Retrofit
-import retrofit2.converter.kotlinx.serialization.asConverterFactory
+import app.kaeru.shared.data.shikimori.ShikimoriClient
 import java.io.IOException
 import java.time.Clock
 import java.time.Instant
@@ -59,25 +54,20 @@ class ShikimoriAuthRepositoryTest {
     private lateinit var api: ShikimoriApi
     private val server = MockWebServer()
     private val store = InMemoryTokenStore()
-    private lateinit var oauth: ShikimoriOAuthApi
+    private lateinit var client: ShikimoriClient
     private lateinit var repo: ShikimoriAuthRepository
     private val clock = Clock.fixed(Instant.ofEpochSecond(1_000), ZoneOffset.UTC)
 
     @Before
     fun setUp() {
         server.start()
-        oauth = Retrofit.Builder().baseUrl(server.url("/"))
-            .addConverterFactory(shikimoriJson().asConverterFactory("application/json".toMediaType()))
-            .build().create(ShikimoriOAuthApi::class.java)
+        client = serverClient(server)
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), KaeruDatabase::class.java)
             .allowMainThreadQueries().build()
         prefs = AppPreferences(PreferenceDataStoreFactory.create(scope = storeScope) { tmp.root.resolve("prefs.preferences_pb") })
         session = AccountSession(store, prefs, db)
-        api = Retrofit.Builder().baseUrl(server.url("/"))
-            .client(OkHttpClient.Builder().addInterceptor(AuthInterceptor(store)).build())
-            .addConverterFactory(shikimoriJson().asConverterFactory("application/json".toMediaType()))
-            .build().create(ShikimoriApi::class.java)
-        repo = ShikimoriAuthRepository(oauth, api, session, prefs, "cid", clock)
+        api = SessionShikimoriApi(client, store, clock)
+        repo = ShikimoriAuthRepository(client, api, session, prefs, "cid", clock)
     }
 
     @After
@@ -179,7 +169,7 @@ class ShikimoriAuthRepositoryTest {
 
     @Test
     fun `authorize url encodes reserved characters in client id and redirect`() {
-        val custom = ShikimoriAuthRepository(oauth, api, session, prefs, "id&scope=other+value", clock)
+        val custom = ShikimoriAuthRepository(serverClient(server, "id&scope=other+value"), api, session, prefs, "id&scope=other+value", clock)
         val url = custom.authorizeUrl("kaeru://oauth?value=a&other=b+c").toHttpUrl()
         assertEquals("id&scope=other+value", url.queryParameter("client_id"))
         assertEquals("kaeru://oauth?value=a&other=b+c", url.queryParameter("redirect_uri"))
@@ -230,7 +220,7 @@ class ShikimoriAuthRepositoryTest {
                 override suspend fun updateData(transform: suspend (Preferences) -> Preferences) =
                     throw IOException("no space left on device")
             })
-            val repo = ShikimoriAuthRepository(oauth, api, session, unwritable, "cid", clock)
+            val repo = ShikimoriAuthRepository(client, api, session, unwritable, "cid", clock)
             enqueueTokens()
 
             assertTrue(repo.exchangeCode("abc", MOBILE_REDIRECT).isSuccess)
@@ -265,14 +255,14 @@ class ShikimoriAuthRepositoryTest {
     @Test
     fun `exchange code form encodes client id codes and OOB redirect`() = runTest {
         enqueueTokens()
-        val custom = ShikimoriAuthRepository(oauth, api, session, prefs, "c+id", clock)
+        val custom = ShikimoriAuthRepository(serverClient(server, "c+id"), api, session, prefs, "c+id", clock)
         assertTrue(custom.exchangeCode("a+b&c", OOB_REDIRECT).isSuccess)
         assertEquals("grant_type=authorization_code&client_id=c%2Bid&code=a%2Bb%26c&redirect_uri=urn%3Aietf%3Awg%3Aoauth%3A2.0%3Aoob", server.takeRequest().body.readUtf8())
     }
 
     @Test
     fun `without a token proxy the exchange fails and nobody is signed in`() = runTest {
-        val offline = ShikimoriAuthRepository(UnconfiguredOAuthApi, api, session, prefs, "cid", clock)
+        val offline = ShikimoriAuthRepository(serverClient(server, proxy = ""), api, session, prefs, "cid", clock)
 
         val result = offline.exchangeCode("abc", MOBILE_REDIRECT)
 

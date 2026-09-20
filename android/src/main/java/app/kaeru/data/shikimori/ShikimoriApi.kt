@@ -1,69 +1,49 @@
 package app.kaeru.data.shikimori
 
-import retrofit2.http.Body
-import retrofit2.http.GET
-import retrofit2.http.Header
-import retrofit2.http.PATCH
-import retrofit2.http.POST
-import retrofit2.http.Path
-import retrofit2.http.Query
+import app.kaeru.shared.data.shikimori.AnimeDto
+import app.kaeru.shared.data.shikimori.ScreenshotDto
+import app.kaeru.shared.data.shikimori.UserDto
+import app.kaeru.shared.data.shikimori.UserRateDto
 
+/**
+ * What the repositories ask of Shikimori, with the signed-in session's token supplied on the way.
+ *
+ * The endpoints themselves — routes, paging, batching, the rate limit, the posters — are the
+ * shared module's `ShikimoriClient`, which takes a token per call and holds no session. This is
+ * the Android side of that bargain: [SessionShikimoriApi] reads the bearer from the token store,
+ * refreshes it once after a 401 and retries, and the repositories never see a token at all.
+ *
+ * An interface rather than the client itself so the repositories' tests can stand a fake here,
+ * as they always have.
+ */
 interface ShikimoriApi {
-    @GET("api/users/whoami")
-    suspend fun whoami(@Header("Authorization") authorization: String? = null): UserDto
-
-    @GET("api/v2/user_rates?target_type=Anime")
-    suspend fun userRates(
-        @Query("user_id") userId: Long,
-        @Query("status") status: String,
-        @Query("page") page: Int = 1,
-        @Query("limit") limit: Int = 1000,
-    ): List<UserRateDto>
-
-    @GET("api/animes")
-    suspend fun animesByIds(
-        @Query("ids") ids: String,
-        @Query("limit") limit: Int = 50,
-    ): List<AnimeShortDto>
-
     /**
-     * The catalogue itself rather than one viewer's list: what is airing now, or what a given
-     * season held. `status` and `season` are separate filters and Retrofit drops whichever is
-     * null, so one route serves both rows without either sending a filter it does not mean.
-     *
-     * `censored=true` asks Shikimori to leave adult titles out; a home screen is not the place
-     * to discover them.
+     * Who a token belongs to. [accessToken] names a candidate identity during sign-in and is used
+     * exactly as given — never swapped for the session's, never refreshed. Null asks about the
+     * session, and is answered 401 when there is none.
      */
-    @GET("api/animes")
-    suspend fun animes(
-        @Query("status") status: String? = null,
-        @Query("season") season: String? = null,
-        @Query("order") order: String = "popularity",
-        @Query("limit") limit: Int = 20,
-        @Query("censored") censored: String = "true",
-    ): List<AnimeShortDto>
+    suspend fun whoami(accessToken: String? = null): UserDto
 
-    @GET("api/animes/{id}")
-    suspend fun anime(@Path("id") id: Int): AnimeDetailsDto
+    /** Every row of the viewer's list, all six statuses. */
+    suspend fun libraryRates(userId: Long): List<UserRateDto>
 
-    @GET("api/animes/{id}/screenshots")
-    suspend fun screenshots(@Path("id") id: Int): List<ScreenshotDto>
+    /** The cards for [ids], however many: the client batches them in fifties. */
+    suspend fun animesByIds(ids: List<Int>): List<AnimeDto>
 
-    @GET("api/animes")
-    suspend fun search(
-        @Query("search") query: String,
-        @Query("limit") limit: Int = 30,
-    ): List<AnimeShortDto>
+    /** What is airing now (`status`), or what a season held (`season`); most popular first. */
+    suspend fun catalogue(status: String? = null, season: String? = null): List<AnimeDto>
 
-    @POST("api/graphql")
-    suspend fun graphql(@Body body: GraphqlRequest): GraphqlAnimesResponse
+    suspend fun anime(id: Int): AnimeDto
 
-    @POST("api/v2/user_rates")
-    suspend fun createUserRate(@Body body: UserRateRequest): UserRateDto
+    suspend fun screenshots(id: Int): List<ScreenshotDto>
 
-    @PATCH("api/v2/user_rates/{id}")
-    suspend fun updateUserRate(
-        @Path("id") id: Long,
-        @Body body: UserRateRequest,
-    ): UserRateDto
+    suspend fun search(query: String): List<AnimeDto>
+
+    /** The real posters of [ids], by id; a title GraphQL has nothing for is simply absent. */
+    suspend fun posters(ids: List<Int>): Map<Int, String>
+
+    suspend fun createUserRate(userId: Long, animeId: Int, status: String): UserRateDto
+
+    /** Names only the half it changes: Shikimori reads an absent field as «leave it». */
+    suspend fun updateUserRate(id: Long, status: String? = null, episodes: Int? = null): UserRateDto
 }

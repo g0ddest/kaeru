@@ -1,6 +1,5 @@
 package app.kaeru.data.library
 
-import app.kaeru.data.shikimori.AnimeShortDto
 import app.kaeru.data.shikimori.ShikimoriApi
 import app.kaeru.data.shikimori.toDomain
 import app.kaeru.data.shikimori.toDomainFailure
@@ -8,6 +7,7 @@ import app.kaeru.di.IoDispatcher
 import app.kaeru.domain.discover.Season
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.repository.DiscoverRepository
+import app.kaeru.shared.data.shikimori.AnimeDto
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.sync.Mutex
@@ -21,9 +21,6 @@ import javax.inject.Singleton
 
 /** Shikimori's filter for titles currently on air. */
 private const val ONGOING = "ongoing"
-
-/** Enough to fill a row and a good scroll past it, and one request against the rate limit. */
-private const val ROW_LIMIT = 20
 
 /** The cache key for the one row that is not about a season. */
 private const val NOW_KEY = "now"
@@ -59,15 +56,15 @@ class ShikimoriDiscoverRepository @Inject constructor(
     private class Cached(val titles: List<Anime>, val at: Instant)
 
     override suspend fun popularNow(force: Boolean): Result<List<Anime>> =
-        read(NOW_KEY, force) { api.animes(status = ONGOING, limit = ROW_LIMIT) }
+        read(NOW_KEY, force) { api.catalogue(status = ONGOING) }
 
     override suspend fun seasonal(season: Season, force: Boolean): Result<List<Anime>> =
-        read(season.apiValue, force) { api.animes(season = season.apiValue, limit = ROW_LIMIT) }
+        read(season.apiValue, force) { api.catalogue(season = season.apiValue) }
 
     private suspend fun read(
         key: String,
         force: Boolean,
-        fetch: suspend () -> List<AnimeShortDto>,
+        fetch: suspend () -> List<AnimeDto>,
     ): Result<List<Anime>> {
         if (!force) fresh(key)?.let { return Result.success(it) }
         return withContext(io) {

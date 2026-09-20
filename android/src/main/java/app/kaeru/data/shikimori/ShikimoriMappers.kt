@@ -4,16 +4,16 @@ import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.UserRate
+import app.kaeru.shared.data.shikimori.AnimeDto
+import app.kaeru.shared.data.shikimori.UserRateDto
+import app.kaeru.shared.data.shikimori.shikimoriUrl
 import java.time.Instant
 import java.time.OffsetDateTime
 
-internal fun absolute(path: String?): String? = path?.let {
-    if (it.startsWith("http://") || it.startsWith("https://")) {
-        it
-    } else {
-        SHIKIMORI_BASE_URL + it.removePrefix("/")
-    }
-}
+/**
+ * The shared module's DTOs as this app's models: Room-shaped, with `java.time` and enums where
+ * the wire has strings. iOS reads the same DTOs into its own shapes; the parsing happens once.
+ */
 
 internal fun parseStatus(status: String): AnimeStatus = when (status) {
     "ongoing" -> AnimeStatus.ONGOING
@@ -31,28 +31,16 @@ internal fun parseInstant(value: String?): Instant? = value?.let {
     runCatching { OffsetDateTime.parse(it).toInstant() }.getOrNull()
 }
 
-fun AnimeShortDto.toDomain(): Anime = Anime(
+/**
+ * One mapping for a list card and for the details: the fields the list does not carry arrive
+ * empty and stay null, which is what `mergeShort` relies on to keep details fetched earlier.
+ */
+fun AnimeDto.toDomain(): Anime = Anime(
     id = id,
     nameRu = russian.orEmpty(),
     nameRomaji = name,
-    posterUrl = absolute(image?.original),
-    screenshotUrls = emptyList(),
-    status = parseStatus(status),
-    episodes = episodes,
-    episodesAired = episodesAired,
-    nextEpisodeAt = null,
-    score = parseScore(score),
-    year = parseYear(airedOn),
-    studio = null,
-    description = null,
-)
-
-fun AnimeDetailsDto.toDomain(): Anime = Anime(
-    id = id,
-    nameRu = russian.orEmpty(),
-    nameRomaji = name,
-    posterUrl = absolute(image?.original),
-    screenshotUrls = screenshots.mapNotNull { absolute(it.original) },
+    posterUrl = restPoster,
+    screenshotUrls = screenshots.mapNotNull { shikimoriUrl(it.original) },
     status = parseStatus(status),
     episodes = episodes,
     episodesAired = episodesAired,
@@ -65,7 +53,7 @@ fun AnimeDetailsDto.toDomain(): Anime = Anime(
 
 fun UserRateDto.toDomain(): UserRate = UserRate(
     id = id,
-    animeId = targetId,
+    animeId = animeId,
     status = ListStatus.fromApi(status),
     episodes = episodes,
     updatedAt = parseInstant(updatedAt) ?: Instant.EPOCH,

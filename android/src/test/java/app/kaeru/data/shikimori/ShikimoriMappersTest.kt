@@ -2,6 +2,11 @@ package app.kaeru.data.shikimori
 
 import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.ListStatus
+import app.kaeru.shared.data.shikimori.AnimeDto
+import app.kaeru.shared.data.shikimori.ImageDto
+import app.kaeru.shared.data.shikimori.ScreenshotDto
+import app.kaeru.shared.data.shikimori.StudioDto
+import app.kaeru.shared.data.shikimori.UserRateDto
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -10,7 +15,7 @@ import java.time.Instant
 class ShikimoriMappersTest {
     @Test
     fun `short dto maps poster to absolute url and status`() {
-        val dto = AnimeShortDto(
+        val dto = AnimeDto(
             id = 1,
             name = "Name",
             russian = "Имя",
@@ -32,7 +37,7 @@ class ShikimoriMappersTest {
 
     @Test
     fun `details dto keeps screenshots studio and next episode`() {
-        val dto = AnimeDetailsDto(
+        val dto = AnimeDto(
             id = 1,
             name = "Name",
             russian = "",
@@ -73,7 +78,7 @@ class ShikimoriMappersTest {
 
     @Test
     fun `unknown remote statuses use safe domain fallbacks`() {
-        val anime = AnimeShortDto(id = 1, status = "unexpected").toDomain()
+        val anime = AnimeDto(id = 1, status = "unexpected").toDomain()
         val rate = UserRateDto(
             id = 2,
             targetId = 1,
@@ -88,11 +93,11 @@ class ShikimoriMappersTest {
 
     @Test
     fun `absolute urls are preserved and relative urls are rooted`() {
-        val absolutePoster = AnimeShortDto(
+        val absolutePoster = AnimeDto(
             id = 1,
             image = ImageDto("https://cdn.example/poster.jpg"),
         ).toDomain()
-        val relativePoster = AnimeShortDto(
+        val relativePoster = AnimeDto(
             id = 2,
             image = ImageDto("images/poster.jpg"),
         ).toDomain()
@@ -103,7 +108,7 @@ class ShikimoriMappersTest {
 
     @Test
     fun `malformed optional values map to null`() {
-        val anime = AnimeDetailsDto(
+        val anime = AnimeDto(
             id = 1,
             score = "not-a-score",
             airedOn = "unknown",

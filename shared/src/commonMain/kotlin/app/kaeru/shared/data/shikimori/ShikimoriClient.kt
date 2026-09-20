@@ -61,7 +61,13 @@ class ShikimoriClient(
         error("Unreachable")
     }
 
-    /** Who [token] belongs to. Sent without a bearer when it is blank, and answered 401 for it. */
+    /**
+     * Who [token] belongs to. Sent without a bearer when it is blank, and answered 401 for it.
+     *
+     * The catalogue endpoints below take a token too, though they answer without one: Android
+     * sends its session on every call, as it always has, and a wire that changes only because the
+     * code moved is a wire nobody asked for. Swift asks them anonymously.
+     */
     suspend fun whoami(token: String): UserDto = decode(request("api/users/whoami", token))
 
     /** Every row of the viewer's list, all six statuses, a thousand rows a page. */
@@ -82,8 +88,8 @@ class ShikimoriClient(
     }
 
     /** The cards for [ids], fetched fifty at a time — Shikimori's ceiling for one `ids=` batch. */
-    suspend fun animesByIds(ids: List<Int>): List<AnimeDto> = ids.distinct().chunked(BATCH).flatMap { batch ->
-        decodeList<AnimeDto>(request("api/animes") { parameter("ids", batch.joinToString(",")); parameter("limit", BATCH) })
+    suspend fun animesByIds(ids: List<Int>, token: String = ""): List<AnimeDto> = ids.distinct().chunked(BATCH).flatMap { batch ->
+        decodeList<AnimeDto>(request("api/animes", token) { parameter("ids", batch.joinToString(",")); parameter("limit", BATCH) })
     }
 
     /**
@@ -91,19 +97,20 @@ class ShikimoriClient(
      * season held (`season`). Most popular first, enough to fill a row, and `censored=true` so a
      * home screen is not where adult titles turn up.
      */
-    suspend fun catalogue(status: String? = null, season: String? = null): List<AnimeDto> =
-        decodeList(request("api/animes") {
+    suspend fun catalogue(status: String? = null, season: String? = null, token: String = ""): List<AnimeDto> =
+        decodeList(request("api/animes", token) {
             parameter("order", "popularity"); parameter("limit", ROW); parameter("censored", "true")
             if (status != null) parameter("status", status)
             if (season != null) parameter("season", season)
         })
 
-    suspend fun anime(id: Int): AnimeDto = decode(request("api/animes/$id"))
+    suspend fun anime(id: Int, token: String = ""): AnimeDto = decode(request("api/animes/$id", token))
 
-    suspend fun screenshots(id: Int): List<ScreenshotDto> = decodeList(request("api/animes/$id/screenshots"))
+    suspend fun screenshots(id: Int, token: String = ""): List<ScreenshotDto> =
+        decodeList(request("api/animes/$id/screenshots", token))
 
-    suspend fun search(query: String): List<AnimeDto> =
-        decodeList(request("api/animes") { parameter("search", query); parameter("limit", 30) })
+    suspend fun search(query: String, token: String = ""): List<AnimeDto> =
+        decodeList(request("api/animes", token) { parameter("search", query); parameter("limit", 30) })
 
     /**
      * The real posters of [ids], by id, from GraphQL — `originalUrl` first, because `mainUrl` is
@@ -114,12 +121,12 @@ class ShikimoriClient(
      * that fails is simply missing from the answer, so a caller keeps whatever REST gave it rather
      * than losing the row. Cancellation is not a failed batch and is rethrown.
      */
-    suspend fun posters(ids: List<Int>): Map<Int, String> {
+    suspend fun posters(ids: List<Int>, token: String = ""): Map<Int, String> {
         val posters = mutableMapOf<Int, String>()
         for (batch in ids.distinct().chunked(BATCH)) {
             try {
                 val query = "{ animes(ids: \"${batch.joinToString(",")}\", limit: $BATCH) { id poster { mainUrl originalUrl } } }"
-                val response = parseObject(request("api/graphql") {
+                val response = parseObject(request("api/graphql", token) {
                     method = HttpMethod.Post
                     contentType(ContentType.Application.Json)
                     setBody(restJson.encodeToString(GraphqlRequest.serializer(), GraphqlRequest(query)))

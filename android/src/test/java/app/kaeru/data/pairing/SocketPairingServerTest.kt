@@ -1,6 +1,6 @@
 package app.kaeru.data.pairing
 
-import app.kaeru.data.shikimori.shikimoriJson
+import app.kaeru.di.NetworkModule
 import app.kaeru.domain.error.PairingFailed
 import app.kaeru.domain.error.PairingFailureReason
 import app.kaeru.domain.pairing.PairingSession
@@ -32,7 +32,7 @@ class SocketPairingServerTest {
     // Compressed clocks: the slow-client test below has to outlast the accept deadline, and a
     // test that waits out the shipped five seconds is a test somebody deletes.
     private val timeouts = PairingTimeouts(acceptMs = 400, readMs = 200)
-    private val server = SocketPairingServer(shikimoriJson(), clock, lan, timeouts, Dispatchers.IO)
+    private val server = SocketPairingServer(NetworkModule.json(), clock, lan, timeouts, Dispatchers.IO)
     private val http = OkHttpClient.Builder()
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(5, TimeUnit.SECONDS)
@@ -216,7 +216,7 @@ class SocketPairingServerTest {
                 return "192.168.1.7"
             }
         }
-        val racing = SocketPairingServer(shikimoriJson(), clock, slowLan, timeouts, Dispatchers.IO)
+        val racing = SocketPairingServer(NetworkModule.json(), clock, slowLan, timeouts, Dispatchers.IO)
         val started = async(Dispatchers.IO) {
             racing.start(PairingSession("nonce-1", now, Duration.ofMinutes(5))) { _, _ -> Result.success(Unit) }
         }
@@ -277,7 +277,7 @@ class SocketPairingServerTest {
     @Test
     fun `a connection whose reads have not timed out yet is still closed at the deadline`() = runTest {
         val patient = SocketPairingServer(
-            shikimoriJson(),
+            NetworkModule.json(),
             clock,
             lan,
             PairingTimeouts(acceptMs = 400, readMs = 30_000),
