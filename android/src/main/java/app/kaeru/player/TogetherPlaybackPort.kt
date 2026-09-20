@@ -34,7 +34,12 @@ class TogetherPlaybackPort @Inject constructor(
         .map { playback ->
             PortState(
                 positionMs = playback.positionMs,
-                playing = playback.isPlaying,
+                // What the viewer asked for, not what the engine is managing. Media3's `isPlaying`
+                // is false for as long as the picture is not advancing, so a stall read as
+                // playing=false, buffering=true — exactly what a friend takes for a pause with an
+                // empty buffer, and never waits for. The whole of «ждём друга» hangs on the two
+                // being told apart: a stall on the way to playing is playing, and buffering.
+                playing = playback.isPlaying || (playback.isBuffering && wantsToPlay()),
                 buffering = playback.isBuffering,
                 animeId = playback.target?.animeId,
                 episode = playback.target?.episode,
@@ -50,6 +55,17 @@ class TogetherPlaybackPort @Inject constructor(
         .stateIn(scope, SharingStarted.Eagerly, PortState())
 
     override val localActions: Flow<LocalAction> get() = controller.localActions
+
+    /**
+     * Whether play has been asked for, whatever the engine is doing about it right now.
+     *
+     * Read off the Media3 player rather than kept in the controller's state, because the state
+     * carries what the engine reports and the engine reports what it is doing. Safe from here: the
+     * scope this state is shared on is the main thread, which is the player's. A receiver across
+     * the room has no player to read, and a picture that is buffering over there is what the
+     * controller says it is.
+     */
+    private fun wantsToPlay(): Boolean = controller.videoPlayer.value?.playWhenReady == true
 
     override suspend fun play() = controller.setPlaying(true, ActionOrigin.REMOTE)
 

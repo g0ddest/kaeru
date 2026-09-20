@@ -22,8 +22,11 @@ class FakePlaybackEngine : PlaybackEngine {
 
     private val _state = MutableStateFlow(EngineState())
     override val state: StateFlow<EngineState> = _state.asStateFlow()
-    /** Nothing to render: this engine never builds a player. */
-    override val videoPlayer: StateFlow<Player?> = MutableStateFlow(null)
+    /**
+     * Nothing to render: this engine never builds a player of its own. Writable so a test can hand
+     * the controller one anyway — a shared session reads the player's intent to play off it.
+     */
+    override val videoPlayer = MutableStateFlow<Player?>(null)
 
     /** Every source the controller pointed the engine at, in order. */
     val prepared = mutableListOf<Prepared>()
@@ -68,6 +71,12 @@ class FakePlaybackEngine : PlaybackEngine {
 
     /** Playback moved on, the way a poll of a real player would report it. */
     fun moveTo(positionMs: Long) = _state.update { it.copy(positionMs = positionMs) }
+
+    /**
+     * The buffer ran dry mid-episode, exactly as a poll of a real player reports it: Media3's
+     * `isPlaying` is false for as long as the picture is not advancing, whatever was asked of it.
+     */
+    fun stall() = _state.update { it.copy(isBuffering = true, isPlaying = false) }
 
     fun end() = _state.update { it.copy(ended = true, isPlaying = false, positionMs = it.durationMs) }
 
