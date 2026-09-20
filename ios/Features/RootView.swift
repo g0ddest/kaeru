@@ -188,7 +188,13 @@ struct RootView: View {
             // Settings closes first: two sheets cannot be raised at once, and the invitation may
             // well have been honoured the moment somebody signed in from that very screen.
             settings = false
-            Task { await model.together.join(invitation); togetherOpen = true }
+            // The room opens now, and the joining happens behind it. It used to be the other way
+            // round, and `join` is a websocket handshake with up to half a minute of backoff
+            // behind it — so a tapped invitation brought the app to the front and then did
+            // nothing visible at all, for as long as the relay took to answer or to give up. The
+            // screen has a state for every part of that; it could not show any of them.
+            togetherOpen = true
+            Task { await model.together.join(invitation) }
         case .pair(let invitation):
             settings = false
             model.pairing.open(invitation)
