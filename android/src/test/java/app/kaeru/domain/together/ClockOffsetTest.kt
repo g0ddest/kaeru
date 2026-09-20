@@ -92,6 +92,37 @@ class ClockOffsetTest {
         assertEquals(100, offset.offsetMs)
     }
 
+    /**
+     * The round trip is the same whatever the offset, so a phone whose date is wrong answers every
+     * ping with an ordinary trip and a preposterous offset — and nothing about the trip refuses it.
+     * iOS has always drawn the line at a day; this is the same line.
+     */
+    @Test
+    fun `a clock that reads a day away from this one is a wrong date, not a measurement`() {
+        repeat(3) { offset.exchange(offsetMs = 200, rttMs = 40) }
+        // Two years ahead, forty milliseconds round trip. Three of them, to outvote the median.
+        repeat(3) { offset.exchange(offsetMs = ClockOffset.MAX_OFFSET_MS * 730, rttMs = 40) }
+        assertEquals(200, offset.offsetMs)
+        // And a year behind.
+        repeat(3) { offset.exchange(offsetMs = -ClockOffset.MAX_OFFSET_MS * 365, rttMs = 40) }
+        assertEquals(200, offset.offsetMs)
+
+        // Right up to the line a clock is a clock, however badly set.
+        val badlySet = ClockOffset()
+        badlySet.exchange(offsetMs = ClockOffset.MAX_OFFSET_MS - 20, rttMs = 40)
+        assertEquals(ClockOffset.MAX_OFFSET_MS - 20, badlySet.offsetMs)
+    }
+
+    /** A pong whose own two marks run backwards is not believed either, whatever it says about the trip. */
+    @Test
+    fun `marks that run backwards at either end are refused`() {
+        offset.exchange(offsetMs = 100, rttMs = 40)
+        // Left the peer before it arrived there — and a trip that still adds up, because the
+        // arrival back here is late by the same amount.
+        offset.record(sentAt = 1_000, peerReceived = 1_600, peerSent = 1_500, receivedAt = 1_140)
+        assertEquals(100, offset.offsetMs)
+    }
+
     @Test
     fun `a clock behind this one gives a negative offset rather than a wrapped one`() {
         offset.exchange(offsetMs = -250, rttMs = 40)

@@ -42,6 +42,14 @@ class ClockOffset(private val window: Int = WINDOW) {
         // the median. The error in an honest sample is at most half its round trip, so a cap on
         // the trip is a cap on the error; past it the sample says nothing worth keeping.
         if (sample.rttMs < 0 || sample.rttMs > MAX_RTT_MS) return
+        // Clocks only run forward: a trip that ends before it started, at either end, is noise.
+        if (receivedAt < sentAt || peerSent < peerReceived) return
+        // The round trip says nothing about the offset itself: a friend whose clock is a day out
+        // answers with a perfectly ordinary trip, and every one of those answers would pass the
+        // check above and outvote the median for as long as their clock stays wrong. Nobody's
+        // clock is honestly a day out; a reading that says so is a phone with a wrong date, and
+        // following it would park both pictures in a seek that never lands. iOS's own bound.
+        if (kotlin.math.abs(peerReceived - sentAt) > MAX_OFFSET_MS) return
         synchronized(lock) {
             samples.addLast(sample)
             while (samples.size > window) samples.removeFirst()
@@ -73,5 +81,11 @@ class ClockOffset(private val window: Int = WINDOW) {
          * cannot pass for a slow packet. The same number as iOS's `TogetherTiming.maxRttMs`.
          */
         const val MAX_RTT_MS = 3_000L
+
+        /**
+         * The furthest apart two clocks may read and still be believed: a day. The same number as
+         * iOS's `TogetherClock.record`.
+         */
+        const val MAX_OFFSET_MS = 24 * 60 * 60 * 1_000L
     }
 }
