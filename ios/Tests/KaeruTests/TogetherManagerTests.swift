@@ -276,3 +276,25 @@ private final class TransportEvents: @unchecked Sendable {
         await manager.leave()
     }
 }
+
+/// The host answers a greeting with its own.
+///
+/// Android's host does, and Android's guest waits for it: a room made on an iPhone was one that
+/// an Android phone could not join — its greeting was heard, the room went live on the iPhone,
+/// and nothing came back. «Не удалось подключиться», every time, in that one direction.
+@MainActor final class TogetherHostAnswersTests: XCTestCase {
+    func testTheHostAnswersAGuestsGreeting() async throws {
+        let transport = TogetherManagerTests.Transport()
+        let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Host", transportFactory: { _, _ in transport })
+        await manager.create()
+        try await Task.sleep(for: .milliseconds(30))
+        let link = try XCTUnwrap(manager.invitation)
+        let before = transport.outgoing.count
+        try transport.deliver(TogetherMessage(t: .hello, seq: 1, name: "Guest", animeId: 0, episode: 0, positionMs: 0, playing: false),
+                              link: link, side: .guest)
+        try await Task.sleep(for: .milliseconds(50))
+        let answered = transport.outgoing.dropFirst(before).compactMap { try? TogetherCodec.decode($0, invitation: link, from: .host) }
+        XCTAssertTrue(answered.contains { $0.t == .hello }, "гость должен услышать приветствие хозяина в ответ на своё")
+        await manager.leave()
+    }
+}

@@ -483,6 +483,11 @@ struct TogetherJoinTarget: Equatable {
             peerName = message.name; rejoinBy = nil
             enter(.live)
             if !already { conversation.notice(.joined, peerName: peerName) }
+            // The host answers a greeting with its own, every time, the way Android's host does.
+            // Its own was said when the room opened and repeated only while nobody had answered;
+            // a guest who walks in a second after the last repeat never hears it, waits for the
+            // greeting that is not coming, and gives up with «Не удалось подключиться».
+            if side == .host { Task { [weak self] in await self?.sendHello(invitation: invitation); self?.sendPing() } }
         }
         apply(message)
     }
