@@ -233,6 +233,53 @@ class TogetherSessionTest {
         joining.cancel()
     }
 
+    /**
+     * A greeting is one frame through a relay that keeps nothing: whoever is in the room first
+     * greets an empty room. Said again every three seconds until somebody answers, and not once
+     * more after that — the same beat iOS keeps, so the order the two phones arrive in stops
+     * mattering.
+     */
+    @Test
+    fun `a greeting nobody answered is said again every three seconds, and stops once it is`() = sessionTest {
+        port.showing(animeId = null, episode = null, translationId = null, positionMs = 0, playing = false)
+        val joining = launch { session.join(RoomLink("room", ByteArray(16), null), "Костя") }
+        runCurrent()
+        assertEquals(1, transport.sentOf<TogetherMessage.Hello>().size)
+
+        advanceTimeBy(TogetherSession.HELLO_RETRY_MS + 1)
+        runCurrent()
+        assertEquals(2, transport.sentOf<TogetherMessage.Hello>().size)
+        advanceTimeBy(TogetherSession.HELLO_RETRY_MS)
+        runCurrent()
+        assertEquals(3, transport.sentOf<TogetherMessage.Hello>().size)
+
+        transport.deliver(peerHello(name = "Аня"))
+        runCurrent()
+        joining.join()
+        val answered = transport.sentOf<TogetherMessage.Hello>().size
+        advanceTimeBy(TogetherSession.HELLO_RETRY_MS * 3)
+        runCurrent()
+
+        assertEquals("после ответа приветствие не повторяется", answered, transport.sentOf<TogetherMessage.Hello>().size)
+    }
+
+    /** The side that made the room says it again too: a guest may have greeted before the host's socket was up. */
+    @Test
+    fun `a host whose room stays silent greets it again until somebody is there`() = sessionTest {
+        session.host("Костя")
+        advanceTimeBy(TogetherSession.HELLO_RETRY_MS * 2 + 1)
+        runCurrent()
+        assertEquals(2, transport.sentOf<TogetherMessage.Hello>().size)
+
+        transport.deliver(peerHello(name = "Аня"))
+        runCurrent()
+        val answered = transport.sentOf<TogetherMessage.Hello>().size
+        advanceTimeBy(TogetherSession.HELLO_RETRY_MS * 3)
+        runCurrent()
+
+        assertEquals(answered, transport.sentOf<TogetherMessage.Hello>().size)
+    }
+
     @Test
     fun `it goes live when the viewer's own screen opens the episode`() = sessionTest {
         port.showing(animeId = null, episode = null, translationId = null, positionMs = 0, playing = false)

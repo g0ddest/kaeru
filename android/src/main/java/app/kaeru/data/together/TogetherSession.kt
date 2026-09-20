@@ -528,7 +528,10 @@ class TogetherSession(
     private suspend fun greetings() {
         while (channel != null) {
             delay(HELLO_RETRY_MS)
-            if (peerName != null) continue
+            // The name is a `String`, never null: a peer who has not spoken is the empty one. The
+            // first version of this compared it with null, which is always false for a `String`,
+            // and the greeting was never once said again.
+            if (peerName.isNotEmpty()) continue
             send(greeting())
         }
     }
