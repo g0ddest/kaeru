@@ -279,6 +279,10 @@ struct TogetherJoinTarget: Equatable {
         self.ordering = TogetherOrdering(isHost: asHost); self.clock = TogetherClock()
         error = nil; peerName = nil; conversation.forget(); enter(.connecting); generation = UUID()
         self.report = nil; self.correcting = false; self.beats = 0; self.rejoinBy = nil
+        // A wait belongs to the room it was made in: a hold left by a friend who was loading when
+        // the last room died would otherwise let go with `play` on the next friend's first report.
+        peerLoading = false; dropHold(); correctionSettledAt = 0
+        reportedBuffering = nil; pendingGreetingAt = 0
         try await value.connect(invitation, asHost: asHost)
         let fence = generation
         enter(.live)
@@ -330,7 +334,7 @@ struct TogetherJoinTarget: Equatable {
         if let deadline = rejoinBy, now() >= deadline { rejoinBy = nil; fail(.disconnected) }
         if heldForPeer, holdUntil > 0, now() >= holdUntil {
             TogetherLog.write("waited \(TogetherTiming.peerLoadingHoldMs / 1000)s for the friend to load; going on")
-            releaseHold(play: true)
+            releaseHold()
         }
     }
 
@@ -381,17 +385,53 @@ struct TogetherJoinTarget: Equatable {
             playback.togetherPause()
             conversation.notice(.catchingUp, peerName: peerName)
         } else if heldForPeer {
-            releaseHold(play: true)
+            // Whether their loading ended in a picture that moves or in one they stopped for this
+            // side's sake — two phones stalling at once each wait for the other, and the first
+            // report to say «not loading» is what breaks that. A pause the friend chose is not
+            // this case: it arrives as a `pause`, ahead of any report, and takes the hold off.
+            releaseHold()
         }
     }
     /// Let go of a hold — because the friend is ready, or because they have taken too long and a
     /// held picture with nothing on screen explaining it is worse than being out of step.
-    private func releaseHold(play: Bool) {
-        heldForPeer = false
-        holdUntil = 0
+    private func releaseHold() {
+        dropHold()
         // Nothing is corrected against a report taken while the picture was standing still.
         report = nil
-        if play { playback?.togetherPlay() }
+        playback?.togetherPlay()
+    }
+    /// The wait is over without anybody being started: somebody said what they wanted instead.
+    private func dropHold() {
+        heldForPeer = false
+        holdUntil = 0
+    }
+    /// Ends a correction that is running. Nothing to do when none is.
+    private func normalSpeed() {
+        guard correcting else { return }
+        playback?.togetherSetRate(1)
+        correcting = false
+    }
+    /// A jump small enough to be read as the video stuttering is not worth making — and on HLS it
+    /// is not a stutter but a stall: the segment is fetched again, the picture stops, the friend
+    /// is told this side is loading and waits. Every pause and play used to cost one. Android's
+    /// `catchUpTo`, with the same half second.
+    private func catchUp(to positionMs: Int64, on playback: any TogetherPlayback) {
+        guard abs(playback.togetherSnapshot.positionMs - positionMs) >= TogetherSync.ignoreMs else { return }
+        playback.togetherSeek(toMilliseconds: positionMs)
+    }
+    /// Where the friend is at this moment, as a position in the episode: their last report carried
+    /// forward on this device's clock, or the greeting carried forward until they have reported.
+    /// The greeting is stale by however long the invitation sat on screen, and a picture opened at
+    /// it jumps visibly — with a sentence about it — the moment the session catches up.
+    private func peerPositionNow(fallback greeting: TogetherMessage) -> Int64 {
+        let now = self.now()
+        if let report {
+            let moved = report.playing ? max(0, now - report.sentAt + clock.offsetMs) : 0
+            return max(0, report.positionMs + moved)
+        }
+        let said = greeting.positionMs ?? 0
+        guard greeting.playing == true, pendingGreetingAt > 0 else { return said }
+        return said + min(max(0, now - pendingGreetingAt), TogetherTiming.helloCarryMaxMs)
     }
     func correct() {
         guard phase == .live, let playback else { return }
@@ -609,7 +649,11 @@ struct TogetherJoinTarget: Equatable {
                 return
             }
             guard let animeID = message.animeId, let episode = message.episode, let playing = message.playing else { return }
-            let item = TogetherEpisode(animeID: animeID, episode: episode, translationID: message.translationId, positionMs: message.positionMs ?? 0)
+            // Where they are now, not where they were when they said hello: a viewer reading the
+            // invitation for ten seconds is ten seconds behind by the time they say yes.
+            let item = TogetherEpisode(animeID: animeID, episode: episode, translationID: message.translationId,
+                                       positionMs: peerPositionNow(fallback: message))
+            dropHold()
             if playback.togetherSnapshot.animeID != animeID || playback.togetherSnapshot.episode != episode {
                 onOpenPlayback?(item)
                 Task { try? await playback.togetherOpen(item); playback.togetherSetRate(1); if playing { playback.togetherPlay() } else { playback.togetherPause() } }
@@ -622,11 +666,16 @@ struct TogetherJoinTarget: Equatable {
             playback.togetherPlay()
             conversation.notice(.played, peerName: peerName, positionMs: message.positionMs ?? 0)
         case .pause:
-            if let positionMs = message.positionMs { playback.togetherSeek(toMilliseconds: positionMs) }
+            dropHold()
+            if let positionMs = message.positionMs { catchUp(to: positionMs, on: playback) }
             playback.togetherPause()
             conversation.notice(.paused, peerName: peerName, positionMs: message.positionMs ?? 0)
+        // Whatever the friend says next outranks a picture this side stopped for them: a pause
+        // pressed while this side was waiting is a pause, and a hold that later let go with `play`
+        // would overrule it — while the friend's own reports, being paused, said nothing.
         case .seek:
-            if let positionMs = message.positionMs { playback.togetherSeek(toMilliseconds: positionMs) }
+            dropHold()
+            if let positionMs = message.positionMs { catchUp(to: positionMs, on: playback) }
             conversation.notice(.seeked, peerName: peerName, positionMs: message.positionMs ?? 0)
         case .episode:
             guard let episode = message.episode else { return }
@@ -634,22 +683,56 @@ struct TogetherJoinTarget: Equatable {
                                        episode: episode, translationID: message.translationId, positionMs: message.positionMs ?? 0)
             onOpenPlayback?(item)
             conversation.notice(.episode, peerName: peerName, episode: episode)
+            dropHold()
             Task { try? await playback.togetherOpen(item) }
         case .state, .ping, .pong, .chat, .reaction, .voice, .bye: break
         }
     }
 
     private enum Action { case play(position: Int64), pause(position: Int64), seek(position: Int64), episode(TogetherEpisode) }
+            dropHold()
+            // A correction running when the episode changes would be inherited by one it was
+            // never about; and an episode a friend opened is one they are playing — on both
+            // phones opening one starts it — so this side plays it too rather than sitting on
+            // its first frame while the friend's reports say they are a minute in.
+            normalSpeed()
     private var currentPosition: Int64 { playback?.togetherSnapshot.positionMs ?? 0 }
     private func sendAction(_ action: Action) {
         switch action {
-        case .play(let position): sendMessage(.init(t: .play, seq: 1, positionMs: position, playing: true))
-        case .pause(let position): sendMessage(.init(t: .pause, seq: 1, positionMs: position, playing: false))
+        case .play(let position): dropHold(); sendMessage(.init(t: .play, seq: 1, positionMs: position, playing: true))
+        case .pause(let position): dropHold(); sendMessage(.init(t: .pause, seq: 1, positionMs: position, playing: false))
         case .seek(let position): sendMessage(.init(t: .seek, seq: 1, positionMs: position))
-        case .episode(let item): sendMessage(.init(t: .episode, seq: 1, animeId: item.animeID, episode: item.episode, translationId: item.translationID, positionMs: item.positionMs))
+        case .episode(let item): dropHold(); sendMessage(.init(t: .episode, seq: 1, animeId: item.animeID, episode: item.episode, translationId: item.translationID, positionMs: item.positionMs))
+    /// The friend pressed «выйти». Nobody to hold a seat for.
+    ///
+    /// Used to be ignored: the relay's `peer-left` followed a moment later and was the only thing
+    /// heard, so a friend who left on purpose was shown as a connection that dropped — half a
+    /// minute of «Восстанавливаем связь» and then «Связь прервалась», an account of what happened
+    /// that is simply untrue. Android's `departed(deliberate = true)`, and the same ending.
+    private func peerSaidGoodbye() {
+        TogetherLog.write("peer said goodbye")
+        conversation.notice(.left, peerName: peerName)
+        generation = UUID()
+        receiveTask?.cancel(); receiveTask = nil
+        heartbeat?.cancel(); heartbeat = nil
+        transport?.close(); transport = nil
+        normalSpeed()
+        playback?.togetherDuck(false)
+        report = nil; rejoinBy = nil; dropHold()
+        invitation = nil
+        // Whoever is still on the join screen is told there: the invitation has been withdrawn,
+        // and knocking on the room again would only find it empty.
+        if joining != nil {
+            joining = TogetherJoinTarget(peerName: peerName, failure: TogetherCopy.ended, retryable: false)
+        }
+        enter(.ended)
+    }
+
         }
     }
     private func sendMessage(_ message: TogetherMessage, invitation: TogetherInvitation? = nil, transport: TogetherTransport? = nil) {
+        // This viewer said what they want the picture doing, and a wait this side had put on it
+        // for the friend's sake must not say otherwise when the friend is ready.
         guard let invitation = invitation ?? self.invitation, let transport = transport ?? self.transport else { return }
         // The number and the bytes are settled here, on this actor, in the order the caller wrote
         // them. Doing it inside the task would let the language schedule two sends in either order,

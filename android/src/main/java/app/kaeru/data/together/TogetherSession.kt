@@ -388,6 +388,13 @@ class TogetherSession(
                     launch { greetOnConnect(transport) }
                     launch { pings() }
                     launch { greetings() }
+        currentRate = SyncPolicy.NORMAL
+        // A wait belongs to the room it was made in. Carried over, a hold left by a friend who
+        // was loading when the last room died would let go with `play` on the next friend's
+        // first report, and a quiet period would keep the next room uncorrected for a while.
+        peerLoading = false
+        dropHold()
+        correctionSettledAt = 0
                     launch { reports() }
                     launch { corrections() }
                     launch { port.localActions.collect { forward(it) } }
@@ -781,6 +788,10 @@ class TogetherSession(
         // would open it under the title this phone was on before.
         if (animeId == 0 || !asHost) animeId = message.animeId
         rejoin?.cancel()
+        // Whatever the friend says next outranks a picture this side stopped for them: a pause
+        // pressed while this side was waiting is a pause, and a hold that later let go with
+        // `play` would overrule it — while the friend's own reports, being paused, said nothing.
+        dropHold()
         rejoin = null
         if (asHost) {
             // The answer first, and only then the round trip the clocks need — for the same
@@ -883,13 +894,16 @@ class TogetherSession(
      * held picture with nothing on screen explaining it is worse than being out of step.
      */
     private suspend fun releaseHold() {
-        heldForPeer = false
-        holdUntil = 0
+        dropHold()
         // Nothing is corrected against a report taken while the picture stood still.
         peer = null
         port.play()
     }
 
+            // Whether their loading ended in a picture that moves or in one they stopped for
+            // this side's sake — two phones stalling at once each wait for the other, and the
+            // first report to say «not loading» is what breaks that. A pause the friend chose is
+            // not this case: it arrives as a Pause, ahead of any report, and takes the hold off.
     /**
      * The friend's socket went away. It is not the end: a room keeps the seat for half a minute,
      * which is about how long a train takes to leave a tunnel.
@@ -906,6 +920,12 @@ class TogetherSession(
             forceNormalSpeed()
             // Settled before the channel is taken down, not after. `stop()` cancels the job this
             // is running on, so anything written after it survives only because something further
+    /** The wait is over without anybody being started: somebody said what they wanted instead. */
+    private fun dropHold() {
+        heldForPeer = false
+        holdUntil = 0
+    }
+
             // down swallows the cancellation — which is a `runCatching` that exists for an
             // entirely different reason and could be tightened at any time.
             _state.value = SessionState.Ended
@@ -949,8 +969,16 @@ class TogetherSession(
         // reopen the episode they are already watching.
         if (channel == null || _state.value !is SessionState.Live) return
         val message = when (action) {
-            is LocalAction.Play -> TogetherMessage.Play(action.positionMs, nextSeq())
-            is LocalAction.Pause -> TogetherMessage.Pause(action.positionMs, nextSeq())
+            // This viewer said what they want the picture doing, and a wait this side had put on
+            // it for the friend's sake must not say otherwise when the friend is ready.
+            is LocalAction.Play -> {
+                dropHold()
+                TogetherMessage.Play(action.positionMs, nextSeq())
+            }
+            is LocalAction.Pause -> {
+                dropHold()
+                TogetherMessage.Pause(action.positionMs, nextSeq())
+            }
             is LocalAction.Seek -> TogetherMessage.Seek(action.positionMs, nextSeq())
             is LocalAction.Episode -> {
                 animeId = action.animeId
@@ -969,6 +997,7 @@ class TogetherSession(
         send(TogetherMessage.Chat(line, nextSeq()))
         announce(TogetherEvent.ChatItem(nextEventId(), fromPeer = false, text = line, at = clock.millis()))
     }
+                dropHold()
 
     override suspend fun sendReaction(kind: ReactionKind) {
         if (channel == null) return

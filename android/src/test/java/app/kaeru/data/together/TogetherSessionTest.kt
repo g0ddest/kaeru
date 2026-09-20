@@ -928,6 +928,57 @@ class TogetherSessionTest {
         assertEquals(1, port.plays)
     }
 
+    /**
+     * A hold is a wait for a friend who wants to play, and the friend's own word ends it. Their
+     * pause used to be applied and then undone: the pause paused this side, their next report —
+     * paused, so no longer «loading» — let the hold go, and letting go meant play.
+     */
+    @Test
+    fun `a friend who pauses while this side waits for them stays paused`() = sessionTest {
+        live()
+        friendIsAt(60_000, playing = true, buffering = true, seq = 20L)
+        assertEquals(1, port.pauses)
+
+        transport.deliver(TogetherMessage.Pause(positionMs = 60_000, seq = 21))
+        runCurrent()
+        friendIsAt(60_000, playing = false, buffering = false, seq = 22L)
+
+        assertEquals("после их паузы никто не жмёт play", 0, port.plays)
+        assertFalse(port.state.value.playing)
+    }
+
+    /**
+     * Two phones stalling at once each stop for the other, and a friend who stopped for this side
+     * reports «paused» without ever sending a Pause. The first report to say «not loading» has to
+     * start this side again, or both sit paused for good, each waiting for the other to move.
+     */
+    @Test
+    fun `two pictures that stopped for each other both start again`() = sessionTest {
+        live()
+        friendIsAt(60_000, playing = true, buffering = true, seq = 20L)
+        assertEquals(1, port.pauses)
+
+        // Their next word: not loading, and stopped — for this side's sake, since no Pause came.
+        friendIsAt(60_000, playing = false, buffering = false, seq = 21L)
+
+        assertEquals(1, port.plays)
+    }
+
+    /** This viewer's own pause during a wait is a pause, not a wait that ends in play. */
+    @Test
+    fun `this viewer pausing during a wait is not overruled when the friend is ready`() = sessionTest {
+        live()
+        friendIsAt(60_000, playing = true, buffering = true, seq = 20L)
+        assertEquals(1, port.pauses)
+
+        port.did(LocalAction.Pause(60_000))
+        runCurrent()
+        friendIsAt(60_500, playing = true, buffering = false, seq = 21L)
+
+        assertEquals(0, port.plays)
+        assertTrue(transport.sentOf<TogetherMessage.Pause>().isNotEmpty())
+    }
+
     /** The side that made the room is what the picture is measured against; it never moves. */
     @Test
     fun `the host never corrects itself`() = sessionTest {

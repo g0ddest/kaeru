@@ -304,3 +304,58 @@ import XCTest
         await manager.leave()
     }
 }
+    /// A hold is a wait for a friend who wants to play, and the friend's own word ends it. Their
+    /// pause used to be applied and then undone: the pause paused this side, their next report —
+    /// paused, so no longer «loading» — let the hold go, and letting go meant play.
+    func testAFriendWhoPausesWhileThisSideWaitsForThemStaysPaused() async throws {
+        let (transport, player, manager, link) = try await room()
+        try transport.deliver(TogetherMessage(t: .hello, seq: 1, name: "Guest", animeId: 7, episode: 1, positionMs: 1000, playing: true),
+                              link: link, side: .guest)
+        try transport.deliver(TogetherMessage(t: .state, seq: 2, positionMs: 1000, playing: true, buffering: true, sentAt: 1),
+                              link: link, side: .guest)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(player.pauses, 1)
+        try transport.deliver(TogetherMessage(t: .pause, seq: 3, positionMs: 1000), link: link, side: .guest)
+        try transport.deliver(TogetherMessage(t: .state, seq: 4, positionMs: 1000, playing: false, buffering: false, sentAt: 2),
+                              link: link, side: .guest)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(player.plays, 0, "после их паузы никто не жмёт play")
+        XCTAssertFalse(player.togetherSnapshot.playing)
+        await manager.leave()
+    }
+
+    /// Two phones stalling at once each stop for the other, and a friend who stopped for this
+    /// side reports «paused» without ever sending a pause. The first report to say «not loading»
+    /// has to start this side again, or both sit paused for good.
+    func testTwoPicturesThatStoppedForEachOtherBothStartAgain() async throws {
+        let (transport, player, manager, link) = try await room()
+        try transport.deliver(TogetherMessage(t: .hello, seq: 1, name: "Guest", animeId: 7, episode: 1, positionMs: 1000, playing: true),
+                              link: link, side: .guest)
+        try transport.deliver(TogetherMessage(t: .state, seq: 2, positionMs: 1000, playing: true, buffering: true, sentAt: 1),
+                              link: link, side: .guest)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(player.pauses, 1)
+        try transport.deliver(TogetherMessage(t: .state, seq: 3, positionMs: 1000, playing: false, buffering: false, sentAt: 2),
+                              link: link, side: .guest)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(player.plays, 1)
+        await manager.leave()
+    }
+
+    /// This viewer's own pause during a wait is a pause, not a wait that ends in play.
+    func testThisViewerPausingDuringAWaitIsNotOverruledWhenTheFriendIsReady() async throws {
+        let (transport, player, manager, link) = try await room()
+        try transport.deliver(TogetherMessage(t: .hello, seq: 1, name: "Guest", animeId: 7, episode: 1, positionMs: 1000, playing: true),
+                              link: link, side: .guest)
+        try transport.deliver(TogetherMessage(t: .state, seq: 2, positionMs: 1000, playing: true, buffering: true, sentAt: 1),
+                              link: link, side: .guest)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(player.pauses, 1)
+        manager.sendPause()
+        try transport.deliver(TogetherMessage(t: .state, seq: 3, positionMs: 1500, playing: true, buffering: false, sentAt: 2),
+                              link: link, side: .guest)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(player.plays, 0)
+        await manager.leave()
+    }
+

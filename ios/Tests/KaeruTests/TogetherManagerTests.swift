@@ -20,14 +20,18 @@ private final class TransportEvents: @unchecked Sendable {
         var togetherSupportsRate = true
         var seeks: [Int64] = []
         var pauses = 0
+        var plays = 0
+        var opened: [TogetherEpisode] = []
         var rate: Float = 1
-        func togetherPlay() { togetherSnapshot.playing = true }
+        func togetherPlay() { plays += 1; togetherSnapshot.playing = true }
         func togetherPause() { pauses += 1; togetherSnapshot.playing = false }
         func togetherSeek(toMilliseconds position: Int64) { seeks.append(position); togetherSnapshot.positionMs = position }
         func togetherSetRate(_ factor: Float) { rate = factor }
         func togetherDuck(_ on: Bool) {}
         func togetherOpen(_ episode: TogetherEpisode) async throws {
-            togetherSnapshot = TogetherPlaybackSnapshot(animeID: episode.animeID, episode: episode.episode, translationID: episode.translationID, positionMs: episode.positionMs, playing: true, ready: true)
+            opened.append(episode)
+            // Opened paused, the way `PlaybackTogetherAdapter` opens one: whether it then plays is the session's word.
+            togetherSnapshot = TogetherPlaybackSnapshot(animeID: episode.animeID, episode: episode.episode, translationID: episode.translationID, positionMs: episode.positionMs, playing: false, ready: true)
         }
     }
     final class Transport: TogetherTransport {
