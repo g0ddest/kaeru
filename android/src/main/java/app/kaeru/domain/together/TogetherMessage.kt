@@ -71,6 +71,14 @@ sealed interface TogetherMessage {
         val episode: Int,
         val translationId: Int? = null,
         override val seq: Long,
+        /**
+         * Which title the episode is in. Optional, because the message used to name an episode
+         * and nothing else — and the receiver opened that episode in whatever title it was on.
+         * Picking another title from the home screen therefore opened the wrong show on the
+         * friend's phone, while a change of episode within the title worked. iOS has always sent
+         * it; a build without it is read as «the same title».
+         */
+        val animeId: Int? = null,
     ) : TogetherMessage
 
     /**

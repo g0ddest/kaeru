@@ -930,7 +930,10 @@ class TogetherSession(
      */
     private suspend fun changed(message: TogetherMessage.Episode) {
         val here = port.state.value
-        if (here.episode == message.episode && here.translationId == message.translationId) return
+        // The title the friend named, or the one this session is on when they named none.
+        val title = message.animeId ?: animeId
+        if (title == here.animeId && here.episode == message.episode && here.translationId == message.translationId) return
+        animeId = title
         // Their last report is about the episode they have just left. Judged against the start of
         // the new one it is a twenty-minute gap and a seek to close it, on a player that has
         // barely opened — the same reason a correcting seek forgets the report it acted on.
@@ -938,7 +941,7 @@ class TogetherSession(
         // media3 keeps a playback speed across media items, so a correction running when the
         // episode changes would be inherited by an episode it was never about.
         normalSpeed()
-        port.openEpisode(animeId, message.episode, message.translationId, 0)
+        port.openEpisode(title, message.episode, message.translationId, 0)
         announce(TogetherEvent.Notice(NoticeKind.EPISODE, peerName, episode = message.episode))
         mentionVoice(message.translationId)
     }
@@ -1108,7 +1111,7 @@ class TogetherSession(
                 // The friend's last report is about the episode this side is leaving, and they
                 // will report from the new one once they have followed.
                 peer = null
-                TogetherMessage.Episode(action.episode, action.translationId, nextSeq())
+                TogetherMessage.Episode(action.episode, action.translationId, nextSeq(), animeId = action.animeId)
             }
         }
         lastControl = Control(message.seq, byHost = asHost)

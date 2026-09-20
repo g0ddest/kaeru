@@ -71,6 +71,12 @@ import Foundation
     func togetherDuck(_ on: Bool) { playback?.setDucked(on) }
     func togetherOpen(_ episode: TogetherEpisode) async throws {
         guard let playback else { throw TogetherError.playbackUnavailable }
+        // Another title, not another episode: the friend picked a different show. A player that
+        // could only change episodes within its own title opened «episode 7» of the wrong one.
+        if episode.animeID > 0, episode.animeID != playback.anime.id {
+            await playback.openTitle(id: episode.animeID, episode: episode.episode, position: Double(episode.positionMs) / 1000)
+            return
+        }
         playback.selectEpisode(episode.episode, position: Double(episode.positionMs) / 1000, play: false, notify: false)
     }
     func close() {

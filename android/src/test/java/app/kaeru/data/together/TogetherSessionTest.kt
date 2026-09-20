@@ -1116,6 +1116,32 @@ class TogetherSessionTest {
         assertEquals(100, report.animeId)
     }
 
+    /** A friend who opened another title is followed to that title, not to its episode number here. */
+    @Test
+    fun `an episode in another title opens that title`() = sessionTest {
+        liveAsGuest()   // this side is on anime 100
+
+        transport.deliver(TogetherMessage.Episode(episode = 7, translationId = 11, seq = 20L, animeId = 62391))
+        runCurrent()
+
+        val opened = port.opened.last()
+        assertEquals(62391, opened.animeId)
+        assertEquals(7, opened.episode)
+    }
+
+    @Test
+    fun `this side's episode change names its title`() = sessionTest {
+        live()
+        transport.sent.clear()
+
+        port.did(LocalAction.Episode(animeId = 62391, episode = 7, translationId = 11))
+        runCurrent()
+
+        val sent = transport.sentOf<TogetherMessage.Episode>().single()
+        assertEquals(62391, sent.animeId)
+        assertEquals(7, sent.episode)
+    }
+
     // ---- what this viewer did ----
 
     @Test

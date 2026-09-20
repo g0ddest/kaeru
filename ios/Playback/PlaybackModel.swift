@@ -20,7 +20,9 @@ enum PlaybackLocalAction {
 
 @MainActor @Observable final class PlaybackModel {
     let player = AVPlayer()
-    let anime: Anime
+    /// The title. Settable in one place only — `openTitle` — for a friend in a shared viewing who
+    /// picked another show; everything else about this model treats it as fixed.
+    private(set) var anime: Anime
     private let model: AppModel
     private let account: String
     private(set) var episode: Int
@@ -199,6 +201,19 @@ enum PlaybackLocalAction {
     private func resumePosition(for episode: Int) -> Double {
         guard let progress = model.progressFor(animeID: anime.id, episode: episode) else { return 0 }
         return PlaybackPolicy.resume(position: progress.position, duration: progress.duration, threshold: model.preferences.watchedThreshold)
+    }
+    /// Another title, opened in this player — what a friend in a shared viewing did when they
+    /// picked a different show from their home screen. The room says «episode 7 of 62391», and a
+    /// player that could only change episodes within its own title opened episode 7 of the wrong
+    /// one. Everything the old title left behind — its dubs, its qualities, its skip marks — is
+    /// forgotten, because none of it is true of the new one.
+    func openTitle(id: Int, episode value: Int, position: Double = 0) async {
+        guard !closed, value > 0, id != anime.id, let next = await model.anime(id: id) else { return }
+        save(); policy.resetEpisode(); completedEpisode = nil
+        anime = next; episode = value; retried = false; finished = false
+        translations = []; qualities = []; stream = nil; translation = 0
+        model.beginPlayback(anime: next)
+        beginResolve(position: position, play: false)
     }
     func selectEpisode(_ value: Int, position: Double? = nil, play: Bool = true, notify: Bool = true) {
         guard !closed, value > 0, value <= episodeCount, value != episode else { return }
