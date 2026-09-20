@@ -145,16 +145,26 @@ struct DetailView: View {
         let watched = episode <= (rate?.episodes ?? 0)
         let available = episode <= playableEpisodes
         let progress = model.progressFor(animeID: anime.id, episode: episode)
+        // Three rows in every tile, always: title, track, caption. The grid gives a row the height
+        // of its tallest tile, so a bar that appeared on some of them and not others left the rest
+        // with a hole in the middle and their captions at different heights — a wall of episodes
+        // that read as ragged rather than as a list.
+        let fraction = episodeFraction(watched: watched, progress: progress)
         return Button { play(episode) } label: {
             VStack(alignment: .leading, spacing: 9) {
                 Label("\(episode) серия", systemImage: watched ? "checkmark.circle.fill" : available ? "play.circle" : "clock")
                     .font(.subheadline.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading)
-                if !available { Text("Не вышла").font(.caption).foregroundStyle(Palette.inkSoft) }
-                else if watched { Text("Просмотрено").font(.caption).foregroundStyle(Palette.inkSoft) }
-                else if let progress, progress.duration > 0, progress.position > 0 {
-                    ProgressTrack(value: progress.position / progress.duration, track: Palette.hairline)
-                    Text(CatalogPresentation.timestamp(progress.position)).font(.caption).monospacedDigit().foregroundStyle(Palette.inkSoft)
-                }
+                ProgressTrack(value: fraction, track: Palette.hairline, minimumFill: 0)
+                    .opacity(available ? 1 : 0.4)
+                let caption = episodeCaption(watched: watched, available: available, progress: progress)
+                Text(caption?.text ?? "Не начата")
+                    .font(.caption).monospacedDigit().foregroundStyle(Palette.inkSoft).lineLimit(1)
+                    .accessibilityLabel(caption?.spoken ?? "")
+                    // An episode nobody has touched has nothing to say, but it still holds the
+                    // line: the placeholder keeps its tile the same height as its neighbours
+                    // without putting the same sentence under two dozen of them.
+                    .opacity(caption == nil ? 0 : 1)
+                    .accessibilityHidden(caption == nil)
             }
             .padding(12).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Palette.surface, in: RoundedRectangle(cornerRadius: Metrics.tileRadius, style: .continuous))
@@ -180,6 +190,25 @@ struct DetailView: View {
             if watched { unwatchEpisode = episode }
             else { model.markEpisode(anime: anime, episode: episode, watched: true) }
         }
+    }
+    /// Filled at all only by something actually watched: marked-off episodes are full, the one
+    /// somebody stopped in the middle of is where they stopped, and everything else is empty.
+    private func episodeFraction(watched: Bool, progress: EpisodeProgress?) -> Double {
+        if watched { return 1 }
+        guard let progress, progress.duration > 0, progress.position > 0 else { return 0 }
+        return min(1, progress.position / progress.duration)
+    }
+    /// Nil when there is nothing to say about this episode yet. A tile is about as wide as one
+    /// Russian word, so the position is shown as the time alone and read out as the sentence.
+    private func episodeCaption(watched: Bool, available: Bool,
+                                progress: EpisodeProgress?) -> (text: String, spoken: String)? {
+        if !available { return ("Не вышла", "Не вышла") }
+        if watched { return ("Просмотрено", "Просмотрено") }
+        if let progress, progress.duration > 0, progress.position > 0 {
+            let stamp = CatalogPresentation.timestamp(progress.position)
+            return (stamp, "Остановились на \(stamp)")
+        }
+        return nil
     }
     private var playLabel: String {
         if target.rewatch { return "Пересмотреть с первой серии" }

@@ -143,6 +143,10 @@ enum TogetherPhase: Equatable {
         transport?.close(); transport = nil; playback?.togetherSetRate(1); playback?.togetherDuck(false)
         correcting = false; report = nil; rejoinBy = nil
         error = nil; peerName = nil
+        // The room goes with it. Leaving used to keep the invitation, so «Завершить комнату» left
+        // the link, the share button and itself on screen — a room that had ended and would not
+        // go away.
+        invitation = nil
         conversation.message = TogetherCopy.leftSession
         enter(.ended)
     }
@@ -487,6 +491,9 @@ enum TogetherPhase: Equatable {
         if correcting { playback?.togetherSetRate(1); correcting = false }
         playback?.togetherDuck(false)
         report = nil; rejoinBy = nil
+        // Nothing here dials again, so the link this invitation carries is a link to a room that
+        // never opened. Keeping it on screen only offers people a way to share a dead one.
+        invitation = nil
         enter(.failed)
     }
 }

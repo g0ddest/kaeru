@@ -223,11 +223,14 @@ struct ProgressTrack: View {
     /// The unfilled part. White by default because the track almost always lies over artwork; a
     /// track on a page surface passes the hairline colour instead.
     var track: Color = .white.opacity(0.28)
+    /// How much is drawn at zero. A sliver, so a position a few seconds in is still visible —
+    /// except where the track stands in a row of them and «not started» has to read as empty.
+    var minimumFill: Double = 0.02
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
                 Capsule().fill(track)
-                Capsule().fill(Palette.accent).frame(width: proxy.size.width * min(1, max(0.02, value)))
+                Capsule().fill(Palette.accent).frame(width: proxy.size.width * min(1, max(minimumFill, value)))
             }
         }
         .frame(height: 3)

@@ -83,6 +83,7 @@
 
   .actions { display: flex; flex-direction: column; gap: 12px; margin: 0 0 14px; }
 
+  .room dd.room-note { margin: 10px 0 0; font-size: 14px; font-weight: 500; letter-spacing: 0; color: var(--muted); word-break: normal; }
   a.button {
     display: block;
     text-align: center;
@@ -141,9 +142,15 @@
     пауза, перемотка и следующая серия работают у обоих.
   </p>
 
+  <!--
+    Shown so two people can check they are in the same room out loud. Never as something to type
+    in: the key is in the fragment, the code is the other half, and a code entered by hand opens
+    nothing. The line under it says that, because people tried.
+  -->
   <dl class="room" id="room" hidden>
     <dt>Код сессии</dt>
     <dd id="code"></dd>
+    <dd class="room-note">Вводить его в приложение не нужно — открывайте саму ссылку.</dd>
   </dl>
 
   <div class="actions">
@@ -199,14 +206,20 @@
     // not a room and a key the app would take, the primary action stays the one that helps:
     // install it.
     var open = document.getElementById('open');
-    if (/android/i.test(navigator.userAgent)) {
-      var key = window.location.hash.replace(/^#/, '');
-      if (/^[A-Za-z0-9_-]{11}$/.test(room) && /^[A-Za-z0-9_-]{22}$/.test(key)) {
-        open.href = 'intent://watch?r=' + room + '&k=' + key +
-          '#Intent;scheme=kaeru;package=app.kaeru;S.browser_fallback_url=' +
-          encodeURIComponent('https://github.com/g0ddest/kaeru/releases') + ';end';
-        open.textContent = 'Открыть в Kaeru';
-      }
+    var key = window.location.hash.replace(/^#/, '');
+    var real = /^[A-Za-z0-9_-]{11}$/.test(room) && /^[A-Za-z0-9_-]{22}$/.test(key);
+    if (real && /android/i.test(navigator.userAgent)) {
+      open.href = 'intent://watch?r=' + room + '&k=' + key +
+        '#Intent;scheme=kaeru;package=app.kaeru;S.browser_fallback_url=' +
+        encodeURIComponent('https://github.com/g0ddest/kaeru/releases') + ';end';
+      open.textContent = 'Открыть в Kaeru';
+    } else if (real && /iphone|ipad|ipod/i.test(navigator.userAgent)) {
+      // The same address in the app's own scheme. iOS opens an installed app straight from it and
+      // does nothing at all when there is none — which is why the page under the button still
+      // says how to get one, and why the key rides in the query: a scheme URL has its own
+      // fragment and this one is already taken.
+      open.href = 'kaeru://watch?r=' + room + '&k=' + key;
+      open.textContent = 'Открыть в Kaeru';
     }
 
     // «latest» on GitHub means «latest full release», and every Kaeru build so far is a

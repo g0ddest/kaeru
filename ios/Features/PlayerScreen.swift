@@ -10,6 +10,8 @@ struct PlayerScreen: View {
     /// Which way the last double tap went, while its label is still up.
     @State private var seekHinted: PlayerTapZone?
     @State private var hintRevision = 0
+    /// The invitation to hand somebody, the moment there is one to hand over.
+    @State private var sharing: TogetherShare?
     init(anime: Anime, episode: Int, model: AppModel) {
         self.model = model
         _playback = State(initialValue: PlaybackModel(anime: anime, episode: episode, model: model))
@@ -52,13 +54,20 @@ struct PlayerScreen: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Готово") { playback.close(); dismiss() }
                 }
-                // Trailing, beside the menu: «Готово» owns the left of a modal, and the cast
-                // control sits where the Android client puts it — at the other end of the bar.
+                // Trailing, in reading order and ending in the menu: «Готово» owns the left of a
+                // modal, and the rest sits where the Android client puts it — at the other end of
+                // the bar. Watching with somebody is in it rather than in the «…» menu, because
+                // it is decided here, on the episode, and a button nobody finds is a feature
+                // nobody has. The slot that used to hold it stood empty until a session existed,
+                // which took the title with it and left a hole beside «Готово».
+                ToolbarItem(placement: .topBarTrailing) { together }
                 ToolbarItem(placement: .topBarTrailing) { CastButton(manager: playback.castManager) }
                 ToolbarItem(placement: .primaryAction) { options }
-                ToolbarItem(placement: .principal) { TogetherChip(manager: model.together, invitation: invitation) }
             }
             .toolbarBackground(.visible, for: .navigationBar)
+            // A room nobody was invited to is a room for one. Android raises the share sheet the
+            // moment the room exists; so does this.
+            .sheet(item: $sharing) { ShareSheet(items: [$0.text]) }
         }
         .preferredColorScheme(.dark)
         .task { await playback.start() }
@@ -160,6 +169,28 @@ struct PlayerScreen: View {
                 .tint(.white).foregroundStyle(.black)
         }
     }
+    /// An invitation when there is nobody, and who is there when there is.
+    ///
+    /// AVKit owns the transport bar and there is no supported way to put a button in it, so an
+    /// opening is skipped by the offer that appears over the picture, by the timeline, or by a
+    /// double tap — not by a menu item that repeats the ∓10 s the player already draws.
+    @ViewBuilder private var together: some View {
+        if TogetherCopy.sessionChip(phase: model.together.phase, peerName: model.together.peerName) != nil {
+            TogetherChip(manager: model.together, invitation: invitation)
+        } else {
+            Button {
+                Task {
+                    await model.together.create()
+                    guard let invitation else { return }
+                    sharing = TogetherShare(text: invitation)
+                }
+            } label: {
+                Image(systemName: "person.2")
+            }
+            .accessibilityLabel(TogetherCopy.watchTogether)
+            .disabled(playback.loading || model.together.phase == .connecting)
+        }
+    }
     private var options: some View {
         Menu {
             Section(playback.anime.title) {
@@ -186,17 +217,6 @@ struct PlayerScreen: View {
                     }
                 }
             }
-            Section("Перемотка") {
-                Button { playback.seek(by: -Double(playback.skipSeconds)) } label: {
-                    Label("Назад на \(playback.skipSeconds) с", systemImage: "gobackward")
-                }.keyboardShortcut(.leftArrow, modifiers: [])
-                Button { playback.seek(by: Double(playback.skipSeconds)) } label: {
-                    Label("Вперёд на \(playback.skipSeconds) с", systemImage: "goforward")
-                }.keyboardShortcut(.rightArrow, modifiers: [])
-                // About the length of an opening, for anybody who would rather press once than
-                // drag a timeline they cannot see the frames of.
-                Button { playback.seek(by: 85) } label: { Label("Вперёд на 85 с", systemImage: "forward.end.alt") }
-            }
             Section {
                 // Closures rather than bare method references: a reference to a main-actor method
                 // is not a `@Sendable` function value, and `Binding`'s setter wants one.
@@ -214,15 +234,6 @@ struct PlayerScreen: View {
                         .disabled(playback.translation <= 0)
                 }
                 if playback.hasNext { Button("Следующая серия") { playback.nextNow() } }
-            }
-            // Offered here because this is the screen somebody is on when they decide to watch
-            // with a friend. Once there is a room, the chip in the bar carries it.
-            if model.together.phase == .idle || model.together.phase == .ended || model.together.phase == .failed {
-                Section {
-                    Button(TogetherCopy.watchTogether, systemImage: "person.2") {
-                        Task { await model.together.create() }
-                    }
-                }
             }
         } label: { Image(systemName: "ellipsis.circle") }
         .accessibilityLabel("Настройки воспроизведения")

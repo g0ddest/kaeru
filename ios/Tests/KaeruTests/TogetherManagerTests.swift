@@ -35,8 +35,12 @@ private final class TransportEvents: @unchecked Sendable {
         var continuation: AsyncThrowingStream<TogetherTransportEvent, Error>.Continuation!
         var stream: AsyncThrowingStream<TogetherTransportEvent, Error>!
         private var events: TransportEvents!
+        /// A relay that is not there — an empty address in the build, no network, a room refused.
+        var refuse = false
         init() { stream = AsyncThrowingStream { continuation = $0 }; events = TransportEvents(stream) }
-        func connect(_ invitation: TogetherInvitation, asHost: Bool) async throws {}
+        func connect(_ invitation: TogetherInvitation, asHost: Bool) async throws {
+            if refuse { throw TogetherError.notConfigured }
+        }
         func receive() async throws -> TogetherTransportEvent {
             guard let event = try await events.next() else { throw TogetherError.disconnected }
             return event
@@ -74,6 +78,25 @@ private final class TransportEvents: @unchecked Sendable {
         await manager.leave()
         try transport.deliver(TogetherMessage(t: .pause, seq: 100, positionMs: 5000), link: link, side: .guest)
         await settle(); XCTAssertEqual(player.pauses, 0); XCTAssertEqual(manager.phase, .ended)
+    }
+    /// «Завершить комнату» used to leave the room on screen: the phase said «Завершено» while the
+    /// link, the share button and the button itself stayed exactly where they were.
+    func testLeavingTakesTheRoomWithIt() async throws {
+        let transport = Transport()
+        let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Host", transportFactory: { _, _ in transport })
+        await manager.create(); await settle()
+        XCTAssertNotNil(manager.invitation)
+        await manager.leave(); await settle()
+        XCTAssertEqual(manager.phase, .ended)
+        XCTAssertNil(manager.invitation)
+    }
+    /// And a room that never opened is not a room to share either.
+    func testAFailedRoomIsNotLeftOnScreen() async throws {
+        let transport = Transport(); transport.refuse = true
+        let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Host", transportFactory: { _, _ in transport })
+        await manager.create(); await settle()
+        XCTAssertEqual(manager.phase, .failed)
+        XCTAssertNil(manager.invitation)
     }
     func testGuestRoutesThenAttachesReadyPlayback() async throws {
         let transport = Transport(); let player = Playback()

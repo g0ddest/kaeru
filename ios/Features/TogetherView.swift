@@ -59,6 +59,14 @@ struct TogetherView: View {
 
     private func join() {
         let typed = invitation.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The page an invitation lands on shows a session code, and a code is the one thing that
+        // can be typed here and cannot possibly work: the key that opens the room is the part
+        // after the `#`, which never leaves the phone that opened the link. Saying so beats a
+        // button that appears to do nothing.
+        if typed.range(of: "^[A-Za-z0-9_-]{6,32}$", options: .regularExpression) != nil {
+            linkError = "Это только код комнаты. Нужна вся ссылка целиком — ключ в ней идёт после «#»."
+            return
+        }
         do {
             guard let url = URL(string: typed) else { throw TogetherError.invalidInvitation }
             let parsed = try TogetherInvitation.parse(url)

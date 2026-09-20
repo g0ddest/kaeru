@@ -83,6 +83,12 @@ struct RootView: View {
         }
         .fullScreenCover(item: $deepLinkRoute) { PlayerScreen(anime: $0.anime, episode: $0.episode, model: model) }
         .onOpenURL { open($0) }
+        // A universal link is not a URL the app is opened with — it arrives as a browsing activity,
+        // and `onOpenURL` never sees it. Without this line an invitation tapped in a messenger went
+        // to Safari and the landing page, which is what a phone without the app is shown.
+        .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+            if let url = activity.webpageURL { open(url) }
+        }
         // A notification tap hands its URL to the app delegate, which has no view to route from.
         .onChange(of: ApplicationRuntime.shared.pendingURL) { _, url in if url != nil { openPending() } }
         .onChange(of: model.session?.account.id) { _, id in
