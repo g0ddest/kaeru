@@ -33,9 +33,16 @@ import Foundation
         // is a report the friend will settle a quarter of a second — or a second — away from.
         let live = value.player.currentTime().seconds
         let position = value.snapshot.ready && live.isFinite && live >= 0 ? live : value.snapshot.position
+        // `playing` on the wire is what the viewer asked for, not what the engine is managing.
+        // `isPlaying` follows `timeControlStatus`, which is `.waitingToPlayAtSpecifiedRate` for as
+        // long as a segment is on its way — so a stall went out as «paused, buffering», which is
+        // exactly what the friend takes for a pause with an empty buffer and never waits for.
+        // AVPlayer's `rate` is the rate that was asked for and stays non-zero through the wait;
+        // it is the intent, and a picture stalling on its way to playing is playing, and buffering.
+        let playing = value.snapshot.isPlaying || (value.snapshot.buffering && value.player.rate > 0)
         return .init(animeID: value.snapshot.animeID, episode: value.snapshot.episode,
                      translationID: value.snapshot.translation, positionMs: Int64(max(0, position) * 1000),
-                     playing: value.snapshot.isPlaying, buffering: value.snapshot.buffering, ready: value.snapshot.ready)
+                     playing: playing, buffering: value.snapshot.buffering, ready: value.snapshot.ready)
     }
     var togetherSupportsRate: Bool { true }
     func togetherPlay() { playback?.setPlaying(true, notify: false) }

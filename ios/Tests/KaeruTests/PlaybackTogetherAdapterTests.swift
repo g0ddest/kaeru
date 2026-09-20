@@ -60,4 +60,17 @@ private typealias Stream = Kaeru.Stream
         adapter.togetherSetRate(1)
         XCTAssertEqual(playback.player.rate, 1, accuracy: 0.001)
     }
+
+    /// A picture waiting for a segment is on its way to playing, and the friend is told so — the
+    /// whole of «ждём друга» hangs on a stall being told apart from a pause.
+    func testAPictureWaitingForTheNetworkIsReportedAsPlayingAndBuffering() throws {
+        let (playback, adapter) = try bench()
+        defer { playback.close() }
+        playback.player.replaceCurrentItem(with: AVPlayerItem(url: URL(fileURLWithPath: "/dev/null")))
+        XCTAssertTrue(adapter.togetherSnapshot.buffering)
+        XCTAssertFalse(adapter.togetherSnapshot.playing)
+        playback.player.rate = 1
+        XCTAssertTrue(adapter.togetherSnapshot.buffering)
+        XCTAssertTrue(adapter.togetherSnapshot.playing, "стоп на пути к воспроизведению — не пауза")
+    }
 }
