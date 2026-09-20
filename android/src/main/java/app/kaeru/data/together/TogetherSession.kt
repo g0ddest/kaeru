@@ -880,6 +880,10 @@ class TogetherSession(
     private suspend fun changed(message: TogetherMessage.Episode) {
         val here = port.state.value
         if (here.episode == message.episode && here.translationId == message.translationId) return
+        // Their last report is about the episode they have just left. Judged against the start of
+        // the new one it is a twenty-minute gap and a seek to close it, on a player that has
+        // barely opened — the same reason a correcting seek forgets the report it acted on.
+        peer = null
         // media3 keeps a playback speed across media items, so a correction running when the
         // episode changes would be inherited by an episode it was never about.
         normalSpeed()
@@ -1032,6 +1036,9 @@ class TogetherSession(
             is LocalAction.Episode -> {
                 dropHold()
                 animeId = action.animeId
+                // The friend's last report is about the episode this side is leaving, and they
+                // will report from the new one once they have followed.
+                peer = null
                 TogetherMessage.Episode(action.episode, action.translationId, nextSeq())
             }
         }

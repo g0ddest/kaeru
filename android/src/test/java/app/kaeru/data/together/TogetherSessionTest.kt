@@ -870,6 +870,48 @@ class TogetherSessionTest {
         watching.cancel()
     }
 
+    /**
+     * The friend's last report is about the episode they have just left. Judged against the start
+     * of the new one it was a twenty-minute gap, and a seek to close it on a player that had barely
+     * opened — the same reason a correcting seek forgets the report it acted on.
+     */
+    @Test
+    fun `a report from the episode before is not corrected against after an episode change`() = sessionTest {
+        liveAsGuest()
+        port.moveTo(1_200_000)
+        friendIsAt(1_200_000)
+        assertTrue(port.seeks.isEmpty())
+
+        transport.deliver(TogetherMessage.Episode(episode = 5, translationId = 11, seq = 21))
+        runCurrent()
+        assertEquals(5, port.state.value.episode)
+        assertEquals(0L, port.state.value.positionMs)
+        // Back onto the beat: one whole sync pass with the old report the only thing to go on,
+        // and then their first report from the new episode, which is what the gap is measured
+        // against. One jump, to where they are now — not one to where they were in the old.
+        advanceTimeBy(TogetherSession.SYNC_INTERVAL_MS - 1)
+        runCurrent()
+        assertTrue("nothing to judge the new episode against until they report from it", port.seeks.isEmpty())
+        friendIsAt(30_000, seq = 22)
+        assertEquals(listOf(true), port.seeks.map { it in 30_000L..30_010L })
+    }
+
+    /** And the same the other way round: this viewer's own episode change forgets their report too. */
+    @Test
+    fun `this side's episode change forgets the friend's report about the episode before`() = sessionTest {
+        liveAsGuest()
+        port.moveTo(1_200_000)
+        friendIsAt(1_200_000)
+
+        port.did(LocalAction.Episode(100, 5, 11))
+        runCurrent()
+        port.showing(animeId = 100, episode = 5, translationId = 11, positionMs = 0)
+        advanceTimeBy(TogetherSession.SYNC_INTERVAL_MS)
+        runCurrent()
+
+        assertTrue(port.seeks.isEmpty())
+    }
+
     @Test
     fun `an episode already on screen is not restarted to be told about`() = sessionTest {
         live()
