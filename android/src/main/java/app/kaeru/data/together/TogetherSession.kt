@@ -1084,12 +1084,22 @@ class TogetherSession(
      */
     private fun collect(message: TogetherMessage.Voice) {
         forgetStaleVoice()
+        // The receiver's own ceiling, not the sender's good manners: a clip is at most the eight
+        // slices `sendVoice` would cut it into, and at most MAX_VOICE_BYTES in all — the same two
+        // bounds iOS puts on a clip before it decodes a byte of it. Holding the key does not buy
+        // anybody the right to fill this phone's memory a slice at a time.
+        if (message.total !in 1..MAX_VOICE_CHUNKS || message.chunk !in 0 until message.total) {
+            voice = null
+            return
+        }
         val holding = voice
         if (message.chunk == 0) {
             voice = VoiceBuffer(message.total, message.durationMs, clock.millis()).also {
                 it.parts += message.bytes
             }
-        } else if (holding == null || holding.total != message.total || holding.parts.size != message.chunk) {
+        } else if (holding == null || holding.total != message.total || holding.parts.size != message.chunk ||
+            holding.parts.sumOf { it.size } + message.bytes.size > MAX_VOICE_BYTES
+        ) {
             voice = null
             return
         } else {
@@ -1220,7 +1230,8 @@ class TogetherSession(
         const val RATELESS_SEEK_MS = 1_000L
 
         /** Eight frames — comfortably past thirty seconds of Opus, and nowhere near a frame cap. */
-        const val MAX_VOICE_BYTES = 8 * TogetherMessage.MAX_VOICE_CHUNK_BYTES
+        const val MAX_VOICE_CHUNKS = 8
+        const val MAX_VOICE_BYTES = MAX_VOICE_CHUNKS * TogetherMessage.MAX_VOICE_CHUNK_BYTES
 
         /** Three, because one is a packet and two is bad luck. */
         const val GARBLED_LIMIT = 3

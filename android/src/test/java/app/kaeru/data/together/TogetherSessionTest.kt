@@ -1310,6 +1310,47 @@ class TogetherSessionTest {
         watching.cancel()
     }
 
+    /**
+     * The receiver's own ceiling. A sender with the key could announce a clip of a thousand slices
+     * and push as many 32 KB frames as thirty seconds allow; this phone used to hold every one of
+     * them in memory until the clip was «complete». iOS has always refused past eight and 256 KB.
+     */
+    @Test
+    fun `a clip announced in more slices than the protocol allows is not collected`() = sessionTest {
+        live()
+        val seen = mutableListOf<TogetherEvent>()
+        val watching = launch { session.events.toList(seen) }
+        runCurrent()
+
+        val slice = ByteArray(TogetherMessage.MAX_VOICE_CHUNK_BYTES)
+        val announced = TogetherSession.MAX_VOICE_CHUNKS + 1
+        repeat(announced) { index ->
+            transport.deliver(TogetherMessage.Voice(index, announced, slice, durationMs = 6_000, seq = 10L + index))
+        }
+        runCurrent()
+
+        assertTrue(seen.none { it is TogetherEvent.VoiceClip })
+        watching.cancel()
+    }
+
+    @Test
+    fun `a clip of exactly eight full slices is the largest one collected`() = sessionTest {
+        live()
+        val seen = mutableListOf<TogetherEvent>()
+        val watching = launch { session.events.toList(seen) }
+        runCurrent()
+
+        val slice = ByteArray(TogetherMessage.MAX_VOICE_CHUNK_BYTES) { 7 }
+        repeat(TogetherSession.MAX_VOICE_CHUNKS) { index ->
+            transport.deliver(TogetherMessage.Voice(index, TogetherSession.MAX_VOICE_CHUNKS, slice, durationMs = 29_000, seq = 10L + index))
+        }
+        runCurrent()
+
+        val clip = seen.filterIsInstance<TogetherEvent.VoiceClip>().single()
+        assertEquals(TogetherSession.MAX_VOICE_BYTES, clip.bytes.size)
+        watching.cancel()
+    }
+
     @Test
     fun `half a clip whose rest never came is thrown away`() = sessionTest {
         live()
