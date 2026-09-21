@@ -24,6 +24,10 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -40,14 +44,14 @@ import kotlin.math.PI
 import kotlin.math.sin
 
 /** How far an emoji gets before it is gone. */
-private val Rise = 120.dp
+private val Rise = 160.dp
 
 /** Fourteen points of horizontal wander, so three at once do not travel as one column. */
 private val Drift = 14.dp
 
-private const val FLIGHT_MS = 1_200
+private const val FLIGHT_MS = 2_200
 
-private val Glyph = 22.dp
+private val Glyph = 64.dp
 
 /** The row that slides out of the 😀 button: six, at the size everything here is reachable at. */
 private val PickSize = KaeruTokens.MinTouchTarget
@@ -128,7 +132,13 @@ private fun Flight(reaction: FlyingReaction, still: Boolean, modifier: Modifier)
     val travelled = progress.value
     Text(
         reactionGlyph(reaction.kind),
-        style = MaterialTheme.typography.titleMedium,
+        // Big, and with a shadow of its own. A title-sized glyph over a moving picture was a
+        // glyph nobody caught — an emoji is a gesture, and a gesture is made to be seen from
+        // across the room. The shadow keeps it readable over a bright frame.
+        style = MaterialTheme.typography.titleMedium.copy(
+            fontSize = 40.sp,
+            shadow = Shadow(color = Color.Black.copy(alpha = 0.6f), offset = Offset(0f, 2f), blurRadius = 16f),
+        ),
         modifier = modifier
             .padding(end = KaeruTokens.Space6, bottom = 96.dp)
             .size(Glyph)
@@ -136,9 +146,15 @@ private fun Flight(reaction: FlyingReaction, still: Boolean, modifier: Modifier)
                 x = Drift * sin(travelled * PI.toFloat()),
                 y = -Rise * travelled,
             )
-            // Fades over the back half only: a glyph that starts disappearing the moment it
+            // Swells on the way up and settles: the eye follows motion, not position.
+            .graphicsLayer {
+                val swell = 1f + 0.3f * sin(travelled * PI.toFloat())
+                scaleX = swell
+                scaleY = swell
+            }
+            // Fades over the last third only: a glyph that starts disappearing the moment it
             // appears is a glyph nobody catches.
-            .alpha(((1f - travelled) * 2f).coerceIn(0f, 1f))
+            .alpha(((1f - travelled) * 3f).coerceIn(0f, 1f))
             // Its own emoji is what it says; nothing reads «❤️» out usefully, and the arrival is
             // already announced by the corner.
             .clearAndSetSemantics {},
@@ -158,7 +174,7 @@ fun ReactionPicker(onPick: (ReactionKind) -> Unit, modifier: Modifier = Modifier
                     .clickable(onClick = { onPick(kind) }, onClickLabel = reactionName(kind)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(reactionGlyph(kind), style = MaterialTheme.typography.titleMedium)
+                Text(reactionGlyph(kind), style = MaterialTheme.typography.headlineSmall)
             }
         }
     }

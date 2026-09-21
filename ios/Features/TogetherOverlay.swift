@@ -306,11 +306,18 @@ struct TogetherReactionBurst: View {
         @State private var travelled = 0.0
         var body: some View {
             Text(reaction.reaction.symbol)
-                .font(.title3)
-                .offset(x: 14 * sin(travelled * .pi), y: -120 * travelled)
-                // Fades over the back half only: a glyph that starts disappearing the moment it
+                // Big, and with a shadow of its own. A title-sized glyph over a moving picture
+                // was a glyph nobody caught — an emoji is a gesture, and a gesture is made to be
+                // seen from across the room. The shadow is what keeps it readable over a bright
+                // frame, where the picture would otherwise swallow it.
+                .font(.system(size: 44))
+                .shadow(color: .black.opacity(0.6), radius: 8, y: 2)
+                // Swells on the way up and settles: the eye follows motion, not position.
+                .scaleEffect(1 + 0.3 * sin(travelled * .pi))
+                .offset(x: 14 * sin(travelled * .pi), y: -160 * travelled)
+                // Fades over the last third only: a glyph that starts disappearing the moment it
                 // appears is a glyph nobody catches.
-                .opacity(min(1, max(0, (1 - travelled) * 2)))
+                .opacity(min(1, max(0, (1 - travelled) * 3)))
                 .onAppear {
                     guard !still else { return }
                     withAnimation(.easeOut(duration: TogetherConversationTiming.reactionLifeMs / 1000)) {

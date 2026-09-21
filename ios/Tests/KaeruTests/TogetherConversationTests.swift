@@ -45,9 +45,11 @@ import XCTest
         let conversation = TogetherConversation()
         for _ in 0..<6 { conversation.fly(.heart, mine: false, now: start) }
         XCTAssertEqual(conversation.reactions.count, 3)
-        conversation.sweep(now: at(1.2))
+        // However long a flight is, the room is clear the moment it ends.
+        let landed = TogetherConversationTiming.reactionLifeMs / 1000
+        conversation.sweep(now: at(landed))
         XCTAssertTrue(conversation.reactions.isEmpty)
-        conversation.fly(.fire, mine: true, now: at(1.2))
+        conversation.fly(.fire, mine: true, now: at(landed))
         XCTAssertEqual(conversation.reactions.count, 1, "The room clears and the next one flies")
     }
 

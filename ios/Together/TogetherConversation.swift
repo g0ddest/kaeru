@@ -68,7 +68,7 @@ enum TogetherConversationTiming {
     static let stackMax = 3
     /// Long enough to read, short enough that it is gone before it is in the way.
     static let noticeLifeMs: Double = 3_000
-    static let reactionLifeMs: Double = 1_200
+    static let reactionLifeMs: Double = 2_200
     /// Three at once. Beyond that a tapped-out friend produces rain rather than a reaction.
     static let reactionMax = 3
     /// Nothing waits longer than this for anybody.
