@@ -88,6 +88,10 @@ enum VoiceLimits {
             startMetering()
             return true
         } catch {
+            // Said to the journal, because from the button all of this looks like a refusal of
+            // the microphone — and it never is one: permission is asked for first. What fails
+            // here is the audio session or the recorder, and the reason is in the error.
+            TogetherLog.write("voice: recorder failed to start: \(error)")
             try? FileManager.default.removeItem(at: target)
             releaseSession()
             return false
@@ -102,7 +106,11 @@ enum VoiceLimits {
         let elapsed = Int64(Date().timeIntervalSince(startedAt) * 1000)
         value.stop()
         defer { try? FileManager.default.removeItem(at: target); releaseSession() }
-        guard elapsed >= VoiceLimits.minDurationMs, let data = try? Data(contentsOf: target), !data.isEmpty else { return nil }
+        guard elapsed >= VoiceLimits.minDurationMs, let data = try? Data(contentsOf: target), !data.isEmpty else {
+            TogetherLog.write("voice: nothing to send — \(elapsed) ms recorded, file \((try? Data(contentsOf: target))?.count ?? 0) bytes")
+            return nil
+        }
+        TogetherLog.write("voice: recorded \(elapsed) ms, \(data.count) bytes")
         return RecordedClip(data: data, durationMs: min(elapsed, VoiceLimits.maxDurationMs))
     }
 

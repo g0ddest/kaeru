@@ -17,6 +17,8 @@ struct VoiceButton: View {
     @State private var recorder = VoiceRecorder()
     var send: (RecordedClip) -> Void
     var denied: () -> Void
+    /// The microphone was granted; the audio session or the recorder would not start.
+    var failed: () -> Void = {}
     /// Whether the microphone is open, said out loud so the picture can be turned down under it.
     var openChanged: (Bool) -> Void = { _ in }
 
@@ -144,7 +146,10 @@ struct VoiceButton: View {
             let allowed = await recorder.permitted()
             guard fingerDown else { return }
             guard allowed else { denied(); return }
-            guard recorder.start() else { denied(); return }
+            // Not a refusal: the microphone was granted a line ago. The audio session or the
+            // recorder would not start, and «нужен доступ» would send somebody to Settings for
+            // nothing. The reason is in the journal.
+            guard recorder.start() else { failed(); return }
             guard fingerDown else { recorder.cancel(); return }
             holding = true; cancelling = false; levels = []; tick += 1
             openChanged(true)

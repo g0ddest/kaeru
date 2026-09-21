@@ -297,10 +297,17 @@ struct TogetherJoinTarget: Equatable {
     /// with a bug rather than somebody with a lot to say, and it is better dropped here than cut
     /// into frames and sent.
     func send(voice clip: RecordedClip) {
-        guard !clip.data.isEmpty, clip.data.count <= Self.maximumVoiceBytes else { return }
+        guard !clip.data.isEmpty, clip.data.count <= Self.maximumVoiceBytes else {
+            // A clip over the ceiling is a clip nobody hears, and saying nothing about it was a
+            // button that appeared to do nothing.
+            TogetherLog.write("voice: clip of \(clip.data.count) bytes is over the \(Self.maximumVoiceBytes)-byte ceiling; dropped")
+            conversation.message = TogetherCopy.voiceTooLong
+            return
+        }
         let cut = Self.voiceChunkBytes
         let total = (clip.data.count + cut - 1) / cut
         guard (1...8).contains(total) else { return }
+        TogetherLog.write("voice out: \(clip.durationMs) ms, \(clip.data.count) bytes in \(total) chunk(s)")
         for index in 0..<total {
             let slice = clip.data[(index * cut)..<min((index + 1) * cut, clip.data.count)]
             sendMessage(.init(t: .voice, seq: 1, chunk: index, total: total,

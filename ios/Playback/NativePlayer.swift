@@ -54,7 +54,13 @@ struct NativePlayer<Overlay: View>: UIViewControllerRepresentable {
             // Only what the overlay actually draws answers a touch; the space between its chips
             // belongs to AVKit, which is what keeps the single tap that raises the transport bar.
             host.view.translatesAutoresizingMaskIntoConstraints = false
-            controller.addChild(host)
+            // A subview and nothing more — deliberately not a child view controller. When AVKit
+            // goes full screen it lifts `contentOverlayView` into a window of its own, under
+            // `AVFullScreenViewController`; a child controller's view found under a stranger's
+            // controller fails UIKit's hierarchy check with an Objective-C exception, which in
+            // Swift is an abort. Four crashes in one evening, every one of them this, each at the
+            // moment the picture was expanded. The hosting controller is kept alive by the
+            // coordinator, and an overlay of chips needs no appearance callbacks from a parent.
             container.addSubview(host.view)
             NSLayoutConstraint.activate([
                 host.view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -62,7 +68,6 @@ struct NativePlayer<Overlay: View>: UIViewControllerRepresentable {
                 host.view.topAnchor.constraint(equalTo: container.topAnchor),
                 host.view.bottomAnchor.constraint(equalTo: container.bottomAnchor)
             ])
-            host.didMove(toParent: controller)
             context.coordinator.host = host
         }
         return controller

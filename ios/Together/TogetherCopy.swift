@@ -38,6 +38,9 @@ enum TogetherCopy {
     static let voiceCancel = "◀ отмена"
     static let replay = "Послушать ещё раз"
     static let micDenied = "Нужен доступ к микрофону"
+    /// Permission was there; the recorder or the audio session was not.
+    static let voiceFailed = "Не удалось начать запись"
+    static let voiceTooLong = "Голосовое слишком длинное — не отправлено"
     static let send = "Отправить"
     static let close = "Закрыть"
     /// Three taps that cover most of what gets said, so the keyboard stays shut.

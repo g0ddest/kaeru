@@ -226,7 +226,7 @@ private struct Controls: View {
                 HStack(spacing: 8) {
                     disc("😀", label: TogetherCopy.reactions) { picking.toggle(); pickerRevision += 1 }
                     VoiceButton(send: { manager.send(voice: $0) },
-                                denied: { manager.conversation.message = TogetherCopy.micDenied },
+                                denied: { manager.conversation.message = TogetherCopy.micDenied }, failed: { manager.conversation.message = TogetherCopy.voiceFailed },
                                 openChanged: { microphoneOpen = $0 })
                     if picking {
                         ForEach(TogetherReaction.allCases, id: \.self) { reaction in
