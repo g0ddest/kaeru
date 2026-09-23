@@ -63,6 +63,7 @@ import app.kaeru.ui.common.theme.KaeruAccent
 import app.kaeru.ui.common.theme.KaeruBackground
 import app.kaeru.ui.common.theme.KaeruSecondary
 import app.kaeru.ui.common.theme.KaeruText
+import app.kaeru.ui.tv.TvFittedText
 import app.kaeru.ui.common.theme.KaeruTvTheme
 
 private const val PAUSE = "Пауза"
@@ -230,12 +231,16 @@ fun TvPlayerHeader(title: String, modifier: Modifier = Modifier) {
         modifier.fillMaxWidth().height(HeaderScrim)
             .background(Brush.verticalGradient(listOf(KaeruBackground.copy(alpha = 0.88f), Color.Transparent))),
     ) {
-        Text(
+        // One line, and a name that does not fit it at `headlineMedium` is set smaller rather
+        // than cut: the player is the one screen where the name is not repeated anywhere else.
+        TvFittedText(
             title,
-            style = MaterialTheme.typography.headlineMedium,
+            styles = listOf(
+                MaterialTheme.typography.headlineMedium,
+                MaterialTheme.typography.headlineSmall,
+                MaterialTheme.typography.titleMedium,
+            ),
             color = KaeruText,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .padding(start = PlayerGutter, top = KaeruTokens.Space8, end = PlayerGutter)
                 // Short of the far corner, which is where a line the player has to say goes.

@@ -31,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -216,17 +217,25 @@ private fun NavigationDrawerScope.TvRail(
     selected: TvDestination,
     onSelect: (TvDestination) -> Unit,
 ) {
+    // Where the remote lands when it steps into the rail: the screen it is on, not whichever icon
+    // happens to be level with the card it came from. Focus search is geometric, so a press of
+    // left from a card two-thirds of the way down the panel used to open the rail on «Настройки»
+    // — and the next press of OK opened the settings the viewer had not asked for.
+    val current = remember { FocusRequester() }
     Column(
         Modifier
             .fillMaxHeight()
             .background(if (value == DrawerValue.Open) KaeruBackground else Color.Transparent)
-            .padding(start = RailInset, top = TvLayout.SafeVertical, bottom = TvLayout.SafeVertical),
+            .padding(start = RailInset, top = TvLayout.SafeVertical, bottom = TvLayout.SafeVertical)
+            .focusProperties { onEnter = { current.requestFocus() } }
+            .focusGroup(),
         verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space2),
     ) {
         tabs.forEach { tab ->
             NavigationDrawerItem(
                 selected = tab.destination == selected,
                 onClick = { onSelect(tab.destination) },
+                modifier = if (tab.destination == selected) Modifier.focusRequester(current) else Modifier,
                 leadingContent = {
                     Icon(
                         tab.icon,

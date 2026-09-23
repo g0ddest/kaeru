@@ -31,6 +31,12 @@ private const val SHADOW = "Восхождение в тени"
 private const val ONE_PUNCH = "Ванпанчмен"
 private const val DEMON_SLAYER = "Клинок, рассекающий демонов"
 
+/**
+ * A name the hero's one line does not hold at `displaySmall` and does two sizes down. Shared with
+ * the render test, which is what checks the hero says all of it rather than «…Тюремн…».
+ */
+internal const val TV_PREVIEW_LONG_NAME = "Приговорённый быть героем: Тюремные хроники"
+
 internal val TV_PREVIEW_NOW: Instant = Instant.parse("2026-09-13T20:00:00Z")
 
 internal fun tvPreviewAnime(
@@ -71,6 +77,16 @@ internal fun tvPreviewFeed(): HomeFeed {
         episode = 7,
         kind = FeedKind.CONTINUE,
     )
+    // A second card in «Продолжить», with the name that does not fit anywhere at full size.
+    val prison = FeedItem(
+        tvPreviewEntry(
+            tvPreviewAnime(7, TV_PREVIEW_LONG_NAME, aired = 9),
+            watched = 8,
+            watch = WatchState(7, 9, 300_000, 1_440_000, null, null, TV_PREVIEW_NOW),
+        ),
+        episode = 9,
+        kind = FeedKind.CONTINUE,
+    )
     val fresh = listOf(
         FeedItem(tvPreviewEntry(tvPreviewAnime(2, DANDADAN, aired = 3), watched = 2), 3, FeedKind.NEW_EPISODE),
         FeedItem(tvPreviewEntry(tvPreviewAnime(3, JUJUTSU, aired = 8), watched = 7), 8, FeedKind.NEW_EPISODE),
@@ -90,7 +106,7 @@ internal fun tvPreviewFeed(): HomeFeed {
             kind = FeedKind.PLANNED,
         ),
     )
-    return HomeFeed(continuing, listOf(continuing), fresh, emptyList(), upcoming, planned)
+    return HomeFeed(continuing, listOf(continuing, prison), fresh, emptyList(), upcoming, planned)
 }
 
 private fun tvPreviewDiscover() = DiscoverUiState(

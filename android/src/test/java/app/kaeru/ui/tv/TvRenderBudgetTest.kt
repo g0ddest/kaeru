@@ -45,17 +45,20 @@ import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.details.DetailsUiState
 import app.kaeru.ui.common.details.EpisodeCell
 import app.kaeru.ui.common.home.HomeUiState
+import app.kaeru.ui.common.library.LibraryUiState
 import app.kaeru.ui.common.player.PlayerUiState
 import app.kaeru.ui.common.player.skipLabel
 import app.kaeru.ui.common.settings.SettingsUiState
 import app.kaeru.ui.common.theme.KaeruTvTheme
 import app.kaeru.ui.common.update.UpdateStage
 import app.kaeru.ui.common.update.UpdateUiState
+import app.kaeru.ui.tv.TV_PREVIEW_LONG_NAME
 import app.kaeru.ui.tv.auth.TvLoginScreen
 import app.kaeru.ui.tv.auth.TvPairingStatus
 import app.kaeru.ui.tv.auth.TvPairingUiState
 import app.kaeru.ui.tv.details.TvTitleScreen
 import app.kaeru.ui.tv.home.TvHomeScreen
+import app.kaeru.ui.tv.library.TvLibraryScreen
 import app.kaeru.ui.tv.player.TvPanelRung
 import app.kaeru.ui.tv.player.TvPlayerHeader
 import app.kaeru.ui.tv.player.PlayerGutter
@@ -69,6 +72,7 @@ import java.io.File
 import java.time.Duration
 import java.time.Instant
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -149,7 +153,79 @@ class TvRenderBudgetTest {
         compose.waitForIdle()
         compose.onNode(hasText(FRIEREN) and hasClickAction())
             .performSemanticsAction(SemanticsActions.RequestFocus)
-        panel("home-second-row").homeFits(CONTINUE)
+        val panel = panel("home-second-row")
+        panel.homeFits(CONTINUE)
+        panel.rowIsAtTheTop(CONTINUE)
+        panel.captionHasLines(FRIEREN, 2)
+        panel.heroSaysWhole(FRIEREN)
+    }
+
+    /**
+     * A name longer than the hero's one line at `displaySmall` — and the second row, so the hero
+     * has to have followed the remote there.
+     */
+    @Test
+    fun `the hero steps the type scale down before it cuts a name`() {
+        showHome(tvPreviewHome())
+        compose.waitForIdle()
+        compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange))
+            .performScrollToIndex(1)
+        compose.waitForIdle()
+        compose.onNode(hasText(LONG_NAME) and hasClickAction())
+            .performSemanticsAction(SemanticsActions.RequestFocus)
+        val panel = panel("home-long-name")
+        panel.homeFits(CONTINUE)
+        panel.heroSaysWhole(LONG_NAME)
+    }
+
+    // --- the library --------------------------------------------------------------------------
+
+    /**
+     * The grid, with the names it used to cut to one line: two lines now, and every card takes the
+     * two whether its name needs them, so the captions sit on one straight floor. The tabs above
+     * run under the panel edge rather than stopping at the margin, and the first stands at the
+     * gutter.
+     */
+    @Test
+    fun `the library gives a name two lines and runs its tabs to the edge`() {
+        compose.setContent {
+            KaeruTvTheme {
+                TvLibraryScreen(
+                    state = LibraryUiState(
+                        items = listOf(
+                            LibraryEntry(anime, UserRate(1L, 1, ListStatus.WATCHING, 17, NOW), null),
+                            LibraryEntry(
+                                anime.copy(id = 2, nameRu = "Дандадан"),
+                                UserRate(2L, 2, ListStatus.WATCHING, 3, NOW),
+                                null,
+                            ),
+                        ),
+                        counts = mapOf(ListStatus.WATCHING to 122, ListStatus.COMPLETED to 67),
+                        isLoading = false,
+                    ),
+                    onStatus = {},
+                    onAnime = {},
+                    onSearch = {},
+                )
+            }
+        }
+        val panel = panel("library")
+        panel.scrollingScreenFits()
+        panel.captionHasLines(FRIEREN, 2)
+        assertEquals(
+            "library: a short name's caption is not held to the two lines a long one takes",
+            panel.saying(FRIEREN).heightDp(),
+            panel.saying("Дандадан").heightDp(),
+            TOLERANCE,
+        )
+        val tabs = panel.strips().first()
+        assertEquals("library: the tab strip does not start at the panel edge", 0f, tabs.positionInRoot.x.dp(), TOLERANCE)
+        assertEquals(
+            "library: the first tab does not stand at the gutter",
+            TvLayout.Gutter.value + KaeruTokens.Space4.value,
+            panel.saying("Смотрю 122").positionInRoot.x.dp(),
+            TOLERANCE,
+        )
     }
 
     // --- the title card -----------------------------------------------------------------------
@@ -235,7 +311,20 @@ class TvRenderBudgetTest {
     @Test
     fun `settings opens with every row inside the fold drawn whole`() {
         showSettings()
-        panel("settings-top").scrollingScreenFits()
+        val panel = panel("settings-top")
+        panel.scrollingScreenFits()
+        // The switch row's ring stands off its label: the label is at the gutter with every other
+        // line of the page, and the row the ring is drawn on reaches 12dp further out on each side.
+        val label = panel.saying(AUTOPLAY)
+        assertEquals("settings: the autoplay label is off the gutter", TvLayout.Gutter.value, label.positionInRoot.x.dp(), TOLERANCE)
+        val row = generateSequence(label) { it.parent }
+            .first { it.config.getOrNull(SemanticsProperties.ToggleableState) != null }
+        assertEquals(
+            "settings: the focus ring of the autoplay row sits on its label",
+            TvLayout.Gutter.value - KaeruTokens.Space3.value,
+            row.positionInRoot.x.dp(),
+            TOLERANCE,
+        )
     }
 
     @Test
@@ -495,6 +584,8 @@ private const val NEW_EPISODES = "Новые серии"
 private const val CONTINUE = "Продолжить"
 private const val FRIEREN = "Фрирен, провожающая в последний путь"
 private const val EXPAND = "Развернуть"
+private const val AUTOPLAY = "Следующая серия автоматически"
+private const val LONG_NAME = TV_PREVIEW_LONG_NAME
 private const val WAITING_FOR_PHONE = "Ждём телефон…"
 private const val CHECK_UPDATES = "Проверить обновления"
 private const val DOWNLOAD = "Скачать и установить"
@@ -551,6 +642,43 @@ private class Panel(val name: String, val root: SemanticsNode) {
 
     fun saying(text: String): SemanticsNode =
         nodes.firstOrNull { it.words() == text } ?: error("$name: nothing on the panel says «$text»")
+
+    /** The column that scrolls the rows, on a screen that has one. */
+    fun rows(): SemanticsNode =
+        nodes.firstOrNull { it.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange) != null }
+            ?: error("$name: no scrolling column on this screen")
+
+    /** Every strip that scrolls sideways, top to bottom. */
+    fun strips(): List<SemanticsNode> =
+        nodes.filter { it.config.getOrNull(SemanticsProperties.HorizontalScrollAxisRange) != null }
+            .sortedBy { it.positionInRoot.y }
+
+    /** The heading of the row under the remote is the first thing under the band. */
+    fun rowIsAtTheTop(heading: String) {
+        val head = saying(heading)
+        assertEquals(
+            "$name: the row «$heading» is at ${head.topDp().r()}dp, not at the top of the rows' viewport",
+            TvLayout.BandTotal.value,
+            head.topDp(),
+            TOLERANCE,
+        )
+    }
+
+    /** A card's caption inside the rows, as opposed to the same name said by the hero above them. */
+    fun captionHasLines(title: String, lines: Int) {
+        val caption = nodes.firstOrNull { it.words() == title && it.isUnder(rows()) }
+            ?: error("$name: no card in the rows says «$title»")
+        assertEquals("$name: the caption «$title» runs to ${caption.lines()} lines", lines, caption.lines())
+    }
+
+    /** The hero says the whole name on its one line, at whatever size that took. */
+    fun heroSaysWhole(title: String) {
+        val hero = nodes.firstOrNull { it.words() == title && !it.isUnder(rows()) }
+            ?: error("$name: the hero does not say «$title»")
+        val layout = hero.textLayout() ?: error("$name: the hero's name was never laid out")
+        assertEquals("$name: the hero's name runs to ${layout.lineCount} lines", 1, layout.lineCount)
+        assertFalse("$name: the hero cuts «$title» short", layout.isLineEllipsized(0))
+    }
 
     fun focused(): SemanticsNode =
         nodes.firstOrNull { it.config.getOrNull(SemanticsProperties.Focused) == true }

@@ -86,8 +86,8 @@ fun SettingsSection(
  * which is why this screen reads more like a page than a control panel.
  */
 @Composable
-fun SettingNote(text: String) {
-    Text(text, style = MaterialTheme.typography.bodyMedium, color = KaeruSecondary)
+fun SettingNote(text: String, modifier: Modifier = Modifier) {
+    Text(text, style = MaterialTheme.typography.bodyMedium, color = KaeruSecondary, modifier = modifier)
 }
 
 /** What a control is called. A step louder than [SettingNote] and a step quieter than the section. */
@@ -109,6 +109,12 @@ fun SettingSwitchRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * Air between the focus ring and the words inside it. Zero on a phone, where no ring is ever
+     * drawn and the label lines up with the headings above it; on a television the caller widens
+     * the row by this much on each side, so the ring stands off the text and the text stays put.
+     */
+    inset: Dp = 0.dp,
 ) {
     Row(
         modifier
@@ -118,7 +124,8 @@ fun SettingSwitchRow(
             // signal. Inert under a finger; on a television it is the only thing that says the
             // remote is here.
             .kaeruFocus(KaeruTokens.CardShape, focusedScale = 1f)
-            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange),
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
+            .padding(horizontal = inset),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(

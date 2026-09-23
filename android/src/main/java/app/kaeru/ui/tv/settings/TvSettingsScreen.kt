@@ -1,5 +1,8 @@
 package app.kaeru.ui.tv.settings
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,6 +30,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.kaeru.BuildConfig
 import app.kaeru.domain.model.Account
@@ -50,6 +55,7 @@ import app.kaeru.ui.common.settings.thresholdOptions
 import app.kaeru.ui.common.theme.KaeruTvTheme
 import app.kaeru.ui.tv.TvDialog
 import app.kaeru.ui.tv.TvLayout
+import app.kaeru.ui.tv.TvLeastScroll
 import app.kaeru.ui.tv.claimFocusWhenReady
 import app.kaeru.ui.tv.requestFocusOrLog
 
@@ -90,6 +96,15 @@ private const val ROW = "row"
 private val TextColumn = 640.dp
 
 /**
+ * The air between a switch row's focus ring and the label inside it.
+ *
+ * The ring is drawn at the row's own edge, and the row's edge was the label's first letter: «С» of
+ * «Следующая серия» sat on the amber line. The same 12dp a chip keeps between its ring and its
+ * words, and it is spent in the margin — see [row] — so the label does not move.
+ */
+private val RingInset = KaeruTokens.Space3
+
+/**
  * The air above a section name. [KaeruTokens.Space8] in total, of which the list's own spacing
  * already supplies [KaeruTokens.Space3].
  */
@@ -119,6 +134,7 @@ private val SectionGap = KaeruTokens.Space8 - KaeruTokens.Space3
  * Everything else is the phone's, from the same view model and the same components, so a preference
  * changed on the sofa reads the same way in the hand.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TvSettingsScreen(
     state: SettingsUiState,
@@ -149,6 +165,13 @@ fun TvSettingsScreen(
         first.claimFocusWhenReady("the autoplay switch of the television settings") { claimed }
     }
 
+    // Scrolled by the least that shows the focused row, not to the television's pivot. On a
+    // television the platform brings a focused thing to three-tenths of the way down its scroll
+    // container — right for a row of posters, and wrong for a page: the switch this screen opens
+    // on is a third of the way down the panel already, so the page opened scrolled 111dp with the
+    // account's name cut off along the top edge, and every press of the D-pad moved the whole
+    // page to keep the focused row on that one line.
+    CompositionLocalProvider(LocalBringIntoViewSpec provides TvLeastScroll) {
     LazyColumn(
         // The bottom safe area is held outside the scrolling viewport rather than being content
         // padding inside it. A focused row asks to be brought into the viewport, and a viewport
@@ -168,20 +191,21 @@ fun TvSettingsScreen(
         row("sign-out") { DestructiveButton(SIGN_OUT, onClick = { confirming = true }) }
 
         heading(PLAYBACK)
-        row("autoplay") {
+        row("autoplay", bleed = RingInset) {
             SettingSwitchRow(
                 AUTOPLAY, state.autoplayNext, onAutoplay,
                 Modifier
                     .focusRequester(first)
                     .onFocusChanged { if (it.isFocused) claimed = true },
+                inset = RingInset,
             )
         }
         // The switch and the sentence under it are one item, for the same reason a label and its
         // chips are: read apart, the row stops with the promise off the panel.
-        row("skip-ending") {
+        row("skip-ending", bleed = RingInset) {
             Column(verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space2)) {
-                SettingSwitchRow(SKIP_ENDING, state.skipEnding, onSkipEnding)
-                SettingNote(SKIP_ENDING_NOTE)
+                SettingSwitchRow(SKIP_ENDING, state.skipEnding, onSkipEnding, inset = RingInset)
+                SettingNote(SKIP_ENDING_NOTE, Modifier.padding(horizontal = RingInset))
             }
         }
         // A label and the chips it names are one item: they are read together, and splitting them
@@ -240,6 +264,7 @@ fun TvSettingsScreen(
             }
         }
     }
+    }
 
     if (confirming) {
         TvSignOutDialog(
@@ -264,13 +289,18 @@ private fun LazyListScope.heading(title: String, first: Boolean = false) =
  *
  * [key] is what keeps a row's node — and the focus on it — attached to the row rather than to the
  * position, which matters on the one list here whose rows change places.
+ *
+ * [bleed] is how far past the text column the row is allowed to reach on either side. A row whose
+ * whole width takes the focus ring wants the ring to stand off its words, and the words want to
+ * stay in line with the headings above them — so the row is widened by the same amount it insets
+ * its content, and the ring lands in the margin rather than the label moving out of the column.
  */
-private fun LazyListScope.row(key: String, content: @Composable () -> Unit) =
+private fun LazyListScope.row(key: String, bleed: Dp = 0.dp, content: @Composable () -> Unit) =
     item(key = key, contentType = ROW) {
         Box(
             Modifier
-                .padding(start = TvLayout.Gutter, end = TvLayout.GutterEnd)
-                .widthIn(max = TextColumn),
+                .padding(start = TvLayout.Gutter - bleed, end = TvLayout.GutterEnd - bleed)
+                .widthIn(max = TextColumn + bleed * 2),
         ) { content() }
     }
 

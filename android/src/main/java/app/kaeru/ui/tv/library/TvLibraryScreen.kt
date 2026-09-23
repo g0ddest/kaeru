@@ -1,6 +1,7 @@
 package app.kaeru.ui.tv.library
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -104,13 +105,25 @@ fun TvLibraryScreen(
             ?.let { gridState.scrollToItem(it) }
     }
     Column(
-        modifier
-            .fillMaxSize()
-            .padding(start = TvLayout.Gutter, end = TvLayout.GutterEnd, top = TvLayout.SafeVertical),
-        verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space4),
+        modifier.fillMaxSize().padding(top = TvLayout.SafeVertical),
+        verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space3),
     ) {
         LazyRow(
+            // The side margins are inside the viewport, as they are for a row of cards on the home
+            // screen: the six tabs are wider than the panel, and a strip that ended at the margin
+            // cut the seventh tab in half 56dp short of the edge, which read as a mistake rather
+            // than as a row that continues. Clipped at the panel edge it reads as the latter — and
+            // the tab the remote walks to is brought in past the margin all the same.
+            //
+            // A little air above and below, because a focused tab grows by six per cent and a
+            // lazy row clips to its own bounds.
             modifier = Modifier.selectableGroup(),
+            contentPadding = PaddingValues(
+                start = TvLayout.Gutter,
+                end = TvLayout.GutterEnd,
+                top = KaeruTokens.Space1,
+                bottom = KaeruTokens.Space1,
+            ),
             horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space3),
         ) {
             items(tabs, key = { it.status.name }) { tab ->
@@ -123,19 +136,21 @@ fun TvLibraryScreen(
                 )
             }
         }
-        when {
-            state.isLoading -> SkeletonGrid(count = SKELETON_CELLS, gutter = 0.dp, columns = GRID_COLUMNS)
-            state.items.isEmpty() -> TvEmptyTab(state.status, onSearch)
-            else -> TvLibraryGrid(
-                items = state.items,
-                threshold = state.watchedThreshold,
-                row = state.status.name,
-                gridState = gridState,
-                restoreId = restore?.id,
-                claimed = claimed,
-                focus = focus,
-                onAnime = onAnime,
-            )
+        Box(Modifier.padding(start = TvLayout.Gutter, end = TvLayout.GutterEnd)) {
+            when {
+                state.isLoading -> SkeletonGrid(count = SKELETON_CELLS, gutter = 0.dp, columns = GRID_COLUMNS)
+                state.items.isEmpty() -> TvEmptyTab(state.status, onSearch)
+                else -> TvLibraryGrid(
+                    items = state.items,
+                    threshold = state.watchedThreshold,
+                    row = state.status.name,
+                    gridState = gridState,
+                    restoreId = restore?.id,
+                    claimed = claimed,
+                    focus = focus,
+                    onAnime = onAnime,
+                )
+            }
         }
     }
 }
@@ -190,7 +205,10 @@ private fun TvLibraryGrid(
                 progress = entry.progressFraction(threshold),
                 // The cell decides how wide a card is here, not the design system's row pitch.
                 width = Dp.Unspecified,
-                titleMaxLines = 1,
+                // Two, where the home screen's cards used to make do with one: there is no hero
+                // band here repeating the name in full, so the caption is the only place a viewer
+                // can tell «Прошло десять лет…» from the three other titles that begin the same way.
+                titleMaxLines = 2,
             )
         }
     }

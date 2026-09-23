@@ -95,6 +95,11 @@ fun TvPosterCard(
                     title,
                     style = MaterialTheme.typography.titleSmall,
                     color = KaeruText,
+                    // As many lines as the longest name in the row would take, whether this one
+                    // needs them: a row of cards is read along its bottom edge as much as along its
+                    // top, and a caption that is one line here and two lines there gives the focus
+                    // rings a ragged floor.
+                    minLines = titleMaxLines,
                     maxLines = titleMaxLines,
                     overflow = TextOverflow.Ellipsis,
                 )

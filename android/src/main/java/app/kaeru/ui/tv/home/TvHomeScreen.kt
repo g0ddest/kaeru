@@ -2,6 +2,9 @@ package app.kaeru.ui.tv.home
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +29,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
@@ -71,8 +76,10 @@ import app.kaeru.ui.common.theme.KaeruText
 import app.kaeru.ui.common.theme.KaeruTvTheme
 import app.kaeru.ui.tv.TvFocusKey
 import app.kaeru.ui.tv.TvFocusMemory
+import app.kaeru.ui.tv.TvFittedText
 import app.kaeru.ui.tv.TvFocusRow
 import app.kaeru.ui.tv.TvLayout
+import app.kaeru.ui.tv.TvLeastScroll
 import app.kaeru.ui.tv.TvRestoreTarget
 import app.kaeru.ui.tv.TvRowStates
 import app.kaeru.ui.tv.claimFocus
@@ -117,9 +124,15 @@ private const val BackdropSettle = 250L
  * 2. **A focused card grows into space that is already there.** The rows carry
  *    [TvLayout.CardFocusPad] above and below precisely so the six per cent a card gains is drawn
  *    rather than shaved off by the lazy list's own clipping.
- * 3. **A card's caption is one line.** The hero above is already showing the focused title in
- *    full, so the card underneath does not need two — and one line is a height the row can be
- *    sized for.
+ * 3. **The row under the remote sits at the top of the rows' viewport, heading first.** Focus on
+ *    its own scrolls the column by the least that brings the card in, which left the tail of the
+ *    row above — captions and all — as a strip between the hero's action line and the heading
+ *    the viewer had just walked down to. Each row is shorter than the viewport, so bringing the
+ *    row's item to the top is bringing the whole row in.
+ * 4. **A card's caption is two lines, and always two.** One was the rule, on the grounds that the
+ *    hero repeats the name in full — but the hero says one name and the row shows five, and
+ *    «Блич: Тысячел…» four cards along is not a name. Two lines is what the row is sized for now,
+ *    and every card takes both so the row's floor is straight.
  *
  * [focus] and [listState] are hoisted so the shell can hand back the same card and the same scroll
  * position after a title card has been open over this screen.
@@ -173,6 +186,7 @@ fun TvHomeScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TvHomeFeed(
     rows: List<TvHomeRow>,
@@ -250,10 +264,24 @@ private fun TvHomeFeed(
     // Focus is both what the hero reads and what the shell hands back after a title card: one
     // callback writes both, so the two can never point at different cards. It also latches the
     // claim — on focus arriving, never on focus being asked for.
+    var focusedRow by remember { mutableStateOf<String?>(null) }
     val onFocused: (String, TvHomeCard) -> Unit = { row, card ->
         hero = card.hero
         focus.key = TvFocusKey(row, card.animeId)
         claimed.value = true
+        focusedRow = row
+    }
+    // The row the remote is on is brought to the top of the viewport, not merely into it: see the
+    // third rule above. Only the rows whose item is one row tall — the feed's own and «Сейчас
+    // смотрят». The seasonal row's item carries the season chips as well and is taller than the
+    // viewport, so pinning its top would push the focused card out of the bottom, and it is left
+    // to the least scroll focus asks for.
+    val alignable = remember(rows, catalogue, onSearch) {
+        tvAlignableRows(rows, catalogue, invitation = rows.isEmpty() && onSearch != null)
+    }
+    LaunchedEffect(focusedRow) {
+        val index = alignable[focusedRow ?: return@LaunchedEffect] ?: return@LaunchedEffect
+        listState.animateScrollToItem(index)
     }
 
     Box(modifier.fillMaxSize()) {
@@ -291,6 +319,15 @@ private fun TvHomeFeed(
                 null -> Unit
             }
             TvHeroBand(hero, underNotice = notice != null)
+            // The column scrolls by the least that shows a focused card and then by the third
+            // rule above; the rows inside it keep the television's own pivot, which is what walks
+            // a focused card to three-tenths of the way along the row. Provided here rather than
+            // by each row so that a row is one composable wherever it is drawn.
+            val rowScroll = LocalBringIntoViewSpec.current
+            CompositionLocalProvider(
+                LocalBringIntoViewSpec provides TvLeastScroll,
+                LocalTvRowScroll provides rowScroll,
+            ) {
             LazyColumn(
                 state = listState,
                 // The safe area is held outside the scrolling viewport rather than being content
@@ -324,9 +361,16 @@ private fun TvHomeFeed(
                     item(key = "sync-error", contentType = NOTE) { TvSyncError(syncError, onRefresh) }
                 }
             }
+            }
         }
     }
 }
+
+/**
+ * How a row of cards scrolls when a card in it takes the focus: the television's pivot, saved
+ * before the column around the rows switches to the least-movement spec.
+ */
+private val LocalTvRowScroll = compositionLocalOf<BringIntoViewSpec> { TvLeastScroll }
 
 /**
  * The one line a television home screen is allowed to say above the hero band, or none.
@@ -390,16 +434,20 @@ private fun TvHeroBand(hero: TvHero?, underNotice: Boolean) {
         ) {
             if (shown != null) {
                 Column {
-                    Text(
+                    // One line, whatever is above it. The second line was paid for by the row
+                    // under the band — the cards, their captions and their focus rings were 36dp
+                    // over the panel. So a name that will not fit the line at `displaySmall` is
+                    // set two sizes down before any of it is given up: «Приговорённый быть героем:
+                    // Тюремные хроники» reads whole at `headlineMedium`, and read as «Приговорённый
+                    // быть героем: Тюремн…» it did not read at all.
+                    TvFittedText(
                         shown.title,
-                        style = MaterialTheme.typography.displaySmall,
+                        styles = listOf(
+                            MaterialTheme.typography.displaySmall,
+                            MaterialTheme.typography.headlineLarge,
+                            MaterialTheme.typography.headlineMedium,
+                        ),
                         color = KaeruText,
-                        // One line, whatever is above it. The second line was paid for by the row
-                        // under the band — the cards, their captions and their focus rings were
-                        // 36dp over the panel — and the card the remote is on repeats the name in
-                        // its own caption anyway.
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                     Row(
                         Modifier.padding(top = KaeruTokens.Space3),
@@ -442,6 +490,7 @@ private fun TvHeroBand(hero: TvHero?, underNotice: Boolean) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TvCardRow(
     title: String,
@@ -456,19 +505,19 @@ private fun TvCardRow(
 ) {
     Column {
         if (header) RowHeader(title, gutter = TvLayout.Gutter)
+        CompositionLocalProvider(LocalBringIntoViewSpec provides LocalTvRowScroll.current) {
         LazyRow(
             // Hoisted above the screen, because this row lives inside a lazy item of a lazy column
             // and both are destroyed when a title card replaces the screen. Without it the vertical
             // position came back and every row reopened at its first card.
             state = rowState,
             // The side margins stay *inside* the viewport, where the safe area above and below does
-            // not — and that is a decision rather than an oversight. A card the D-pad walks right to
-            // is brought flush to the panel edge rather than to the 56dp margin, which is a card
-            // sitting closer to the edge than the design system's gutter. The alternative is worse
-            // on a television: padding outside the list makes the row start and end at the margin,
-            // so cards scroll out of existence at the rail rather than sliding under it, and the
-            // row stops looking like a row that continues. Flush at the edge while scrubbing is
-            // what every television launcher does.
+            // not — and that is a decision rather than an oversight. Padding outside the list would
+            // make the row start and end at the margin, so cards would scroll out of existence at
+            // the rail rather than sliding under it, and the row would stop looking like a row that
+            // continues. Sliding under the rail while scrubbing is what every television launcher
+            // does, and the television's own pivot keeps the focused card three-tenths of the way
+            // along the row while the rest slides.
             modifier = Modifier.padding(top = KaeruTokens.Space3),
             contentPadding = PaddingValues(
                 start = TvLayout.Gutter,
@@ -488,6 +537,7 @@ private fun TvCardRow(
                     onDetails = onDetails,
                 )
             }
+        }
         }
     }
 }
@@ -529,7 +579,7 @@ private fun TvFeedCard(
         onLongClick = { onDetails(card.animeId) },
         badge = card.badge,
         progress = card.progress,
-        titleMaxLines = 1,
+        titleMaxLines = 2,
         modifier = Modifier
             .focusRequester(requester)
             .onFocusChanged { if (it.isFocused) onFocused() },
@@ -738,6 +788,25 @@ private fun DiscoverRows?.tvCards(): List<Pair<String, List<TvHomeCard>>> {
     return listOfNotNull(popularNow, seasonal).mapNotNull { row ->
         (row.content as? DiscoverContent.Titles)?.let { row.title to tvDiscoverCards(it.cards) }
     }
+}
+
+/**
+ * Which item of the column each row that can be pinned to the top of the viewport is.
+ *
+ * The column's items are, in order: the invitation when there are no rows of the viewer's own,
+ * then one item per feed row, then «Сейчас смотрят», then the seasonal row. The first two kinds
+ * and the popular row are each one row tall and are here; the seasonal row is not, for the reason
+ * given where this is used.
+ */
+internal fun tvAlignableRows(
+    rows: List<TvHomeRow>,
+    catalogue: DiscoverRows?,
+    invitation: Boolean,
+): Map<String, Int> {
+    val offset = if (invitation) 1 else 0
+    val feed = rows.mapIndexed { index, row -> row.title to index + offset }
+    val popular = catalogue?.popularNow?.let { it.title to rows.size + offset }
+    return (feed + listOfNotNull(popular)).toMap()
 }
 
 /** The card the restored focus points at, so the hero is right before focus has actually landed. */

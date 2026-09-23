@@ -42,9 +42,9 @@ object TvLayout {
      * 540dp.
      *
      * **One line, always.** It was two, and the second one was being paid for by the row below: the
-     * cards, their captions and their focus rings wanted 36dp more than the panel had. The card
-     * under the remote repeats the name in its own caption anyway, so the second line was saying
-     * the same thing twice on the one screen with no room to say anything twice.
+     * cards, their captions and their focus rings wanted 36dp more than the panel had. A name the
+     * line does not hold at `displaySmall` is set a size or two down rather than cut — see
+     * `TvFittedText` — so the one line still says all of it.
      *
      * The number is the sum of what it holds and is recomputed whenever the type scale moves: one
      * line of `displaySmall` at 56dp, [KaeruTokens.Space3] between, and a line of `titleMedium` at
@@ -62,8 +62,9 @@ object TvLayout {
      * This number is the one the rows are measured against, and it does not move: a notice
      * appearing at the top of the panel takes its height out of the hero band rather than out of
      * the viewport below. What is left is 358dp; a row is its heading, [KaeruTokens.Space3] under
-     * it and a card with its focus room — 324dp — so the rows have 34dp of slack in every state a
-     * viewer can put the screen in, rather than the −36 they had.
+     * it and a card with its two-line caption and its focus room — 350dp — so the rows have 8dp of
+     * slack in every state a viewer can put the screen in, rather than the −36 they had.
+     * `TvRenderBudgetTest` is what keeps that number from going negative again.
      */
     val BandTotal = SafeVertical + HeroHeight
 
@@ -105,10 +106,10 @@ object TvLayout {
      * Room around a row for the six per cent a focused card grows by.
      *
      * What grows is the whole card now, not only its artwork — that is what makes a focused tile
-     * scroll into view with its name — so the number is about the card's full height. 234dp of
-     * poster, a name under it and the clearance around that is about 278dp, and six per cent of
-     * that is 17dp: eight and a half above and below. A lazy list clips to its own bounds, so eight
-     * would shave the focus ring along the top and bottom edges.
+     * scroll into view with its name — so the number is about the card's full height. 216dp of
+     * poster, two lines of name under it and the clearance around that is 284dp, and six per cent
+     * of that is 17dp: eight and a half above and below. A lazy list clips to its own bounds, so
+     * eight would shave the focus ring along the top and bottom edges.
      */
     val CardFocusPad = KaeruTokens.Space3
 
@@ -130,7 +131,7 @@ object TvLayout {
 
     /**
      * And for the home screen's column of rows: the band takes 155 of 540dp, the safe area below
-     * takes 27, and a row is about 324 — so the row the screen opens on is the only one with
+     * takes 27, and a row is about 350 — so the row the screen opens on is the only one with
      * pixels on it and the next one is not composed at all. One, therefore, and being wrong low
      * here costs a scroll nobody sees.
      */

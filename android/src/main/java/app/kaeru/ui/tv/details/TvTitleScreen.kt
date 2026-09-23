@@ -90,6 +90,7 @@ import app.kaeru.ui.common.theme.KaeruTvTheme
 import app.kaeru.ui.tv.TvDialog
 import app.kaeru.ui.tv.TvEpisodeAction
 import app.kaeru.ui.tv.TvEpisodeCell
+import app.kaeru.ui.tv.TvFittedText
 import app.kaeru.ui.tv.TvLayout
 import app.kaeru.ui.tv.requestFocusOrLog
 import app.kaeru.ui.tv.tvEpisodeActions
@@ -102,7 +103,12 @@ private const val EPISODES = "Серии"
 private const val NO_EPISODES = "Список серий пока неизвестен"
 private const val EXPAND = "Развернуть"
 private const val COLLAPSE = "Свернуть"
-private const val NOT_AIRED = "не вышла"
+/**
+ * Under the number of an episode that is still to come. «не вышла» is what the phone says, and on a
+ * 68dp tile it became «не выш…», which says nothing; «скоро» fits, and is what the tile is for —
+ * the spoken description of the tile still says the whole thing.
+ */
+private const val NOT_AIRED = "скоро"
 private const val WATCHED = "Просмотрено"
 private const val WATCH = "Смотреть"
 private const val MARK_WATCHED = "Отметить просмотренной"
@@ -299,12 +305,18 @@ private fun TvTitleDetails(
         Row(horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space6)) {
             TvPoster(anime)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space3)) {
-                Text(
+                // Two lines, and three sizes to fit them in before the name is cut: «Блич:
+                // Тысячелетняя кровавая война — Раздор» filled its two lines of headlineMedium
+                // with «Блич: Тысячелетняя к…», which is not a name a viewer can act on.
+                TvFittedText(
                     anime.title,
-                    style = MaterialTheme.typography.headlineMedium,
+                    styles = listOf(
+                        MaterialTheme.typography.headlineMedium,
+                        MaterialTheme.typography.headlineSmall,
+                        MaterialTheme.typography.titleMedium,
+                    ),
                     color = KaeruText,
                     maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
                 )
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(KaeruTokens.Space2),
