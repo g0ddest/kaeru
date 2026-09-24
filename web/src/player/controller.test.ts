@@ -155,6 +155,8 @@ class FakeShikimori {
   detailsFailure: unknown = null;
   /** While set, the list read waits for it. */
   ratesHold: Promise<void> | null = null;
+  /** While set, the list read throws it. */
+  ratesFailure: unknown = null;
   /** One entry per write, in order; a truthy entry is thrown by that write. */
   failures: unknown[] = [];
   private nextId = 900;
@@ -180,6 +182,7 @@ class FakeShikimori {
       byIds: async (ids) => (ids.includes(this.details.id) ? [this.details] : []),
       userRates: async () => {
         if (this.ratesHold) await this.ratesHold;
+        if (this.ratesFailure) throw this.ratesFailure;
         return this.rates.map((rate) => ({ ...rate }));
       },
       createRate: async (_token, userId, animeId, fields) => {
@@ -510,6 +513,62 @@ describe("PlayerController: positions", () => {
     expect(saved(7)).toBe(611_000);
   });
 
+  it("ignores the 0 an element reloaded under the engine reads until it seeks back (Review Focus 1)", async () => {
+    const controller = await playing();
+    controller.onTime(600_000, DUR);
+    controller.onTime(605_000, DUR);
+
+    // hls.js recoverMediaError reloads the element: it announces its length at 0, then seeks back.
+    controller.onTime(0, DUR);
+    controller.onTime(0, DUR);
+
+    expect(saved(7)).toBe(605_000);
+    expect(controller.getState().positionMs).toBe(605_000);
+
+    // A second media error within 5 s, before the seek back: «Повторить» starts where the episode was.
+    controller.onEngineFailure("media");
+    await controller.retry();
+    expect(engine.loads.at(-1)).toEqual({ url: link(610, 7, 720), startMs: 605_000 });
+    expect(saved(7)).toBe(605_000);
+  });
+
+  it("follows the episode again once the reloaded element seeks back", async () => {
+    const controller = await playing();
+    controller.onTime(600_000, DUR);
+    controller.onTime(605_000, DUR);
+
+    controller.onTime(0, DUR);
+    controller.onSeeked(605_000);
+    controller.onTime(611_000, DUR);
+
+    expect(saved(7)).toBe(611_000);
+    expect(controller.getState().positionMs).toBe(611_000);
+  });
+
+  it("follows a seek to the start the controller did not make, once it lands", async () => {
+    const controller = await playing();
+    controller.onTime(600_000, DUR);
+    controller.onTime(605_000, DUR);
+
+    controller.onTime(0, DUR);
+    controller.onSeeked(0);
+    controller.onTime(1_000, DUR);
+
+    expect(controller.getState().positionMs).toBe(1_000);
+    expect(saved(7)).toBe(1_000);
+  });
+
+  it("follows an element that plays on from the start without seeking back", async () => {
+    const controller = await playing();
+    controller.onTime(600_000, DUR);
+
+    controller.onTime(0, DUR);
+    controller.onTime(500, DUR);
+    controller.onTime(1_000, DUR);
+
+    expect(controller.getState().positionMs).toBe(1_000);
+  });
+
   it("saves every 5 s of position and on pause", async () => {
     const controller = await playing();
     const put = vi.spyOn(progress, "put");
@@ -554,6 +613,8 @@ describe("PlayerController: positions", () => {
 describe("PlayerController: marks on Shikimori", () => {
   it("marks the episode once at 90 %", async () => {
     const controller = await playing();
+    // The library itself sends nothing for a count it already has: only the calls show a second mark.
+    const mark = vi.spyOn(library, "markWatched");
 
     controller.onTime(1_295_000, DUR);
     await settle();
@@ -561,6 +622,23 @@ describe("PlayerController: marks on Shikimori", () => {
     controller.onTime(1_296_000, DUR);
     controller.onTime(1_300_000, DUR);
     controller.onTime(1_310_000, DUR);
+    await settle();
+
+    expect(mark).toHaveBeenCalledTimes(1);
+    expect(server.writes()).toEqual(["PATCH 1 episodes=7"]);
+  });
+
+  it("reads the list again on open when the last read failed, so a mark waiting for it goes out", async () => {
+    server.ratesFailure = new NetworkError("Failed to fetch");
+    const controller = build();
+    await library.load();
+    expect(library.state().kind).toBe("error");
+    server.ratesFailure = null;
+
+    await controller.open(ANIME, 7);
+    await settle();
+    controller.onPlaying();
+    controller.onTime(1_300_000, DUR);
     await settle();
 
     expect(server.writes()).toEqual(["PATCH 1 episodes=7"]);
@@ -928,6 +1006,57 @@ describe("PlayerController: failures, quality and dub", () => {
     expect(controller.getState().failure).toEqual({ message: "Kodik временно недоступен, попробуйте позже", action: "dub" });
   });
 
+  it("opens the fresh link in a quality picked while it was being fetched, and loads nothing from the dead one", async () => {
+    const controller = await playing();
+    controller.onTime(600_000, DUR);
+    const fresh = deferred();
+    kodik.holds.set("610:7", fresh.promise);
+    controller.onEngineFailure("network");
+    await settle();
+
+    await controller.changeQuality(480);
+    expect(engine.loads).toHaveLength(1);
+
+    fresh.resolve();
+    await settle();
+
+    expect(engine.loads.at(-1)).toEqual({ url: link(610, 7, 480), startMs: 600_000 });
+    expect(engine.loads).toHaveLength(2);
+    expect(controller.getState()).toMatchObject({ phase: "playing", failure: null, quality: 480 });
+  });
+
+  it("keeps a pause pressed while the fresh link was being fetched", async () => {
+    const controller = await playing();
+    controller.onTime(600_000, DUR);
+    const fresh = deferred();
+    kodik.holds.set("610:7", fresh.promise);
+    controller.onEngineFailure("network");
+    await settle();
+
+    controller.togglePlay();
+    fresh.resolve();
+    await settle();
+
+    expect(engine.loads).toHaveLength(2);
+    expect(media.play).toHaveBeenCalledTimes(1);
+    expect(controller.getState()).toMatchObject({ phase: "playing", paused: true });
+  });
+
+  it("does not repeat the stand-in toast when a retry lands on the same stand-in", async () => {
+    const shortDub = { ...ANIDUB, episodesCount: 6 };
+    kodik.tracks = [ANILIBRIA, shortDub];
+    rememberDub(ANIME, shortDub, storage);
+    const controller = await playing();
+    expect(toasts).toHaveLength(1);
+    controller.onEngineFailure("media");
+
+    await controller.retry();
+
+    expect(controller.getState()).toMatchObject({ phase: "playing", track: ANILIBRIA });
+    expect(engine.loads).toHaveLength(2);
+    expect(toasts).toHaveLength(1);
+  });
+
   it("fails at once when the device is offline", async () => {
     const controller = await playing();
 
@@ -1062,6 +1191,72 @@ describe("PlayerController: failures, quality and dub", () => {
     controller.onWaiting();
 
     expect(controller.getState().buffering).toBe(true);
+  });
+
+  it("stops the spinner once the seek of a paused quality change lands", async () => {
+    const controller = await playing();
+    controller.onTime(600_000, DUR);
+    controller.onPause();
+    await controller.changeQuality(480);
+    expect(controller.getState().buffering).toBe(true);
+
+    controller.onSeeked(600_000);
+    controller.onTime(600_000, DUR);
+
+    expect(controller.getState()).toMatchObject({ paused: true, buffering: false });
+  });
+
+  it("keeps the spinner after a seek lands on a playing element until it plays", async () => {
+    const controller = await playing();
+    controller.onTime(600_000, DUR);
+    await controller.changeQuality(480);
+
+    controller.onSeeked(600_000);
+    expect(controller.getState().buffering).toBe(true);
+    controller.onPlaying();
+
+    expect(controller.getState().buffering).toBe(false);
+  });
+
+  it("stops the spinner once a source paused while loading is ready", async () => {
+    const loading = deferred();
+    engine.hold = loading.promise;
+    const controller = build();
+    const opened = controller.open(ANIME, 7);
+    await settle();
+    controller.togglePlay();
+    loading.resolve();
+    await opened;
+    await settle();
+    expect(controller.getState().buffering).toBe(true);
+
+    controller.onCanPlay();
+
+    expect(controller.getState()).toMatchObject({ paused: true, buffering: false });
+  });
+
+  it("stops the spinner once a link re-resolved while paused lands", async () => {
+    const controller = await playing();
+    controller.onTime(600_000, DUR);
+    controller.onPause();
+    controller.onEngineFailure("network");
+    await settle();
+    expect(engine.loads).toHaveLength(2);
+    expect(media.play).toHaveBeenCalledTimes(1);
+
+    controller.onSeeked(600_000);
+
+    expect(controller.getState()).toMatchObject({ phase: "playing", paused: true, buffering: false });
+  });
+
+  it("stops the spinner when the viewer pauses an episode waiting for data", async () => {
+    const controller = await playing();
+    controller.onWaiting();
+
+    controller.togglePlay();
+    controller.onPause();
+
+    expect(controller.getState()).toMatchObject({ paused: true, buffering: false });
   });
 
   it("still sends a mark that was waiting for the list when the player closes", async () => {

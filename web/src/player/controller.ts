@@ -77,6 +77,11 @@ const LOAD_FAILED = "Не удалось загрузить аниме. Пров
 const NO_TRACKS = "Источник не предложил ни одной озвучки для этого аниме";
 /** How many other dubs the walk asks before it calls the episode missing everywhere. */
 const WALK_LIMIT = 5;
+/**
+ * A reading this close to the start, this far behind the episode with no seek landing there, is an
+ * element reloaded under the engine (hls.js recoverMediaError): it reads 0 until hls.js seeks back.
+ */
+const RELOADED_MS = 1_000;
 
 const INITIAL: PlayerState = {
   anime: null,
@@ -152,6 +157,10 @@ export class PlayerController {
   private autoSkipped = false;
   /** This episode's one silent re-resolve after a failed link has been spent. */
   private reResolved = false;
+  /** The op of the silent re-resolve under way; while it is the current op the link playing is dead. */
+  private reResolving: number | null = null;
+  /** A quality picked while that re-resolve was fetching: the fresh link opens in it. */
+  private wantedQuality: number | null = null;
   /** Left from inside its ending: the episode is over, and its row says so. */
   private finishedHere = false;
   private ended = false;
@@ -200,8 +209,10 @@ export class PlayerController {
     this.freshEpisode();
     this.set({ ...INITIAL, episode, buffering: true });
     const { library } = this.deps;
-    // The signed-in shell starts the list too; whoever comes first starts it once.
-    if (library.state().kind === "idle") void library.load().catch(() => undefined);
+    // The signed-in shell starts the list too; whoever comes first starts it once. A read that failed
+    // is tried again: marks waiting for the list would otherwise wait for another screen to read it.
+    const list = library.state();
+    if (!listKnown(list) && list.kind !== "loading") void library.load().catch(() => undefined);
 
     // Asked side by side: neither answer depends on the other.
     const listing = this.deps.kodik.translations(animeId);
@@ -255,6 +266,9 @@ export class PlayerController {
     if (!Number.isFinite(durationMs) || durationMs <= 0 || !Number.isFinite(positionMs)) return;
     const duration = Math.round(durationMs);
     const position = Math.min(duration, Math.max(0, Math.round(positionMs)));
+    // Not the episode's position but a reloaded element's 0; the seek back lands through onSeeked. An
+    // element that really plays on from the start is followed again from its second second.
+    if (position < RELOADED_MS && this.state.positionMs - position >= RELOADED_MS) return;
     if (position < duration) this.ended = false;
     this.tick(position, duration);
   }
@@ -269,7 +283,8 @@ export class PlayerController {
   onPause(): void {
     // A new source pauses the element on its own; that is not the viewer pausing.
     if (this.state.phase !== "playing" || this.swapping) return;
-    this.set({ paused: true });
+    // A paused episode waits for nothing: play says `waiting` again if the data is still not there.
+    this.set({ paused: true, buffering: false });
     this.save();
   }
 
@@ -280,7 +295,18 @@ export class PlayerController {
   onSeeked(positionMs: number): void {
     if (this.state.phase !== "playing" || !Number.isFinite(positionMs)) return;
     this.swapping = false;
+    // A seek lands once its frame is decoded, which is all a paused episode shows. A playing one may
+    // still lack the data to go on, and says so with `playing`.
+    if (this.state.paused) this.set({ buffering: false });
     this.landed(Math.max(0, Math.round(positionMs)));
+  }
+
+  /**
+   * `canplay`: enough data to play. The one readiness a paused source that starts at 0 gives, since
+   * nothing seeks it; a playing one follows with `playing`.
+   */
+  onCanPlay(): void {
+    if (this.state.phase === "playing") this.set({ buffering: false });
   }
 
   onEnded(): void {
@@ -386,8 +412,14 @@ export class PlayerController {
   /** Another playlist of the same stream at the same position, playing or paused as it was. */
   async changeQuality(q: number): Promise<void> {
     const s = this.state;
-    if (s.phase !== "playing" || this.stream === null || s.track === null || q === s.quality) return;
+    if (s.phase !== "playing" || this.stream === null || s.track === null) return;
     if (!this.stream.links.some((link) => link.quality === q)) return;
+    if (this.reResolving === this.op) {
+      // The link playing is the one that failed: the fresh one the re-resolve brings opens in q.
+      this.wantedQuality = q;
+      return;
+    }
+    if (q === s.quality) return;
     this.save();
     const chosen = this.standingInFor ?? s.track;
     await this.start({ stream: this.stream, track: s.track, chosen }, s.positionMs, q, !s.paused && !s.needsGesture);
@@ -487,6 +519,8 @@ export class PlayerController {
     if (s.track === null) return;
     const op = ++this.op;
     const track = s.track;
+    this.reResolving = op;
+    this.wantedQuality = null;
     this.set({ buffering: true });
     let stream: KodikStream;
     try {
@@ -494,9 +528,14 @@ export class PlayerController {
     } catch (error) {
       if (op === this.op) this.failWith(error, s.episode);
       return;
+    } finally {
+      if (this.reResolving === op) this.reResolving = null;
     }
     if (op !== this.op) return;
-    await this.start({ stream, track, chosen: this.standingInFor ?? track }, this.state.positionMs, s.quality, !s.paused);
+    // As things stand now, not as they did before the request: a pause or a quality picked meanwhile stands.
+    const { positionMs, quality, paused, needsGesture } = this.state;
+    const chosen = this.standingInFor ?? track;
+    await this.start({ stream, track, chosen }, positionMs, this.wantedQuality ?? quality, !paused && !needsGesture);
   }
 
   /** Everything that belongs to one episode rather than to one file of it. */
