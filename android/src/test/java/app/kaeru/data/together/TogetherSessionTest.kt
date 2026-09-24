@@ -1116,6 +1116,21 @@ class TogetherSessionTest {
         assertEquals(100, report.animeId)
     }
 
+    /**
+     * The controller's position moves on a quarter-second tick, and a report taken from it left
+     * up to 250 ms old — half the band the friend's side leaves alone, gone before anything was
+     * measured. The report is read off the player at the moment it is sent.
+     */
+    @Test
+    fun `a report says where the player is now, not where the last tick left it`() = sessionTest {
+        live()
+        port.engineMs = 61_240
+        transport.sent.clear()
+        advanceTimeBy(TogetherSession.STATE_INTERVAL_MS + 1)
+        runCurrent()
+        assertEquals(61_240L, transport.sentOf<TogetherMessage.State>().last().positionMs)
+    }
+
     /** A friend who opened another title is followed to that title, not to its episode number here. */
     @Test
     fun `an episode in another title opens that title`() = sessionTest {
@@ -1548,7 +1563,7 @@ class TogetherSessionTest {
 
     @Test
     fun `a friend whose socket went away is announced and given half a minute to come back`() = sessionTest {
-        live()
+        val room = live()
         val seen = mutableListOf<TogetherEvent>()
         val watching = launch { session.events.toList(seen) }
         runCurrent()
@@ -1562,8 +1577,43 @@ class TogetherSessionTest {
         advanceTimeBy(TogetherSession.REJOIN_WINDOW_MS + 1)
         runCurrent()
 
-        assertEquals(SessionState.Lost(LostReason.CONNECTION), session.state.value)
+        // The host keeps the room: open again, on the same link, for whoever follows it next.
+        assertEquals(SessionState.Hosting(room, waiting = true), session.state.value)
+        assertEquals(0, transport.closes)
         watching.cancel()
+    }
+
+    /**
+     * «Не сейчас» on the other phone's invitation screen is a socket that closes without a
+     * goodbye. It used to end the room here thirty seconds later with «связь с другом потеряна».
+     */
+    @Test
+    fun `a friend who declined the invitation leaves the room open for the next one`() = sessionTest {
+        val link = live()
+
+        transport.deliver(TogetherMessage.PeerLeft())
+        advanceTimeBy(TogetherSession.REJOIN_WINDOW_MS + 1)
+        runCurrent()
+        assertEquals(SessionState.Hosting(link, waiting = true), session.state.value)
+
+        // Somebody else follows the same link, with a session of their own and a count from one.
+        transport.deliver(peerHello(name = "Боря", seq = 1, epoch = 77))
+        transport.deliver(TogetherMessage.Seek(positionMs = 90_000, seq = 2))
+        runCurrent()
+
+        assertEquals(SessionState.Live("Боря", 0, 0), session.state.value)
+        assertEquals(listOf(90_000L), port.seeks)
+    }
+
+    @Test
+    fun `a guest whose host went away for good loses the room`() = sessionTest {
+        liveAsGuest()
+
+        transport.deliver(TogetherMessage.PeerLeft())
+        advanceTimeBy(TogetherSession.REJOIN_WINDOW_MS + 1)
+        runCurrent()
+
+        assertEquals(SessionState.Lost(LostReason.CONNECTION), session.state.value)
     }
 
     @Test

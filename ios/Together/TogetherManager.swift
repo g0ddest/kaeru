@@ -392,7 +392,12 @@ struct TogetherJoinTarget: Equatable {
             Task { [weak self] in await self?.sendHello(invitation: invitation) }
         }
         if beats % (TogetherTiming.syncMs / TogetherTiming.stateMs) == 0 { correct() }
-        if let deadline = rejoinBy, now() >= deadline { rejoinBy = nil; fail(.disconnected) }
+        if let deadline = rejoinBy, now() >= deadline {
+            rejoinBy = nil
+            // The side that made the room keeps it: see `vacate()`. A guest whose host did not
+            // come back has nothing left to be in.
+            if side == .host { vacate() } else { fail(.disconnected) }
+        }
         if heldForPeer, holdUntil > 0, now() >= holdUntil {
             TogetherLog.write("waited \(TogetherTiming.peerLoadingHoldMs / 1000)s for the friend to load; going on")
             releaseHold()
@@ -671,6 +676,27 @@ struct TogetherJoinTarget: Equatable {
         rejoinBy = now() + TogetherTiming.rejoinWindowMs
         conversation.notice(.left, peerName: peerName)
         enter(.reconnecting)
+    }
+
+    /// The friend did not come back, and the room goes back to what it was before they came:
+    /// open, on the same link, waiting for whoever walks through it next.
+    ///
+    /// A friend who tapped «Не сейчас» on the invitation, or closed the app, is a socket that
+    /// closed without a goodbye — and when the half minute ran out this used to end the room with
+    /// «связь с другом потеряна», taking it away from anybody else who might follow the same link.
+    /// Everything that belonged to that friend goes; the replay guard keeps its mark, and a
+    /// newcomer gets in the way a friend who started over always has — with an epoch never heard
+    /// before, or, on a build too old to carry one, as the one greeting `allowRejoin` still lets
+    /// in below the mark.
+    private func vacate() {
+        TogetherLog.write("peer did not come back in \(TogetherTiming.rejoinWindowMs / 1000)s; the room stays open")
+        peerName = nil
+        report = nil
+        if correcting { playback?.togetherSetRate(1); correcting = false }
+        peerLoading = false; dropHold()
+        pendingGreeting = nil; pendingGreetingAt = 0
+        greetingAnsweredAt = nil
+        enter(.live)
     }
 
     /// This phone's own socket is back. The greeting goes out again because a friend whose room

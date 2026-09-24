@@ -68,6 +68,19 @@ sealed interface LocalAction {
 interface PlaybackPort {
     val state: StateFlow<PortState>
 
+    /**
+     * Where the picture is this instant, read off the player rather than out of [state].
+     *
+     * [state] moves on the controller's position tick, a quarter of a second apart, so a report
+     * taken from it was up to 250 ms old when it left — and the friend then added the time the
+     * frame spent in flight on top. Half a second is the whole band the session leaves alone, and
+     * this was half of it spent before anything was measured. iOS has always read the player at
+     * the moment of sending; this is the same.
+     *
+     * [state] where there is no player to ask, which is also the fakes' answer.
+     */
+    fun positionNow(): Long = state.value.positionMs
+
     /** Actions this viewer took. Nothing this interface's own methods caused ever appears here. */
     val localActions: Flow<LocalAction>
 

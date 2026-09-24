@@ -149,7 +149,7 @@ class TogetherPlaybackPortTest {
     /** Whereas a buffer filling under a paused picture is simply a paused picture. */
     @Test
     fun `a paused picture that is buffering is reported as paused`() = runTest(dispatcher) {
-        val player = mockk<Player>()
+        val player = mockk<Player>(relaxed = true)
         every { player.playWhenReady } returns false
         engine.videoPlayer.value = player
         controller.play(target())
@@ -163,6 +163,25 @@ class TogetherPlaybackPortTest {
         val state = port.state.value
         assertTrue(state.buffering)
         assertFalse(state.playing)
+    }
+
+    /**
+     * The controller's position moves on a quarter-second tick; a report taken from it left up to
+     * 250 ms old. The port reads the engine instead, once there is one playing this episode.
+     */
+    @Test
+    fun `the position a session sends is the engine's, not the last tick's`() = runTest(dispatcher) {
+        val player = mockk<Player>(relaxed = true)
+        every { player.playbackState } returns Player.STATE_READY
+        every { player.currentPosition } returns 61_240
+        engine.videoPlayer.value = player
+        assertEquals("до готовности — позиция контроллера", port.state.value.positionMs, port.positionNow())
+
+        controller.play(target())
+        engine.ready(durationMs = 1_440_000)
+        advanceUntilIdle()
+
+        assertEquals(61_240L, port.positionNow())
     }
 
     @Test

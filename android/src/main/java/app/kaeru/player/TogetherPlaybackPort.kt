@@ -56,6 +56,8 @@ class TogetherPlaybackPort @Inject constructor(
 
     override val localActions: Flow<LocalAction> get() = controller.localActions
 
+    override fun positionNow(): Long = controller.positionNow()
+
     /**
      * Whether play has been asked for, whatever the engine is doing about it right now.
      *

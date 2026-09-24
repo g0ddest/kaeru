@@ -136,6 +136,9 @@ class TogetherSession(
     private var ticks: Job? = null
     private var asHost = false
 
+    /** The room this session is in, for handing a host's own link back when the seat empties. */
+    private var link: RoomLink? = null
+
     /** The room this phone made and is keeping, so its own invitation can be recognised. */
     private var hostedRoom: String? = null
     private var myName = ""
@@ -398,6 +401,7 @@ class TogetherSession(
         myName = name
         peerName = ""
         this.asHost = asHost
+        this.link = link
         hostedRoom = if (asHost) link.roomId else null
         channel = transport
         seq = 0
@@ -634,7 +638,7 @@ class TogetherSession(
     private suspend fun report() {
         if (_state.value !is SessionState.Live) return
         val now = port.state.value
-        send(TogetherMessage.State(now.positionMs, now.playing, now.buffering, clock.millis(), nextSeq(),
+        send(TogetherMessage.State(port.positionNow(), now.playing, now.buffering, clock.millis(), nextSeq(),
             animeId = now.animeId, episode = now.episode))
     }
 
@@ -685,7 +689,7 @@ class TogetherSession(
         val there = if (report.playing) report.positionMs + (now - report.sentAt) else report.positionMs
         val target = there + offsets.offsetMs
         val action = SyncPolicy.decide(
-            localMs = here.positionMs,
+            localMs = port.positionNow(),
             remoteMs = there,
             remotePlaying = report.playing,
             localPlaying = here.playing,
@@ -700,7 +704,7 @@ class TogetherSession(
                 if (action.factor != currentRate) port.setRate(action.factor)
                 currentRate = action.factor
                 correcting = action.factor != SyncPolicy.NORMAL
-            } else if (kotlin.math.abs(here.positionMs - target) > RATELESS_SEEK_MS) {
+            } else if (kotlin.math.abs(port.positionNow() - target) > RATELESS_SEEK_MS) {
                 // Nothing here can play slightly slow — the picture is on a television — so the
                 // band that would have been nudged shut has to be jumped instead. Not at the
                 // bottom of it: below a second a jump is worse than the gap it closes.
@@ -861,7 +865,7 @@ class TogetherSession(
 
     /** A jump small enough to be read as the video stuttering is not worth making. */
     private suspend fun catchUpTo(positionMs: Long) {
-        if (kotlin.math.abs(port.state.value.positionMs - positionMs) < SyncPolicy.IGNORE_MS) return
+        if (kotlin.math.abs(port.positionNow() - positionMs) < SyncPolicy.IGNORE_MS) return
         port.seekTo(positionMs)
     }
 
@@ -983,7 +987,7 @@ class TogetherSession(
         // acted on. Read off the raw report instead, the two differ by the one-way delay less the
         // clock offset — enough, between phones whose clocks are a second apart, to show a steady
         // drift the session can plainly see is not there.
-        drift = port.state.value.positionMs - (reportedPositionNow() ?: return)
+        drift = port.positionNow() - (reportedPositionNow() ?: return)
         republishLive()
         if (syncOnReport) {
             syncOnReport = false
@@ -1070,12 +1074,52 @@ class TogetherSession(
         rejoining = true
         rejoin = scope.launch(failures) {
             delay(REJOIN_WINDOW_MS)
+            rejoin = null
+            // The side that made the room keeps it. A friend who tapped «Не сейчас» on the
+            // invitation, or closed the app, or whose train never left the tunnel is not the end
+            // of a room this phone still has a socket in: the link in the chat still opens it, and
+            // «связь с другом потеряна» here used to take the room away from everybody else who
+            // might have followed the same link a minute later.
+            //
+            // Whether the host's own socket is up right now does not matter here: one that is
+            // redialling comes back into the same room, and one that is gone for good ends the
+            // collection in `begin`, which is where a host's session is lost.
+            val room = link
+            if (asHost && room != null) {
+                vacate(room)
+                return@launch
+            }
             // Closed before the window's own verdict, so the exception the guard makes for a
             // returning hello lasts the window rather than the rest of the session.
-            rejoin = null
             rejoining = false
             lose(LostReason.CONNECTION)
         }
+    }
+
+    /**
+     * The friend did not come back, and the room goes back to what it was before they came: open,
+     * on the same link, waiting for whoever walks through it next.
+     *
+     * Everything that belonged to that friend goes with them — their name, their last report, a
+     * correction or a hold on their account. The replay guard does not: the mark on their count
+     * stays where it was, and a newcomer gets in the way a friend who started over always has, by
+     * greeting with an epoch never heard before. [rejoining] stays up for a friend on a build too
+     * old to carry an epoch: theirs is the one greeting let in below the mark, as inside the
+     * window.
+     */
+    private suspend fun vacate(room: RoomLink) {
+        TogetherLog.write("peer did not come back in ${REJOIN_WINDOW_MS / 1000}s; the room stays open")
+        peerName = ""
+        peer = null
+        drift = 0
+        normalSpeed()
+        peerLoading = false
+        dropHold()
+        voice = null
+        hello = CompletableDeferred()
+        helloAt = 0
+        greetingAnsweredAt = null
+        _state.value = SessionState.Hosting(room, waiting = true)
     }
 
     private fun goLive(name: String) {
@@ -1214,7 +1258,7 @@ class TogetherSession(
             animeId = now.animeId ?: animeId,
             episode = now.episode ?: 1,
             translationId = now.translationId,
-            positionMs = now.positionMs,
+            positionMs = port.positionNow(),
             playing = now.playing,
             seq = nextSeq(),
             epoch = epoch,

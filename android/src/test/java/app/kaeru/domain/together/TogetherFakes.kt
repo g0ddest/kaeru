@@ -148,6 +148,14 @@ class FakePlaybackPort : PlaybackPort {
     override var supportsRate: Boolean = true
 
     /**
+     * The player's own clock, when a test wants it to differ from the last tick in [state] — the
+     * way a real player runs up to a quarter of a second ahead of the controller's position tick.
+     */
+    var engineMs: Long? = null
+
+    override fun positionNow(): Long = engineMs ?: state.value.positionMs
+
+    /**
      * Whether an episode this fake opens is ready the moment it is opened. False stands in for
      * the seconds a real player spends resolving and reading the manifest, during which the
      * episode is named but nothing can be seeked.

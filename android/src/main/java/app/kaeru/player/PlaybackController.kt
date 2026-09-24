@@ -83,6 +83,17 @@ interface PlaybackController {
     val videoPlayer: StateFlow<Player?>
 
     /**
+     * Where the picture is this instant, read off the engine rather than out of [state].
+     *
+     * [state] moves on a quarter-second position tick; a shared session that reported from it
+     * spent up to 250 ms of its half-second tolerance before anything was measured. The engine's
+     * clock where there is one playing this episode, [state] everywhere else — while casting, the
+     * phone's player is idle and remembers where the picture was when it left, and while a stream
+     * is still being resolved it holds the last episode. Main thread, which is the player's.
+     */
+    fun positionNow(): Long = state.value.positionMs
+
+    /**
      * What this viewer did, for a shared session to pass on: a press, a scrub, an episode they
      * chose or one autoplay ran into for them.
      *
@@ -404,11 +415,19 @@ class DefaultPlaybackController @Inject constructor(
 
     override fun togglePlayPause() = setPlaying(!_state.value.isPlaying)
 
+    override fun positionNow(): Long {
+        val now = _state.value
+        val player = _videoPlayer.value
+        if (now.isCasting || !now.ready || player == null || player.currentMediaItem == null) return now.positionMs
+        if (player.playbackState == Player.STATE_IDLE) return now.positionMs
+        return player.currentPosition.coerceAtLeast(0)
+    }
+
     override fun setPlaying(playing: Boolean, origin: ActionOrigin) {
         val current = _state.value
         if (!playing) {
             engine.pause()
-            announce(origin) { LocalAction.Pause(_state.value.positionMs) }
+            announce(origin) { LocalAction.Pause(positionNow()) }
             return
         }
         // Pressing play on an episode that ran out should replay it, not sit on the last frame.
@@ -418,7 +437,7 @@ class DefaultPlaybackController @Inject constructor(
             _state.update { it.copy(positionMs = 0) }
         }
         engine.play()
-        announce(origin) { LocalAction.Play(_state.value.positionMs) }
+        announce(origin) { LocalAction.Play(if (replaying) 0 else positionNow()) }
     }
 
     override fun seekTo(positionMs: Long, origin: ActionOrigin) {

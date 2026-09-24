@@ -216,6 +216,43 @@ import XCTest
         XCTAssertEqual(bench.manager.phase, .failed)
         XCTAssertEqual(bench.manager.error, .disconnected)
     }
+
+    /// «Не сейчас» on the friend's invitation screen is a socket that closes without a goodbye.
+    /// The host used to end its room half a minute later with «связь с другом потеряна»; it keeps
+    /// the room now, on the same link, for whoever follows it next.
+    func testTheHostKeepsTheRoomWhenTheFriendDoesNotComeBack() async throws {
+        let clock = TogetherSyncTests.Bench.Clock()
+        let transport = TogetherManagerTests.Transport()
+        let manager = TogetherManager(relayURL: "wss://relay.test", displayName: "Хозяин",
+                                      transportFactory: { _, _ in transport }, now: { clock.value })
+        await manager.create()
+        let link = try XCTUnwrap(manager.invitation)
+        clock.value = 1_000
+        try transport.deliver(.init(t: .hello, seq: 1, name: "Аня", animeId: 7, episode: 1, positionMs: 0, playing: true, epoch: 5),
+                              link: link, side: .guest)
+        for _ in 0..<30 { await Task.yield() }
+        XCTAssertEqual(manager.peerName, "Аня")
+
+        transport.continuation.yield(.peerLeft)
+        for _ in 0..<30 { await Task.yield() }
+        XCTAssertEqual(manager.phase, .reconnecting)
+        clock.value = 1_000 + TogetherTiming.rejoinWindowMs
+        manager.beat()
+        for _ in 0..<30 { await Task.yield() }
+
+        XCTAssertEqual(manager.phase, .live, "the room is open again")
+        XCTAssertNil(manager.peerName)
+        XCTAssertNil(manager.error)
+        XCTAssertEqual(manager.invitation, link, "the same link still opens it")
+        XCTAssertEqual(manager.conversation.wait?.text, TogetherCopy.waitingFriend)
+
+        // Somebody else follows the link, with a session of their own and a count from one.
+        try transport.deliver(.init(t: .hello, seq: 1, name: "Боря", animeId: 7, episode: 1, positionMs: 0, playing: true, epoch: 77),
+                              link: link, side: .guest)
+        for _ in 0..<30 { await Task.yield() }
+        XCTAssertEqual(manager.peerName, "Боря")
+        XCTAssertEqual(manager.phase, .live)
+    }
 }
 
 /// A room with one person in it is silent, and silence is not a failure.
