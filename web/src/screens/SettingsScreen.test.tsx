@@ -12,6 +12,7 @@ import type { authorized } from "../auth/session";
 import { Library } from "../library/library";
 import { setWatchedThreshold, watchedThreshold } from "../library/prefs";
 import { ProgressStore } from "../library/progress";
+import { noPlayback } from "../test/fakes";
 import { SettingsScreen } from "./SettingsScreen";
 
 const ACCOUNT: Account = { id: 1, nickname: "Лягушка", avatar: "https://shikimori.io/system/users/x160/1.png" };
@@ -64,7 +65,7 @@ function setup() {
   // setup.ts clears localStorage after every test, so the next test starts signed out again.
   sessionStore.setSession({ account: ACCOUNT, tokens: TOKENS });
   const view = render(
-    <ServicesContext.Provider value={{ shikimori, library, progress }}>
+    <ServicesContext.Provider value={{ shikimori, library, progress, ...noPlayback() }}>
       <MemoryRouter initialEntries={["/settings"]}>
         <Routes>
           <Route path="/settings" element={<SettingsScreen />} />

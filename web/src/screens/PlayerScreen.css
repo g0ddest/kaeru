@@ -1,0 +1,377 @@
+/* The full-window player (Android ui/mobile/player/PlayerScreen.kt, PlayerControls.kt). Layers, bottom
+   to top: the picture and the surface that takes clicks on it; the spinner and the failure scrim; the
+   controls (they fade out after 3 s of playback); the skip button, the cards and the «Смотреть» press. */
+.player {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #000;
+  color: var(--ink);
+  --player-pad-x: max(var(--gutter), env(safe-area-inset-left), env(safe-area-inset-right));
+  /* The bottom bar's height: the cards and the skip button sit above it. */
+  --player-bar-h: 112px;
+}
+
+.player[data-idle="true"] {
+  cursor: none;
+}
+
+.player-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: contain;
+  background: #000;
+}
+
+.player-surface {
+  position: absolute;
+  inset: 0;
+}
+
+/* ---------- Controls ---------- */
+.player-chrome {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  transition: opacity var(--normal) ease-out;
+}
+
+/* Only the controls take the pointer: the bars' gradients let a click through to the picture. */
+.player-top > *,
+.player-bottom > *,
+.player-centre .player-toggle {
+  pointer-events: auto;
+}
+
+.player[data-idle="true"] .player-chrome * {
+  pointer-events: none;
+}
+
+.player[data-idle="true"] .player-chrome {
+  opacity: 0;
+}
+
+.player-top {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  padding: max(var(--s2), env(safe-area-inset-top)) var(--player-pad-x) var(--s8);
+  background: linear-gradient(to bottom, rgb(0 0 0 / 0.72), rgb(0 0 0 / 0));
+}
+
+.player-heading {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.player-title,
+.player-episode {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.player-episode {
+  color: var(--ink-soft);
+}
+
+.player-top-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s2);
+  margin-left: auto;
+}
+
+.player-top .pill {
+  background: var(--secondary-bg);
+}
+
+.player-top .pill__label {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The pills sit at the right edge: their menus open leftwards, and a long dub list scrolls. */
+.player-top .menu-list {
+  right: 0;
+  left: auto;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+}
+
+.player .icon-button:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.12);
+}
+
+.player .icon-button[aria-pressed="true"] {
+  color: var(--accent);
+}
+
+.player-centre {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.player-centre .player-toggle {
+  width: 72px;
+  height: 72px;
+}
+
+.player-centre .player-toggle svg {
+  width: 40px;
+  height: 40px;
+}
+
+.player-bottom {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  padding: var(--s8) var(--player-pad-x) max(var(--s2), env(safe-area-inset-bottom));
+  background: linear-gradient(to top, rgb(0 0 0 / 0.72), rgb(0 0 0 / 0));
+}
+
+/* Its own display would otherwise win over [hidden]: the failure takes the bottom bar away. */
+.player-bottom[hidden] {
+  display: none;
+}
+
+.player-seek-row,
+.player-bottom-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
+.player-time {
+  flex: none;
+  min-width: 88px;
+  color: var(--ink);
+  text-align: right;
+}
+
+.player-spacer {
+  flex: 1;
+}
+
+.player-bottom .btn--text {
+  color: var(--ink);
+}
+
+/* The seek slider: an amber played part on a pale track, 24px tall to hit. */
+.player-seek {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.player-seek:disabled {
+  cursor: default;
+}
+
+.player-seek::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--accent) var(--played, 0%), var(--track) var(--played, 0%));
+}
+
+.player-seek::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--accent) var(--played, 0%), var(--track) var(--played, 0%));
+}
+
+.player-seek::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.player-seek::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.player-seek:disabled::-webkit-slider-thumb {
+  background: transparent;
+}
+
+.player-seek:disabled::-moz-range-thumb {
+  background: transparent;
+}
+
+.player-seek:focus-visible {
+  outline: none;
+}
+
+.player-seek:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px var(--bg), 0 0 0 6px var(--accent);
+}
+
+.player-seek:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 3px var(--bg), 0 0 0 6px var(--accent);
+}
+
+/* A phone keeps the next-episode glyph; its name stays for screen readers. */
+@media (max-width: 479px) {
+  .player-next {
+    padding: 0 var(--s2);
+  }
+
+  .player-next .btn__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .player-time {
+    min-width: 0;
+  }
+}
+
+/* ---------- Loading, the press autoplay needs, failures ---------- */
+.player-spinner {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.player-spinner-ring {
+  width: 44px;
+  height: 44px;
+  border: 4px solid var(--accent);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: player-spin 900ms linear infinite;
+}
+
+@keyframes player-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.player-gesture {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  background: var(--scrim);
+}
+
+.player-failure {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s6);
+  padding: var(--s14) var(--player-pad-x);
+  background: var(--scrim);
+  text-align: center;
+}
+
+.player-failure-message {
+  max-width: 420px;
+}
+
+.player-failure-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--s3);
+}
+
+/* ---------- Skip button and cards, bottom right above the bar ---------- */
+.player-skip {
+  position: absolute;
+  right: var(--player-pad-x);
+  bottom: calc(var(--player-bar-h) + env(safe-area-inset-bottom));
+  z-index: 3;
+}
+
+.player-card {
+  position: absolute;
+  right: var(--player-pad-x);
+  bottom: calc(var(--player-bar-h) + env(safe-area-inset-bottom));
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  width: min(360px, calc(100% - 2 * var(--player-pad-x)));
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--elevated);
+  animation: kaeru-rise var(--normal) ease-out;
+}
+
+.player-card-text {
+  color: var(--ink-soft);
+}
+
+.player-card-drain {
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--track);
+}
+
+.player-card-drain > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 1s linear;
+}
+
+.player-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-top: var(--s2);
+}
+
+.player-card-actions .btn {
+  flex: 1 1 auto;
+}

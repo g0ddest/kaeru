@@ -72,3 +72,24 @@
   flex: none;
   color: var(--accent);
 }
+
+.menu-item-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: var(--s2) 0;
+}
+
+.menu-item-note {
+  color: var(--ink-soft);
+  font-weight: 400;
+}
+
+.menu-item:disabled {
+  color: var(--ink-soft);
+  cursor: default;
+}
+
+.menu-item:disabled:hover {
+  background: none;
+}

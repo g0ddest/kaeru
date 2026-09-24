@@ -13,6 +13,7 @@ import type { authorized } from "../auth/session";
 import type { Anime, ListStatus, UserRate } from "../domain/models";
 import { Library } from "../library/library";
 import { ProgressStore } from "../library/progress";
+import { noPlayback } from "../test/fakes";
 import { ToastProvider } from "../ui/Toast";
 import { CatalogueCache } from "./home";
 import { SearchScreen } from "./SearchScreen";
@@ -119,7 +120,7 @@ function setup(
     },
   });
   render(
-    <ServicesContext.Provider value={{ shikimori, library, progress }}>
+    <ServicesContext.Provider value={{ shikimori, library, progress, ...noPlayback() }}>
       <ToastProvider>
         <MemoryRouter initialEntries={[options.path ?? "/search"]}>
           <Routes>

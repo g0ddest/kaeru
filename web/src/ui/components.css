@@ -606,6 +606,18 @@
   }
 }
 
+/* The full-window player has no sidebar or tab bar: centred, just above its bottom bar. The body
+   selector outranks the shell's rules above at every width. */
+body.is-player {
+  overflow: hidden;
+}
+
+body.is-player .toast-region {
+  bottom: calc(120px + env(safe-area-inset-bottom));
+  left: 50%;
+  width: min(560px, calc(100vw - 2 * var(--gutter)));
+}
+
 /* ---------- Dialog ---------- */
 .dialog-backdrop {
   position: fixed;

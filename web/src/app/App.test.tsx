@@ -52,8 +52,19 @@ describe("App", () => {
   it("lets a signed-in viewer in and starts loading the list", async () => {
     sessionStore.setSession(SESSION);
     const services = openAt("/watch/7/2");
-    expect(screen.getByRole("heading", { name: "Плеер появится в следующем обновлении" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Назад к тайтлу" })).toHaveAttribute("href", "/anime/7");
     await waitFor(() => expect(services.library.state().kind).toBe("ready"), { timeout: 3000 });
+  });
+
+  it("opens the player full window at /watch/:id/:episode", async () => {
+    sessionStore.setSession(SESSION);
+    openAt("/watch/7/3");
+
+    expect(document.querySelector("video")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Назад" })).toBeInTheDocument();
+    // No shell around it: no sections sidebar, no tab bar.
+    expect(screen.queryByRole("navigation")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Плеер появится в следующем обновлении" })).toBeNull();
+    // Every Shikimori answer here is an empty list, so the title cannot load: the player says so.
+    expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось загрузить аниме. Проверьте соединение и повторите");
   });
 });

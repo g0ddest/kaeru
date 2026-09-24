@@ -12,6 +12,7 @@ import type { authorized } from "../auth/session";
 import type { Anime, EpisodeProgress, ListStatus, UserRate } from "../domain/models";
 import { Library } from "../library/library";
 import { ProgressStore } from "../library/progress";
+import { noPlayback } from "../test/fakes";
 import { ToastProvider } from "../ui/Toast";
 import { TitleScreen } from "./TitleScreen";
 
@@ -146,7 +147,7 @@ function start(details: Anime, rate?: { status: ListStatus; episodes: number }, 
   for (const row of rows) progress.put(row);
   const shikimori = server.api();
   const library = new Library({ shikimori, authorized: fakeAuthorized, accountId: () => 42, progress });
-  services = { shikimori, library, progress };
+  services = { shikimori, library, progress, ...noPlayback() };
 }
 
 function WatchProbe() {

@@ -4,11 +4,19 @@ import { createShikimori, type Shikimori } from "../api/shikimori";
 import { authorized, sessionStore, type SessionStore } from "../auth/session";
 import { Library } from "../library/library";
 import { progressStore, type ProgressStore } from "../library/progress";
+import { createAniSkip, type AniSkip } from "../player/aniskip";
+import { createEngine, type EngineFactory } from "../player/engine";
+import { createKodik, type Kodik } from "../player/kodik";
 
 export interface Services {
   shikimori: Shikimori;
   library: Library;
   progress: ProgressStore;
+  /** The worker's Kodik routes. */
+  kodik: Kodik;
+  aniskip: AniSkip;
+  /** Builds the engine for the player's one `<video>`. */
+  engine: EngineFactory;
 }
 
 /** The real object graph; tests pass a fake fetch or a separate session store. */
@@ -30,7 +38,14 @@ export function createServices(
     },
     progress,
   });
-  return { shikimori, library, progress };
+  // An account the worker takes off its allow-list closes this store's session, as a refresh would.
+  const kodik = createKodik({
+    authorized: auth,
+    onClosed: (nickname) => store.setClosed(nickname),
+    ...(deps.fetch ? { fetch: deps.fetch } : {}),
+  });
+  const aniskip = createAniSkip(deps.fetch ? { fetch: deps.fetch } : {});
+  return { shikimori, library, progress, kodik, aniskip, engine: createEngine };
 }
 
 export const ServicesContext = createContext<Services | null>(null);

@@ -4,10 +4,10 @@ import { useAccess } from "../auth/session";
 import { AuthCallbackScreen } from "../screens/AuthCallbackScreen";
 import { HomeScreen } from "../screens/HomeScreen";
 import { LibraryScreen } from "../screens/LibraryScreen";
+import { PlayerScreen } from "../screens/PlayerScreen";
 import { SearchScreen } from "../screens/SearchScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import { TitleScreen } from "../screens/TitleScreen";
-import { WatchPlaceholderScreen } from "../screens/WatchPlaceholderScreen";
 import { Layout } from "../ui/Layout";
 import { ToastProvider } from "../ui/Toast";
 import { Gate } from "./Gate";
@@ -41,8 +41,8 @@ export function AppRoutes({ services }: { services?: Services }) {
               </Gate>
             }
           >
-            {/* Full window, no bars: the player takes this route in the next plan. */}
-            <Route path="/watch/:id/:episode" element={<WatchPlaceholderScreen />} />
+            {/* Full window, no bars. No key: the next episode keeps the same player and <video>. */}
+            <Route path="/watch/:id/:episode" element={<PlayerScreen />} />
             <Route element={<Layout />}>
               <Route path="/" element={<HomeScreen />} />
               <Route path="/search" element={<SearchScreen />} />
