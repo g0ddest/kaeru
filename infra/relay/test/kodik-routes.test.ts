@@ -17,16 +17,23 @@ beforeEach(() => {
     }
     if (url.includes("/ftor")) return new Response(links);
     if (url.startsWith("https://kodikplayer.com/")) return new Response(player);
+    if (url === "https://shikimori.io/api/users/whoami") {
+      const auth = new Headers(init?.headers).get("authorization");
+      if (auth === "Bearer allowed-token") return Response.json({ id: 42, nickname: "vitaliy" });
+      if (auth === "Bearer stranger-token") return Response.json({ id: 7, nickname: "stranger" });
+      return new Response("", { status: 401 });
+    }
     return realFetch(input, init);
   });
 });
 afterEach(() => vi.unstubAllGlobals());
 
 let ip = 0;
-function get(path: string, origin: string | null = SITE): Promise<Response> {
+function get(path: string, origin: string | null = SITE, token: string | null = "allowed-token"): Promise<Response> {
   ip += 1;
   const headers: Record<string, string> = { "CF-Connecting-IP": `198.51.100.${ip}` };
   if (origin !== null) headers.Origin = origin;
+  if (token !== null) headers.Authorization = `Bearer ${token}`;
   return SELF.fetch(`https://relay.test${path}`, { headers });
 }
 
@@ -77,5 +84,24 @@ describe("/kodik/*", () => {
   it("refuses other methods", async () => {
     const response = await SELF.fetch("https://relay.test/kodik/translations?anime=1535", { method: "POST", headers: { Origin: SITE } });
     expect(response.status).toBe(405);
+  });
+});
+
+describe("/kodik/* behind the whitelist", () => {
+  it("asks to sign in without a token", async () => {
+    const response = await get("/kodik/translations?anime=1535", SITE, null);
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: "sign_in" });
+    expect(response.headers.get("access-control-allow-origin")).toBe(SITE);
+  });
+
+  it("closes the door on an account that is not listed, naming it", async () => {
+    const response = await get("/kodik/translations?anime=1535", SITE, "stranger-token");
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "not_allowed", nickname: "stranger" });
+  });
+
+  it("asks to sign in again for a token Shikimori refuses", async () => {
+    expect((await get("/kodik/translations?anime=1535", SITE, "expired-token")).status).toBe(401);
   });
 });

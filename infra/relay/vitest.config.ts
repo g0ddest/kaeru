@@ -16,6 +16,7 @@ export default defineConfig({
         bindings: {
           SHIKIMORI_CLIENT_ID: "test-client-id",
           SHIKIMORI_CLIENT_SECRET: "test-client-secret",
+          WEB_ALLOWED_SHIKIMORI_IDS: "42, 100",
         },
       },
     }),

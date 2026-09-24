@@ -18,6 +18,10 @@
  *   GET  /kodik/translations?anime=          the Kodik tracks of a title, for the web client
  *   GET  /kodik/resolve?anime=&translation=&episode=&season=   signed HLS links of one episode
  *
+ * The web client's routes are behind a whitelist of Shikimori accounts (`WEB_ALLOWED_SHIKIMORI_IDS`):
+ * `/kodik/*` needs `Authorization: Bearer <Shikimori token>` of a listed account, and `/oauth/token`
+ * called with the site's Origin hands a token only to a listed account. See `whitelist.ts`.
+ *
  * Client to server: binary frames only, at most 64 KiB, forwarded verbatim to the
  * other peer and never echoed back to the sender. Text frames are ignored.
  *
@@ -34,6 +38,7 @@
 import { KodikClient } from "./kodik/client";
 import { handleKodik } from "./kodik/routes";
 import { preflight, webOrigin, withCors } from "./web";
+import { WEB_REDIRECTS, fromSite, gate, parseAllowed, verdict, whoami } from "./whitelist";
 
 /** One per isolate: the catalogue and the token it remembers are worth keeping between requests. */
 let kodik: KodikClient | undefined;
@@ -170,13 +175,22 @@ export default {
     if (url.pathname.startsWith("/kodik/")) {
       const early = preflight(request);
       if (early !== null) return early;
+      // Before the whitelist: a wrong method is wrong whoever sends it, and not worth asking
+      // Shikimori who the token belongs to.
+      if (request.method !== "GET") return withCors(plain("method not allowed", 405), webOrigin(request));
       const retryAfter = await rateLimit(request, env, "kodik");
       if (retryAfter > 0) return withCors(tooManyRequests(retryAfter), webOrigin(request));
+      const closed = await gate(request, env);
+      if (closed !== null) return withCors(closed, webOrigin(request));
       kodik ??= new KodikClient({ fetch: (input, init) => fetch(input, init), configuredToken: env.KODIK_TOKEN });
       return withCors(await handleKodik(request, kodik), webOrigin(request));
     }
 
-    if (url.pathname === TOKEN_PATH) return proxyToken(request, env);
+    if (url.pathname === TOKEN_PATH) {
+      const early = preflight(request);
+      if (early !== null) return early;
+      return withCors(await proxyToken(request, env), webOrigin(request));
+    }
 
     const path = ROOM_PATH_PATTERN.exec(url.pathname);
     if (path === null) return plain("not found", 404);
@@ -241,7 +255,7 @@ async function proxyToken(request: Request, env: Env): Promise<Response> {
   if (raw.byteLength > MAX_TOKEN_BODY_BYTES) return plain("body too large", 400);
 
   const form = new URLSearchParams(new TextDecoder().decode(raw));
-  const refusal = refuseToken(form, env);
+  const refusal = refuseToken(form, env, fromSite(request));
   if (refusal !== null) {
     console.log(`oauth refused ${refusal}`);
     return plain(refusal, 400);
@@ -268,6 +282,20 @@ async function proxyToken(request: Request, env: Env): Promise<Response> {
     return plain("upstream unavailable", 502);
   }
 
+  // From the site, a token is handed over only to an account on the list. Shikimori is asked
+  // whose it is with the token itself; the token goes back to the page only if the answer is
+  // on the list. The apps never reach this: they send no Origin of the site.
+  if (fromSite(request) && status === 200) {
+    let accessToken = "";
+    try { accessToken = String((JSON.parse(answer) as { access_token?: unknown }).access_token ?? ""); } catch { accessToken = ""; }
+    if (accessToken === "") return plain("upstream answer unreadable", 502);
+    const closed = verdict(await whoami(accessToken, (input, init) => fetch(input, init), Date.now), parseAllowed(env.WEB_ALLOWED_SHIKIMORI_IDS));
+    if (closed !== null) {
+      console.log(`oauth ${grant} web refused ${closed.status}`);
+      return closed;
+    }
+  }
+
   // The grant and the status only; the body is a token or the reason there is none.
   console.log(`oauth ${grant} upstream=${status}`);
   return new Response(answer.length === 0 ? null : answer, {
@@ -277,7 +305,7 @@ async function proxyToken(request: Request, env: Env): Promise<Response> {
 }
 
 /** The reason to refuse this form, or null when there is none. Never quotes what was sent. */
-function refuseToken(form: URLSearchParams, env: Env): string | null {
+function refuseToken(form: URLSearchParams, env: Env, site: boolean): string | null {
   const fields = GRANT_FIELDS.get(form.get("grant_type") ?? "");
   if (fields === undefined) return "unsupported grant_type";
   for (const name of form.keys()) {
@@ -290,11 +318,10 @@ function refuseToken(form: URLSearchParams, env: Env): string | null {
   if (form.get("client_id") !== env.SHIKIMORI_CLIENT_ID) return "unknown client";
   const required = GRANT_REQUIRED.get(form.get("grant_type") ?? "") ?? "";
   if ((form.get(required) ?? "") === "") return `missing ${required}`;
-  if (
-    form.get("grant_type") === "authorization_code" &&
-    !ALLOWED_REDIRECTS.has(form.get("redirect_uri") ?? "")
-  ) {
-    return "unexpected redirect_uri";
+  if (form.get("grant_type") === "authorization_code") {
+    const redirect = form.get("redirect_uri") ?? "";
+    const allowed = ALLOWED_REDIRECTS.has(redirect) || (site && WEB_REDIRECTS.includes(redirect));
+    if (!allowed) return "unexpected redirect_uri";
   }
   return null;
 }

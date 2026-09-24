@@ -16,6 +16,8 @@ interface RelayEnv {
   SHIKIMORI_CLIENT_SECRET?: string;
   /** A Kodik API token of our own, when there is one; otherwise the public one is scraped. */
   KODIK_TOKEN?: string;
+  /** Shikimori user ids, comma-separated, allowed into the web client. Set with `wrangler secret put`. */
+  WEB_ALLOWED_SHIKIMORI_IDS?: string;
 }
 
 declare namespace Cloudflare {

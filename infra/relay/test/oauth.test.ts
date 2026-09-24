@@ -448,3 +448,78 @@ describe("a rate limiter that is down", () => {
     }
   });
 });
+
+describe("from the site", () => {
+  const SITE = "https://kaeru.vitaliy.velikodniy.name";
+
+  function webToken(form: Record<string, string>): Promise<Response> {
+    const body = new URLSearchParams(form).toString();
+    return SELF.fetch(`${ORIGIN}/oauth/token`, {
+      method: "POST",
+      headers: {
+        Origin: SITE,
+        "content-type": "application/x-www-form-urlencoded",
+        "content-length": String(new TextEncoder().encode(body).byteLength),
+        "CF-Connecting-IP": freshIp(),
+      },
+      body,
+    });
+  }
+
+  it("accepts the site's redirect and hands a listed account its token, with CORS", async () => {
+    reply = (call) => call.url.endsWith("/whoami")
+      ? json(200, { id: 42, nickname: "vitaliy" })
+      : json(200, { access_token: "web-access-allowed", refresh_token: "r" });
+    const response = await webToken({ grant_type: "authorization_code", client_id: CLIENT_ID, code: "c", redirect_uri: `${SITE}/auth` });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("access-control-allow-origin")).toBe(SITE);
+    expect(((await response.json()) as { access_token: string }).access_token).toBe("web-access-allowed");
+  });
+
+  it("keeps the token from an account that is not listed", async () => {
+    reply = (call) => call.url.endsWith("/whoami")
+      ? json(200, { id: 7, nickname: "stranger" })
+      : json(200, { access_token: "web-access-stranger", refresh_token: "r" });
+    const response = await webToken({ grant_type: "authorization_code", client_id: CLIENT_ID, code: "c", redirect_uri: `${SITE}/auth` });
+    expect(response.status).toBe(403);
+    const body = await response.text();
+    expect(JSON.parse(body)).toEqual({ error: "not_allowed", nickname: "stranger" });
+    expect(body).not.toContain("web-access-stranger");
+  });
+
+  it("checks a refresh from the site too — no redirect to tell it apart, only the Origin", async () => {
+    reply = (call) => call.url.endsWith("/whoami")
+      ? json(200, { id: 7, nickname: "stranger" })
+      : json(200, { access_token: "web-access-stranger-refresh", refresh_token: "r2" });
+    const response = await webToken({ grant_type: "refresh_token", client_id: CLIENT_ID, refresh_token: "r" });
+    expect(response.status).toBe(403);
+  });
+
+  it("answers 502, not 403, when Shikimori cannot say who the token belongs to", async () => {
+    reply = (call) => call.url.endsWith("/whoami")
+      ? new Response("", { status: 503 })
+      : json(200, { access_token: "web-access-unavailable", refresh_token: "r" });
+    const response = await webToken({ grant_type: "authorization_code", client_id: CLIENT_ID, code: "c", redirect_uri: `${SITE}/auth` });
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ error: "unavailable" });
+  });
+
+  it("refuses the site's redirect from anything that is not the site", async () => {
+    const body = new URLSearchParams({ grant_type: "authorization_code", client_id: CLIENT_ID, code: "c", redirect_uri: `${SITE}/auth` }).toString();
+    const response = await SELF.fetch(`${ORIGIN}/oauth/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", "content-length": String(body.length), "CF-Connecting-IP": freshIp() },
+      body,
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("answers the site's preflight", async () => {
+    const response = await SELF.fetch(`${ORIGIN}/oauth/token`, {
+      method: "OPTIONS",
+      headers: { Origin: SITE, "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type" },
+    });
+    expect(response.status).toBe(204);
+    expect(response.headers.get("access-control-allow-origin")).toBe(SITE);
+  });
+});
