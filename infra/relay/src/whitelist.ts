@@ -48,7 +48,10 @@ export async function whoami(token: string, fetcher: typeof fetch, now: () => nu
     return "unavailable";
   }
   let viewer: Viewer | null;
-  if (response.status === 401 || response.status === 403) viewer = null;
+  // Only a 401 is Shikimori's word on the token. A 403 from that host is its DDoS-Guard or WAF,
+  // and reading it as «sign in again» — remembered for ten minutes — looped every listed viewer
+  // through sign-in for as long as the block lasted.
+  if (response.status === 401) viewer = null;
   else if (!response.ok) return "unavailable";
   else {
     const body = (await response.json().catch(() => null)) as { id?: unknown; nickname?: unknown } | null;

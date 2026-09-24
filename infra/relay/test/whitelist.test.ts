@@ -40,6 +40,15 @@ describe("whoami", () => {
     expect(await whoami("token-c", answering(401, {}).fetcher, () => 0)).toBeNull();
   });
 
+  it("reads a 403 as Shikimori's gate, not as a verdict on the token, and does not remember it", async () => {
+    // Doorkeeper refuses a bad token with 401; a 403 from that host is DDoS-Guard or a WAF, and
+    // treating it as «sign in again» put every listed viewer in a sign-in loop for ten minutes.
+    const blocked = answering(403, {});
+    expect(await whoami("token-f", blocked.fetcher, () => 0)).toBe("unavailable");
+    await whoami("token-f", blocked.fetcher, () => 0);
+    expect(blocked.calls()).toBe(2);
+  });
+
   it("is unavailable when Shikimori cannot be asked", async () => {
     const broken = (async () => { throw new Error("down"); }) as typeof fetch;
     expect(await whoami("token-d", broken, () => 0)).toBe("unavailable");
