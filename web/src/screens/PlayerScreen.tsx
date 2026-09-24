@@ -14,7 +14,7 @@ import { waitingLabel, watchPath } from "../domain/actions";
 import { episodeBadge, formatTime } from "../domain/format";
 import { availableEpisodes } from "../domain/models";
 import { PlayerController, type MediaPort, type PlayerState } from "../player/controller";
-import { playerKeyAction, type PlayerKeyAction } from "../player/keys";
+import { focusShown, playerKeyAction, trackFocusOrigin, type FocusOrigin, type PlayerKeyAction } from "../player/keys";
 import { clearMediaSession, showInMediaSession, showMediaPosition } from "../player/mediaSession";
 import { CONTROLS_HIDE_MS, COUNTDOWN_S, JUMP_MS, SEEK_STEP_MS, lacksEpisode } from "../player/rules";
 import { IconButton, PrimaryButton, SecondaryButton, TextAction } from "../ui/Button";
@@ -85,6 +85,13 @@ function elementFullscreen(): boolean {
   return doc.fullscreenEnabled === true || doc.webkitFullscreenEnabled === true;
 }
 
+/** The keyboard, not a click, has put the focus on one of the controls: the viewer is using them. */
+function keyboardOnControls(player: HTMLElement | null, keyboardFocused: (element: Element) => boolean): boolean {
+  const active = document.activeElement;
+  if (active === null || player?.querySelector(".player-chrome")?.contains(active) !== true) return false;
+  return keyboardFocused(active);
+}
+
 function exitFullscreen(): void {
   const doc = document as Document & WebkitDocument;
   if (typeof doc.exitFullscreen === "function") void doc.exitFullscreen().catch(() => undefined);
@@ -130,10 +137,27 @@ function Player({ animeId, episode }: { animeId: number; episode: number }) {
   /** Where the seek slider is being dragged; the episode moves there on release. */
   const [scrub, setScrub] = useState<number | null>(null);
   const [awake, setAwake] = useState(true);
+  /** A mouse resting on the top or bottom bar: it is there to use them. */
+  const [overBar, setOverBar] = useState(false);
 
   useEffect(() => {
     toastRef.current = toast;
   }, [toast]);
+
+  // Whether the keyboard put the focus on a control: Space presses it then, and the controls stay up.
+  const focusOrigin = useRef<FocusOrigin | null>(null);
+  useEffect(() => {
+    const origin = trackFocusOrigin();
+    focusOrigin.current = origin;
+    return () => {
+      origin.stop();
+      focusOrigin.current = null;
+    };
+  }, []);
+  const keyboardFocused = useCallback(
+    (element: Element) => focusOrigin.current?.keyboardFocused(element) ?? focusShown(element),
+    [],
+  );
 
   // One controller and one engine for the screen's one <video>.
   useEffect(() => {
@@ -210,7 +234,8 @@ function Player({ animeId, episode }: { animeId: number; episode: number }) {
     countdownUp ||
     waitingUp ||
     completion ||
-    scrub !== null;
+    scrub !== null ||
+    overBar;
 
   // Controls go after 3 s of playback with nothing touched, and never while anything asks for them.
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -219,11 +244,17 @@ function Player({ animeId, episode }: { animeId: number; episode: number }) {
     if (hideTimer.current !== null) clearTimeout(hideTimer.current);
     hideTimer.current = null;
     if (holding.current) return;
-    hideTimer.current = setTimeout(() => {
+    const hide = () => {
+      // The keyboard on a control waits for it to move off, or for its control to go.
+      if (keyboardOnControls(root.current, keyboardFocused)) {
+        hideTimer.current = setTimeout(hide, CONTROLS_HIDE_MS);
+        return;
+      }
       hideTimer.current = null;
       setAwake(false);
-    }, CONTROLS_HIDE_MS);
-  }, []);
+    };
+    hideTimer.current = setTimeout(hide, CONTROLS_HIDE_MS);
+  }, [keyboardFocused]);
   const wake = useCallback(() => {
     setAwake(true);
     schedule();
@@ -308,16 +339,33 @@ function Player({ animeId, episode }: { animeId: number; episode: number }) {
   );
 
   useEffect(() => {
+    // A Space the player took stays the player's until it is let go: held, and on the keyup, where
+    // Firefox presses a focused button whatever became of the keydown.
+    let spaceTaken = false;
     const onKey = (event: KeyboardEvent) => {
       wake();
-      const action = playerKeyAction(event);
+      if (event.code === "Space" && event.repeat && spaceTaken) {
+        event.preventDefault();
+        return;
+      }
+      const action = playerKeyAction(event, keyboardFocused);
+      if (event.code === "Space") spaceTaken = action === "toggle";
       if (action === null) return;
       event.preventDefault();
       run(action);
     };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.code !== "Space" || !spaceTaken) return;
+      spaceTaken = false;
+      event.preventDefault();
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [wake, run]);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, [wake, run, keyboardFocused]);
 
   // What this browser can do, and the state of it, from the events rather than from the buttons.
   useEffect(() => {
@@ -451,9 +499,10 @@ function Player({ animeId, episode }: { animeId: number; episode: number }) {
   }, [centreToggle, focusToggle]);
 
   const back = () => {
-    // A deep link has no page of ours behind it.
+    // A deep link has no page of ours behind it. The title takes the player's place, or the title's own
+    // «Назад» would step back into the player.
     if (fromApp) void navigate(-1);
-    else void navigate(`/anime/${animeId}`);
+    else void navigate(`/anime/${animeId}`, { replace: true });
   };
 
   const report = () => {
@@ -480,6 +529,14 @@ function Player({ animeId, episode }: { animeId: number; episode: number }) {
     }
     if (tap.current.wasAwake && !holding.current) sleep();
     else wake();
+  };
+
+  // A touch passes over a bar only on its way to a tap, which wakes the controls by itself.
+  const bar = {
+    onPointerEnter: (event: ReactPointerEvent) => {
+      if (event.pointerType !== "touch") setOverBar(true);
+    },
+    onPointerLeave: () => setOverBar(false),
   };
 
   const number = shownEpisode > 0 ? shownEpisode : episode;
@@ -564,7 +621,7 @@ function Player({ animeId, episode }: { animeId: number; episode: number }) {
       )}
 
       <div className="player-chrome">
-        <header className="player-top">
+        <header className="player-top" {...bar}>
           <IconButton label="Назад" icon={<IconBack />} onClick={back} />
           <div className="player-heading">
             {anime !== null && <h1 className="t-title player-title">{anime.title}</h1>}
@@ -614,7 +671,7 @@ function Player({ animeId, episode }: { animeId: number; episode: number }) {
           </div>
         )}
 
-        <div className="player-bottom" hidden={failed}>
+        <div className="player-bottom" hidden={failed} {...bar}>
           <div className="player-seek-row">
             <input
               ref={seekRef}
@@ -703,7 +760,9 @@ function Player({ animeId, episode }: { animeId: number; episode: number }) {
               Повторить
             </PrimaryButton>
             {state.failure.action === "list" ? (
-              <SecondaryButton to={`/anime/${animeId}`}>К списку серий</SecondaryButton>
+              <SecondaryButton to={`/anime/${animeId}`} replace>
+                К списку серий
+              </SecondaryButton>
             ) : state.tracks.length > 0 ? (
               <SecondaryButton onClick={() => setDubOpen(true)}>Сменить озвучку</SecondaryButton>
             ) : null}

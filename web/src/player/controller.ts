@@ -133,7 +133,10 @@ export class PlayerController {
   private readonly listeners = new Set<() => void>();
   private state: PlayerState = INITIAL;
 
-  /** Bumped by everything that resolves: an answer to an older question is dropped. */
+  /**
+   * Bumped by everything that resolves, and again by a switch as it commits: an answer to an older
+   * question is dropped, and of two switches under way only the first to commit plays.
+   */
   private op = 0;
   /** Bumped by every engine.load: what play() says belongs to the source it was asked for. */
   private source = 0;
@@ -392,6 +395,8 @@ export class PlayerController {
       if (this.advancing === op) this.advancing = null;
     }
     if (op !== this.op) return;
+    // The switch is this one's: a re-resolve or a dub change still under way was for the episode left.
+    this.op++;
     this.save();
     this.adopt(resolved, episode);
     this.freshEpisode();
@@ -456,6 +461,8 @@ export class PlayerController {
     if (op !== this.op) return;
     rememberDub(this.animeId, track, this.deps.storage);
     this.standingInFor = null;
+    // Claimed again as it switches: a next episode resolved in the old dub meanwhile is dropped.
+    this.op++;
     await this.start({ stream, track, chosen: track }, this.state.positionMs, this.state.quality);
   }
 
@@ -534,6 +541,8 @@ export class PlayerController {
       if (this.reResolving === op) this.reResolving = null;
     }
     if (op !== this.op) return;
+    // Claimed again as it switches: a next episode asked for meanwhile is dropped.
+    this.op++;
     // As things stand now, not as they did before the request: a pause or a quality picked meanwhile stands.
     const { positionMs, quality, paused, needsGesture } = this.state;
     const chosen = this.standingInFor ?? track;
@@ -826,7 +835,8 @@ export class PlayerController {
 
   /**
    * play() as browsers answer it: refused autoplay is a state the «Смотреть» overlay answers, and an
-   * interruption by a newer load is nothing at all.
+   * interruption by a newer load is nothing at all. A source that would not load (Safari's
+   * NotSupportedError) is the engine's to report, before or after this: its report says what failed.
    */
   private playMedia(mine: number): void {
     this.deps.media.play().then(
@@ -834,7 +844,9 @@ export class PlayerController {
         if (mine === this.source) this.set({ needsGesture: false, paused: false });
       },
       (error: unknown) => {
-        if (mine !== this.source || named(error, "AbortError")) return;
+        if (mine !== this.source || named(error, "AbortError") || named(error, "NotSupportedError")) return;
+        // The engine has already said what went wrong, or a fresh link is on its way.
+        if (this.state.phase !== "playing" || this.reResolving === this.op) return;
         if (named(error, "NotAllowedError")) {
           this.set({ needsGesture: true, paused: true, buffering: false });
           return;

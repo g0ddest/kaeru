@@ -138,6 +138,25 @@
   overflow-y: auto;
 }
 
+/* On a phone the dub pill ends the row at the screen's right edge, or wraps onto a row of its own when
+   «Добавить в планы» is wide: its menu hangs from the row and spans it, so it stays on screen either
+   way. Pinned to the pill's right edge it would run off the left edge once the pill wraps. */
+@media (max-width: 479px) {
+  .title-controls {
+    position: relative;
+  }
+
+  .title-controls .menu:last-child:not(:first-child) {
+    position: static;
+  }
+
+  .title-controls .menu:last-child:not(:first-child) .menu-list {
+    left: 0;
+    right: 0;
+    min-width: 0;
+  }
+}
+
 /* The pill has no disabled look of its own; «Нет озвучек» looks like a menu that cannot open. */
 .title-controls .title-dub-none:disabled {
   opacity: 0.5;

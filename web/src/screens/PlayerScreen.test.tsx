@@ -185,6 +185,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  for (const put of undo.splice(0)) put();
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -217,6 +218,35 @@ function stubFullscreen() {
   return { request, exit };
 }
 
+/** What a test changed on the document, put back by afterEach. */
+const undo: (() => void)[] = [];
+
+/**
+ * :focus-visible as Chrome has it (measured in Chrome 153); jsdom guesses it from whatever events it
+ * has seen, earlier tests' included. A mouse press leaves a clicked control focused with no ring, and so
+ * does a script focusing another one afterwards. Any key turns the ring on for the focused control
+ * before the page hears that key; with no mouse press yet, script focus shows it too.
+ */
+function chromeFocusRing(): void {
+  let keyboard = true;
+  const matches = Element.prototype.matches;
+  vi.spyOn(Element.prototype, "matches").mockImplementation(function (this: Element, selector: string) {
+    return selector === ":focus-visible" ? keyboard && this === document.activeElement : matches.call(this, selector);
+  });
+  const mouse = () => {
+    keyboard = false;
+  };
+  const key = () => {
+    keyboard = true;
+  };
+  document.addEventListener("pointerdown", mouse, true);
+  document.addEventListener("keydown", key, true);
+  undo.push(() => {
+    document.removeEventListener("pointerdown", mouse, true);
+    document.removeEventListener("keydown", key, true);
+  });
+}
+
 function pressF(): void {
   act(() => {
     fireEvent.keyDown(document.body, { code: "KeyF", key: "а" });
@@ -238,6 +268,19 @@ function SignedIn() {
   return null;
 }
 
+/** The title page as far as history goes: with a page of the site behind it, «Назад» steps back to it. */
+function TitleStub() {
+  const navigate = useNavigate();
+  return (
+    <>
+      <p>Страница тайтла</p>
+      <button type="button" onClick={() => void navigate(-1)}>
+        Назад
+      </button>
+    </>
+  );
+}
+
 /** Where the router is, and how it got there: a replaced episode leaves no history entry behind. */
 function Where() {
   const location = useLocation();
@@ -252,7 +295,7 @@ function renderPlayer(entries: string[] = [`/watch/${ANIME}/7`]) {
         <MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}>
           <Routes>
             <Route path="/watch/:id/:episode" element={<PlayerScreen />} />
-            <Route path="/anime/:id" element={<p>Страница тайтла</p>} />
+            <Route path="/anime/:id" element={<TitleStub />} />
             <Route path="/auth" element={<SignedIn />} />
           </Routes>
           <Where />
@@ -521,6 +564,79 @@ describe("PlayerScreen", () => {
     expect(engines.loads.at(-1)).toEqual({ url: link(610, 8, 720), startMs: 0 });
   });
 
+  it("seeks 10 s, pauses, mutes and moves on with the keys while a click has left the seek slider focused", async () => {
+    await playing();
+    at(600_000);
+    const slider = screen.getByRole("slider", { name: "Перемотка" });
+    act(() => slider.focus());
+
+    // Taken, so the slider's own 1-s step does not run as well.
+    expect(fireEvent.keyDown(slider, { code: "ArrowRight", key: "ArrowRight" })).toBe(false);
+    expect(video().currentTime).toBe(610);
+    expect(fireEvent.keyDown(slider, { code: "ArrowLeft", key: "ArrowLeft" })).toBe(false);
+    expect(video().currentTime).toBe(600);
+    fireEvent.keyDown(slider, { code: "Space", key: " " });
+    expect(pause).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(slider, { code: "KeyM", key: "ь" });
+    expect(video().muted).toBe(true);
+    fireEvent.keyDown(slider, { code: "KeyN", key: "т" });
+    await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent(`/watch/${ANIME}/8 REPLACE`));
+  });
+
+  it("pauses on Space after a click on a control rather than pressing that control again", async () => {
+    const user = userEvent.setup();
+    chromeFocusRing();
+    await playing();
+    at(600_000);
+    const forward = screen.getByRole("button", { name: "Вперёд на 10 секунд" });
+    await user.click(forward);
+    expect(video().currentTime).toBe(610);
+    expect(forward).toHaveFocus();
+
+    await user.keyboard(" ");
+
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(video().currentTime).toBe(610);
+    // Firefox presses a button on the keyup, whatever became of the keydown: that is taken too.
+    fireEvent.keyDown(forward, { code: "Space", key: " " });
+    expect(fireEvent.keyUp(forward, { code: "Space", key: " " })).toBe(false);
+  });
+
+  it("pauses on Space at the countdown card it focused after a click, rather than starting the next episode", async () => {
+    const user = userEvent.setup();
+    chromeFocusRing();
+    await playing();
+    await user.click(screen.getByRole("button", { name: "Вперёд на 10 секунд" }));
+    at(DUR - 10_000);
+    expect(screen.getByRole("button", { name: "Смотреть сейчас" })).toHaveFocus();
+
+    await user.keyboard(" ");
+
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(engines.loads).toHaveLength(1);
+    expect(screen.getByTestId("where")).toHaveTextContent(`/watch/${ANIME}/7`);
+  });
+
+  it("lets Space press a control the keyboard focused, the countdown's «Смотреть сейчас» included", async () => {
+    const user = userEvent.setup();
+    chromeFocusRing();
+    await playing();
+    at(600_000);
+    const forward = screen.getByRole("button", { name: "Вперёд на 10 секунд" });
+    // Where Tab would put it: no mouse press yet.
+    act(() => forward.focus());
+
+    await user.keyboard(" ");
+    expect(video().currentTime).toBe(610);
+    expect(pause).not.toHaveBeenCalled();
+
+    at(DUR - 10_000);
+    expect(screen.getByRole("button", { name: "Смотреть сейчас" })).toHaveFocus();
+    await user.keyboard(" ");
+    await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent(`/watch/${ANIME}/8 REPLACE`));
+    expect(pause).not.toHaveBeenCalled();
+  });
+
   it("previews a drag on the seek slider and seeks when it is let go", async () => {
     await playing();
     at(600_000);
@@ -747,6 +863,32 @@ describe("PlayerScreen", () => {
     expect(screen.getByText("Страница тайтла")).toBeInTheDocument();
   });
 
+  it("puts the title in place of a deep-linked player, so the title's «Назад» does not lead back into it", async () => {
+    const user = userEvent.setup();
+    await playing();
+
+    await user.click(screen.getByRole("button", { name: "Назад" }));
+    expect(screen.getByTestId("where")).toHaveTextContent(`/anime/${ANIME} REPLACE`);
+
+    await user.click(screen.getByRole("button", { name: "Назад" }));
+    expect(screen.getByText("Страница тайтла")).toBeInTheDocument();
+    expect(screen.getByTestId("where")).not.toHaveTextContent("/watch/");
+  });
+
+  it("puts the title in place of a failed player on «К списку серий»", async () => {
+    const user = userEvent.setup();
+    kodik.missingEverywhere(7);
+    renderPlayer();
+    const alert = await screen.findByRole("alert");
+
+    await user.click(within(alert).getByRole("link", { name: "К списку серий" }));
+    expect(screen.getByTestId("where")).toHaveTextContent(`/anime/${ANIME} REPLACE`);
+
+    await user.click(screen.getByRole("button", { name: "Назад" }));
+    expect(screen.getByText("Страница тайтла")).toBeInTheDocument();
+    expect(screen.getByTestId("where")).not.toHaveTextContent("/watch/");
+  });
+
   it("goes to the title, not back out of the site, from a deep link that went through sign-in", async () => {
     const user = userEvent.setup();
     await playing(["/auth"]);
@@ -855,6 +997,49 @@ describe("PlayerScreen", () => {
     await user.click(screen.getByRole("button", { name: "Пауза" }));
     act(() => vi.advanceTimersByTime(CONTROLS_HIDE_MS * 2));
     expect(player).toHaveAttribute("data-idle", "false");
+  });
+
+  it("keeps the controls up while the mouse rests on a bar, and hides them once it has left", async () => {
+    vi.useFakeTimers();
+    await playing();
+    const player = screen.getByRole("main");
+    fireEvent.pointerMove(player);
+
+    for (const bar of [document.querySelector(".player-bottom"), document.querySelector(".player-top")] as HTMLElement[]) {
+      fireEvent.pointerEnter(bar, { pointerType: "mouse" });
+      act(() => vi.advanceTimersByTime(CONTROLS_HIDE_MS * 3));
+      expect(player).toHaveAttribute("data-idle", "false");
+
+      fireEvent.pointerLeave(bar, { pointerType: "mouse" });
+      act(() => vi.advanceTimersByTime(CONTROLS_HIDE_MS));
+      expect(player).toHaveAttribute("data-idle", "true");
+      fireEvent.pointerMove(player);
+    }
+  });
+
+  it("keeps the controls up while the keyboard is on one of them, but not over one a click left focused", async () => {
+    vi.useFakeTimers();
+    chromeFocusRing();
+    await playing();
+    const player = screen.getByRole("main");
+    const forward = screen.getByRole("button", { name: "Вперёд на 10 секунд" });
+
+    act(() => forward.focus());
+    act(() => vi.advanceTimersByTime(CONTROLS_HIDE_MS * 3));
+    expect(player).toHaveAttribute("data-idle", "false");
+
+    act(() => forward.blur());
+    act(() => vi.advanceTimersByTime(CONTROLS_HIDE_MS));
+    expect(player).toHaveAttribute("data-idle", "true");
+
+    // A click leaves it focused; a key pressed there after it turns Chrome's ring on, but the viewer is
+    // watching, not walking the controls.
+    fireEvent.pointerDown(forward);
+    act(() => forward.focus());
+    fireEvent.keyDown(forward, { code: "ArrowRight", key: "ArrowRight" });
+    expect(player).toHaveAttribute("data-idle", "false");
+    act(() => vi.advanceTimersByTime(CONTROLS_HIDE_MS));
+    expect(player).toHaveAttribute("data-idle", "true");
   });
 
   it("keeps the controls up while taps land on them, though a touch screen does not focus a tapped button", async () => {

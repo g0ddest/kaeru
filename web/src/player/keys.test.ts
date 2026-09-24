@@ -1,8 +1,8 @@
 // Vectors: Task 6 of docs/superpowers/plans/2026-09-24-kaeru-web-03-player.md (Review Focus 5) and spec
 // §5 «пробел — пауза, ←/→ — 10 с, F — полный экран, M — звук, N — следующая серия». The audience types in
 // the Russian layout, where the letter keys say «а», «ь», «т»: only the physical key counts.
-import { afterEach, describe, expect, it } from "vitest";
-import { playerKeyAction } from "./keys";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { playerKeyAction, trackFocusOrigin } from "./keys";
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -70,7 +70,6 @@ describe("playerKeyAction", () => {
 
   it.each([
     ["a text input", '<input id="t" type="text">'],
-    ["a range input", '<input id="t" type="range">'],
     ["a textarea", '<textarea id="t"></textarea>'],
     ["a select", '<select id="t"><option>1</option></select>'],
     ["an editable block", '<div contenteditable="true"><span id="t">чат</span></div>'],
@@ -93,14 +92,90 @@ describe("playerKeyAction", () => {
     }
   });
 
-  it("lets Space press a focused button or link itself, while the other keys still work there", () => {
+  it("lets Space press a button or link the keyboard focused, while the other keys still work there", () => {
     const body = mount('<button id="b">Отмена</button><a id="a" href="/anime/1">К списку серий</a><div id="r" role="button">x</div>');
+    const keyboard = () => true;
     for (const id of ["#b", "#a", "#r"]) {
       const target = body.querySelector(id) as Element;
-      expect(playerKeyAction(press({ code: "Space", key: " " }, target))).toBeNull();
-      expect(playerKeyAction(press({ code: "ArrowRight", key: "ArrowRight" }, target))).toBe("fwd10");
-      expect(playerKeyAction(press({ code: "KeyF", key: "а" }, target))).toBe("fullscreen");
+      expect(playerKeyAction(press({ code: "Space", key: " " }, target), keyboard)).toBeNull();
+      expect(playerKeyAction(press({ code: "ArrowRight", key: "ArrowRight" }, target), keyboard)).toBe("fwd10");
+      expect(playerKeyAction(press({ code: "KeyF", key: "а" }, target), keyboard)).toBe("fullscreen");
     }
+  });
+
+  it("pauses on Space over a button or link a pointer or a script left focused, rather than pressing it", () => {
+    const body = mount(
+      '<button id="b">Вперёд на 10 секунд</button><a id="a" href="/anime/1">К списку серий</a><div id="r" role="button"><span id="s">x</span></div>',
+    );
+    const asked: Element[] = [];
+    const pointer = (element: Element) => {
+      asked.push(element);
+      return false;
+    };
+    for (const id of ["#b", "#a", "#s"]) {
+      expect(playerKeyAction(press({ code: "Space", key: " " }, body.querySelector(id) as Element), pointer)).toBe("toggle");
+    }
+    // The control itself is asked, not whatever inside it the key landed on.
+    expect(asked.map((element) => element.id)).toEqual(["b", "a", "r"]);
+  });
+
+  it("takes Space on a focused control by :focus-visible when nothing else is asked", () => {
+    const body = mount('<button id="b">Вперёд на 10 секунд</button>');
+    const button = body.querySelector("#b") as HTMLButtonElement;
+    const matches = Element.prototype.matches;
+    let ring = true;
+    const spy = vi.spyOn(Element.prototype, "matches").mockImplementation(function (this: Element, selector: string) {
+      return selector === ":focus-visible" ? ring : matches.call(this, selector);
+    });
+    try {
+      button.focus();
+      expect(playerKeyAction(press({ code: "Space", key: " " }, button))).toBeNull();
+      ring = false;
+      expect(playerKeyAction(press({ code: "Space", key: " " }, button))).toBe("toggle");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("remembers whether the keyboard put the focus on a control, not what the ring says afterwards", () => {
+    const body = mount('<button id="a">Вперёд на 10 секунд</button><button id="b">Смотреть сейчас</button>');
+    const [a, b] = ["#a", "#b"].map((id) => body.querySelector(id) as HTMLButtonElement);
+    const matches = Element.prototype.matches;
+    let ring = false;
+    const spy = vi.spyOn(Element.prototype, "matches").mockImplementation(function (this: Element, selector: string) {
+      return selector === ":focus-visible" ? ring && this === document.activeElement : matches.call(this, selector);
+    });
+    const origin = trackFocusOrigin();
+    try {
+      // A click: no ring as the focus arrives. Chrome turns it on at the first key pressed there.
+      a.focus();
+      ring = true;
+      expect(origin.keyboardFocused(a)).toBe(false);
+      // Tab: the ring is there as the focus arrives.
+      b.focus();
+      expect(origin.keyboardFocused(b)).toBe(true);
+      // Not seen arriving (focused before the player opened): the ring as it is now.
+      expect(origin.keyboardFocused(a)).toBe(false);
+      origin.stop();
+      a.focus();
+      ring = false;
+      expect(origin.keyboardFocused(a)).toBe(false);
+    } finally {
+      origin.stop();
+      spy.mockRestore();
+    }
+  });
+
+  it("hands every player key through the seek slider a click left focused, its arrows included", () => {
+    const slider = mount('<input id="t" type="range" min="0" max="1440" step="1">').querySelector("#t") as Element;
+    expect(playerKeyAction(press({ code: "Space", key: " " }, slider))).toBe("toggle");
+    expect(playerKeyAction(press({ code: "KeyF", key: "а" }, slider))).toBe("fullscreen");
+    expect(playerKeyAction(press({ code: "KeyM", key: "ь" }, slider))).toBe("mute");
+    expect(playerKeyAction(press({ code: "KeyN", key: "т" }, slider))).toBe("next");
+    expect(playerKeyAction(press({ code: "ArrowLeft", key: "ArrowLeft" }, slider))).toBe("back10");
+    expect(playerKeyAction(press({ code: "ArrowRight", key: "ArrowRight" }, slider))).toBe("fwd10");
+    // Browser shortcuts stay the browser's there too.
+    expect(playerKeyAction(press({ code: "ArrowRight", key: "ArrowRight", altKey: true }, slider))).toBeNull();
   });
 
   it("repeats only the arrows while a key is held", () => {

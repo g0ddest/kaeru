@@ -479,13 +479,131 @@ describe("PlayerController: autoplay", () => {
   });
 
   it("fails when play() is refused for any other reason", async () => {
-    media.play.mockRejectedValueOnce(new DOMException("No source", "NotSupportedError"));
+    media.play.mockRejectedValueOnce(new DOMException("Decoder gone", "UnknownError"));
     const controller = build();
 
     await controller.open(ANIME, 7);
     await settle();
 
     expect(controller.getState().failure).toEqual({ message: "Что-то пошло не так. Повторите попытку", action: "dub" });
+  });
+
+  it("leaves a source that would not load to the engine, which reports it itself (Safari's NotSupportedError)", async () => {
+    media.play.mockRejectedValueOnce(new DOMException("The operation is not supported.", "NotSupportedError"));
+    const controller = build();
+
+    await controller.open(ANIME, 7);
+    await settle();
+
+    expect(controller.getState()).toMatchObject({ phase: "playing", failure: null });
+  });
+});
+
+/**
+ * Safari's native engine: a source that fails to load fires the element's `error` (the engine reports
+ * it) and refuses the play() pending on it with NotSupportedError, in either order.
+ */
+describe("PlayerController: a refused play() after the engine's own failure", () => {
+  /** The play() of the open, refused when the test says so. */
+  function heldPlay(): (error: unknown) => void {
+    let refuse: (error: unknown) => void = () => undefined;
+    media.play.mockReturnValueOnce(
+      new Promise<void>((_done, fail) => {
+        refuse = fail;
+      }),
+    );
+    return (error) => refuse(error);
+  }
+
+  function notSupported(): DOMException {
+    return new DOMException("The operation is not supported.", "NotSupportedError");
+  }
+
+  it("re-resolves silently and plays on when the refusal comes after the error", async () => {
+    const refuse = heldPlay();
+    const controller = build();
+    await controller.open(ANIME, 7);
+    const fresh = deferred();
+    kodik.holds.set("610:7", fresh.promise);
+
+    controller.onEngineFailure("network");
+    refuse(notSupported());
+    await settle();
+    expect(controller.getState()).toMatchObject({ phase: "playing", failure: null });
+
+    fresh.resolve();
+    await settle();
+    expect(kodik.asked).toEqual(["610:7", "610:7"]);
+    expect(media.play).toHaveBeenCalledTimes(2);
+    expect(controller.getState()).toMatchObject({ phase: "playing", failure: null, paused: false });
+  });
+
+  it("re-resolves silently when the refusal comes before the error", async () => {
+    const refuse = heldPlay();
+    const controller = build();
+    await controller.open(ANIME, 7);
+
+    refuse(notSupported());
+    await settle();
+    controller.onEngineFailure("network");
+    await settle();
+
+    expect(kodik.asked).toEqual(["610:7", "610:7"]);
+    expect(media.play).toHaveBeenCalledTimes(2);
+    expect(controller.getState()).toMatchObject({ phase: "playing", failure: null, paused: false });
+  });
+
+  it("keeps the offline copy when the refusal comes after the error", async () => {
+    const refuse = heldPlay();
+    const controller = build();
+    await controller.open(ANIME, 7);
+
+    controller.onEngineFailure("offline");
+    refuse(notSupported());
+    await settle();
+
+    expect(controller.getState().failure).toEqual({ message: "Нет соединения. Проверьте интернет", action: "dub" });
+  });
+
+  it("shows the offline copy when the refusal comes before the error", async () => {
+    const refuse = heldPlay();
+    const controller = build();
+    await controller.open(ANIME, 7);
+
+    refuse(notSupported());
+    await settle();
+    controller.onEngineFailure("offline");
+
+    expect(controller.getState().failure).toEqual({ message: "Нет соединения. Проверьте интернет", action: "dub" });
+  });
+
+  it("keeps the engine's failure whatever the refusal after it says", async () => {
+    const refuse = heldPlay();
+    const controller = build();
+    await controller.open(ANIME, 7);
+
+    controller.onEngineFailure("offline");
+    refuse(new DOMException("Decoder gone", "UnknownError"));
+    await settle();
+
+    expect(controller.getState().failure).toEqual({ message: "Нет соединения. Проверьте интернет", action: "dub" });
+  });
+
+  it("lets a re-resolve under way answer whatever the refusal of the dead link says", async () => {
+    const refuse = heldPlay();
+    const controller = build();
+    await controller.open(ANIME, 7);
+    const fresh = deferred();
+    kodik.holds.set("610:7", fresh.promise);
+
+    controller.onEngineFailure("network");
+    refuse(new DOMException("Decoder gone", "UnknownError"));
+    await settle();
+    fresh.resolve();
+    await settle();
+
+    expect(media.play).toHaveBeenCalledTimes(2);
+    expect(controller.getState()).toMatchObject({ phase: "playing", failure: null, paused: false });
   });
 });
 
@@ -816,6 +934,103 @@ describe("PlayerController: the next episode", () => {
     controller.onPlaying();
     await controller.next();
     expect(controller.getState().episode).toBe(8);
+  });
+
+  // Whichever switch commits first wins, and the older ones still under way are dropped (Android's
+  // transition{} cancels the running job).
+  it("plays the next episode, not a fresh link of this one, when a re-resolve under way answers after it", async () => {
+    const controller = await playing();
+    controller.onTime(DUR - 20_000, DUR);
+    const fresh = deferred();
+    kodik.holds.set("610:7", fresh.promise);
+    controller.onEngineFailure("network");
+    await settle();
+
+    await controller.next();
+    fresh.resolve();
+    await settle();
+
+    expect(engine.loads.map((load) => load.url)).toEqual([link(610, 7, 720), link(610, 8, 720)]);
+    expect(controller.getState()).toMatchObject({ episode: 8, phase: "playing", failure: null });
+  });
+
+  it("stays on this episode when its re-resolve answers before the next episode, and drops the next one's answer", async () => {
+    const controller = await playing();
+    controller.onTime(DUR - 20_000, DUR);
+    const fresh = deferred();
+    const next = deferred();
+    kodik.holds.set("610:7", fresh.promise);
+    kodik.holds.set("610:8", next.promise);
+    controller.onEngineFailure("network");
+    await settle();
+    const moving = controller.next();
+    await settle();
+
+    fresh.resolve();
+    await settle();
+    next.resolve();
+    await moving;
+    await settle();
+
+    expect(engine.loads.map((load) => load.url)).toEqual([link(610, 7, 720), link(610, 7, 720)]);
+    expect(controller.getState()).toMatchObject({ episode: 7, phase: "playing" });
+  });
+
+  it("does not fail the next episode when this one's re-resolve fails after it has opened", async () => {
+    const controller = await playing();
+    controller.onTime(DUR - 20_000, DUR);
+    const fresh = deferred();
+    kodik.holds.set("610:7", fresh.promise);
+    kodik.failures.set("610:7", new KodikError("upstream"));
+    controller.onEngineFailure("network");
+    await settle();
+
+    await controller.next();
+    controller.onPlaying();
+    fresh.resolve();
+    await settle();
+
+    expect(controller.getState()).toMatchObject({ episode: 8, phase: "playing", failure: null });
+  });
+
+  it("opens the next episode, not the picked dub's copy of this one, when the dub answers after it", async () => {
+    const controller = await playing();
+    controller.onTime(DUR - 5_000, DUR);
+    const dub = deferred();
+    kodik.holds.set("609:7", dub.promise);
+    const changing = controller.changeDub(609);
+    await settle();
+
+    await controller.next();
+    dub.resolve();
+    await changing;
+    await settle();
+
+    expect(engine.loads.map((load) => load.url)).toEqual([link(610, 7, 720), link(610, 8, 720)]);
+    expect(controller.getState()).toMatchObject({ episode: 8, track: ANILIBRIA });
+  });
+
+  it("keeps the dub just picked when it answers before the next episode, and drops the next one's answer", async () => {
+    const controller = await playing();
+    controller.onTime(DUR - 5_000, DUR);
+    const dub = deferred();
+    const next = deferred();
+    kodik.holds.set("609:7", dub.promise);
+    kodik.holds.set("610:8", next.promise);
+    const changing = controller.changeDub(609);
+    await settle();
+    const moving = controller.next();
+    await settle();
+
+    dub.resolve();
+    await changing;
+    next.resolve();
+    await moving;
+    await settle();
+
+    expect(engine.loads.map((load) => load.url)).toEqual([link(610, 7, 720), link(609, 7, 720)]);
+    expect(controller.getState()).toMatchObject({ episode: 7, track: ANIDUB });
+    expect(rememberedDub(ANIME, storage)?.id).toBe(609);
   });
 
   it("counts the episode as watched when left from inside the ending zone", async () => {
