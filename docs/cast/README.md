@@ -6,6 +6,7 @@
 | Путь | Зачем |
 | --- | --- |
 | `.well-known/assetlinks.json` | Android App Links: отпечатки релизного и отладочного ключей и `app.kaeru`. Без него ссылка `https://kaeru.vitaliy.velikodniy.name/w/<room>` открывается в браузере, а не в приложении. |
+| `.well-known/apple-app-site-association` | iOS Universal Links: appID `TXY49DW96F.app.kaeru.ios` и путь `/w/*`. Apple забирает файл через свой CDN (`https://app-site-association.cdn-apple.com/a/v1/kaeru.vitaliy.velikodniy.name`), устройство читает его при установке приложения. |
 | `w/index.html` | Посадочная страница приглашения. |
 | `404.html` | Та же страница байт в байт: Pages — статика без рерайтов, и `/w/<room>` — не файл, поэтому реальные ссылки попадают именно сюда. |
 
