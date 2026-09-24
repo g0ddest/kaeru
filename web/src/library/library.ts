@@ -426,3 +426,8 @@ export class Library {
 export function useLibrary(library: Library): LibraryState {
   return useSyncExternalStore(library.subscribe, library.state, library.state);
 }
+
+/** Whether the viewer's list has been read: writing before that could create a rate Shikimori already holds. */
+export function listKnown(state: LibraryState): boolean {
+  return state.kind !== "idle" && state.entries !== null;
+}

@@ -6,7 +6,7 @@ import { useServices } from "../app/services";
 import { catalogueCard } from "../domain/feed";
 import type { Card } from "../domain/feed";
 import type { Anime } from "../domain/models";
-import { useLibrary } from "../library/library";
+import { listKnown, useLibrary } from "../library/library";
 import { IconButton, SecondaryButton } from "../ui/Button";
 import { IconClose, IconSearch } from "../ui/icons";
 import { PosterCard, PosterGrid } from "../ui/PosterCard";
@@ -46,7 +46,7 @@ function searchCard(anime: Anime): Card {
 export function SearchScreen({ catalogue = catalogueCache }: SearchScreenProps) {
   const { shikimori, library } = useServices();
   // Subscribed so cards repaint when a title lands in the list or a failed add is reverted.
-  useLibrary(library);
+  const known = listKnown(useLibrary(library));
   const toast = useToast();
   const [params, setParams] = useSearchParams();
   const [text, setText] = useState(() => params.get("q") ?? "");
@@ -151,11 +151,12 @@ export function SearchScreen({ catalogue = catalogueCache }: SearchScreenProps) 
     // Already in the list wins over a write in flight (Android addAction).
     const inList = library.entry(anime.id) !== undefined;
     const busy = adding.has(anime.id);
+    // Until the list is read, a title Shikimori already holds looks absent and an add would overwrite it.
     return (
       <SecondaryButton
         compact
         fullWidth
-        disabled={inList || busy}
+        disabled={inList || busy || !known}
         aria-label={inList || busy ? undefined : `Добавить ${anime.title} в планы`}
         onClick={() => {
           void add(anime);

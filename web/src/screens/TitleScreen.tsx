@@ -5,7 +5,7 @@ import { useServices } from "../app/services";
 import { primaryAction } from "../domain/actions";
 import { factsLine, formatTime, pluralEpisodesAccusative, statusLabel } from "../domain/format";
 import { STATUS_MENU, type Anime, type EpisodeProgress, type LibraryEntry, type ListStatus } from "../domain/models";
-import { useLibrary, type LibraryState } from "../library/library";
+import { listKnown, useLibrary } from "../library/library";
 import { watchedThreshold } from "../library/prefs";
 import { IconButton, PrimaryButton, SecondaryButton, TextAction } from "../ui/Button";
 import { Dialog } from "../ui/Dialog";
@@ -20,11 +20,6 @@ import "./TitleScreen.css";
 const LOAD_FAILED = "Не удалось загрузить аниме. Проверьте соединение и повторите";
 
 type Details = { kind: "loading" } | { kind: "ready"; anime: Anime } | { kind: "failed" };
-
-// Writing before the list is read could create a rate Shikimori already holds.
-function listKnown(state: LibraryState): boolean {
-  return state.kind !== "idle" && state.entries !== null;
-}
 
 function watchPath(animeId: number, episode: number): string {
   return `/watch/${animeId}/${episode}`;

@@ -303,6 +303,38 @@ describe("SearchScreen", () => {
     expect(within(cardOf("Фрирен")).getByRole("button", { name: "В списке" })).toBeDisabled();
   });
 
+  it("keeps «В планы» shut until the list is read, so it never creates a rate Shikimori already holds", async () => {
+    let answerRates: (rates: UserRate[]) => void = () => undefined;
+    const userRates = vi.fn<Shikimori["userRates"]>().mockImplementation(
+      () =>
+        new Promise<UserRate[]>((resolve) => {
+          answerRates = resolve;
+        }),
+    );
+    const createRate = vi.fn<Shikimori["createRate"]>().mockImplementation(created);
+    const { user } = setup({ userRates, createRate });
+    await elapse(0);
+    const add = screen.getByRole("button", { name: "Добавить Фрирен в планы" });
+    expect(add).toBeDisabled();
+    await user.click(add);
+    await elapse(0);
+    expect(createRate).not.toHaveBeenCalled();
+    answerRates([]);
+    await elapse(0);
+    expect(screen.getByRole("button", { name: "Добавить Фрирен в планы" })).toBeEnabled();
+  });
+
+  it("keeps «В планы» shut when the list could not be read", async () => {
+    const createRate = vi.fn<Shikimori["createRate"]>().mockImplementation(created);
+    const { user } = setup({ userRates: () => Promise.reject(new NetworkError("offline")), createRate });
+    await elapse(0);
+    const add = screen.getByRole("button", { name: "Добавить Фрирен в планы" });
+    expect(add).toBeDisabled();
+    await user.click(add);
+    await elapse(0);
+    expect(createRate).not.toHaveBeenCalled();
+  });
+
   it("a failed add puts «В планы» back and offers «Повторить» in a toast", async () => {
     const createRate = vi
       .fn<Shikimori["createRate"]>()
