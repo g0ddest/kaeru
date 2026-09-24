@@ -18,6 +18,7 @@ import { EPISODE_PAGE, episodeRows, type EpisodeRow } from "./episodeRows";
 import "./TitleScreen.css";
 
 const LOAD_FAILED = "Не удалось загрузить аниме. Проверьте соединение и повторите";
+const LIST_FAILED = "Не удалось загрузить ваш список — без него отметки недоступны";
 
 type Details = { kind: "loading" } | { kind: "ready"; anime: Anime } | { kind: "failed" };
 
@@ -83,6 +84,7 @@ export function TitleScreen() {
       rows={rows}
       threshold={threshold}
       known={listKnown(libraryState)}
+      listFailed={libraryState.kind === "error" && !listKnown(libraryState)}
       failed={details.kind === "failed"}
       onRetry={retry}
     />
@@ -95,11 +97,13 @@ interface ContentProps {
   rows: readonly EpisodeProgress[];
   threshold: number;
   known: boolean;
+  /** The list could not be read, so every control that writes to it stays shut. */
+  listFailed: boolean;
   failed: boolean;
   onRetry: () => void;
 }
 
-function TitleContent({ anime, entry, rows, threshold, known, failed, onRetry }: ContentProps) {
+function TitleContent({ anime, entry, rows, threshold, known, listFailed, failed, onRetry }: ContentProps) {
   const { library } = useServices();
   const toast = useToast();
   const navigate = useNavigate();
@@ -206,6 +210,15 @@ function TitleContent({ anime, entry, rows, threshold, known, failed, onRetry }:
       </header>
       <div className="title-body">
         {failed && <ErrorState message={LOAD_FAILED} onRetry={onRetry} align="start" />}
+        {listFailed && (
+          <ErrorState
+            message={LIST_FAILED}
+            onRetry={() => {
+              void library.load().catch(() => undefined);
+            }}
+            align="start"
+          />
+        )}
         <div className="title-controls" ref={controls}>
           {entry ? (
             <MenuButton label={statusLabel(entry.rate.status)} items={statusItems} disabled={!known} />

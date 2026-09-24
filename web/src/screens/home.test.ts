@@ -194,6 +194,17 @@ describe("CatalogueCache", () => {
     expect(load).toHaveBeenCalledTimes(1);
   });
 
+  it("hands back a fresh row at once, and nothing once it is old", async () => {
+    const clock = clockAt(START);
+    const cache = new CatalogueCache({ now: clock.now });
+    expect(cache.peek("now")).toBeUndefined();
+
+    const titles = await cache.read("now", async () => [anime(1)]);
+    expect(cache.peek("now")).toBe(titles);
+    clock.advance(6 * HOUR);
+    expect(cache.peek("now")).toBeUndefined();
+  });
+
   it("reads the row again six hours on", async () => {
     const clock = clockAt(START);
     const cache = new CatalogueCache({ now: clock.now });

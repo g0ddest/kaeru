@@ -4,7 +4,7 @@
 // wrapper can drain them because src/test/setup.ts defines the `jest` shim it looks for.
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NetworkError } from "../api/http";
 import type { Shikimori } from "../api/shikimori";
@@ -18,6 +18,7 @@ import { CatalogueCache } from "./home";
 import { SearchScreen } from "./SearchScreen";
 
 const OFFLINE = "Нет соединения. Проверьте интернет";
+const DEBOUNCE = 350;
 
 function anime(id: number, title: string, year: number): Anime {
   return {
@@ -87,7 +88,20 @@ const created: Shikimori["createRate"] = async (_token, _userId, animeId, fields
   updatedAt: Date.now(),
 });
 
-function setup(over: Partial<Shikimori>, options: { path?: string; catalogue?: CatalogueCache } = {}) {
+// The title page, reduced to the way back.
+function TitleStub() {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate(-1)}>
+      Назад
+    </button>
+  );
+}
+
+function setup(
+  over: Partial<Shikimori>,
+  options: { path?: string; catalogue?: CatalogueCache; searches?: CatalogueCache } = {},
+) {
   const shikimori = fakeShikimori({
     popularNow: async () => [FRIEREN],
     userRates: async () => [],
@@ -98,6 +112,7 @@ function setup(over: Partial<Shikimori>, options: { path?: string; catalogue?: C
   const library = new Library({ shikimori, authorized: signedIn, accountId: () => 1, progress });
   // A fresh cache per test: the module-wide one would carry titles from one test to the next.
   const catalogue = options.catalogue ?? new CatalogueCache();
+  const searches = options.searches ?? new CatalogueCache();
   const user = userEvent.setup({
     advanceTimers: (ms) => {
       vi.advanceTimersByTime(ms);
@@ -108,7 +123,8 @@ function setup(over: Partial<Shikimori>, options: { path?: string; catalogue?: C
       <ToastProvider>
         <MemoryRouter initialEntries={[options.path ?? "/search"]}>
           <Routes>
-            <Route path="/search" element={<SearchScreen catalogue={catalogue} />} />
+            <Route path="/search" element={<SearchScreen catalogue={catalogue} searches={searches} />} />
+            <Route path="/anime/:id" element={<TitleStub />} />
           </Routes>
         </MemoryRouter>
       </ToastProvider>
@@ -291,6 +307,20 @@ describe("SearchScreen", () => {
     expect(search).toHaveBeenCalledWith("дандадан");
     expect(field()).toHaveValue("дандадан");
     expect(cardLink("Дандадан")).toBeInTheDocument();
+  });
+
+  it("coming back from a title shows the same results at once, without searching again", async () => {
+    const search = vi.fn<Shikimori["search"]>().mockResolvedValue([DANDADAN]);
+    const { user } = setup({ search });
+    await user.type(field(), "дандадан");
+    await elapse(350);
+    await user.click(cardLink("Дандадан"));
+    await user.click(screen.getByRole("button", { name: "Назад" }));
+
+    expect(field()).toHaveValue("дандадан");
+    expect(cardLink("Дандадан")).toBeInTheDocument();
+    await elapse(DEBOUNCE);
+    expect(search).toHaveBeenCalledTimes(1);
   });
 
   it("«В планы» puts the title in «В планах» and the card says so", async () => {

@@ -70,6 +70,8 @@ class FakeShikimori {
   cards: Anime[] = [];
   details: Anime = deathNote();
   detailsFailures = 0;
+  /** How many list reads fail before one succeeds. */
+  rateFailures = 0;
   /** While set, details wait for it. */
   detailsGate: Promise<void> | null = null;
   /** One entry per write, in order; a truthy entry is thrown by that write. */
@@ -99,7 +101,13 @@ class FakeShikimori {
         return this.details;
       },
       byIds: async (ids) => this.cards.filter((card) => ids.includes(card.id)),
-      userRates: async () => this.rates.map((rate) => ({ ...rate })),
+      userRates: async () => {
+        if (this.rateFailures > 0) {
+          this.rateFailures -= 1;
+          throw new NetworkError("Failed to fetch");
+        }
+        return this.rates.map((rate) => ({ ...rate }));
+      },
       createRate: async (_token, userId, animeId, fields) => {
         this.calls.push(`POST ${userId}/${animeId} ${fieldsText(fields)}`);
         const failure = this.failures.shift();
@@ -182,6 +190,21 @@ describe("TitleScreen", () => {
     expect(screen.getByText("Death Note")).toBeInTheDocument();
     expect(screen.getByText("Вышло · 2006 · 37 эп. · ★ 8.62 · Сериал · Madhouse")).toBeInTheDocument();
     expect(server.calls).toContain("details 1535");
+  });
+
+  it("says why the list controls are shut when the list could not be read, and reads it again", async () => {
+    const user = userEvent.setup();
+    start(deathNote());
+    server.rateFailures = 1;
+    renderTitle();
+
+    const notice = await screen.findByRole("alert");
+    expect(notice).toHaveTextContent("Не удалось загрузить ваш список — без него отметки недоступны");
+    expect(screen.getByRole("button", { name: "Добавить в планы" })).toBeDisabled();
+
+    await user.click(within(notice).getByRole("button", { name: "Повторить" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Добавить в планы" })).toBeEnabled());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("says it is loading while the title comes", async () => {

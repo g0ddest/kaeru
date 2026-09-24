@@ -19,10 +19,16 @@ export class CatalogueCache {
     this.now = options.now ?? Date.now;
   }
 
+  /** The stored row if it is still fresh, so a screen coming back can paint it on its first render. */
+  peek(key: string): Anime[] | undefined {
+    const hit = this.stored.get(key);
+    return hit && this.now() - hit.at < this.ttlMs ? hit.titles : undefined;
+  }
+
   async read(key: string, load: () => Promise<Anime[]>, force = false): Promise<Anime[]> {
     if (!force) {
-      const hit = this.stored.get(key);
-      if (hit && this.now() - hit.at < this.ttlMs) return hit.titles;
+      const hit = this.peek(key);
+      if (hit) return hit;
     }
     const titles = await load();
     this.stored.set(key, { titles, at: this.now() });

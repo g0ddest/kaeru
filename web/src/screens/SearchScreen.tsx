@@ -13,8 +13,7 @@ import { PosterCard, PosterGrid } from "../ui/PosterCard";
 import { SkeletonGrid, SkeletonGroup } from "../ui/Skeleton";
 import { EmptyState, ErrorState } from "../ui/States";
 import { useToast } from "../ui/Toast";
-import { catalogueCache } from "./home";
-import type { CatalogueCache } from "./home";
+import { CatalogueCache, catalogueCache } from "./home";
 import "./browse.css";
 
 // Below two characters a query matches half the catalogue (iOS SearchView, Android SearchViewModel).
@@ -23,10 +22,17 @@ const MIN_QUERY = 2;
 const DEBOUNCE_MS = 350;
 // Home's «Популярно сейчас» row reads the same key, so the two screens share one read per 6 h.
 const POPULAR_KEY = "now";
+// Answers are kept for a while, so Back from a title paints the results it left at once.
+const SEARCH_TTL_MS = 30 * 60 * 1000;
+
+/** Module-wide so a title opened from the results and closed again costs no second search. */
+export const searchCache = new CatalogueCache({ ttlMs: SEARCH_TTL_MS });
 
 export interface SearchScreenProps {
   /** Where «Популярно сейчас» is kept: the module-wide cache Home also uses, unless a test passes its own. */
   catalogue?: CatalogueCache;
+  /** Answers to earlier queries: the module-wide cache, unless a test passes its own. */
+  searches?: CatalogueCache;
 }
 
 type Results =
@@ -43,18 +49,25 @@ function searchCard(anime: Anime): Card {
   return { ...catalogueCard(anime), badge: anime.year === null ? null : String(anime.year), subtitle: null };
 }
 
-export function SearchScreen({ catalogue = catalogueCache }: SearchScreenProps) {
+function remembered(searches: CatalogueCache, query: string): Results {
+  const titles = query.length < MIN_QUERY ? undefined : searches.peek(query);
+  if (titles === undefined) return { kind: "idle" };
+  return titles.length > 0 ? { kind: "found", query, titles } : { kind: "none", query };
+}
+
+export function SearchScreen({ catalogue = catalogueCache, searches = searchCache }: SearchScreenProps) {
   const { shikimori, library } = useServices();
   // Subscribed so cards repaint when a title lands in the list or a failed add is reverted.
   const known = listKnown(useLibrary(library));
   const toast = useToast();
   const [params, setParams] = useSearchParams();
   const [text, setText] = useState(() => params.get("q") ?? "");
-  const [results, setResults] = useState<Results>({ kind: "idle" });
+  const [results, setResults] = useState<Results>(() => remembered(searches, text.trim()));
   const [popular, setPopular] = useState<Popular>({ kind: "loading" });
   const [adding, setAdding] = useState<ReadonlySet<number>>(() => new Set());
   const field = useRef<HTMLInputElement>(null);
-  const sent = useRef<string | null>(null);
+  // A remembered answer counts as sent: the query is not asked again.
+  const sent = useRef<string | null>(results.kind === "idle" ? null : text.trim());
   const ticket = useRef(0);
   const opened = useRef(text.trim());
 
@@ -82,8 +95,8 @@ export function SearchScreen({ catalogue = catalogueCache }: SearchScreenProps) 
     ticket.current += 1;
     const mine = ticket.current;
     setResults({ kind: "loading", query });
-    setParams({ q: query }, { replace: true });
-    shikimori.search(query).then(
+    if (params.get("q") !== query) setParams({ q: query }, { replace: true });
+    searches.read(query, () => shikimori.search(query), true).then(
       (titles) => {
         // Only the newest query may paint: a slow answer to an older one is dropped.
         if (mine !== ticket.current) return;

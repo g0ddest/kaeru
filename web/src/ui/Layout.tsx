@@ -1,4 +1,4 @@
-import { useEffect, useId, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigationType } from "react-router-dom";
 import type { Account } from "../api/shikimori";
 import { useAccess } from "../auth/session";
@@ -26,9 +26,14 @@ export function Layout({ children }: { children?: ReactNode }) {
   const { pathname } = useLocation();
   const navigationType = useNavigationType();
 
+  const shownPath = useRef(pathname);
+
   useEffect(() => {
-    // A new page starts at the top; back and forward keep the browser's position.
-    if (navigationType === "POP") return;
+    const moved = shownPath.current !== pathname;
+    shownPath.current = pathname;
+    // A new page starts at the top. Back and forward keep the browser's position, and so does a page
+    // that rewrites its own address in place (search updating ?q= as you type).
+    if (navigationType === "POP" || (navigationType === "REPLACE" && !moved)) return;
     (document.scrollingElement ?? document.documentElement).scrollTop = 0;
   }, [pathname, navigationType]);
 

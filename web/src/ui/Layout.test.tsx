@@ -1,6 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useSearchParams } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { sessionStore, type Session } from "../auth/session";
 import { Layout } from "./Layout";
@@ -10,6 +10,20 @@ const SESSION: Session = {
   tokens: { accessToken: "tok", refreshToken: "ref", expiresIn: 86400, createdAt: Math.floor(Date.now() / 1000) },
 };
 
+// Stands in for search: typing rewrites ?q= in place, on the same page.
+function QueryPage() {
+  const [params, setParams] = useSearchParams();
+  return (
+    <button type="button" onClick={() => setParams({ q: `${params.get("q") ?? ""}а` }, { replace: true })}>
+      Уточнить запрос
+    </button>
+  );
+}
+
+function page(): HTMLElement {
+  return document.scrollingElement instanceof HTMLElement ? document.scrollingElement : document.documentElement;
+}
+
 function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
@@ -18,6 +32,7 @@ function renderAt(path: string) {
           <Route path="/" element={<p>Главная страница</p>} />
           <Route path="/list" element={<p>Страница списка</p>} />
           <Route path="/search" element={<p>Страница поиска</p>} />
+          <Route path="/query" element={<QueryPage />} />
           <Route path="/settings" element={<p>Страница настроек</p>} />
         </Route>
       </Routes>
@@ -105,5 +120,19 @@ describe("Layout", () => {
     renderAt("/");
     expect(screen.getByRole("link", { name: "Перейти к содержимому" })).toHaveAttribute("href", "#main");
     expect(screen.getByRole("main")).toHaveAttribute("id", "main");
+  });
+
+  it("starts a newly opened page at the top", async () => {
+    renderAt("/");
+    page().scrollTop = 600;
+    await userEvent.setup().click(screen.getAllByRole("link", { name: "Поиск" })[0]);
+    expect(page().scrollTop).toBe(0);
+  });
+
+  it("keeps the scroll position when the page only rewrites its own address", async () => {
+    renderAt("/query?q=д");
+    page().scrollTop = 600;
+    await userEvent.setup().click(screen.getByRole("button", { name: "Уточнить запрос" }));
+    expect(page().scrollTop).toBe(600);
   });
 });

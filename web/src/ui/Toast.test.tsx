@@ -96,7 +96,9 @@ describe("toasts", () => {
     renderToasts(() => undefined);
     fireEvent.click(screen.getByRole("button", { name: "Снять отметку" }));
     const undo = screen.getByRole("button", { name: "Отменить" });
+    // The toast put the focus on its action itself; the viewer leaves and comes back with Tab.
     act(() => {
+      undo.blur();
       undo.focus();
     });
     act(() => {
@@ -110,6 +112,57 @@ describe("toasts", () => {
       vi.advanceTimersByTime(TOAST_WITH_ACTION_MS);
     });
     expect(screen.queryByText(UNMARKED)).toBeNull();
+  });
+
+  it("put the focus on the action, so a keyboard reaches «Отменить» at once", () => {
+    renderToasts(() => undefined);
+    const trigger = screen.getByRole("button", { name: "Снять отметку" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    expect(screen.getByRole("button", { name: "Отменить" })).toHaveFocus();
+  });
+
+  it("give the focus back to where it was once the action runs", () => {
+    const onUndo = vi.fn();
+    renderToasts(onUndo);
+    const trigger = screen.getByRole("button", { name: "Снять отметку" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("button", { name: "Отменить" }));
+    expect(onUndo).toHaveBeenCalledTimes(1);
+    expect(trigger).toHaveFocus();
+  });
+
+  it("still close on time when the viewer did not touch it, and give the focus back", () => {
+    renderToasts(() => undefined);
+    const trigger = screen.getByRole("button", { name: "Снять отметку" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    act(() => {
+      vi.advanceTimersByTime(TOAST_WITH_ACTION_MS);
+    });
+    expect(screen.queryByText(UNMARKED)).toBeNull();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("close on Escape and give the focus back", () => {
+    const onUndo = vi.fn();
+    renderToasts(onUndo);
+    const trigger = screen.getByRole("button", { name: "Снять отметку" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    fireEvent.keyDown(screen.getByRole("button", { name: "Отменить" }), { key: "Escape" });
+    expect(screen.queryByText(UNMARKED)).toBeNull();
+    expect(onUndo).not.toHaveBeenCalled();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("leave the focus alone for a toast without an action", () => {
+    renderToasts();
+    const trigger = screen.getByRole("button", { name: "Ошибка" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    expect(trigger).toHaveFocus();
   });
 
   it("need the provider", () => {

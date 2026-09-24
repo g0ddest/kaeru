@@ -351,6 +351,7 @@
 }
 
 .shelf__title {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -359,6 +360,29 @@
 
 .shelf__header .btn--text {
   margin-right: calc(-1 * var(--s3));
+}
+
+/* Paging for a mouse: a plain wheel scrolls the page, and the row's scrollbar is hidden. Touch swipes. */
+.shelf__pager {
+  display: none;
+  flex: none;
+  gap: var(--s1);
+  margin-right: calc(-1 * var(--s2));
+}
+
+.shelf__pager .icon-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.shelf__pager .icon-button:hover:not(:disabled) {
+  background: var(--elevated);
+}
+
+@media (min-width: 768px) and (pointer: fine) {
+  .shelf__pager {
+    display: flex;
+  }
 }
 
 .shelf__extra {

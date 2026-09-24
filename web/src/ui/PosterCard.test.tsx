@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Card } from "../domain/feed";
 import { SecondaryButton } from "./Button";
 import { PosterCard, PosterGrid, type PosterCardProps } from "./PosterCard";
@@ -122,6 +122,50 @@ describe("Shelf", () => {
     expect(within(shelf).getByRole("heading", { level: 2, name: "Продолжить" })).toBeInTheDocument();
     expect(within(shelf).getAllByRole("listitem")).toHaveLength(2);
     expect(within(shelf).getByRole("link", { name: "Всё" })).toHaveAttribute("href", "/list");
+  });
+
+  // jsdom lays nothing out, so the row is given the geometry a 1280 px window measured.
+  function laidOut(row: HTMLElement, geometry: { clientWidth: number; scrollWidth: number; scrollLeft: number }) {
+    Object.defineProperty(row, "clientWidth", { configurable: true, value: geometry.clientWidth });
+    Object.defineProperty(row, "scrollWidth", { configurable: true, value: geometry.scrollWidth });
+    row.scrollLeft = geometry.scrollLeft;
+    fireEvent.scroll(row);
+  }
+
+  function renderRow() {
+    render(
+      <MemoryRouter>
+        <Shelf title="Популярно сейчас">
+          <PosterCard card={CARD} />
+          <PosterCard card={{ ...CARD, key: "1535", animeId: 1535, title: "Тетрадь смерти" }} />
+        </Shelf>
+      </MemoryRouter>,
+    );
+    return within(screen.getByRole("region", { name: "Популярно сейчас" })).getByRole("list");
+  }
+
+  it("pages a row wider than the screen with buttons, since a plain mouse wheel scrolls only the page", () => {
+    const row = renderRow();
+    const scrollBy = vi.fn();
+    row.scrollBy = scrollBy as typeof row.scrollBy;
+    laidOut(row, { clientWidth: 1032, scrollWidth: 3766, scrollLeft: 0 });
+
+    expect(screen.getByRole("button", { name: "Листать назад" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Листать вперёд" }));
+    expect(scrollBy).toHaveBeenCalledTimes(1);
+    expect(scrollBy.mock.calls[0][0].left).toBeGreaterThan(0);
+
+    laidOut(row, { clientWidth: 1032, scrollWidth: 3766, scrollLeft: 3766 - 1032 });
+    expect(screen.getByRole("button", { name: "Листать вперёд" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Листать назад" }));
+    expect(scrollBy.mock.calls[1][0].left).toBeLessThan(0);
+  });
+
+  it("offers no paging when every card fits", () => {
+    const row = renderRow();
+    laidOut(row, { clientWidth: 1032, scrollWidth: 1032, scrollLeft: 0 });
+    expect(screen.queryByRole("button", { name: "Листать вперёд" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Листать назад" })).not.toBeInTheDocument();
   });
 
   it("puts extra controls between the header and the row", () => {
