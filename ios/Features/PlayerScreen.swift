@@ -77,6 +77,7 @@ struct PlayerScreen: View {
         }
         .preferredColorScheme(.dark)
         .task { await playback.start() }
+        .onAppear { Reporting.screen("player") }
         .onAppear { model.playerAppeared() }
 
         .onDisappear {

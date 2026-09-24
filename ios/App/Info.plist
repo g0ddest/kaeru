@@ -26,5 +26,9 @@
     <key>NSLocalNetworkUsageDescription</key><string>Kaeru ищет телевизоры для трансляции, входа по QR-коду и совместного просмотра в вашей сети.</string>
     <key>NSMicrophoneUsageDescription</key><string>Микрофон используется только при записи голосового сообщения в совместном просмотре.</string>
     <key>UIBackgroundModes</key><array><string>audio</string><string>fetch</string></array>
+    <!-- Firebase starts with both collectors off; Reporting.install switches them on only when the
+         viewer has not said no in Settings, so a «no» holds from the first frame. -->
+    <key>FIREBASE_ANALYTICS_COLLECTION_ENABLED</key><false/>
+    <key>FirebaseCrashlyticsCollectionEnabled</key><false/>
     <key>BGTaskSchedulerPermittedIdentifiers</key><array><string>app.kaeru.ios.new-episodes</string></array>
 </dict></plist>

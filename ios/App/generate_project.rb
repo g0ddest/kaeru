@@ -58,6 +58,35 @@ Dir[File.join(root, '**', '*.swift')].sort.each do |file|
   target = file.include?('/UITests/') ? ui_tests : (file.include?('/Tests/') ? tests : app)
   target.add_file_references([reference])
 end
+# Firebase — Analytics and Crashlytics — only where the project's config is present. The plist is
+# per-developer and outside git, like local.properties; without it the app builds the same, with
+# `KAERU_FIREBASE` unset and every report a no-op (see Core/Reporting.swift).
+firebase = File.exist?(File.join(__dir__, 'GoogleService-Info.plist'))
+if firebase
+  app.resources_build_phase.add_file_reference(group.new_file('App/GoogleService-Info.plist'))
+  firebase_package = project.new(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
+  firebase_package.repositoryURL = 'https://github.com/firebase/firebase-ios-sdk.git'
+  firebase_package.requirement = { 'kind' => 'upToNextMajorVersion', 'minimumVersion' => '12.19.0' }
+  project.root_object.package_references << firebase_package
+  %w[FirebaseAnalytics FirebaseCrashlytics].each do |name|
+    product = project.new(Xcodeproj::Project::Object::XCSwiftPackageProductDependency)
+    product.package = firebase_package
+    product.product_name = name
+    app.package_product_dependencies << product
+  end
+  # Symbols for the crash reports. Crashlytics' own script, from the checkout SPM made; it needs the
+  # dSYM, which is why the debug information format below is the one that writes one.
+  upload = app.new_shell_script_build_phase('Upload symbols to Crashlytics')
+  upload.shell_script = '"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run"'
+  upload.input_paths = [
+    '${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}',
+    '${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${PRODUCT_NAME}',
+    '${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Info.plist',
+    '$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/GoogleService-Info.plist',
+    '$(TARGET_BUILD_DIR)/$(EXECUTABLE_PATH)'
+  ]
+end
+
 phase = app.new_shell_script_build_phase('Build shared framework')
 phase.shell_script = '/bin/sh "$SRCROOT/../Scripts/BuildSharedFramework.sh"'
 phase.always_out_of_date = '1'
@@ -91,6 +120,8 @@ app.build_phases.unshift(phase)
       config.build_settings.merge!({
         'DEVELOPMENT_TEAM' => ENV['DEVELOPMENT_TEAM'] || properties['DEVELOPMENT_TEAM'] || 'TXY49DW96F',
         'INFOPLIST_FILE' => 'Info.plist',
+        'SWIFT_ACTIVE_COMPILATION_CONDITIONS' => firebase ? ['$(inherited)', 'KAERU_FIREBASE'] : ['$(inherited)'],
+        'DEBUG_INFORMATION_FORMAT' => 'dwarf-with-dsym',
         'CODE_SIGN_ENTITLEMENTS' => associated_domains ? 'Kaeru.entitlements' : nil,
         'ASSETCATALOG_COMPILER_APPICON_NAME' => 'AppIcon',
         # Kaeru's amber, so the system chrome agrees with the palette instead of staying blue.

@@ -102,10 +102,40 @@ struct TogetherJoinTarget: Equatable {
     /// The one place the phase moves, so the overlay can never be drawing a session that has
     /// already ended. Everything the screen shows about waiting follows from here.
     private func enter(_ value: TogetherPhase) {
+        report(from: phase, to: value)
         phase = value
         conversation.phaseChanged(value, peerPresent: peerName != nil, error: error)
         if value == .idle || value == .ended { stopSweeping() }
         else { startSweeping() }
+    }
+    /// Each change of stage told to `Reporting` once, with the same names as Android: made, joining,
+    /// live, vacated, lost and why, ended. Never the room, the link or the friend's name.
+    private func report(from old: TogetherPhase, to new: TogetherPhase) {
+        guard old != new else { return }
+        let stage: String
+        var reason: String?
+        switch new {
+        case .idle: return
+        case .connecting: stage = side == .host ? "hosting" : "joining"
+        case .live: stage = old == .reconnecting && peerName == nil ? "vacated" : (peerName == nil ? "hosting" : "live")
+        case .reconnecting: stage = "reconnecting"
+        case .failed:
+            stage = "lost"
+            // Android's `LostReason` names, so the two platforms are one column in the numbers.
+            reason = error.map { error in
+                switch error {
+                case .disconnected: "connection"
+                case .timeout: "wait_timeout"
+                case .roomFull: "room_full"
+                case .notConfigured: "not_configured"
+                case .sameSide: "same_side"
+                case .expired: "expired"
+                default: String(describing: error)
+                }
+            }
+        case .ended: stage = "ended"
+        }
+        Reporting.event(Reporting.together, ["stage": stage, "reason": reason, "side": side == .host ? "host" : "guest"])
     }
     private func startSweeping() {
         guard sweeper == nil else { return }

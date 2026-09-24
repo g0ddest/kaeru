@@ -51,6 +51,7 @@ struct DetailView: View {
         // it prints the same name a second time in ten points with an ellipsis in it.
         .navigationTitle("").navigationBarTitleDisplayMode(.inline)
         .task(id: "\(initial.id)-\(revision)") { await loadDetails() }
+        .onAppear { Reporting.screen("details") }
         .refreshable { await loadDetails() }
         .safeAreaInset(edge: .bottom, spacing: 0) { EpisodeUndoBar() }
         .sheet(isPresented: $translationsOpen) { TranslationChooser(anime: anime) }

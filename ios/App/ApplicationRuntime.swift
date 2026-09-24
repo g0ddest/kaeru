@@ -23,6 +23,8 @@ import UserNotifications
 
 @MainActor final class KaeruAppDelegate: NSObject, UIApplicationDelegate, @preconcurrency UNUserNotificationCenterDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        // First, so a crash anywhere after this is one that gets reported.
+        Reporting.install()
         UNUserNotificationCenter.current().delegate = self
         EpisodeBackgroundRefresh.register()
         return true

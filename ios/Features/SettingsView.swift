@@ -103,6 +103,14 @@ struct SettingsView: View {
                     Text("Для разбора неполадок: адрес комнаты, кадры и состояние плеера, без ключей. Файл — Library/Caches/together.log.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
+                // Absent from a build made without a Firebase project, where it would change nothing.
+                if Reporting.available {
+                    Section("Статистика") {
+                        Toggle("Отправлять статистику и отчёты о сбоях", isOn: Binding(get: { Reporting.enabled }, set: { Reporting.setEnabled($0) }))
+                        Text("Какие экраны открываются, какие серии запускаются и что ломается — без ников, комнат и переписки. Помогает чинить приложение.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
                 Section {
                     SecureField("Свой токен Kodik", text: $model.kodikToken)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("kodik-token")

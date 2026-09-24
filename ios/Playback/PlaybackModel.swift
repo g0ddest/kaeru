@@ -462,6 +462,10 @@ enum PlaybackLocalAction {
     private func resolve(position: Double, play: Bool, explicitTranslation: Int? = nil, fence suppliedFence: UUID? = nil) async {
         let fence = suppliedFence ?? beginTransition(position: position, play: play)
         guard isCurrent(fence) else { return }
+        // An episode being opened — not a change of voice or quality on one already playing.
+        if explicitTranslation == nil {
+            Reporting.event(Reporting.playStart, ["anime_id": anime.id, "episode": episode, "casting": false])
+        }
         model.downloads.beginPlayback(animeID: anime.id, episode: episode)
         // Deliberately precedes ALL network work, including the translation catalogue.
         let downloaded = model.downloads.entries.filter {
@@ -513,6 +517,11 @@ enum PlaybackLocalAction {
         } catch {
             TogetherLog.write("resolve failed: \(error.localizedDescription)")
             guard isCurrent(fence) else { return }
+            // By kind, as on Android: the everyday failures — no network, a source that would not
+            // answer or had no such voice — are counted; anything else is worth a record.
+            let everyday = error is URLError || error is AppError
+            Reporting.event(Reporting.playError, ["kind": String(describing: type(of: error)), "anime_id": anime.id])
+            if !everyday { Reporting.problem(error) }
             fail(error.localizedDescription)
         }
     }

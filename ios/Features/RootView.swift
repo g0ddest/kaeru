@@ -112,6 +112,8 @@ struct RootView: View {
             }
             .environment(model)
         }
+        // The same screen names Android reports, without its route syntax: «home», «library»…
+        .task(id: selection) { Reporting.screen(selection.rawValue) }
         .onOpenURL { open($0) }
         // A universal link is not a URL the app is opened with — it arrives as a browsing activity,
         // and `onOpenURL` never sees it. Without this line an invitation tapped in a messenger went
