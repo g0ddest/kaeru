@@ -35,3 +35,7 @@ release.properties
 # Firebase: конфигурация проекта, у каждого своя
 android/google-services.json
 ios/App/GoogleService-Info.plist
+
+# Web client: dependencies and build output
+web/node_modules/
+web/dist/

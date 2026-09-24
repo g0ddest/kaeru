@@ -1,0 +1,129 @@
+/* Kaeru design tokens. Colours: android/.../ui/common/theme/Color.kt; type: theme/Type.kt
+   (phone scale); spacing, radii, motion and sizes: design/KaeruTokens.kt. Dark only. */
+:root {
+  color-scheme: dark;
+
+  /* Nine colours and no tenth: every surface is a step of one near-black, amber is for the one action. */
+  --bg: #0B0C10;
+  --surface: #15171E;
+  --elevated: #1E212B;
+  --line: #2A2E3A;
+  --ink: #F2F3F5;
+  --ink-soft: #9AA0AA;
+  --accent: #F5A524;
+  --on-accent: #1A1200;
+  --error: #E5484D;
+
+  /* Tints of the palette and black scrims, never a new hue. */
+  --accent-soft: rgb(245 165 36 / 0.18);
+  --secondary-bg: rgb(30 33 43 / 0.85);
+  --badge-bg: rgb(11 12 16 / 0.82);
+  --track: rgb(255 255 255 / 0.18);
+  --skeleton-low: rgb(255 255 255 / 0.1);
+  --skeleton-high: rgb(255 255 255 / 0.24);
+  --disc: rgb(0 0 0 / 0.42);
+  --scrim: rgb(0 0 0 / 0.6);
+
+  /* Spacing in 4px steps, named by their multiple of 4. */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s6: 24px;
+  --s8: 32px;
+  --s14: 56px;
+
+  /* Nothing rounder than a chip. */
+  --r-card: 12px;
+  --r-chip: 20px;
+
+  /* Press, open/close, hero crossfade. */
+  --fast: 150ms;
+  --normal: 250ms;
+  --hero: 400ms;
+
+  /* Layout, narrow (below 768px). */
+  --gutter: 16px;
+  --shelf-gap: 24px;
+  --card-gap: 12px;
+  --poster-w: 132px;
+  --grid-min: 88px;
+  --content-max: 1280px;
+  --button-h: 52px;
+  --touch: 48px;
+  --sidebar-w: 248px;
+  --topbar-h: 56px;
+  --tabbar-h: 64px;
+
+  --font: "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+@media (min-width: 768px) {
+  :root {
+    --gutter: 32px;
+    --shelf-gap: 36px;
+    --card-gap: 18px;
+    --poster-w: 168px;
+    --grid-min: 168px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --fast: 0ms;
+    --normal: 0ms;
+    --hero: 0ms;
+  }
+}
+
+/* Type, the Android phone scale. Manrope's line box is 1.366 of the size, so every line-height is
+   at least 1.4 times it: lower, and the descenders of у р д ф and the breve of й get clipped. */
+.t-display {
+  font-size: 34px;
+  line-height: 48px;
+  font-weight: 800;
+  letter-spacing: -0.8px;
+}
+
+.t-headline {
+  font-size: 24px;
+  line-height: 34px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+}
+
+.t-title {
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+.t-title-sm {
+  font-size: 15px;
+  line-height: 21px;
+  font-weight: 600;
+}
+
+.t-body {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 400;
+}
+
+.t-body-lg {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 400;
+}
+
+.t-label {
+  font-size: 13px;
+  line-height: 19px;
+  font-weight: 600;
+}
+
+.t-label-sm {
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+}
