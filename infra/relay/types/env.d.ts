@@ -20,3 +20,8 @@ declare namespace Cloudflare {
   // `cloudflare:test` and `cloudflare:workers` expose the environment under this name.
   interface Env extends RelayEnv {}
 }
+
+declare module "*?raw" {
+  const text: string;
+  export default text;
+}
