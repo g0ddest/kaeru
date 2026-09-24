@@ -201,3 +201,20 @@ npx wrangler tail
 
 У `/oauth/token` ограничение такое же и в своей корзине: 30 запросов на IP в минуту. Этого хватает
 любому живому входу — их два-три за сессию — и не хватает перебору по чужим кодам.
+
+## Веб-клиент
+
+- `GET /kodik/translations?anime=<shikimoriId>` и `GET /kodik/resolve?anime=&translation=&episode=&season=` —
+  резолв Kodik для браузера. Только с `Authorization: Bearer <токен Shikimori>` аккаунта из белого списка.
+- `POST /oauth/token` с `Origin` сайта — обмен кода с адресом возврата `https://kaeru.vitaliy.velikodniy.name/auth`
+  и обновление токена; токен отдаётся только аккаунту из белого списка.
+- CORS — только для `https://kaeru.vitaliy.velikodniy.name` и `http://localhost:5173`.
+
+Белый список — id пользователей Shikimori через запятую:
+
+    npx wrangler secret put WEB_ALLOWED_SHIKIMORI_IDS
+
+Пустой или отсутствующий список закрывает веб-клиент для всех. Изменение действует сразу для новых
+входов и не позже чем через 10 минут для уже выданных токенов. Приложения список не затрагивает.
+
+Свой токен Kodik, если появится: `npx wrangler secret put KODIK_TOKEN`.
