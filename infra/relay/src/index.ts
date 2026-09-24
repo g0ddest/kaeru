@@ -15,6 +15,8 @@
  *   GET  /health       200 "ok"
  *   GET  /w/:roomId    WebSocket upgrade into the room's Durable Object
  *   POST /oauth/token  Shikimori's token endpoint, with the client secret filled in
+ *   GET  /kodik/translations?anime=          the Kodik tracks of a title, for the web client
+ *   GET  /kodik/resolve?anime=&translation=&episode=&season=   signed HLS links of one episode
  *
  * Client to server: binary frames only, at most 64 KiB, forwarded verbatim to the
  * other peer and never echoed back to the sender. Text frames are ignored.
@@ -28,6 +30,13 @@
  *   4409  the room already holds two peers
  *   4413  the sender pushed a frame larger than 64 KiB
  */
+
+import { KodikClient } from "./kodik/client";
+import { handleKodik } from "./kodik/routes";
+import { preflight, webOrigin, withCors } from "./web";
+
+/** One per isolate: the catalogue and the token it remembers are worth keeping between requests. */
+let kodik: KodikClient | undefined;
 
 export interface Env extends Cloudflare.Env {}
 
@@ -156,6 +165,15 @@ export default {
         return plain("method not allowed", 405);
       }
       return plain("ok", 200);
+    }
+
+    if (url.pathname.startsWith("/kodik/")) {
+      const early = preflight(request);
+      if (early !== null) return early;
+      const retryAfter = await rateLimit(request, env, "kodik");
+      if (retryAfter > 0) return withCors(tooManyRequests(retryAfter), webOrigin(request));
+      kodik ??= new KodikClient({ fetch: (input, init) => fetch(input, init), configuredToken: env.KODIK_TOKEN });
+      return withCors(await handleKodik(request, kodik), webOrigin(request));
     }
 
     if (url.pathname === TOKEN_PATH) return proxyToken(request, env);

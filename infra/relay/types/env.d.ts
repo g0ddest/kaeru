@@ -14,6 +14,8 @@ interface RelayEnv {
    * the token route has to answer that honestly rather than send Shikimori the word "undefined".
    */
   SHIKIMORI_CLIENT_SECRET?: string;
+  /** A Kodik API token of our own, when there is one; otherwise the public one is scraped. */
+  KODIK_TOKEN?: string;
 }
 
 declare namespace Cloudflare {
