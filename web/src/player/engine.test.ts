@@ -1,5 +1,7 @@
-// Vectors: player-map 3 §3.1 (which engine each browser gets) and §2.7 (hls.js errors; a 403 manifest
-// measured in Chromium and WebKit).
+// Vectors: the engine rule of the hls.js README (v1.7.3), its API.md «Fatal Error Recovery» (one
+// recoverMediaError per 5 s), and Task 4 of docs/superpowers/plans/2026-09-24-kaeru-web-03-player.md.
+// A 403 manifest, measured in Chromium and WebKit: hls.js sends a fatal networkError with response.code
+// 403, Safari a MediaError 4 with no message.
 import workerPath from "hls.js/dist/hls.worker.js?url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { chooseEngine, classifyHlsError, createEngine } from "./engine";
@@ -196,6 +198,117 @@ describe("createEngine over hls.js", () => {
 
     expect(instances[0]!.recoverMediaError).toHaveBeenCalledTimes(2);
     expect(failures).toEqual([]);
+  });
+
+  // Measured in Chrome with hls.js 1.7.3: the recovery reloads the element, which leaves it paused at the
+  // same position without a `pause` event, so the controller still believes it is playing.
+  function playingThroughRecovery(hls: InstanceType<typeof fake.FakeHls>) {
+    const element = { paused: false };
+    vi.spyOn(HTMLMediaElement.prototype, "paused", "get").mockImplementation(() => element.paused);
+    hls.recoverMediaError.mockImplementation(() => {
+      element.paused = true;
+    });
+    return vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(() => {
+      element.paused = false;
+      return Promise.resolve();
+    });
+  }
+
+  it("resumes a playing video after recovering it", async () => {
+    chrome();
+    const { video, engine, failures } = started();
+    await engine.load("https://cdn.example/720.m3u8", 0);
+    const play = playingThroughRecovery(instances[0]!);
+
+    instances[0]!.emit("hlsError", FATAL_MEDIA);
+
+    expect(instances[0]!.recoverMediaError).toHaveBeenCalledTimes(1);
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(video.paused).toBe(false);
+    expect(failures).toEqual([]);
+  });
+
+  it("leaves a paused video paused after recovering it", async () => {
+    chrome();
+    vi.spyOn(HTMLMediaElement.prototype, "paused", "get").mockReturnValue(true);
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    const { engine } = started();
+    await engine.load("https://cdn.example/720.m3u8", 0);
+
+    instances[0]!.emit("hlsError", FATAL_MEDIA);
+
+    expect(instances[0]!.recoverMediaError).toHaveBeenCalledTimes(1);
+    expect(play).not.toHaveBeenCalled();
+  });
+
+  it("swallows a refused resume after a recovery", async () => {
+    chrome();
+    const escaped: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      escaped.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      vi.spyOn(HTMLMediaElement.prototype, "paused", "get").mockReturnValue(false);
+      const { video, engine, failures } = started();
+      // Not a vi spy: it handles the promises it returns itself, which would hide a missing catch.
+      let plays = 0;
+      video.play = () => {
+        plays++;
+        return Promise.reject(new DOMException("The play() request was interrupted", "AbortError"));
+      };
+      await engine.load("https://cdn.example/720.m3u8", 0);
+
+      instances[0]!.emit("hlsError", FATAL_MEDIA);
+      // Node reports an unhandled rejection once the microtasks have run.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(plays).toBe(1);
+      expect(escaped).toEqual([]);
+      expect(failures).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
+  it("reports one failure per source, however many fatal errors follow", async () => {
+    chrome();
+    const clock = { now: 1_000_000 };
+    vi.spyOn(Date, "now").mockImplementation(() => clock.now);
+    const { engine, failures } = started();
+    await engine.load("https://cdn.example/720.m3u8", 0);
+
+    instances[0]!.emit("hlsError", { type: "networkError", details: "fragLoadError", fatal: true, response: { code: 403 } });
+    instances[0]!.emit("hlsError", { type: "networkError", details: "fragLoadError", fatal: true, response: { code: 403 } });
+    instances[0]!.emit("hlsError", FATAL_MEDIA);
+    expect(failures).toEqual(["network"]);
+    // Given up on: no recovery either.
+    expect(instances[0]!.recoverMediaError).not.toHaveBeenCalled();
+
+    // The next source is new and reports for itself.
+    await engine.load("https://cdn.example/720.m3u8", 12_000);
+    instances[1]!.emit("hlsError", { type: "networkError", details: "manifestLoadError", fatal: true, response: { code: 403 } });
+    expect(failures).toEqual(["network", "network"]);
+  });
+
+  it("reports one failure once a media error is given up on", async () => {
+    chrome();
+    const clock = { now: 1_000_000 };
+    vi.spyOn(Date, "now").mockImplementation(() => clock.now);
+    const { engine, failures } = started();
+    await engine.load("https://cdn.example/720.m3u8", 0);
+
+    instances[0]!.emit("hlsError", FATAL_MEDIA);
+    clock.now += SECOND;
+    instances[0]!.emit("hlsError", FATAL_MEDIA);
+    clock.now += SECOND;
+    instances[0]!.emit("hlsError", FATAL_MEDIA);
+    // Past the 5 s window, but the source has already been given up on.
+    clock.now += 10 * SECOND;
+    instances[0]!.emit("hlsError", FATAL_MEDIA);
+
+    expect(failures).toEqual(["media"]);
+    expect(instances[0]!.recoverMediaError).toHaveBeenCalledTimes(1);
   });
 
   it("reports a refused playlist as the source's while online", async () => {

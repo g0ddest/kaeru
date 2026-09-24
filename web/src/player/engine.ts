@@ -112,22 +112,33 @@ function hlsEngine(video: HTMLVideoElement, onFailure: (kind: EngineFailureKind)
         backBufferLength: BACK_BUFFER_S,
         maxBufferLength: FORWARD_BUFFER_S,
       });
-      // Per source: a new file earns its own recovery.
+      // Per source: a new file earns its own recovery, and reports its failure once. hls.js keeps sending
+      // fatal errors after it has given up, and the controller counts failures to decide on a re-resolve.
       let recoveredAt: number | null = null;
+      let failed = false;
+      const fail = (kind: EngineFailureKind): void => {
+        failed = true;
+        onFailure(kind);
+      };
       instance.on(Events.ERROR, (_event, data) => {
+        if (failed) return;
         const verdict = classifyHlsError(data, navigator.onLine);
         if (verdict === "ignore") return;
         if (verdict === "recover") {
           const now = Date.now();
           if (recoveredAt === null || now - recoveredAt >= RECOVERY_GAP_MS) {
             recoveredAt = now;
+            // The recovery reloads the element, which leaves it paused at the same position without a
+            // `pause` event (Chrome, hls.js 1.7.3): only the engine knows to carry on.
+            const resume = !video.paused;
             instance.recoverMediaError();
+            if (resume) void video.play().catch(() => {});
             return;
           }
-          onFailure("media");
+          fail("media");
           return;
         }
-        onFailure(verdict);
+        fail(verdict);
       });
       instance.attachMedia(video);
       instance.loadSource(url);
