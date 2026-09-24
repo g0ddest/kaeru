@@ -980,6 +980,30 @@ describe("PlayerController: opening and ending marks", () => {
     expect(server.writes()).toEqual(["PATCH 1 episodes=12"]);
     expect(saved(12)).toBe(DUR);
   });
+
+  it("finishes only once the mark is answered, so the offer to complete the title comes first", async () => {
+    setSkipEnding(true, storage);
+    setWatchedThreshold(1, storage);
+    server.details = frieren({ status: "released", episodes: 12, episodesAired: 12 });
+    server.rates = [{ id: 1, animeId: ANIME, status: "watching", episodes: 11, updatedAt: 1 }];
+    aniskip.found = { opening: null, ending: ENDING };
+    const controller = await playing(12);
+    controller.onTime(1_290_000, DUR);
+    await settle();
+    // The screen leaves as soon as `finished` holds with no question up: what it sees at that moment.
+    const whenFinished: boolean[] = [];
+    controller.subscribe(() => {
+      const s = controller.getState();
+      if (s.finished && whenFinished.length === 0) whenFinished.push(s.completion);
+    });
+
+    controller.onTime(1_305_000, DUR);
+    controller.onTime(1_310_000, DUR);
+    await settle();
+
+    expect(whenFinished).toEqual([true]);
+    expect(controller.getState()).toMatchObject({ finished: true, completion: true, episode: 12 });
+  });
 });
 
 describe("PlayerController: failures, quality and dub", () => {

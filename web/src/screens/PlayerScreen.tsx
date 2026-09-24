@@ -7,7 +7,8 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams } from "react-router-dom";
+import { hasPageBehind } from "../app/history";
 import { useServices } from "../app/services";
 import { waitingLabel } from "../domain/actions";
 import { episodeBadge, formatTime } from "../domain/format";
@@ -84,6 +85,12 @@ function elementFullscreen(): boolean {
   return doc.fullscreenEnabled === true || doc.webkitFullscreenEnabled === true;
 }
 
+function exitFullscreen(): void {
+  const doc = document as Document & WebkitDocument;
+  if (typeof doc.exitFullscreen === "function") void doc.exitFullscreen().catch(() => undefined);
+  else doc.webkitExitFullscreen?.();
+}
+
 /** /watch/:id/:episode — a malformed address has nothing to play and goes where it can. */
 export function PlayerScreen() {
   const { id = "", episode = "" } = useParams();
@@ -103,9 +110,8 @@ function Player({ animeId, episode }: { animeId: number; episode: number }) {
   const services = useServices();
   const toast = useToast();
   const navigate = useNavigate();
-  const location = useLocation();
   // Taken on arrival: episodes replace the address later, and «Назад» must still know where it came from.
-  const [fromApp] = useState(() => location.key !== "default");
+  const [fromApp] = useState(hasPageBehind);
   const root = useRef<HTMLElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const seekRef = useRef<HTMLInputElement>(null);
@@ -247,18 +253,18 @@ function Player({ animeId, episode }: { animeId: number; episode: number }) {
   }, []);
 
   const toggleFullscreen = useCallback(() => {
-    const doc = document as Document & WebkitDocument;
     try {
       if (fullscreenElement() !== null) {
-        if (typeof doc.exitFullscreen === "function") void doc.exitFullscreen().catch(() => undefined);
-        else doc.webkitExitFullscreen?.();
+        exitFullscreen();
         return;
       }
-      const container = root.current as (HTMLElement & WebkitElement) | null;
-      if (elementFullscreen() && container !== null) {
-        // The whole player, not the bare video: its controls stay on screen.
-        if (typeof container.requestFullscreen === "function") void container.requestFullscreen().catch(() => undefined);
-        else container.webkitRequestFullscreen?.();
+      // The whole page, not the player or the bare video: only what is inside the fullscreen element
+      // is on screen, and the completion question and the notices are drawn outside <main>. The
+      // player fills the window, so it fills the screen.
+      const page = document.documentElement as HTMLElement & WebkitElement;
+      if (elementFullscreen()) {
+        if (typeof page.requestFullscreen === "function") void page.requestFullscreen().catch(() => undefined);
+        else page.webkitRequestFullscreen?.();
         return;
       }
       // An iPhone has only the system's own video player.
@@ -361,6 +367,13 @@ function Player({ animeId, episode }: { animeId: number; episode: number }) {
     );
   }, [controller, anime, track, hasNext, shownEpisode]);
   useEffect(() => () => clearMediaSession(), []);
+  // The page, unlike a removed player, stays in fullscreen: the title page must not open in it.
+  useEffect(
+    () => () => {
+      if (fullscreenElement() === document.documentElement) exitFullscreen();
+    },
+    [],
+  );
 
   useEffect(() => {
     const title = document.title;
@@ -402,16 +415,40 @@ function Player({ animeId, episode }: { animeId: number; episode: number }) {
     return () => input.removeEventListener("change", commit);
   }, [controller]);
 
+  // A drag the episode moved away from: the slider went (a failure), turned off (the next episode, its
+  // length not known yet) or spans another length. No release comes to end it.
+  const scrubbable = state.phase === "playing" && state.durationMs > 0;
+  useEffect(() => {
+    setScrub(null);
+  }, [shownEpisode, state.durationMs, scrubbable]);
+
   // The ending skipped itself after the last aired episode: back to the title, once the viewer has
   // answered the completion question if there is one.
   useEffect(() => {
     if (finished && !completion) void navigate(`/anime/${animeId}`, { replace: true });
   }, [finished, completion, animeId, navigate]);
 
-  // The card takes the focus, so Enter watches on at once (the TV card does the same).
+  // The card takes the focus, so Enter watches on at once (the TV card does the same). An open menu
+  // keeps it: Escape still has to close the menu.
   useEffect(() => {
-    if (countdownUp) countdownRef.current?.querySelector<HTMLElement>(".btn--primary")?.focus();
+    if (!countdownUp || document.activeElement?.closest("[role=menu]")) return;
+    countdownRef.current?.querySelector<HTMLElement>(".btn--primary")?.focus();
   }, [countdownUp]);
+
+  // The play/pause toggle stays under the spinner, so the keyboard is not dropped to the page there.
+  const centreToggle = state.phase === "playing" && !state.needsGesture;
+  // «Отмена» and «Повторить» leave with their card; the keyboard goes to the toggle rather than the page.
+  const focusToggle = useCallback(() => {
+    root.current?.querySelector<HTMLElement>(".player-toggle")?.focus();
+  }, []);
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (!refocus.current || !centreToggle) return;
+    refocus.current = false;
+    // Unless the viewer has put it somewhere since.
+    const active = document.activeElement;
+    if (active === null || active === document.body) focusToggle();
+  }, [centreToggle, focusToggle]);
 
   const back = () => {
     // A deep link has no page of ours behind it.
@@ -469,7 +506,6 @@ function Player({ animeId, episode }: { animeId: number; episode: number }) {
   const played = durationMs > 0 ? Math.min(100, (shownMs / durationMs) * 100) : 0;
   // «Следующая серия» over the ending says it already; one button of that name at a time.
   const nextButton = hasNext && state.countdown === null && state.skip !== "ending";
-  const centreButton = state.phase === "playing" && !state.needsGesture && !spinner;
 
   return (
     <main
@@ -479,6 +515,9 @@ function Player({ animeId, episode }: { animeId: number; episode: number }) {
       onPointerMove={(event) => {
         if (event.pointerType !== "touch") wake();
       }}
+      // A touch screen does not focus a tapped button: every tap counts, and the surface has taken
+      // its note of whether the controls were up before this runs.
+      onPointerDown={wake}
       onFocus={wake}
     >
       <video
@@ -563,8 +602,8 @@ function Player({ animeId, episode }: { animeId: number; episode: number }) {
           </div>
         </header>
 
-        {centreButton && (
-          <div className="player-centre">
+        {centreToggle && (
+          <div className="player-centre" data-covered={spinner}>
             <IconButton
               className="player-toggle"
               overArt
@@ -633,7 +672,14 @@ function Player({ animeId, episode }: { animeId: number; episode: number }) {
           </span>
           <div className="player-card-actions">
             <PrimaryButton onClick={() => void controller?.next()}>Смотреть сейчас</PrimaryButton>
-            <SecondaryButton onClick={() => controller?.cancelCountdown()}>Отмена</SecondaryButton>
+            <SecondaryButton
+              onClick={() => {
+                controller?.cancelCountdown();
+                focusToggle();
+              }}
+            >
+              Отмена
+            </SecondaryButton>
           </div>
         </section>
       )}
@@ -648,7 +694,14 @@ function Player({ animeId, episode }: { animeId: number; episode: number }) {
         <div className="player-failure" role="alert">
           <p className="t-body-lg player-failure-message">{state.failure.message}</p>
           <div className="player-failure-actions">
-            <PrimaryButton onClick={() => void controller?.retry()}>Повторить</PrimaryButton>
+            <PrimaryButton
+              onClick={() => {
+                refocus.current = true;
+                void controller?.retry();
+              }}
+            >
+              Повторить
+            </PrimaryButton>
             {state.failure.action === "list" ? (
               <SecondaryButton to={`/anime/${animeId}`}>К списку серий</SecondaryButton>
             ) : state.tracks.length > 0 ? (

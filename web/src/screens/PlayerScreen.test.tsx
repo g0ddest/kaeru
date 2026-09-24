@@ -5,7 +5,8 @@
 // PlayerControls.kt, ui/common/player/PlayerFailure.kt.
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes, useLocation, useNavigationType } from "react-router-dom";
+import { useEffect } from "react";
+import { MemoryRouter, Route, Routes, useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { ApiError } from "../api/http";
 import type { Shikimori } from "../api/shikimori";
@@ -188,12 +189,53 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   delete (navigator as unknown as { mediaSession?: unknown }).mediaSession;
+  for (const name of ["fullscreenEnabled", "fullscreenElement", "exitFullscreen"]) {
+    delete (document as unknown as Record<string, unknown>)[name];
+  }
+  delete (HTMLElement.prototype as unknown as Record<string, unknown>).requestFullscreen;
+  window.history.replaceState(null, "");
 });
+
+/**
+ * Element fullscreen as a desktop browser has it (jsdom has none): the element asked becomes
+ * document.fullscreenElement, and the document says so with fullscreenchange. afterEach removes it.
+ */
+function stubFullscreen() {
+  const request = vi.fn(function (this: Element) {
+    Object.defineProperty(document, "fullscreenElement", { configurable: true, value: this });
+    document.dispatchEvent(new Event("fullscreenchange"));
+    return Promise.resolve();
+  });
+  const exit = vi.fn(() => {
+    Object.defineProperty(document, "fullscreenElement", { configurable: true, value: null });
+    document.dispatchEvent(new Event("fullscreenchange"));
+    return Promise.resolve();
+  });
+  Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: true });
+  Object.defineProperty(document, "exitFullscreen", { configurable: true, value: exit });
+  Object.defineProperty(HTMLElement.prototype, "requestFullscreen", { configurable: true, value: request });
+  return { request, exit };
+}
+
+function pressF(): void {
+  act(() => {
+    fireEvent.keyDown(document.body, { code: "KeyF", key: "а" });
+  });
+}
 
 function services(): Services {
   const shikimori = server.api();
   const library = new Library({ shikimori, authorized: fakeAuthorized, accountId: () => 42, progress });
   return { shikimori, library, progress, kodik, aniskip, engine: engines.factory };
+}
+
+/** AuthCallbackScreen once Shikimori has signed the viewer in: the address they came for, replaced. */
+function SignedIn() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    void navigate(`/watch/${ANIME}/7`, { replace: true });
+  }, [navigate]);
+  return null;
 }
 
 /** Where the router is, and how it got there: a replaced episode leaves no history entry behind. */
@@ -211,6 +253,7 @@ function renderPlayer(entries: string[] = [`/watch/${ANIME}/7`]) {
           <Routes>
             <Route path="/watch/:id/:episode" element={<PlayerScreen />} />
             <Route path="/anime/:id" element={<p>Страница тайтла</p>} />
+            <Route path="/auth" element={<SignedIn />} />
           </Routes>
           <Where />
         </MemoryRouter>
@@ -434,6 +477,25 @@ describe("PlayerScreen", () => {
     expect(savedAt(12)).toBe(DUR);
   });
 
+  it("asks about completing the title before leaving when the ending of its last episode skips itself", async () => {
+    const user = userEvent.setup();
+    setSkipEnding(true);
+    server.details = frieren({ status: "released", episodes: 12, episodesAired: 12 });
+    server.rates = [{ id: 1, animeId: ANIME, status: "watching", episodes: 11, updatedAt: 1 }];
+    aniskip.found = { opening: null, ending: { startMs: 1_290_000, endMs: 1_380_000 } };
+    await playing([`/anime/${ANIME}`, `/watch/${ANIME}/12`]);
+
+    at(1_295_000);
+    await act(async () => undefined);
+    at(1_300_000);
+
+    const dialog = await screen.findByRole("dialog", { name: `Перевести «${TITLE}» в завершённые?` });
+    await user.click(within(dialog).getByRole("button", { name: "Позже" }));
+
+    expect(await screen.findByText("Страница тайтла")).toBeInTheDocument();
+    expect(server.writes()).toEqual(["PATCH 1 episodes=12"]);
+  });
+
   it("skips the opening to its end", async () => {
     const user = userEvent.setup();
     aniskip.found = { opening: { startMs: 60_000, endMs: 150_000 }, ending: null };
@@ -476,6 +538,83 @@ describe("PlayerScreen", () => {
     expect(screen.getByText("11:41 / 24:00")).toBeInTheDocument();
   });
 
+  it("drops a drag on the seek slider that the next episode cut short", async () => {
+    await playing();
+    at(600_000);
+    fireEvent.input(screen.getByRole("slider", { name: "Перемотка" }), { target: { value: "700" } });
+    expect(screen.getByText("11:40 / 24:00")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Следующая серия" }));
+    await waitFor(() => expect(engines.loads).toHaveLength(2));
+    fireEvent.playing(video());
+    at(5_000);
+
+    expect(screen.getByText("0:05 / 24:00")).toBeInTheDocument();
+  });
+
+  it("drops a drag on the seek slider that a failure cut short", async () => {
+    const user = userEvent.setup();
+    await playing();
+    at(600_000);
+    fireEvent.input(screen.getByRole("slider", { name: "Перемотка" }), { target: { value: "700" } });
+
+    engines.fail("offline");
+    await user.click(within(await screen.findByRole("alert")).getByRole("button", { name: "Повторить" }));
+    await waitFor(() => expect(engines.loads).toHaveLength(2));
+
+    expect(screen.getByText("10:00 / 24:00")).toBeInTheDocument();
+  });
+
+  it("keeps the keyboard on «Пауза» while the picture buffers", async () => {
+    await playing();
+    const toggle = screen.getByRole("button", { name: "Пауза" });
+    toggle.focus();
+
+    fireEvent.waiting(video());
+
+    expect(screen.getByText("Загружаем")).toBeInTheDocument();
+    expect(toggle).toHaveFocus();
+  });
+
+  it("hands the keyboard to «Пауза» when «Отмена» closes the countdown", async () => {
+    const user = userEvent.setup();
+    await playing();
+    at(DUR - 10_000);
+
+    await user.click(screen.getByRole("button", { name: "Отмена" }));
+
+    expect(screen.getByRole("button", { name: "Пауза" })).toHaveFocus();
+  });
+
+  it("hands the keyboard to «Пауза» once «Повторить» has brought the episode back", async () => {
+    const user = userEvent.setup();
+    kodik.failures.set("610:7", new KodikError("upstream"));
+    renderPlayer();
+    const alert = await screen.findByRole("alert");
+    kodik.failures.clear();
+
+    await user.click(within(alert).getByRole("button", { name: "Повторить" }));
+    await waitFor(() => expect(engines.loads).toHaveLength(1));
+    fireEvent.playing(video());
+
+    expect(await screen.findByRole("button", { name: "Пауза" })).toHaveFocus();
+  });
+
+  it("leaves the keyboard in an open menu when the countdown comes up", async () => {
+    const user = userEvent.setup();
+    await playing();
+    await user.click(screen.getByRole("button", { name: "Качество: 720p" }));
+    const item = screen.getByRole("menuitemradio", { name: "720p" });
+    expect(item).toHaveFocus();
+
+    at(DUR - 10_000);
+
+    expect(screen.getByText("Следующая серия через 10")).toBeInTheDocument();
+    expect(item).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
   it("mutes and unmutes with M in any layout and with its button", async () => {
     const user = userEvent.setup();
     await playing();
@@ -497,35 +636,69 @@ describe("PlayerScreen", () => {
     expect(screen.queryByRole("button", { name: "Следующая серия" })).toBeNull();
   });
 
-  it("puts the whole player in fullscreen with F, and follows the browser out of it", async () => {
-    const request = vi.fn(function (this: Element) {
-      Object.defineProperty(document, "fullscreenElement", { configurable: true, value: this });
-      document.dispatchEvent(new Event("fullscreenchange"));
-      return Promise.resolve();
-    });
-    Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: true });
-    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", { configurable: true, value: request });
-    try {
-      await playing();
-      expect(screen.getByRole("button", { name: "Во весь экран" })).toBeInTheDocument();
+  it("puts the page in fullscreen with F, and follows the browser out of it", async () => {
+    const { request } = stubFullscreen();
+    await playing();
+    expect(screen.getByRole("button", { name: "Во весь экран" })).toBeInTheDocument();
 
-      act(() => {
-        fireEvent.keyDown(document.body, { code: "KeyF", key: "а" });
-      });
+    pressF();
 
-      expect(request).toHaveBeenCalledTimes(1);
-      expect(request.mock.contexts[0]).toBe(screen.getByRole("main"));
-      expect(screen.getByRole("button", { name: "Выйти из полноэкранного режима" })).toBeInTheDocument();
+    expect(request).toHaveBeenCalledTimes(1);
+    // The page, not <main>: the completion question and the notices are drawn outside the player.
+    expect(request.mock.contexts[0]).toBe(document.documentElement);
+    expect(screen.getByRole("button", { name: "Выйти из полноэкранного режима" })).toBeInTheDocument();
 
-      // Esc is the browser's: the player only hears that fullscreen ended.
-      Object.defineProperty(document, "fullscreenElement", { configurable: true, value: null });
-      fireEvent(document, new Event("fullscreenchange"));
-      expect(screen.getByRole("button", { name: "Во весь экран" })).toBeInTheDocument();
-    } finally {
-      delete (document as unknown as Record<string, unknown>).fullscreenEnabled;
-      delete (document as unknown as Record<string, unknown>).fullscreenElement;
-      delete (HTMLElement.prototype as unknown as Record<string, unknown>).requestFullscreen;
-    }
+    // Esc is the browser's: the player only hears that fullscreen ended.
+    Object.defineProperty(document, "fullscreenElement", { configurable: true, value: null });
+    fireEvent(document, new Event("fullscreenchange"));
+    expect(screen.getByRole("button", { name: "Во весь экран" })).toBeInTheDocument();
+  });
+
+  it("asks about completing the title where fullscreen shows it", async () => {
+    stubFullscreen();
+    server.details = frieren({ status: "released", episodes: 12, episodesAired: 12 });
+    server.rates = [{ id: 1, animeId: ANIME, status: "watching", episodes: 11, updatedAt: 1 }];
+    await playing([`/watch/${ANIME}/12`]);
+    pressF();
+
+    at(1_300_000);
+
+    const dialog = await screen.findByRole("dialog", { name: `Перевести «${TITLE}» в завершённые?` });
+    expect(document.fullscreenElement).not.toBeNull();
+    expect(document.fullscreenElement?.contains(dialog)).toBe(true);
+  });
+
+  it("shows its notices where fullscreen shows them", async () => {
+    stubFullscreen();
+    kodik.missingEverywhere(8);
+    await playing();
+    pressF();
+
+    fireEvent.keyDown(document.body, { code: "KeyN", key: "т" });
+
+    const notice = await screen.findByText("Серия 8 пока не вышла ни в одной озвучке");
+    expect(document.fullscreenElement).not.toBeNull();
+    expect(document.fullscreenElement?.contains(notice)).toBe(true);
+  });
+
+  it("takes the page out of fullscreen when the player closes", async () => {
+    const { exit } = stubFullscreen();
+    const view = await playing();
+    pressF();
+
+    view.unmount();
+
+    expect(exit).toHaveBeenCalledTimes(1);
+    expect(document.fullscreenElement).toBeNull();
+  });
+
+  it("leaves a page that is not in fullscreen alone when the player closes", async () => {
+    const { exit } = stubFullscreen();
+    const view = await playing();
+
+    view.unmount();
+
+    expect(exit).not.toHaveBeenCalled();
   });
 
   it("offers picture-in-picture where the browser has it", async () => {
@@ -572,6 +745,26 @@ describe("PlayerScreen", () => {
     await user.click(screen.getByRole("button", { name: "Назад" }));
 
     expect(screen.getByText("Страница тайтла")).toBeInTheDocument();
+  });
+
+  it("goes to the title, not back out of the site, from a deep link that went through sign-in", async () => {
+    const user = userEvent.setup();
+    await playing(["/auth"]);
+
+    await user.click(screen.getByRole("button", { name: "Назад" }));
+
+    expect(screen.getByText("Страница тайтла")).toBeInTheDocument();
+  });
+
+  it("goes back through history when a page of the site opened it", async () => {
+    const user = userEvent.setup();
+    // What BrowserRouter keeps in history.state: the player is the second entry of this visit.
+    window.history.replaceState({ idx: 1 }, "");
+    await playing([`/anime/${ANIME}`, `/watch/${ANIME}/7`]);
+
+    await user.click(screen.getByRole("button", { name: "Назад" }));
+
+    expect(screen.getByTestId("where")).toHaveTextContent(`/anime/${ANIME} POP`);
   });
 
   it("saves the position when the page is hidden and when the player closes", async () => {
@@ -661,6 +854,27 @@ describe("PlayerScreen", () => {
     expect(player).toHaveAttribute("data-idle", "false");
     await user.click(screen.getByRole("button", { name: "Пауза" }));
     act(() => vi.advanceTimersByTime(CONTROLS_HIDE_MS * 2));
+    expect(player).toHaveAttribute("data-idle", "false");
+  });
+
+  it("keeps the controls up while taps land on them, though a touch screen does not focus a tapped button", async () => {
+    vi.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: (ms) => vi.advanceTimersByTime(ms) });
+    await playing();
+    const player = screen.getByRole("main");
+    const surface = document.querySelector(".player-surface") as HTMLElement;
+    act(() => vi.advanceTimersByTime(CONTROLS_HIDE_MS));
+    expect(player).toHaveAttribute("data-idle", "true");
+
+    await user.pointer({ keys: "[TouchA]", target: surface });
+    expect(player).toHaveAttribute("data-idle", "false");
+    const forward = screen.getByRole("button", { name: "Вперёд на 10 секунд" });
+    act(() => vi.advanceTimersByTime(2_000));
+    await user.pointer({ keys: "[TouchA]", target: forward });
+    act(() => vi.advanceTimersByTime(2_000));
+    await user.pointer({ keys: "[TouchA]", target: forward });
+    act(() => vi.advanceTimersByTime(2_000));
+
     expect(player).toHaveAttribute("data-idle", "false");
   });
 

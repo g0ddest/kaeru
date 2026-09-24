@@ -3,7 +3,8 @@
 // EpisodeSection.kt; ios/Features/DetailView.swift.
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes, useParams } from "react-router-dom";
+import { useEffect } from "react";
+import { MemoryRouter, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import { ApiError, NetworkError } from "../api/http";
 import type { Shikimori } from "../api/shikimori";
@@ -155,13 +156,24 @@ function WatchProbe() {
   return <p>{`watch ${id ?? ""}/${episode ?? ""}`}</p>;
 }
 
-function renderTitle(id = 1535): void {
+/** AuthCallbackScreen once Shikimori has signed the viewer in: the address they came for, replaced. */
+function SignedIn({ to }: { to: string }) {
+  const navigate = useNavigate();
+  useEffect(() => {
+    void navigate(to, { replace: true });
+  }, [navigate, to]);
+  return null;
+}
+
+function renderTitle(id = 1535, entries = [`/anime/${id}`]): void {
   render(
     <ServicesContext.Provider value={services}>
       <ToastProvider>
-        <MemoryRouter initialEntries={[`/anime/${id}`]}>
+        <MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}>
           <Routes>
             <Route path="/" element={<p>home</p>} />
+            <Route path="/search" element={<p>search</p>} />
+            <Route path="/auth" element={<SignedIn to={`/anime/${id}`} />} />
             <Route path="/anime/:id" element={<TitleScreen />} />
             <Route path="/watch/:id/:episode" element={<WatchProbe />} />
           </Routes>
@@ -180,7 +192,10 @@ async function pick(user: User, episode: number, action: string): Promise<void> 
   await user.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: action }));
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  window.history.replaceState(null, "");
+});
 
 describe("TitleScreen", () => {
   it("shows the artwork header: title, original title and the facts line", async () => {
@@ -247,6 +262,28 @@ describe("TitleScreen", () => {
     await user.click(await screen.findByRole("button", { name: "Назад" }));
 
     expect(await screen.findByText("home")).toBeInTheDocument();
+  });
+
+  it("goes home, not back out of the site, from a title opened through sign-in", async () => {
+    const user = userEvent.setup();
+    start(deathNote());
+    renderTitle(1535, ["/auth"]);
+
+    await user.click(await screen.findByRole("button", { name: "Назад" }));
+
+    expect(await screen.findByText("home")).toBeInTheDocument();
+  });
+
+  it("goes back through history from «Назад» when a page of the site opened the title", async () => {
+    const user = userEvent.setup();
+    start(deathNote());
+    // What BrowserRouter keeps in history.state: the title is the second entry of this visit.
+    window.history.replaceState({ idx: 1 }, "");
+    renderTitle(1535, ["/search", "/anime/1535"]);
+
+    await user.click(await screen.findByRole("button", { name: "Назад" }));
+
+    expect(await screen.findByText("search")).toBeInTheDocument();
   });
 
   it("adds a title that is in no list to the plans and keeps focus on the status", async () => {

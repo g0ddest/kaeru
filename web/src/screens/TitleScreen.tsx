@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { errorMessage } from "../api/http";
+import { hasPageBehind } from "../app/history";
 import { useServices } from "../app/services";
 import { primaryAction } from "../domain/actions";
 import { factsLine, formatTime, pluralEpisodesAccusative, statusLabel } from "../domain/format";
@@ -107,7 +108,6 @@ function TitleContent({ anime, entry, rows, threshold, known, listFailed, failed
   const { library } = useServices();
   const toast = useToast();
   const navigate = useNavigate();
-  const location = useLocation();
   const controls = useRef<HTMLDivElement>(null);
   const [completion, setCompletion] = useState(false);
   const [focusStatus, setFocusStatus] = useState(false);
@@ -132,7 +132,7 @@ function TitleContent({ anime, entry, rows, threshold, known, listFailed, failed
   };
   const back = () => {
     // A deep link has no page of ours to go back to.
-    if (location.key !== "default") void navigate(-1);
+    if (hasPageBehind()) void navigate(-1);
     else void navigate("/");
   };
   const play = (episode: number) => {

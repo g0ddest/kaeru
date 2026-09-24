@@ -1,6 +1,6 @@
 /* The full-window player (Android ui/mobile/player/PlayerScreen.kt, PlayerControls.kt). Layers, bottom
-   to top: the picture and the surface that takes clicks on it; the spinner and the failure scrim; the
-   controls (they fade out after 3 s of playback); the skip button, the cards and the «Смотреть» press. */
+   to top: the picture and the surface that takes clicks on it; the spinner, the failure scrim and the
+   «Смотреть» press; the controls (they fade out after 3 s of playback); the skip button and the cards. */
 .player {
   position: fixed;
   inset: 0;
@@ -135,6 +135,12 @@
 .player-centre .player-toggle svg {
   width: 40px;
   height: 40px;
+}
+
+/* Under the spinner the toggle stays for the keyboard, but is neither seen nor hit. */
+.player-centre[data-covered="true"] .player-toggle {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .player-bottom {
@@ -288,10 +294,11 @@
   }
 }
 
+/* Under the controls: «Назад» and the dub and quality menus work before the first press. */
 .player-gesture {
   position: absolute;
   inset: 0;
-  z-index: 3;
+  z-index: 1;
   display: grid;
   place-items: center;
   background: var(--scrim);

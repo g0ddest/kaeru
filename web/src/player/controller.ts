@@ -151,6 +151,8 @@ export class PlayerController {
   private skipEnding = false;
   /** This episode has been sent to Shikimori as watched (or is waiting for the list to be). */
   private marked = false;
+  /** That mark once it has gone out, settling when Shikimori has answered it either way. */
+  private marking: Promise<void> | null = null;
   /** «Отмена» on this episode's countdown, or a next episode that would not open. */
   private cancelled = false;
   /** The ending already skipped itself once this episode. */
@@ -545,6 +547,7 @@ export class PlayerController {
     this.autoplay = autoplayNext(storage);
     this.skipEnding = skipEnding(storage);
     this.marked = false;
+    this.marking = null;
     this.cancelled = false;
     this.autoSkipped = false;
     this.reResolved = false;
@@ -651,7 +654,13 @@ export class PlayerController {
     this.markWatched();
     this.save();
     this.deps.media.pause();
-    this.set({ finished: true, countdown: null, skip: null });
+    this.set({ countdown: null, skip: null });
+    // The screen leaves on `finished`: not before the mark's answer, which may ask to complete the
+    // title. A mark still waiting for the list does not hold it; it goes out after the screen has gone.
+    const { episode } = this.state;
+    void (this.marking ?? Promise.resolve()).then(() => {
+      if (this.finishedHere && this.state.episode === episode) this.set({ finished: true });
+    });
   }
 
   /**
@@ -664,7 +673,7 @@ export class PlayerController {
     this.marked = true;
     const { library } = this.deps;
     this.whenListKnown(() => {
-      library.markWatched(anime, episode).then(
+      const sent = library.markWatched(anime, episode).then(
         ({ suggestCompleted }) => {
           // Only ever a suggestion; an already completed title has nothing to ask.
           if (!suggestCompleted || library.entry(anime.id)?.rate.status === "completed") return;
@@ -672,6 +681,8 @@ export class PlayerController {
         },
         (error: unknown) => this.deps.toast(errorMessage(error)),
       );
+      // A mark that waited for the list may go out after the episode has changed; it is not this one's.
+      if (this.animeId === anime.id && this.state.episode === episode) this.marking = sent;
     });
   }
 
