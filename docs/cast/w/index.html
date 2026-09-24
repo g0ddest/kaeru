@@ -11,6 +11,18 @@
 <meta property="og:description" content="Вас зовут смотреть аниме вместе.">
 <meta property="og:image" content="https://kaeru.vitaliy.velikodniy.name/logo.png">
 <meta property="og:type" content="website">
+<script data-route>
+  // Kaeru for the browser is the app at the site root. Pages answers every path without a file
+  // with this page, so any path outside /w/ is handed to the app as /?p=<path and query>, the
+  // fragment kept as a fragment; the app puts the address back when it starts. The root itself
+  // stays here, so a site published without the app shows this page instead of looping.
+  (function (here) {
+    var path = here.pathname;
+    if (path === '/' || path.indexOf('/w/') === 0) return;
+    var at = here.href.indexOf('#');
+    here.replace('/?p=' + encodeURIComponent(path + here.search) + (at < 0 ? '' : here.href.slice(at)));
+  })(location);
+</script>
 <style>
   :root {
     --ground: #0B0C10;
