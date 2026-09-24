@@ -29,11 +29,12 @@ end
 # never drift: one repository publishes both, and a release is named once.
 gradle = File.join(root, '..', 'android', 'build.gradle.kts')
 version_name = (File.exist?(gradle) && File.read(gradle)[/versionName\s*=\s*"([^"]+)"/, 1]) || '0.0.0'
-# Universal links need the Associated Domains capability, and a free personal team does not have
-# it: asking for it there fails to sign at all — «Personal development teams … do not support the
-# Associated Domains capability». So it is opted into by a team that has it, and everybody else
-# gets a build that signs, where an invitation opens through `kaeru://watch` instead.
-associated_domains = %w[1 true yes].include?((ENV['IOS_ASSOCIATED_DOMAINS'] || properties['IOS_ASSOCIATED_DOMAINS'] || '').to_s.downcase)
+# Universal links need the Associated Domains capability. The team that signs Kaeru has it since
+# 2026-09-24, so the entitlement is on by default; a free personal team does not have it — asking
+# for it there fails to sign at all, «Personal development teams … do not support the Associated
+# Domains capability» — and such a team opts out with `IOS_ASSOCIATED_DOMAINS=0`, getting a build
+# that signs, where an invitation opens through `kaeru://watch` instead.
+associated_domains = !%w[0 false no].include?((ENV['IOS_ASSOCIATED_DOMAINS'] || properties['IOS_ASSOCIATED_DOMAINS'] || '1').to_s.downcase)
 Xcodeproj::Plist.write_to_path(configuration, File.join(__dir__, 'Configuration.plist'))
 app.resources_build_phase.add_file_reference(group.new_file('App/Configuration.plist'))
 app.resources_build_phase.add_file_reference(group.new_file('App/Assets.xcassets'))
