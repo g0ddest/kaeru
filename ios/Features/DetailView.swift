@@ -132,8 +132,14 @@ struct DetailView: View {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Серии").font(.kaeruShelf(sizeClass != .regular)).foregroundStyle(Palette.ink)
                 Text(verbatim: "Просмотрено \(rate?.episodes ?? 0) из \(totalEpisodes)").font(.subheadline).foregroundStyle(Palette.inkSoft)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: typeSize.isAccessibilitySize ? 200 : 125), spacing: 12)], spacing: 12) {
-                    ForEach(1...min(visibleEpisodes, totalEpisodes), id: \.self) { episode in episodeTile(episode) }
+                // Rows, not tiles. A grid gives every tile in a row the height of the tallest, so a
+                // progress bar on one episode meant an empty track under all the others — sixteen
+                // dark boxes with a blank line in each, which read as a form nobody had filled in.
+                // A row draws a bar where there is progress and nothing where there is none, and
+                // has the width for what an episode actually says. One column on a phone; as many
+                // as fit on an iPad, so a wide screen is not one long ribbon down its left side.
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: typeSize.isAccessibilitySize ? 420 : 300), spacing: 16)], spacing: 0) {
+                    ForEach(1...min(visibleEpisodes, totalEpisodes), id: \.self) { episode in episodeRow(episode) }
                 }
                 if visibleEpisodes < totalEpisodes {
                     Button("Показать ещё \(min(60, totalEpisodes - visibleEpisodes)) серий") { visibleEpisodes += 60 }
@@ -143,40 +149,44 @@ struct DetailView: View {
             }
         } else { ContentUnavailableView("Серии ещё не вышли", systemImage: "calendar", description: Text("Добавьте аниме в планы, чтобы вернуться к нему позже.")) }
     }
-    private func episodeTile(_ episode: Int) -> some View {
+    private func episodeRow(_ episode: Int) -> some View {
         let watched = episode <= (rate?.episodes ?? 0)
         let available = episode <= playableEpisodes
         let progress = model.progressFor(animeID: anime.id, episode: episode)
-        // Three rows in every tile, always: title, track, caption. The grid gives a row the height
-        // of its tallest tile, so a bar that appeared on some of them and not others left the rest
-        // with a hole in the middle and their captions at different heights — a wall of episodes
-        // that read as ragged rather than as a list.
         let fraction = episodeFraction(watched: watched, progress: progress)
+        // Only an episode somebody stopped in the middle of has a bar: a watched one says so with
+        // its mark, and an untouched one has nothing to show.
+        let started = !watched && fraction > 0
+        let caption = episodeCaption(watched: watched, available: available, progress: progress)
         return Button { play(episode) } label: {
-            VStack(alignment: .leading, spacing: 9) {
-                Label("\(episode) серия", systemImage: watched ? "checkmark.circle.fill" : available ? "play.circle" : "clock")
-                    .font(.subheadline.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading)
-                ProgressTrack(value: fraction, track: Palette.hairline, minimumFill: 0)
-                    .opacity(available ? 1 : 0.4)
-                let caption = episodeCaption(watched: watched, available: available, progress: progress)
-                Text(caption?.text ?? "Не начата")
-                    .font(.caption).monospacedDigit().foregroundStyle(Palette.inkSoft).lineLimit(1)
-                    .accessibilityLabel(caption?.spoken ?? "")
-                    // An episode nobody has touched has nothing to say, but it still holds the
-                    // line: the placeholder keeps its tile the same height as its neighbours
-                    // without putting the same sentence under two dozen of them.
-                    .opacity(caption == nil ? 0 : 1)
-                    .accessibilityHidden(caption == nil)
+            VStack(spacing: 0) {
+                HStack(spacing: 14) {
+                    Image(systemName: watched ? "checkmark.circle.fill" : available ? "play.circle" : "clock")
+                        .font(.title3)
+                        .foregroundStyle(watched ? Palette.accent : Palette.inkSoft)
+                        .frame(width: 28)
+                        .accessibilityHidden(true)
+                    Text("\(episode) серия")
+                        .font(.body.weight(.medium)).monospacedDigit()
+                        .foregroundStyle(available ? Palette.ink : Palette.inkSoft)
+                    Spacer(minLength: 8)
+                    if let caption {
+                        Text(caption.text)
+                            .font(.subheadline).monospacedDigit().foregroundStyle(Palette.inkSoft).lineLimit(1)
+                            .accessibilityLabel(caption.spoken)
+                    }
+                }
+                .frame(minHeight: 52)
+                if started {
+                    ProgressTrack(value: fraction, track: Palette.hairline, minimumFill: 0)
+                        .padding(.leading, 42).padding(.bottom, 6)
+                }
+                Rectangle().fill(Palette.hairline).frame(height: Metrics.hairline).padding(.leading, 42)
             }
-            .padding(12).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Palette.surface, in: RoundedRectangle(cornerRadius: Metrics.tileRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: Metrics.tileRadius, style: .continuous)
-                    .strokeBorder(watched ? Palette.accent.opacity(0.55) : Palette.hairline, lineWidth: Metrics.hairline)
-            }
-            .foregroundStyle(available ? Palette.ink : Palette.inkSoft)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain).disabled(!available)
+        .accessibilityValue(watched ? "Просмотрено" : "")
         .accessibilityIdentifier("episode-\(episode)")
         .contextMenu {
             if available {
@@ -205,7 +215,9 @@ struct DetailView: View {
     private func episodeCaption(watched: Bool, available: Bool,
                                 progress: EpisodeProgress?) -> (text: String, spoken: String)? {
         if !available { return ("Не вышла", "Не вышла") }
-        if watched { return ("Просмотрено", "Просмотрено") }
+        // The mark at the start of the row already says it, and «Просмотрено» at the end of two
+        // dozen rows in a row is a column of the same word. VoiceOver is told on the row instead.
+        if watched { return nil }
         if let progress, progress.duration > 0, progress.position > 0 {
             let stamp = CatalogPresentation.timestamp(progress.position)
             return (stamp, "Остановились на \(stamp)")
