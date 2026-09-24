@@ -1,0 +1,184 @@
+/* Home: the hero, the list's rows, then the catalogue. Colours, spacing and type come from
+   ui/tokens.css; shelves, pills, skeletons and states are ui/components.css. Selectors that
+   adjust a shared class carry two classes, so they win whichever stylesheet the bundle puts last. */
+
+.home {
+  padding-bottom: var(--s8);
+}
+
+.home-offline {
+  padding: var(--s2) var(--gutter);
+  background: var(--surface);
+  color: var(--ink-soft);
+}
+
+/* ---------- Hero ---------- */
+
+.hero {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: flex-end;
+  min-height: max(45vh, 320px);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.hero-art {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+}
+
+.hero-backdrop,
+.hero-blur {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  object-fit: cover;
+}
+
+.hero-blur {
+  filter: blur(34px);
+  opacity: 0.7;
+  transform: scale(1.15);
+}
+
+/* Phones get the blur only: a sharp poster squeezed beside the text reads as clutter. */
+.hero-poster {
+  display: none;
+}
+
+/* Android's Backdrop scrims, in the page colour: one darkens the start under the text, the other
+   ends in opaque --bg, so the hero dissolves into the page without a seam. */
+.hero-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(
+      to right,
+      color-mix(in srgb, var(--bg) 78%, transparent) 0%,
+      color-mix(in srgb, var(--bg) 40%, transparent) 50%,
+      color-mix(in srgb, var(--bg) 5%, transparent) 100%
+    ),
+    linear-gradient(
+      to bottom,
+      transparent 30%,
+      color-mix(in srgb, var(--bg) 78%, transparent) 68%,
+      var(--bg) 100%
+    );
+}
+
+.hero-text {
+  position: relative;
+  display: grid;
+  gap: var(--s2);
+  max-width: 560px;
+  padding: var(--s8) var(--gutter) var(--s6);
+}
+
+/* Long Russian titles shrink rather than ellipsise; 1.4 keeps the descenders of «у р д ф» and the
+   breve of «й» inside the clamp. */
+.hero .hero-title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: clamp(22px, 5vw + 8px, 34px);
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.hero-line {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink-soft);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+/* The pair wraps to a second line rather than truncating a label. */
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: var(--s2);
+}
+
+@media (min-width: 768px) {
+  .hero {
+    align-items: center;
+    min-height: max(40vh, 320px);
+  }
+
+  .hero-poster {
+    position: absolute;
+    inset: 0 0 0 auto;
+    display: block;
+    width: min(520px, 50%);
+    max-width: none;
+    height: 100%;
+    object-fit: cover;
+    /* A mask reads only alpha: the poster fades in from its left edge. */
+    -webkit-mask-image: linear-gradient(to right, transparent 0%, black 35%);
+    mask-image: linear-gradient(to right, transparent 0%, black 35%);
+  }
+}
+
+/* ---------- Catalogue ---------- */
+
+/* 32px more than between personal rows: the gap alone says the subject changed (DiscoverGap). */
+.home-discover {
+  padding-top: var(--s8);
+}
+
+/* A catalogue row that is loading, empty or failed has no cards, so no empty scroller either. */
+.home-discover .shelf__row:empty {
+  display: none;
+}
+
+/* The chips scroll edge to edge like the row under them, resting at the gutter. */
+.pill-group.home-seasons {
+  margin-inline: calc(-1 * var(--gutter));
+  padding-inline: var(--gutter);
+  scroll-padding-inline: var(--gutter);
+}
+
+.home-note {
+  padding-top: var(--s3);
+  color: var(--ink-soft);
+}
+
+.home-failed {
+  display: grid;
+  justify-items: start;
+}
+
+/* A text action carries 12px of its own padding; this lines its label up with the note above. */
+.btn.home-retry {
+  margin-inline-start: calc(-1 * var(--s3));
+}
+
+/* The loading row under a real heading, laid out like .shelf__row: edge to edge from the gutter. */
+.home-skel-row {
+  display: flex;
+  gap: var(--card-gap);
+  margin-inline: calc(-1 * var(--gutter));
+  padding: var(--s3) var(--gutter) var(--s2);
+  overflow: hidden;
+}
+
+.home-skel-card {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--s2);
+  width: var(--poster-w);
+}
+
+.home-skel-art {
+  aspect-ratio: 2 / 3;
+}
