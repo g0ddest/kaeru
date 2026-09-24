@@ -1,0 +1,31 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Kodik probe</title>
+<!-- A page served from http://localhost:5173 asks the Worker for links resolved on Cloudflare's IP,
+     then plays them in this browser from this machine's IP. It answers one question: are Kodik's
+     signed links bound to the address that resolved them? -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.20/hls.min.js"></script>
+<video id="v" controls muted width="640"></video>
+<pre id="log"></pre>
+<script>
+  const log = (line) => { document.getElementById("log").textContent += line + "\n"; console.log(line); };
+  const worker = new URLSearchParams(location.search).get("worker");
+  (async () => {
+    const answer = await fetch(`${worker}/kodik/resolve?anime=1535&translation=0&episode=1`);
+    log(`resolve ${answer.status}`);
+    const { urls } = await answer.json();
+    const manifest = urls[urls.length - 1].url;
+    log(`manifest host ${new URL(manifest).host}`);
+    const video = document.getElementById("v");
+    const hls = new Hls();
+    hls.on(Hls.Events.MANIFEST_PARSED, () => log("manifest parsed"));
+    hls.on(Hls.Events.FRAG_LOADED, (_, d) => log(`fragment ${d.frag.sn} loaded`));
+    hls.on(Hls.Events.ERROR, (_, d) => log(`error ${d.type} ${d.details} ${d.response?.code ?? ""}`));
+    hls.loadSource(manifest);
+    hls.attachMedia(video);
+    video.addEventListener("playing", () => log("PLAYING"));
+    video.play().catch((e) => log(`play() ${e.name}`));
+    setTimeout(() => { video.currentTime = 600; log("seek 600"); }, 8000);
+    setTimeout(() => log(`time ${video.currentTime.toFixed(1)}`), 14000);
+  })().catch((e) => log(`failed ${e}`));
+</script>
