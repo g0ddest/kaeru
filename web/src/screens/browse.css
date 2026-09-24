@@ -1,0 +1,191 @@
+/* My list, Search and Settings. The page frame and title are .page and .page-title, and the grid,
+   pills, cards, states and dialog come from components.css. A rule here that restyles a Task 8
+   class carries two classes, so it wins whichever stylesheet the bundle puts first. */
+
+.browse-body {
+  padding: var(--s4) var(--gutter) 0;
+}
+
+/* ---------- My list ---------- */
+
+/* The status pills scroll edge to edge on a phone and start in line with the title. */
+.pill-group.lib-tabs {
+  margin-inline: calc(-1 * var(--gutter));
+  padding-inline: var(--gutter);
+  scroll-padding-inline: var(--gutter);
+}
+
+/* Sort: two segments, the chosen one elevated and ink, the other ink-soft. Never amber. */
+.lib-sort {
+  display: inline-flex;
+  margin-top: var(--s2);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+}
+
+.lib-sort > button {
+  min-height: var(--touch);
+  padding: 0 var(--s4);
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition:
+    background-color var(--fast) ease-out,
+    color var(--fast) ease-out;
+}
+
+.lib-sort > button + button {
+  border-left: 1px solid var(--line);
+}
+
+.lib-sort > button[aria-pressed="true"] {
+  background: var(--elevated);
+  color: var(--ink);
+}
+
+/* The frame clips, so the ring is drawn inside the segment. */
+.lib-sort > button:focus-visible {
+  outline-offset: -3px;
+}
+
+@media (min-width: 768px) and (pointer: fine) {
+  .lib-sort > button {
+    min-height: 40px;
+  }
+}
+
+.lib-panel {
+  margin-top: var(--s4);
+  border-radius: var(--r-card);
+}
+
+.lib-panel:focus-visible {
+  outline-offset: 4px;
+}
+
+/* An empty tab sits under the tabs, in line with them, not centred in a void. */
+.lib-panel .state--start {
+  padding-inline: 0;
+}
+
+/* ---------- Search ---------- */
+
+.srch-form {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.srch-form__icon {
+  position: absolute;
+  left: var(--s4);
+  color: var(--ink-soft);
+  pointer-events: none;
+}
+
+.srch-form__input {
+  width: 100%;
+  min-height: var(--button-h);
+  margin: 0;
+  padding: 0 56px 0 48px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  color: var(--ink);
+  appearance: none;
+}
+
+.srch-form__input::placeholder {
+  color: var(--ink-soft);
+  opacity: 1;
+}
+
+/* The field draws its own «Очистить». */
+.srch-form__input::-webkit-search-cancel-button,
+.srch-form__input::-webkit-search-decoration {
+  appearance: none;
+}
+
+/* Full width: the ring only, no scale. */
+.srch-form__input:focus-visible {
+  outline-offset: 0;
+}
+
+.srch-form__clear.icon-button {
+  position: absolute;
+  right: 2px;
+}
+
+.srch-body {
+  margin-top: var(--s6);
+}
+
+.srch-section__title {
+  margin-bottom: var(--s3);
+}
+
+/* ---------- Settings: one form column, 680px at most ---------- */
+
+.set-body {
+  max-width: calc(680px + 2 * var(--gutter));
+}
+
+.set-section + .set-section {
+  margin-top: var(--s8);
+}
+
+.set-section__title {
+  margin-bottom: var(--s3);
+}
+
+.set-account {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  margin-bottom: var(--s4);
+}
+
+.set-account__avatar {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--elevated);
+  object-fit: cover;
+}
+
+.set-account__avatar--letter {
+  display: grid;
+  place-items: center;
+  color: var(--ink-soft);
+  font-size: 24px;
+  line-height: 34px;
+  font-weight: 700;
+}
+
+.set-account__text {
+  min-width: 0;
+}
+
+.set-account__name {
+  overflow: hidden;
+  color: var(--ink);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.set-account__source,
+.set-note {
+  color: var(--ink-soft);
+}
+
+.set-note {
+  margin-top: var(--s1);
+}
+
+.pill-group.set-choices {
+  flex-wrap: wrap;
+  margin-top: var(--s2);
+}
