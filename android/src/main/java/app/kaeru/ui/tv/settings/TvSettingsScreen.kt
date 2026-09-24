@@ -33,6 +33,10 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.kaeru.BuildConfig
+import app.kaeru.data.report.Reporting
+import app.kaeru.ui.mobile.settings.REPORTING
+import app.kaeru.ui.mobile.settings.REPORTING_NOTE
+import app.kaeru.ui.mobile.settings.REPORTING_SWITCH
 import app.kaeru.domain.model.Account
 import app.kaeru.domain.model.Quality
 import app.kaeru.ui.common.design.DestructiveButton
@@ -250,6 +254,22 @@ fun TvSettingsScreen(
         }
         if (state.studiosChosen) {
             row("dubs-reset") { SecondaryButton(RESET, onStudiosReset, Modifier.fillMaxWidth(0.4f)) }
+        }
+
+        // Whether the app reports on itself, where the build can; a switch that changes nothing
+        // is not offered. The same words as on the phone.
+        if (Reporting.available) {
+            heading(REPORTING)
+            row("reporting", bleed = RingInset) {
+                var on by remember { mutableStateOf(Reporting.enabled) }
+                Column(verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space2)) {
+                    SettingSwitchRow(REPORTING_SWITCH, on, { value ->
+                        Reporting.setEnabled(value)
+                        on = value
+                    }, inset = RingInset)
+                    SettingNote(REPORTING_NOTE, Modifier.padding(horizontal = RingInset))
+                }
+            }
         }
 
         heading(ABOUT)

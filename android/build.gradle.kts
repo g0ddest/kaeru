@@ -9,6 +9,14 @@ plugins {
     alias(libs.plugins.hilt)
 }
 
+// Firebase — Analytics and Crashlytics — only where the project's config is present. The file is
+// per-developer and outside git, like local.properties; a checkout without it builds the same app
+// with reporting simply absent, instead of failing on a plugin that has nothing to read.
+if (file("google-services.json").exists()) {
+    apply(plugin = libs.plugins.google.services.get().pluginId)
+    apply(plugin = libs.plugins.firebase.crashlytics.get().pluginId)
+}
+
 val localProps = Properties().apply {
     val f = rootProject.file("local.properties")
     if (f.exists()) f.inputStream().use { load(it) }
@@ -98,6 +106,9 @@ ksp {
 }
 
 dependencies {
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.analytics)
+    implementation(libs.firebase.crashlytics)
     constraints {
         // Ktor 3.6 asks for OkHttp 5.5, whose Android artifact insists on compileSdk 37 — a step
         // past the AGP this project is pinned to. The app keeps the OkHttp it already ships, and

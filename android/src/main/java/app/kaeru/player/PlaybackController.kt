@@ -1,6 +1,7 @@
 package app.kaeru.player
 
 import androidx.media3.common.Player
+import app.kaeru.data.report.Reporting
 import app.kaeru.di.IoDispatcher
 import app.kaeru.di.LocalEngine
 import app.kaeru.di.PlaybackScope
@@ -9,6 +10,7 @@ import app.kaeru.domain.download.DownloadRepository
 import app.kaeru.domain.download.DeferredDownloadRemoval
 import app.kaeru.domain.error.NetworkUnavailable
 import app.kaeru.domain.error.SourceUnavailable
+import app.kaeru.domain.error.EpisodeNotAvailable
 import app.kaeru.domain.error.SourceUnavailableReason
 import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.EpisodeStream
@@ -408,6 +410,13 @@ class DefaultPlaybackController @Inject constructor(
                 isBuffering = true,
                 positionMs = target.startPositionMs,
                 isCasting = casting,
+            )
+            Reporting.event(
+                Reporting.PLAY_START,
+                "anime_id" to target.animeId,
+                "episode" to target.episode,
+                "origin" to origin.name.lowercase(),
+                "casting" to casting,
             )
             open(plan).onFailure(::fail)
         }.join()
@@ -1218,6 +1227,19 @@ class DefaultPlaybackController @Inject constructor(
      *   downloaded — and true only where the engine was reading the download when it broke.
      */
     private fun fail(error: Throwable, fromDownload: Boolean = false) {
+        // What broke, by kind: a source that would not serve the episode is the everyday failure
+        // and is counted; anything else is a fault worth its stack in Crashlytics.
+        val reason = (error as? SourceUnavailable)?.reason?.name?.lowercase()
+        Reporting.event(
+            Reporting.PLAY_ERROR,
+            "kind" to (error::class.simpleName ?: "unknown"),
+            "reason" to reason,
+            "offline_file" to fromDownload,
+            "anime_id" to _state.value.target?.animeId,
+        )
+        val everyday = error is SourceUnavailable || error is EpisodeNotAvailable ||
+            error is NetworkUnavailable || error is java.io.IOException
+        if (!everyday) Reporting.problem(error)
         _state.update {
             it.copy(isBuffering = false, isPlaying = false, error = error, failedReadingDownload = fromDownload)
         }

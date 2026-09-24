@@ -1,6 +1,7 @@
 package app.kaeru.data.together
 
 import android.util.Log
+import app.kaeru.data.report.Reporting
 import app.kaeru.domain.error.RelayNotConfigured
 import app.kaeru.domain.error.TogetherFailed
 import app.kaeru.domain.error.TogetherFailureReason
@@ -88,10 +89,11 @@ class TogetherSession(
      */
     private val failures = CoroutineExceptionHandler { _, broken ->
         Log.w(TAG, "The shared viewing failed unexpectedly", broken)
+        Reporting.problem(broken)
         scope.launch { runCatching { lose(LostReason.CONNECTION) } }
     }
 
-    private val _state = MutableStateFlow<SessionState>(SessionState.Idle)
+    private val _state: MutableStateFlow<SessionState> = ReportedState(MutableStateFlow(SessionState.Idle), { asHost })
     override val state: StateFlow<SessionState> = _state.asStateFlow()
 
     /**
@@ -1377,4 +1379,32 @@ class TogetherSession(
 
         private const val TAG = "TogetherSession"
     }
+}
+
+/**
+ * The session's state, with each change of kind told to [Reporting] once: a room made, joined,
+ * live, lost and why, ended. Only the kind and a reason from a fixed list — never the room, the
+ * link or the friend's name. Wrapped here rather than reported at each of the dozen places that
+ * write the state, so a new place cannot forget.
+ */
+private class ReportedState(
+    private val flow: MutableStateFlow<SessionState>,
+    private val host: () -> Boolean,
+) : MutableStateFlow<SessionState> by flow {
+    override var value: SessionState
+        get() = flow.value
+        set(next) {
+            val before = flow.value
+            flow.value = next
+            if (before::class == next::class) return
+            val (stage, reason) = when (next) {
+                SessionState.Idle -> return
+                is SessionState.Hosting -> (if (before is SessionState.Live) "vacated" else "hosting") to null
+                is SessionState.Joining -> "joining" to null
+                is SessionState.Live -> "live" to null
+                is SessionState.Lost -> "lost" to next.reason.name.lowercase()
+                SessionState.Ended -> "ended" to null
+            }
+            Reporting.event(Reporting.TOGETHER, "stage" to stage, "reason" to reason, "side" to if (host()) "host" else "guest")
+        }
 }

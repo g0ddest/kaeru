@@ -42,6 +42,15 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Kaeru">
 
+        <!-- Firebase starts with both collectors off; Reporting.install switches them on only when
+             the viewer has not said no in Settings, so a «no» holds from the first frame. -->
+        <meta-data
+            android:name="firebase_analytics_collection_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="firebase_crashlytics_collection_enabled"
+            android:value="false" />
+
         <!-- How the Cast framework finds our receiver id; it builds the class itself. -->
         <meta-data
             android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"

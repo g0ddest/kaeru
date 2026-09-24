@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.kaeru.BuildConfig
+import app.kaeru.data.report.Reporting
 import app.kaeru.domain.model.Quality
 import app.kaeru.ui.common.design.DestructiveButton
 import app.kaeru.ui.common.design.IconAction
@@ -85,6 +86,12 @@ private const val TOGETHER_LOG = "Журнал сессии"
 private const val TOGETHER_LOG_NOTE =
     "Для разбора неполадок: адрес комнаты, кадры и состояние плеера, без ключей. " +
         "Файл — Android/data/app.kaeru/files/together.log"
+
+internal const val REPORTING = "Статистика"
+internal const val REPORTING_SWITCH = "Отправлять статистику и отчёты о сбоях"
+internal const val REPORTING_NOTE =
+    "Какие экраны открываются, какие серии запускаются и что ломается — без ников, комнат и " +
+        "переписки. Помогает чинить приложение"
 
 private const val DUBS = "Озвучки"
 private const val DUBS_NOTE = "Порядок работает, когда у аниме ещё нет запомненной озвучки"
@@ -156,6 +163,7 @@ fun SettingsScreen(
             PlaybackSection(state, onAutoplay, onSkipEnding, onPipOnLeave, onQuality, onThreshold)
             NotificationsSection(state.newEpisodes, notificationsBlocked, onNewEpisodes)
             TogetherSection()
+            ReportingSection()
             DownloadsSection(onDownloads)
             DubsSection(state, onStudioUp, onStudioDown, onStudioRemove, onStudioAdd, onStudiosReset)
             KodikSection(state.kodikToken, onKodikToken)
@@ -187,6 +195,23 @@ fun SettingsScreen(
  * kept in `TogetherLog` itself rather than in the settings store, because the transport writes to
  * it before any view model exists.
  */
+/**
+ * Whether the app reports on itself. Absent from a build made without a Firebase project, where
+ * the switch would change nothing.
+ */
+@Composable
+private fun ReportingSection() {
+    if (!Reporting.available) return
+    var on by remember { mutableStateOf(Reporting.enabled) }
+    SettingsSection(REPORTING) {
+        SettingNote(REPORTING_NOTE)
+        SettingSwitchRow(REPORTING_SWITCH, on, onCheckedChange = { value ->
+            Reporting.setEnabled(value)
+            on = value
+        })
+    }
+}
+
 @Composable
 private fun TogetherSection() {
     var journal by remember { mutableStateOf(app.kaeru.data.together.TogetherLog.enabled) }

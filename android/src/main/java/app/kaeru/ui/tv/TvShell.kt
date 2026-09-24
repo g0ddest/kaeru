@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import app.kaeru.data.report.Reporting
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -155,6 +156,14 @@ fun TvShell(
         // A focus group, so that one request can hand the D-pad back to the screen without naming
         // anything on it: the group passes the focus on to a child, and which child that is stays
         // the screen's business.
+        // The same names the phone reports, so one screen is one screen in the numbers whichever
+        // device it was opened on — «tv/» in front, because how it is used is not the same.
+        val screen = when {
+            route.updates -> "tv/updates"
+            route.titleId != null -> "tv/details"
+            else -> "tv/" + route.destination.name.lowercase()
+        }
+        LaunchedEffect(screen) { Reporting.screen(screen) }
         Box(Modifier.fillMaxSize().focusRequester(content).focusGroup()) {
             val titleId = route.titleId
             // The title card replaces its destination rather than covering it. A screen still

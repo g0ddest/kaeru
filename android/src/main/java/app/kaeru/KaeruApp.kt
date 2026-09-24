@@ -3,6 +3,8 @@ package app.kaeru
 import android.app.Activity
 import android.app.Application
 import app.kaeru.data.together.TogetherLog
+import app.kaeru.data.report.Reporting
+import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
@@ -54,6 +56,8 @@ class KaeruApp : Application(), SingletonImageLoader.Factory, Configuration.Prov
 
     override fun onCreate() {
         super.onCreate()
+        // Analytics and crash reports first, so a crash anywhere below is one that gets reported.
+        Reporting.install(this, television = packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK))
         // The shared-viewing journal, where `adb pull` can reach it on a release build.
         TogetherLog.install(this)
         offlineSync.start()

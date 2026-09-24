@@ -18,6 +18,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import app.kaeru.data.report.Reporting
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -85,6 +86,8 @@ fun MobileShell(
     nav: NavHostController = rememberNavController(),
 ) {
     val current = nav.currentBackStackEntryAsState().value?.destination?.route
+    // The route template, `details/{animeId}` rather than the id in it: a screen is a screen.
+    LaunchedEffect(current) { current?.let(Reporting::screen) }
     // A television's QR code arrives as a deep link rather than as a tap, so the screen it opens
     // is pushed from here rather than reached from a tab. Single top, because a second scan while
     // the question is already on screen is the same question.

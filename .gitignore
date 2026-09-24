@@ -31,3 +31,7 @@ release.properties
 /ios/App/Kaeru.xcodeproj/
 /ios/App/Configuration.plist
 /ios/Dependencies/
+
+# Firebase: конфигурация проекта, у каждого своя
+android/google-services.json
+ios/App/GoogleService-Info.plist
