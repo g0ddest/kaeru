@@ -9,3 +9,16 @@ export function restoreDeepLink(location: Location, history: History): void {
   if (target.startsWith("//") || target.startsWith("/\\")) return;
   history.replaceState(null, "", target + location.hash);
 }
+
+/**
+ * "kaeru.vitaliy.velikodniy.name." is the same site to DNS and to GitHub Pages, but another origin to
+ * the browser: its own storage, a CORS origin the worker refuses and an OAuth return address Shikimori
+ * does not know. A sentence-ending dot copied into a link is enough to land there. Returns the address
+ * without the dot to go to instead, or null when the address is already the usual one.
+ */
+export function canonicalAddress(location: Pick<Location, "href" | "hostname">): string | null {
+  if (!location.hostname.endsWith(".")) return null;
+  const url = new URL(location.href);
+  url.hostname = location.hostname.replace(/\.+$/, "");
+  return url.href;
+}

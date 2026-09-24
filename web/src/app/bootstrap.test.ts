@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { restoreDeepLink } from "./bootstrap";
+import { canonicalAddress, restoreDeepLink } from "./bootstrap";
 
 // The docs/cast/404.html prelude sends /anime/1535?x#frag to /?p=%2Fanime%2F1535%3Fx#frag (web-map 5).
 function openAt(url: string): string {
@@ -40,5 +40,26 @@ describe("restoreDeepLink", () => {
 
   it("leaves an ordinary address alone", () => {
     expect(openAt("/search?q=1")).toBe("/search?q=1");
+  });
+});
+
+describe("canonicalAddress", () => {
+  // "name." is the same host to DNS but another origin to the browser: its own storage, and an OAuth
+  // return address neither Shikimori nor the worker knows. A sentence-ending dot copied into a link
+  // is enough to land there.
+  it("drops the dot a fully qualified host name ends with, keeping path, query and fragment", () => {
+    const opened = new URL("https://kaeru.vitaliy.velikodniy.name./anime/1535?x=1#top");
+    expect(canonicalAddress(opened)).toBe("https://kaeru.vitaliy.velikodniy.name/anime/1535?x=1#top");
+  });
+
+  it("drops every trailing dot", () => {
+    expect(canonicalAddress(new URL("https://kaeru.vitaliy.velikodniy.name../"))).toBe(
+      "https://kaeru.vitaliy.velikodniy.name/",
+    );
+  });
+
+  it("leaves the usual address alone", () => {
+    expect(canonicalAddress(new URL("https://kaeru.vitaliy.velikodniy.name/auth?code=a"))).toBeNull();
+    expect(canonicalAddress(new URL("http://localhost:5173/"))).toBeNull();
   });
 });
