@@ -1,0 +1,265 @@
+/* Title screen: artwork header, controls, «Об аниме», episode rows (map 6, details).
+   Buttons, the back disc, the dialog, the toast and the skeleton blocks are Task 8's; this file only
+   lays them out. Rules that touch Task 8 classes are scoped under .title so they win in any order. */
+.title {
+  padding-bottom: var(--s8);
+}
+
+.title-failed {
+  padding: var(--s8) var(--gutter);
+}
+
+.title-hero {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: flex-end;
+  min-height: max(38vh, 280px);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.title-hero-art {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+}
+
+.title-hero-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  animation: title-fade var(--normal) ease-out both;
+}
+
+/* No screenshot: a soft poster, as the iOS Backdrop does. */
+.title-hero-img-soft {
+  filter: blur(34px);
+  opacity: 0.7;
+  transform: scale(1.15);
+}
+
+/* Android Backdrop scrims: the artwork ends in the page colour, never in a seam. */
+.title-hero-art::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(
+      180deg,
+      transparent 30%,
+      color-mix(in srgb, var(--bg) 78%, transparent) 68%,
+      var(--bg) 100%
+    ),
+    linear-gradient(90deg, var(--bg) 0%, color-mix(in srgb, var(--bg) 72%, transparent) 28%, transparent 65%);
+}
+
+/* Task 8's IconButton with overArt draws the 42 % disc; this only pins it over the artwork. */
+.title .title-back {
+  position: absolute;
+  top: var(--s3);
+  left: var(--s3);
+}
+
+.title-hero-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s2);
+  width: 100%;
+  max-width: calc(560px + 2 * var(--gutter));
+  padding: calc(var(--touch) + var(--s6)) var(--gutter) var(--s6);
+}
+
+/* Long Russian titles wrap to three lines; line-height stays ≥ 1.4 for й and у. */
+.title-name {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: clamp(24px, 4.2vw + 8px, 34px);
+  line-height: 1.41;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.title-original {
+  color: color-mix(in srgb, var(--ink) 75%, transparent);
+}
+
+.title-facts {
+  color: color-mix(in srgb, var(--ink) 85%, transparent);
+}
+
+.title-play {
+  display: flex;
+  align-self: stretch;
+  margin-top: var(--s2);
+}
+
+@media (max-width: 767px) {
+  .title .title-play > .btn {
+    flex: 1;
+  }
+}
+
+.title-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s6);
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: var(--s4) var(--gutter) 0;
+}
+
+.title-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+.title-section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s3);
+}
+
+/* Text actions line up with the text above them, not with their own padding. */
+.title .title-section > .btn--text {
+  margin-left: calc(-1 * var(--s3));
+}
+
+.title-section-head,
+.title-empty-title {
+  color: var(--ink);
+}
+
+.title-muted {
+  color: var(--ink-soft);
+}
+
+.title-about {
+  max-width: 72ch;
+  color: var(--ink-soft);
+  white-space: pre-line;
+  user-select: text;
+}
+
+.title-about-clamped {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.title-episodes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+  column-gap: var(--s4);
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.title-episode {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 52px;
+}
+
+/* Hairline inset past the glyph, as on iOS. */
+.title-episode::after {
+  content: "";
+  position: absolute;
+  left: 40px;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--line);
+}
+
+.title-episode-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--s3);
+  min-width: 0;
+  min-height: 52px;
+  padding: 0 var(--s2) 0 0;
+  border-radius: var(--r-card);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.title-episode-main-off {
+  color: var(--ink-soft);
+}
+
+/* Full-width control: ring only, no scale. */
+.title-episode-main:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+}
+
+.title-episode-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  color: var(--ink-soft);
+}
+
+.title-episode-icon-watched {
+  color: var(--accent);
+}
+
+.title-episode-name {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.title-episode-caption {
+  margin-left: auto;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 19px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.title-episode-progress {
+  position: absolute;
+  left: 40px;
+  right: calc(var(--touch) + var(--s2));
+  bottom: 6px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--track);
+}
+
+.title-episode-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+/* Only a start frame: the end is the element's own opacity (0.7 on a soft poster). */
+@keyframes title-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .title-hero-img {
+    animation: none;
+  }
+}

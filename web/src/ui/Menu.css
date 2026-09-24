@@ -1,0 +1,74 @@
+/* Menu button and its popup: the status menu and the episode row menus. The triggers are Task 8's
+   .pill and .icon-button; rules here are scoped under .menu so they win whatever the file order. */
+.menu {
+  position: relative;
+  display: inline-flex;
+}
+
+/* Task 8's pill has no disabled look; a menu that waits for the list shows it is waiting. */
+.menu .menu-trigger:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The row menus are secondary to the row itself. */
+.menu .icon-button {
+  color: var(--ink-soft);
+}
+
+.menu-list {
+  position: absolute;
+  top: calc(100% + var(--s1));
+  left: 0;
+  z-index: 30;
+  min-width: 232px;
+  margin: 0;
+  padding: var(--s1) 0;
+  list-style: none;
+  background: var(--elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+}
+
+.menu-list-end {
+  left: auto;
+  right: 0;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--s4);
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  line-height: 22px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-item:hover {
+  background: var(--line);
+}
+
+/* Full-width row: ring inside, no scale. */
+.menu-item:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+  background: var(--line);
+}
+
+.menu-item-destructive {
+  color: var(--error);
+}
+
+.menu-item-tick {
+  flex: none;
+  color: var(--accent);
+}
