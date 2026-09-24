@@ -10,7 +10,7 @@ import {
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { hasPageBehind } from "../app/history";
 import { useServices } from "../app/services";
-import { waitingLabel } from "../domain/actions";
+import { waitingLabel, watchPath } from "../domain/actions";
 import { episodeBadge, formatTime } from "../domain/format";
 import { availableEpisodes } from "../domain/models";
 import { PlayerController, type MediaPort, type PlayerState } from "../player/controller";
@@ -185,7 +185,7 @@ function Player({ animeId, episode }: { animeId: number; episode: number }) {
     const key = `${animeId}/${now}`;
     if (opened.current?.controller !== controller || opened.current.key === key) return;
     opened.current = { controller, key };
-    void navigate(`/watch/${animeId}/${now}`, { replace: true });
+    void navigate(watchPath(animeId, now), { replace: true });
   }, [controller, shownEpisode, animeId, navigate]);
 
   const { anime, track, hasNext, finished, completion } = state;

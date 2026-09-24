@@ -2,7 +2,7 @@
 // waitingLabel, episodeLine). Android's WatchState pointer becomes a plain progress row here.
 import { describe, expect, it } from "vitest";
 import type { FeedKind } from "./actions";
-import { episodeLine, primaryAction, waitingLabel } from "./actions";
+import { episodeLine, primaryAction, waitingLabel, watchPath } from "./actions";
 import type { Anime, EpisodeProgress, LibraryEntry, ListStatus } from "./models";
 import { availableEpisodes } from "./models";
 
@@ -208,6 +208,12 @@ describe("primaryAction", () => {
       enabled: false,
     });
     expect(primaryAction(null, released, [stopped(3, 600_000)], THRESHOLD, now).label).toBe("Продолжить с 10:00");
+  });
+});
+
+describe("watchPath", () => {
+  it("is the player's address for one episode of one title", () => {
+    expect(watchPath(1535, 4)).toBe("/watch/1535/4");
   });
 });
 

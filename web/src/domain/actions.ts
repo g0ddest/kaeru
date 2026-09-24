@@ -45,6 +45,11 @@ export function primaryAction(
   return { label: waitingLabel(anime, next, now), episode: next, positionMs: 0, enabled: false };
 }
 
+/** The player's address for one episode: every watch button and episode row links here. */
+export function watchPath(animeId: number, episode: number): string {
+  return `/watch/${animeId}/${episode}`;
+}
+
 // What to say about an episode that cannot start yet. A date already past is the catalogue
 // lagging, so it is not repeated as a promise.
 export function waitingLabel(anime: Anime, episode: number, now: number): string {

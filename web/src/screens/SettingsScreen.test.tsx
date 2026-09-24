@@ -10,7 +10,16 @@ import type { Tokens } from "../auth/relay";
 import { sessionStore } from "../auth/session";
 import type { authorized } from "../auth/session";
 import { Library } from "../library/library";
-import { setWatchedThreshold, watchedThreshold } from "../library/prefs";
+import {
+  autoplayNext,
+  defaultQuality,
+  setAutoplayNext,
+  setDefaultQuality,
+  setSkipEnding,
+  setWatchedThreshold,
+  skipEnding,
+  watchedThreshold,
+} from "../library/prefs";
 import { ProgressStore } from "../library/progress";
 import { noPlayback } from "../test/fakes";
 import { SettingsScreen } from "./SettingsScreen";
@@ -18,6 +27,8 @@ import { SettingsScreen } from "./SettingsScreen";
 const ACCOUNT: Account = { id: 1, nickname: "Лягушка", avatar: "https://shikimori.io/system/users/x160/1.png" };
 const TOKENS: Tokens = { accessToken: "access", refreshToken: "refresh", expiresIn: 86_400, createdAt: 1_790_000_000 };
 const DIALOG_TEXT = "Список и прогресс останутся на Shikimori, локальный кэш будет очищен";
+const SKIP_ENDING_NOTE =
+  "Через 10 секунд начнётся следующая серия. После последней плеер закроется и вернёт на карточку";
 
 function memoryStorage(): Storage {
   const data = new Map<string, string>();
@@ -81,6 +92,18 @@ function thresholds(): HTMLElement {
   return screen.getByRole("radiogroup", { name: "Порог просмотра" });
 }
 
+function qualities(): HTMLElement {
+  return screen.getByRole("radiogroup", { name: "Качество по умолчанию" });
+}
+
+function autoplaySwitch(): HTMLElement {
+  return screen.getByRole("switch", { name: "Следующая серия автоматически" });
+}
+
+function skipEndingSwitch(): HTMLElement {
+  return screen.getByRole("switch", { name: "Пропускать эндинг" });
+}
+
 describe("SettingsScreen", () => {
   it("shows who is signed in", () => {
     const { container } = setup();
@@ -116,6 +139,76 @@ describe("SettingsScreen", () => {
       "95\u00A0%",
     ]);
     expect(within(thresholds()).getByRole("radio", { name: /^70\s%$/ })).toBeChecked();
+  });
+
+  it("plays the next episode automatically by default, and the switch turns it off and on", async () => {
+    const { user } = setup();
+    expect(autoplaySwitch()).toBeChecked();
+
+    await user.click(autoplaySwitch());
+    expect(autoplaySwitch()).not.toBeChecked();
+    expect(autoplayNext()).toBe(false);
+
+    await user.click(autoplaySwitch());
+    expect(autoplaySwitch()).toBeChecked();
+    expect(autoplayNext()).toBe(true);
+  });
+
+  it("does not skip endings by default, says what skipping does, and turns it on", async () => {
+    const { user } = setup();
+    expect(skipEndingSwitch()).not.toBeChecked();
+    expect(skipEndingSwitch()).toHaveAccessibleDescription(SKIP_ENDING_NOTE);
+
+    await user.click(skipEndingSwitch());
+    expect(skipEndingSwitch()).toBeChecked();
+    expect(skipEnding()).toBe(true);
+  });
+
+  it("shows the switches as they were stored", () => {
+    setAutoplayNext(false);
+    setSkipEnding(true);
+    setup();
+    expect(autoplaySwitch()).not.toBeChecked();
+    expect(skipEndingSwitch()).toBeChecked();
+  });
+
+  it("offers «Авто» and four heights as the default quality and keeps the choice", async () => {
+    const { user } = setup();
+    expect(within(qualities()).getAllByRole("radio").map((radio) => radio.textContent)).toEqual([
+      "Авто",
+      "360p",
+      "480p",
+      "720p",
+      "1080p",
+    ]);
+    expect(within(qualities()).getByRole("radio", { name: "Авто" })).toBeChecked();
+
+    await user.click(within(qualities()).getByRole("radio", { name: "720p" }));
+    expect(within(qualities()).getByRole("radio", { name: "720p" })).toBeChecked();
+    expect(within(qualities()).getByRole("radio", { name: "Авто" })).not.toBeChecked();
+    expect(defaultQuality()).toBe(720);
+
+    await user.click(within(qualities()).getByRole("radio", { name: "Авто" }));
+    expect(within(qualities()).getByRole("radio", { name: "Авто" })).toBeChecked();
+    expect(defaultQuality()).toBeNull();
+    expect(window.localStorage.getItem("kaeru.quality")).toBeNull();
+  });
+
+  it("shows the stored default quality", () => {
+    setDefaultQuality(480);
+    setup();
+    expect(within(qualities()).getByRole("radio", { name: "480p" })).toBeChecked();
+    expect(within(qualities()).getByRole("radio", { name: "Авто" })).not.toBeChecked();
+  });
+
+  it("puts the playback settings after the threshold, inside «Воспроизведение»", () => {
+    setup();
+    const section = screen.getByRole("region", { name: "Воспроизведение" });
+    const order = [thresholds(), autoplaySwitch(), skipEndingSwitch(), qualities()];
+    for (const control of order) expect(section).toContainElement(control);
+    for (let index = 1; index < order.length; index += 1) {
+      expect(order[index - 1].compareDocumentPosition(order[index]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
   });
 
   it("asks before signing out, and «Отмена» keeps everything", async () => {

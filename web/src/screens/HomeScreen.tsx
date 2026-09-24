@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState, u
 import type { ReactNode } from "react";
 import type { Shikimori } from "../api/shikimori";
 import { useServices } from "../app/services";
-import { episodeLine, primaryAction } from "../domain/actions";
+import { episodeLine, primaryAction, watchPath } from "../domain/actions";
 import { buildFeed, feedRows, isFeedEmpty } from "../domain/feed";
 import type { FeedItem } from "../domain/feed";
 import type { Anime, EpisodeProgress } from "../domain/models";
@@ -284,7 +284,7 @@ function Hero({ item, progress, threshold, now }: HeroProps) {
         <div className="hero-actions">
           {/* Navigation is a link; an episode that cannot start yet is a disabled button going nowhere. */}
           {action.enabled ? (
-            <PrimaryButton to={`/watch/${anime.id}/${action.episode}`} icon={<IconPlay />}>
+            <PrimaryButton to={watchPath(anime.id, action.episode)} icon={<IconPlay />}>
               {action.label}
             </PrimaryButton>
           ) : (

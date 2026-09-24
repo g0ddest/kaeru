@@ -13,6 +13,8 @@ import type { authorized } from "../auth/session";
 import type { Anime, EpisodeProgress, ListStatus, UserRate } from "../domain/models";
 import { Library } from "../library/library";
 import { ProgressStore } from "../library/progress";
+import type { Translation } from "../player/kodik";
+import { rememberDub, rememberedDub } from "../player/memory";
 import { noPlayback } from "../test/fakes";
 import { ToastProvider } from "../ui/Toast";
 import { TitleScreen } from "./TitleScreen";
@@ -135,7 +137,19 @@ class FakeShikimori {
 
 const fakeAuthorized: typeof authorized = (call) => call("tok");
 
+// Kodik's own order: an unknown studio first, then AniLibria, then a subtitle track.
+const UNKNOWN: Translation = { id: 1, title: "Студия Пупкина", type: "voice", episodesCount: 37 };
+const ANILIBRIA: Translation = { id: 610, title: "AniLibria.TV", type: "voice", episodesCount: 37 };
+const SUBTITLES: Translation = { id: 900, title: "Fansub Team", type: "subtitles", episodesCount: 37 };
+
+/** Kodik's dub list for the title page: records who asked, answers with `answer`. */
+class FakeDubs {
+  readonly asked: number[] = [];
+  answer: () => Promise<Translation[]> = async () => [UNKNOWN, ANILIBRIA, SUBTITLES];
+}
+
 let server: FakeShikimori;
+let dubs: FakeDubs;
 let progress: ProgressStore;
 let services: Services;
 
@@ -148,7 +162,13 @@ function start(details: Anime, rate?: { status: ListStatus; episodes: number }, 
   for (const row of rows) progress.put(row);
   const shikimori = server.api();
   const library = new Library({ shikimori, authorized: fakeAuthorized, accountId: () => 42, progress });
-  services = { shikimori, library, progress, ...noPlayback() };
+  dubs = new FakeDubs();
+  const playback = noPlayback();
+  const translations = (animeId: number): Promise<Translation[]> => {
+    dubs.asked.push(animeId);
+    return dubs.answer();
+  };
+  services = { shikimori, library, progress, ...playback, kodik: { ...playback.kodik, translations } };
 }
 
 function WatchProbe() {
@@ -492,6 +512,98 @@ describe("TitleScreen", () => {
     await user.click(screen.getByRole("button", { name: "Повторить" }));
 
     expect(await screen.findByRole("heading", { level: 1, name: "Тетрадь смерти" })).toBeInTheDocument();
+  });
+
+  describe("dub", () => {
+    it("names the dub the player will start with, AniLibria before an unknown studio", async () => {
+      const user = userEvent.setup();
+      start(deathNote());
+      renderTitle();
+
+      const dub = await screen.findByRole("button", { name: "Озвучка: AniLibria.TV" });
+      expect(dubs.asked).toEqual([1535]);
+      await user.click(dub);
+
+      const menu = screen.getByRole("menu");
+      // Named by their titles; the subtitle note is a description, so it is not part of the name.
+      const ranked = ["AniLibria.TV", "Студия Пупкина", "Fansub Team"].map((name) =>
+        within(menu).getByRole("menuitemradio", { name }),
+      );
+      expect(within(menu).getAllByRole("menuitemradio")).toEqual(ranked);
+      expect(within(menu).getByRole("menuitemradio", { name: "AniLibria.TV" })).toHaveAttribute("aria-checked", "true");
+      expect(within(menu).getByRole("menuitemradio", { name: "Студия Пупкина" })).toHaveAttribute("aria-checked", "false");
+      expect(within(menu).getByRole("menuitemradio", { name: "Fansub Team" })).toHaveAccessibleDescription("Субтитры");
+      expect(within(menu).getByRole("menuitemradio", { name: "Студия Пупкина" })).not.toHaveAccessibleDescription();
+    });
+
+    it("remembers another dub picked from the menu, for the player to start with", async () => {
+      const user = userEvent.setup();
+      start(deathNote());
+      renderTitle();
+
+      await user.click(await screen.findByRole("button", { name: "Озвучка: AniLibria.TV" }));
+      await user.click(within(screen.getByRole("menu")).getByRole("menuitemradio", { name: "Студия Пупкина" }));
+
+      expect(rememberedDub(1535)).toEqual({ id: 1, title: "Студия Пупкина" });
+      const dub = screen.getByRole("button", { name: "Озвучка: Студия Пупкина" });
+      expect(dub).toHaveFocus();
+      await user.click(dub);
+      expect(within(screen.getByRole("menu")).getByRole("menuitemradio", { name: "Студия Пупкина" })).toHaveAttribute(
+        "aria-checked",
+        "true",
+      );
+      // Picking writes the memory only: the list is not asked for again.
+      expect(dubs.asked).toEqual([1535]);
+      expect(server.writes()).toEqual([]);
+    });
+
+    it("names the dub this title remembers", async () => {
+      rememberDub(1535, { id: 1, title: "Студия Пупкина" });
+      start(deathNote());
+      renderTitle();
+
+      expect(await screen.findByRole("button", { name: "Озвучка: Студия Пупкина" })).toBeEnabled();
+    });
+
+    it("says «Озвучка» and takes no press while the dubs load", async () => {
+      start(deathNote());
+      dubs.answer = () => new Promise(() => undefined);
+      renderTitle();
+
+      expect(await screen.findByRole("button", { name: "Озвучка" })).toBeDisabled();
+    });
+
+    it("says there are no dubs when Kodik offers none", async () => {
+      start(deathNote());
+      dubs.answer = async () => [];
+      renderTitle();
+
+      const none = await screen.findByRole("button", { name: "Нет озвучек" });
+      expect(none).toBeDisabled();
+      expect(none).not.toHaveAttribute("aria-haspopup");
+    });
+
+    it("leaves the control out when the dubs cannot be loaded", async () => {
+      start(deathNote());
+      dubs.answer = async () => {
+        throw new NetworkError("Failed to fetch");
+      };
+      renderTitle();
+
+      await screen.findByRole("heading", { level: 1, name: "Тетрадь смерти" });
+      await waitFor(() => expect(dubs.asked).toEqual([1535]));
+      await waitFor(() => expect(screen.queryByRole("button", { name: /^Озвучка/ })).not.toBeInTheDocument());
+      expect(screen.queryByRole("button", { name: "Нет озвучек" })).not.toBeInTheDocument();
+    });
+
+    it("offers no dub for a title that has not aired, and does not ask Kodik", async () => {
+      start(deathNote({ status: "anons", episodes: 12, episodesAired: 0 }));
+      renderTitle();
+
+      expect(await screen.findByRole("button", { name: "Ещё не вышло" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^Озвучка/ })).not.toBeInTheDocument();
+      expect(dubs.asked).toEqual([]);
+    });
   });
 
   describe("about", () => {

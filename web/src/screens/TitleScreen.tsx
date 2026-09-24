@@ -1,17 +1,28 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { errorMessage } from "../api/http";
 import { hasPageBehind } from "../app/history";
 import { useServices } from "../app/services";
-import { primaryAction } from "../domain/actions";
+import { primaryAction, watchPath } from "../domain/actions";
 import { factsLine, formatTime, pluralEpisodesAccusative, statusLabel } from "../domain/format";
-import { STATUS_MENU, type Anime, type EpisodeProgress, type LibraryEntry, type ListStatus } from "../domain/models";
+import {
+  STATUS_MENU,
+  availableEpisodes,
+  type Anime,
+  type EpisodeProgress,
+  type LibraryEntry,
+  type ListStatus,
+} from "../domain/models";
 import { listKnown, useLibrary } from "../library/library";
 import { watchedThreshold } from "../library/prefs";
+import type { Translation } from "../player/kodik";
+import { dubUsage, rememberDub, rememberedDub } from "../player/memory";
+import { rankTranslations } from "../player/rules";
 import { IconButton, PrimaryButton, SecondaryButton, TextAction } from "../ui/Button";
 import { Dialog } from "../ui/Dialog";
 import { IconBack, IconCheckCircle, IconClock, IconMore, IconPlay, IconPlayCircle } from "../ui/icons";
 import { MenuButton, type MenuItem } from "../ui/Menu";
+import { Pill } from "../ui/Pill";
 import { SkeletonBlock, SkeletonGroup } from "../ui/Skeleton";
 import { ErrorState } from "../ui/States";
 import { useToast } from "../ui/Toast";
@@ -22,10 +33,6 @@ const LOAD_FAILED = "Не удалось загрузить аниме. Пров
 const LIST_FAILED = "Не удалось загрузить ваш список — без него отметки недоступны";
 
 type Details = { kind: "loading" } | { kind: "ready"; anime: Anime } | { kind: "failed" };
-
-function watchPath(animeId: number, episode: number): string {
-  return `/watch/${animeId}/${episode}`;
-}
 
 /** /anime/:id — details, list status and episode marks (map 4, decisions 4–7 and 9). */
 export function TitleScreen() {
@@ -227,6 +234,7 @@ function TitleContent({ anime, entry, rows, threshold, known, listFailed, failed
               Добавить в планы
             </SecondaryButton>
           )}
+          {availableEpisodes(anime) > 0 && <DubControl animeId={anime.id} />}
         </div>
         {description !== null && description !== "" && <About text={description} />}
         <Episodes
@@ -251,6 +259,68 @@ function TitleContent({ anime, entry, rows, threshold, known, listFailed, failed
       />
     </div>
   );
+}
+
+type Dubs = { kind: "loading" } | { kind: "ready"; tracks: readonly Translation[] } | { kind: "failed" };
+
+const DUB = "Озвучка";
+const NO_DUBS = "Нет озвучек";
+
+/**
+ * Which dub the player will start with, and a menu that changes it without playing (Android
+ * DubPill + DetailsViewModel.pickTranslation). Asked of Kodik once per visit; a list that cannot be
+ * had leaves the control out, since the player still picks a dub by itself.
+ */
+function DubControl({ animeId }: { animeId: number }) {
+  const { kodik } = useServices();
+  const [dubs, setDubs] = useState<Dubs>({ kind: "loading" });
+  const [remembered, setRemembered] = useState(() => rememberedDub(animeId)?.id ?? null);
+
+  useEffect(() => {
+    let live = true;
+    kodik.translations(animeId).then(
+      (tracks) => {
+        if (live) setDubs({ kind: "ready", tracks });
+      },
+      () => {
+        if (live) setDubs({ kind: "failed" });
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [kodik, animeId]);
+
+  // The player's own order: the head is what it starts with, the remembered dub whenever Kodik lists it.
+  const ranked = useMemo(
+    () => (dubs.kind === "ready" ? rankTranslations(dubs.tracks, { remembered, usage: dubUsage() }) : []),
+    [dubs, remembered],
+  );
+
+  if (dubs.kind === "failed") return null;
+  if (dubs.kind === "loading") return <MenuButton label={DUB} items={[]} disabled />;
+  const current = ranked[0];
+  if (current === undefined) {
+    return (
+      <Pill className="title-dub-none" disabled>
+        {NO_DUBS}
+      </Pill>
+    );
+  }
+
+  const pick = (track: Translation) => {
+    rememberDub(animeId, track);
+    // Read back: storage that refused the write keeps the old tick, and the pill must say so.
+    setRemembered(rememberedDub(animeId)?.id ?? null);
+  };
+  const items: MenuItem[] = ranked.map((track) => ({
+    key: String(track.id),
+    label: track.title,
+    checked: track.id === current.id,
+    note: track.type === "subtitles" ? "Субтитры" : undefined,
+    onSelect: () => pick(track),
+  }));
+  return <MenuButton label={`${DUB}: ${current.title}`} items={items} />;
 }
 
 function About({ text }: { text: string }) {
