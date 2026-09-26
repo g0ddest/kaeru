@@ -80,14 +80,48 @@ private typealias Stream = Kaeru.Stream
                 tokens: Tokens(access_token: "token-\(account)", refresh_token: "refresh", expires_in: 3600, created_at: Date().timeIntervalSince1970))
     }
     private func model(store: any LocalStorage, account: Int64? = 1, transport: FakeSyncTransport, clock: ManualClock,
-                       service: SyncStubService = SyncStubService()) -> AppModel {
-        AppModel(service: service, store: store,
+                       service: SyncStubService = SyncStubService(), syncOn: Bool = true) -> AppModel {
+        // Sync is opt-in; the tests here are about it switched on, unless they say otherwise.
+        var preferences = (try? store.read(PlaybackPreferences.self, key: "playbackPreferences")) ?? PlaybackPreferences()
+        preferences.syncOn = syncOn
+        try? store.write(preferences, key: "playbackPreferences")
+        return AppModel(service: service, store: store,
                  configuration: AppConfiguration(clientID: "test", proxyURL: "https://example.com", togetherRelayURL: "wss://relay.test"),
                  session: account.map(session), saveSession: { _ in },
                  sync: SyncEnvironment(transport: transport, now: { clock.now }, schedule: clock.schedule, keepAlive: { {} }))
     }
     private func position(_ anime: Int = 7, episode: Int, at seconds: Double, of length: Double = 1200, updated: Date) -> EpisodeProgress {
         EpisodeProgress(animeID: anime, episode: episode, position: seconds, duration: length, updatedAt: updated)
+    }
+
+    // MARK: - the switch
+
+    func testOffByDefaultSendsAndReadsNothing() async throws {
+        XCTAssertFalse(PlaybackPreferences().syncOn)
+        let store = try LocalStore(inMemory: true), transport = FakeSyncTransport(), clock = ManualClock()
+        let app = model(store: store, transport: transport, clock: clock, syncOn: false)
+        app.saveProgress(position(episode: 1, at: 300, updated: clock.now), anime: Anime(id: 7, title: "T"), account: app.accountKey)
+        app.pushSync(.leaving)
+        await app.viewingSync?.settle()
+        clock.advance(120)
+        await app.viewingSync?.settle()
+        XCTAssertTrue(transport.requests.isEmpty)
+    }
+
+    func testSwitchedOnReadsThenOffSendsNothingMore() async throws {
+        let store = try LocalStore(inMemory: true), transport = FakeSyncTransport(), clock = ManualClock()
+        let app = model(store: store, transport: transport, clock: clock, syncOn: false)
+        app.setSyncEnabled(true)
+        await app.viewingSync?.settle()
+        XCTAssertEqual(transport.gets, 1)
+        app.setSyncEnabled(false)
+        let sent = transport.requests.count
+        app.saveProgress(position(episode: 2, at: 300, updated: clock.now), anime: Anime(id: 7, title: "T"), account: app.accountKey)
+        app.pushSync(.leaving)
+        clock.advance(120)
+        await app.viewingSync?.settle()
+        XCTAssertEqual(transport.requests.count, sent)
+        XCTAssertFalse(app.preferences.syncOn)
     }
 
     // MARK: - the wire

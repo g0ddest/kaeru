@@ -34,6 +34,10 @@ struct SettingsView: View {
                 Section {
                     Toggle("Следующая серия автоматически", isOn: $model.autoNext)
                     Toggle("Пропускать эндинг автоматически", isOn: $model.preferences.autoSkipEnding)
+                    Toggle(isOn: Binding(get: { model.preferences.syncOn }, set: { model.setSyncEnabled($0) })) {
+                        Text("Синхронизация между устройствами")
+                        Text("Позиция в серии и выбранная озвучка — на всех ваших устройствах через сервер Kaeru")
+                    }
                     Toggle(isOn: $model.preferences.spatialAudioOn) {
                         Text("Пространственный звук")
                         Text("В AirPods звук привязан к положению устройства. Если голоса звучат приглушённо или сбоку — выключите.")

@@ -15,6 +15,13 @@ struct PlaybackPreferences: Codable, Equatable {
     /// default — off on the Mac, where it made dialogue sound muffled and off to the side (a
     /// browser plays the same stream as plain stereo), on elsewhere, as the system has it.
     var spatialAudio: Bool?
+    /// «Синхронизация между устройствами»: positions and dubs through the Kaeru server. Opt-in —
+    /// off unless switched on, so a viewer with one device costs the server nothing.
+    var sync: Bool?
+    var syncOn: Bool {
+        get { sync ?? false }
+        set { sync = newValue }
+    }
     var spatialAudioOn: Bool {
         get {
             #if os(macOS)

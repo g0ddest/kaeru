@@ -419,6 +419,11 @@ import AuthenticationServices
 
     /// The player paused, moved to another episode or went away: the batch goes now.
     func pushSync(_ reason: SyncReason) { viewingSync?.push(reason) }
+    func setSyncEnabled(_ on: Bool) {
+        preferences.syncOn = on
+        savePreferences()
+        viewingSync?.setEnabled(on)
+    }
     func appWentToBackground() { viewingSync?.wentToBackground() }
     func appBecameActive() { viewingSync?.becameActive() }
     func isFinished(_ animeID: Int) -> Bool { rate(for: animeID)?.status == "completed" }

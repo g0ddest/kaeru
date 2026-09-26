@@ -104,10 +104,22 @@ struct SyncEnvironment {
 
     func now() -> Date { environment.now() }
 
+    /// The setting. Off, nothing is read, queued or sent.
+    private var enabled: Bool { model?.preferences.syncOn == true }
+
+    /// «Синхронизация между устройствами» switched: on reads the document (and uploads what this
+    /// device has, once); off stops everything and drops what was waiting to go.
+    func setEnabled(_ on: Bool) {
+        if on { statuses = nil; start(); return }
+        timer?.cancel(); timer = nil
+        again = false
+        if let account = model?.accountID { writeOutbox([:], account: account) }
+    }
+
     // MARK: - what the app tells sync
 
     /// Signed in at launch or just now: read the document.
-    func start() { launch { await self.pull() } }
+    func start() { guard enabled else { return }; launch { await self.pull() } }
 
     /// The account is another one, or none: whatever was scheduled was the previous one's, and
     /// its list is not this one's.
@@ -117,19 +129,19 @@ struct SyncEnvironment {
     }
 
     func positionSaved(_ value: EpisodeProgress) {
-        guard let model, model.accountID != nil, !model.isFinished(value.animeID) else { return }
+        guard enabled, let model, model.accountID != nil, !model.isFinished(value.animeID) else { return }
         enqueue(value.animeID, SyncTitle(eps: [String(value.episode): Self.position(value)]))
     }
 
     func dubChosen(_ animeID: Int, _ dub: SyncDub) {
-        guard let model, model.accountID != nil, !model.isFinished(animeID) else { return }
+        guard enabled, let model, model.accountID != nil, !model.isFinished(animeID) else { return }
         enqueue(animeID, SyncTitle(dub: dub))
     }
 
     /// The list as it now stands. A title turning «completed» leaves a tombstone; turning back
     /// before the tombstone went out takes it back. The first list seen is where things stand.
     func libraryChanged(_ library: [LibraryItem]) {
-        guard model?.accountID != nil else { return }
+        guard enabled, model?.accountID != nil else { return }
         let current = Self.statuses(library)
         // The first list seen is where things stand, not a change. An empty one says nothing yet:
         // it is what a fresh install has before Shikimori answers.
@@ -146,18 +158,18 @@ struct SyncEnvironment {
     }
 
     func push(_ reason: SyncReason) {
-        guard model?.accountID != nil else { return }
+        guard enabled, model?.accountID != nil else { return }
         launch { await self.send(keepAlive: reason == .leaving) }
     }
 
     func wentToBackground() {
         if backgroundedAt == nil { backgroundedAt = now() }
-        guard model?.accountID != nil else { return }
+        guard enabled, model?.accountID != nil else { return }
         launch { await self.send(keepAlive: true) }
     }
 
     func becameActive() {
-        guard let at = backgroundedAt else { return }
+        guard enabled, let at = backgroundedAt else { return }
         backgroundedAt = nil
         if now().timeIntervalSince(at) >= Self.pullAfterBackground { launch { await self.pull() } }
     }
@@ -171,6 +183,7 @@ struct SyncEnvironment {
 
     /// Reads the document and takes what is newer; one read at a time.
     func pull() async {
+        guard enabled else { return }
         if let pulling { await pulling.value; return }
         let task = Task { await self.read() }
         pulling = task
@@ -291,7 +304,7 @@ struct SyncEnvironment {
     }
 
     private func send(keepAlive: Bool) async {
-        guard let model, let account = model.accountID else { return }
+        guard enabled, let model, let account = model.accountID else { return }
         // A batch on its way goes on; this one follows it at once.
         if inflight { again = true; return }
         let outbox = readOutbox(account)
