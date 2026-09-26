@@ -37,6 +37,7 @@
 
 import { KodikClient } from "./kodik/client";
 import { handleKodik } from "./kodik/routes";
+import { handleSync } from "./sync";
 import { preflight, webOrigin, withCors } from "./web";
 import { WEB_REDIRECTS, fromSite, gate, parseAllowed, verdict, whoami } from "./whitelist";
 
@@ -184,6 +185,15 @@ export default {
       if (closed !== null) return withCors(closed, webOrigin(request));
       kodik ??= new KodikClient({ fetch: (input, init) => fetch(input, init), configuredToken: env.KODIK_TOKEN });
       return withCors(await handleKodik(request, kodik), webOrigin(request));
+    }
+
+    if (url.pathname === "/sync") {
+      const early = preflight(request);
+      if (early !== null) return early;
+      if (request.method !== "GET" && request.method !== "POST") return withCors(plain("method not allowed", 405), webOrigin(request));
+      const retryAfter = await rateLimit(request, env, "sync");
+      if (retryAfter > 0) return withCors(tooManyRequests(retryAfter), webOrigin(request));
+      return withCors(await handleSync(request, env), webOrigin(request));
     }
 
     if (url.pathname === TOKEN_PATH) {

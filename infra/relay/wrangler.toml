@@ -32,6 +32,12 @@ class_name = "RoomDO"
 name = "RATE"
 class_name = "RateDO"
 
+# Viewing sync (/sync): one document per Shikimori user, key `u:<id>`. The free plan allows 1000
+# writes a day for the whole account, which is why the clients write positions sparingly.
+[[kv_namespaces]]
+binding = "SYNC"
+id = "be4b9c151d934871a6974c1604a5993a"
+
 # SQLite-backed Durable Objects are the ones available on the free plan.
 [[migrations]]
 tag = "v1"

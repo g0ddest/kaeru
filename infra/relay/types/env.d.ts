@@ -3,6 +3,8 @@
 interface RelayEnv {
   ROOM: DurableObjectNamespace;
   RATE: DurableObjectNamespace;
+  /** Viewing sync: one JSON document per Shikimori user under `u:<id>` (src/sync.ts). */
+  SYNC: KVNamespace;
   /** The app's public Shikimori client id, a plain var in wrangler.toml. */
   SHIKIMORI_CLIENT_ID: string;
   /**
