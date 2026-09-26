@@ -1,7 +1,7 @@
 import type { EpisodeProgress, LibraryEntry, ListStatus } from "../domain/models";
 import type { Library } from "../library/library";
 import type { ProgressStore } from "../library/progress";
-import { mergeDub, onDubRemembered, rememberedDubs, type StampedDub } from "../player/memory";
+import { forgetDubs, mergeDub, onDubRemembered, rememberedDubs, type StampedDub } from "../player/memory";
 import type { SyncClient, SyncPosition, SyncTitle, SyncTitles } from "./client";
 
 /** What the player tells sync: it just paused, left, or moved on, so the batch goes now. */
@@ -33,6 +33,8 @@ export const PULL_AFTER_HIDDEN_MS = 5 * 60_000;
 const OUTBOX_KEY = "kaeru.sync.outbox";
 /** Accounts whose positions this browser already sent once in full. */
 const SEEDED_KEY = "kaeru.sync.seeded";
+/** The account that last used this browser; sign-out keeps it, so the next account can be told apart. */
+export const LAST_ACCOUNT_KEY = "kaeru.account.last";
 /** The worker keeps the 30 latest episodes of a title; older ones would only be trimmed again. */
 const EPISODES_PER_TITLE = 30;
 /** Titles per POST, well under the worker's 256 KB body with 30 episodes each. */
@@ -123,6 +125,8 @@ export class SyncService implements Sync {
   constructor(deps: SyncDeps) {
     this.deps = deps;
     this.storage = deps.storage === undefined ? browserStorage() : deps.storage;
+    // At construction: services are built per account before any screen reads a position.
+    this.claim();
   }
 
   start(): void {
@@ -143,6 +147,38 @@ export class SyncService implements Sync {
     }
     this.onLibrary();
     void this.pull();
+  }
+
+  /**
+   * Another account than the last one to use this browser: its positions, dubs and unsent changes
+   * go before anything is read or sent, so none of them reach this account's document. The same
+   * account signing back in keeps everything.
+   */
+  private claim(): void {
+    const account = this.deps.accountId();
+    if (account === null) return;
+    let last: string | null = null;
+    try {
+      last = this.storage?.getItem(LAST_ACCOUNT_KEY) ?? null;
+    } catch {
+      last = null;
+    }
+    if (last !== null && last !== String(account)) {
+      this.deps.progress.clear();
+      if (this.storage !== null) forgetDubs(this.storage);
+      this.memoryOutbox = null;
+      try {
+        this.storage?.removeItem(OUTBOX_KEY);
+        this.storage?.removeItem(SEEDED_KEY);
+      } catch {
+        // Blocked storage keeps nothing of the other account either.
+      }
+    }
+    try {
+      this.storage?.setItem(LAST_ACCOUNT_KEY, String(account));
+    } catch {
+      // Blocked storage: every start looks like the first one, which clears nothing.
+    }
   }
 
   stop(): void {

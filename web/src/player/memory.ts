@@ -99,6 +99,15 @@ export function rememberedDubs(storage?: Storage): Map<number, StampedDub> {
   return dubs;
 }
 
+/** Forgets every remembered dub: another account took this browser over. */
+export function forgetDubs(storage?: Storage): void {
+  try {
+    (storage ?? browserStorage())?.removeItem(KEY);
+  } catch {
+    // Blocked storage holds nothing to forget.
+  }
+}
+
 /** Hears every rememberDub (not mergeDub), with the storage it went to. */
 export function onDubRemembered(listener: DubListener): () => void {
   listeners.add(listener);

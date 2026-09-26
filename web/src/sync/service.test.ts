@@ -473,6 +473,51 @@ describe("SyncService signed out", () => {
     expect(second.posts().some((post) => post.titles["1535"]?.eps?.["1"]?.p === 10_000)).toBe(false);
   });
 
+  it("never lets one account's positions reach another who signs in on the same browser", async () => {
+    const storage = memoryStorage();
+    const a = started({ storage, account: 7 });
+    a.service.start();
+    await settle();
+    a.progress.put(row(1535, 3, 600_000, Date.now()));
+    rememberDub(1535, { id: 610, title: "AniLibria.TV" }, storage, Date.now());
+    a.state.fail = 10;
+    a.progress.put(row(1535, 4, 700_000, Date.now() + 1));
+    await settle(MINUTE);
+    // The session expires: nothing is cleared on the way out.
+    a.service.stop();
+
+    const b = started({ storage, account: 8 });
+    expect(b.progress.of(1535)).toEqual([]);
+    b.service.start();
+    await settle(MINUTE);
+
+    expect(b.progress.of(1535)).toEqual([]);
+    expect(rememberedDub(1535, storage)).toBeNull();
+    expect(storage.getItem("kaeru.sync.outbox")).toBeNull();
+    const sent = JSON.stringify(b.posts());
+    expect(sent).not.toContain("1535");
+  });
+
+  it("keeps everything when the same account signs back in", async () => {
+    const storage = memoryStorage();
+    const first = started({ storage, account: 7 });
+    first.service.start();
+    await settle();
+    first.progress.put(row(1535, 3, 600_000, Date.now()));
+    rememberDub(1535, { id: 610, title: "AniLibria.TV" }, storage, Date.now());
+    await settle();
+    first.service.stop();
+
+    const again = started({ storage, account: 7 });
+    again.service.start();
+    await settle(MINUTE);
+
+    expect(again.progress.of(1535).map((p) => p.positionMs)).toEqual([600_000]);
+    expect(rememberedDub(1535, storage)).toEqual({ id: 610, title: "AniLibria.TV" });
+    // Already sent once: the one-time upload does not run again.
+    expect(again.posts()).toEqual([]);
+  });
+
   it("forgets its listeners once stopped", async () => {
     const env = started();
     env.service.start();
