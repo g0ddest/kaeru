@@ -44,6 +44,7 @@ struct PlayerWindow: View {
     /// Says on the picture how far ← or → went.
     @ObservationIgnored var hint: (PlayerTapZone) -> Void = { _ in }
     @ObservationIgnored private var monitor: Any?
+    @ObservationIgnored private var pointer: Any?
 
     init(playback: PlaybackModel) { self.playback = playback }
 
@@ -79,10 +80,24 @@ struct PlayerWindow: View {
             let taken = MainActor.assumeIsolated { self?.take(event) ?? false }
             return taken ? nil : event
         }
+        // The pointer brings the controls — and the window's own buttons, hidden with them — back.
+        // SwiftUI's hover over AVKit's view stopped hearing it once the next episode replaced the
+        // picture, and the window was left with no way to close, minimise or zoom it.
+        pointer = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] event in
+            MainActor.assumeIsolated {
+                guard let self, let window = self.window, event.window === window else { return }
+                // Resting on the title bar strip is reaching for a button there: keep it up.
+                if event.locationInWindow.y > window.contentLayoutRect.maxY - 56 { self.playback.holdChrome() }
+                else { self.playback.showChrome() }
+            }
+            return event
+        }
     }
     func stopListening() {
         if let monitor { NSEvent.removeMonitor(monitor) }
+        if let pointer { NSEvent.removeMonitor(pointer) }
         monitor = nil
+        pointer = nil
     }
 
     private func take(_ event: NSEvent) -> Bool {
@@ -132,6 +147,7 @@ private struct PlayerWindowControls: ViewModifier {
         content
             .background(WindowReader { window in
                 controls.window = window
+                window.acceptsMouseMovedEvents = true
                 controls.fullScreenChanged(window, window.styleMask.contains(.fullScreen))
             })
             .focusedSceneValue(controls)
