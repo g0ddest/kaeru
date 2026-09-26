@@ -1,7 +1,8 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { SessionStore, type Session } from "../auth/session";
-import { progressStore } from "../library/progress";
+import { ProgressStore, progressStore } from "../library/progress";
+import { memoryStorage } from "../test/fakes";
 import { createServices, ServicesProvider, useServices } from "./services";
 
 const SESSION: Session = {
@@ -88,6 +89,45 @@ describe("services", () => {
     await expect(services.kodik.resolve(52991, 610, 7)).rejects.toMatchObject({ kind: "unavailable" });
 
     expect(store.get()).toEqual({ kind: "closed", nickname: "friend" });
+  });
+
+  it("sync viewing through the worker with the chosen store's token", async () => {
+    const calls: { url: string; method: string; authorization: string | null }[] = [];
+    const fakeFetch: typeof fetch = async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      calls.push({ url, method: init?.method ?? "GET", authorization: new Headers(init?.headers).get("Authorization") });
+      return new Response(JSON.stringify({ titles: {} }), { status: 200, headers: { "Content-Type": "application/json" } });
+    };
+    const store = new SessionStore(window.sessionStorage);
+    store.setSession(SESSION);
+    const services = createServices({ fetch: fakeFetch, store, progress: new ProgressStore(memoryStorage()) });
+
+    services.sync.start();
+    try {
+      await waitFor(() => expect(calls).toHaveLength(1));
+    } finally {
+      services.sync.stop();
+    }
+
+    expect(calls).toEqual([{ url: "https://kaeru-relay.vitaliy-velikodniy.workers.dev/sync", method: "GET", authorization: "Bearer tok" }]);
+  });
+
+  it("do not sync while signed out", async () => {
+    const calls: string[] = [];
+    const fakeFetch: typeof fetch = async (input) => {
+      calls.push(String(input));
+      return new Response("{}", { status: 200 });
+    };
+    const store = new SessionStore(window.sessionStorage);
+    store.signOut();
+    const services = createServices({ fetch: fakeFetch, store, progress: new ProgressStore(memoryStorage()) });
+
+    services.sync.start();
+    services.sync.push({ keepalive: true });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    services.sync.stop();
+
+    expect(calls).toEqual([]);
   });
 
   it("build the browser's playback engine for a video element", async () => {

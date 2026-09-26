@@ -183,6 +183,7 @@ function Player({ animeId, episode }: { animeId: number; episode: number }) {
       engine,
       media,
       toast: (text) => toastRef.current.show(text),
+      sync: services.sync,
     });
     setController(created);
     const owned = created;

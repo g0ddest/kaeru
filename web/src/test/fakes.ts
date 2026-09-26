@@ -2,6 +2,7 @@
 import type { AniSkip } from "../player/aniskip";
 import type { EngineFactory } from "../player/engine";
 import type { Kodik } from "../player/kodik";
+import type { Sync } from "../sync/service";
 
 /** A Storage in memory: a fresh browser per test, and no crosstalk with window.localStorage. */
 export function memoryStorage(): Storage {
@@ -37,6 +38,19 @@ export function noPlayback(): { kodik: Kodik; aniskip: AniSkip; engine: EngineFa
     aniskip: { marks: refuse },
     engine: () => {
       throw new Error(REFUSED);
+    },
+  };
+}
+
+/** Viewing sync that sends and reads nothing: screens under test make no /sync requests. */
+export function noSync(): Sync & { pushes: { keepalive?: boolean }[] } {
+  const pushes: { keepalive?: boolean }[] = [];
+  return {
+    pushes,
+    start: () => {},
+    stop: () => {},
+    push: (options = {}) => {
+      pushes.push(options);
     },
   };
 }

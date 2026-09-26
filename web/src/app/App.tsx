@@ -59,7 +59,12 @@ export function AppRoutes({ services }: { services?: Services }) {
 }
 
 function SignedIn() {
-  const { library } = useServices();
+  const { library, sync } = useServices();
+  useEffect(() => {
+    // Reads the other devices' positions now and sends this browser's as they change.
+    sync.start();
+    return () => sync.stop();
+  }, [sync]);
   useEffect(() => {
     // Every screen reads the list: start it here unless a screen already has.
     // A failure is kept in library.state(), where the screens show it.

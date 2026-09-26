@@ -5,6 +5,7 @@ import { DEFAULT_THRESHOLD, progressAt } from "../domain/progress";
 import { listKnown, type Library } from "../library/library";
 import { autoplayNext, defaultQuality, skipEnding, watchedThreshold } from "../library/prefs";
 import type { ProgressStore } from "../library/progress";
+import type { SyncPort } from "../sync/service";
 import type { AniSkip } from "./aniskip";
 import type { Engine } from "./engine";
 import { EngineError, failureAction, playerMessage, type EngineFailureKind } from "./errors";
@@ -45,6 +46,8 @@ export interface PlayerDeps {
   now?: () => number;
   /** For the dub memory and the playback settings; the browser's own by default. */
   storage?: Storage;
+  /** Viewing sync: told when a batch should go now. Fire and forget; it never holds playback up. */
+  sync?: SyncPort;
 }
 
 export interface PlayerState {
@@ -202,6 +205,8 @@ export class PlayerController {
 
   async open(animeId: number, episode: number): Promise<void> {
     this.save();
+    // Another episode or title replaces one that was open: where it stopped goes out now.
+    if (this.state.episode > 0) this.sync();
     // The episode being left stops now, not once the next one has resolved.
     if (this.stream !== null) this.deps.media.pause();
     const op = ++this.op;
@@ -291,6 +296,7 @@ export class PlayerController {
     // A paused episode waits for nothing: play says `waiting` again if the data is still not there.
     this.set({ paused: true, buffering: false });
     this.save();
+    this.sync();
   }
 
   onWaiting(): void {
@@ -398,6 +404,7 @@ export class PlayerController {
     // The switch is this one's: a re-resolve or a dub change still under way was for the episode left.
     this.op++;
     this.save();
+    this.sync();
     this.adopt(resolved, episode);
     this.freshEpisode();
     const startMs = resumeFrom(progressAt(this.deps.progress.of(this.animeId), episode), this.threshold);
@@ -511,6 +518,8 @@ export class PlayerController {
   /** Writes the position now: pagehide, unmount, and before every switch. */
   flush(): void {
     this.save();
+    // The page may be going away: the batch has to outlive it.
+    this.sync({ keepalive: true });
   }
 
   dispose(): void {
@@ -872,6 +881,16 @@ export class PlayerController {
       updatedAt: this.now(),
     });
     this.lastSavedMs = positionMs;
+  }
+
+  /** Sync is best effort: whatever it does, playback goes on. */
+  private sync(options?: { keepalive: boolean }): void {
+    try {
+      if (options === undefined) this.deps.sync?.push();
+      else this.deps.sync?.push(options);
+    } catch {
+      // Nothing to tell the viewer: the position is saved in this browser either way.
+    }
   }
 
   private failWith(error: unknown, episode?: number): void {

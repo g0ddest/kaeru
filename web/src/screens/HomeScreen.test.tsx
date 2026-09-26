@@ -14,7 +14,7 @@ import type { Anime, ListStatus, UserRate } from "../domain/models";
 import type { Season } from "../domain/season";
 import { Library } from "../library/library";
 import { ProgressStore } from "../library/progress";
-import { noPlayback } from "../test/fakes";
+import { noPlayback, noSync } from "../test/fakes";
 import { ToastProvider } from "../ui/Toast";
 import { CatalogueCache } from "./home";
 import { HomeScreen } from "./HomeScreen";
@@ -123,7 +123,7 @@ function Where() {
 function renderHome(services: ReturnType<typeof setup>, cache = new CatalogueCache({ now: () => NOW })) {
   const { shikimori, library, progress } = services;
   return render(
-    <ServicesContext.Provider value={{ shikimori, library, progress, ...noPlayback() }}>
+    <ServicesContext.Provider value={{ shikimori, library, progress, ...noPlayback(), sync: noSync() }}>
       <ToastProvider>
         <MemoryRouter initialEntries={["/"]}>
           <Routes>

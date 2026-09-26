@@ -219,6 +219,7 @@ let progress: ProgressStore;
 let library: Library;
 let media: { play: ReturnType<typeof vi.fn<() => Promise<void>>>; pause: ReturnType<typeof vi.fn<() => void>>; seek: ReturnType<typeof vi.fn<(ms: number) => void>> };
 let toasts: string[];
+let sync: { push: ReturnType<typeof vi.fn<(options?: { keepalive?: boolean }) => void>> };
 
 beforeEach(() => {
   storage = memoryStorage();
@@ -231,6 +232,7 @@ beforeEach(() => {
   progress = new ProgressStore(memoryStorage());
   media = { play: vi.fn(() => Promise.resolve()), pause: vi.fn(), seek: vi.fn() };
   toasts = [];
+  sync = { push: vi.fn() };
 });
 
 function build(): PlayerController {
@@ -248,6 +250,7 @@ function build(): PlayerController {
     toast: (text) => toasts.push(text),
     now: () => NOW,
     storage,
+    sync,
   });
 }
 
@@ -685,6 +688,49 @@ describe("PlayerController: positions", () => {
     controller.onTime(1_000, DUR);
 
     expect(controller.getState().positionMs).toBe(1_000);
+  });
+
+  it("has sync send at once on pause, on the next episode and on leaving, with keepalive as the page goes", async () => {
+    const controller = await playing();
+    controller.onTime(600_000, DUR);
+    expect(sync.push).not.toHaveBeenCalled();
+
+    controller.onPause();
+    expect(sync.push.mock.calls).toEqual([[]]);
+
+    controller.flush();
+    expect(sync.push.mock.calls.at(-1)).toEqual([{ keepalive: true }]);
+
+    controller.onPlaying();
+    await controller.next();
+    expect(controller.getState().episode).toBe(8);
+    expect(sync.push.mock.calls.at(-1)).toEqual([]);
+
+    sync.push.mockClear();
+    await controller.open(ANIME, 3);
+    expect(sync.push.mock.calls).toEqual([[]]);
+
+    sync.push.mockClear();
+    controller.dispose();
+    expect(sync.push.mock.calls).toEqual([[{ keepalive: true }]]);
+  });
+
+  it("does not trouble sync when opening the first episode", async () => {
+    await playing();
+
+    expect(sync.push).not.toHaveBeenCalled();
+  });
+
+  it("plays on when sync throws", async () => {
+    sync.push.mockImplementation(() => {
+      throw new Error("boom");
+    });
+    const controller = await playing();
+    controller.onTime(600_000, DUR);
+
+    expect(() => controller.onPause()).not.toThrow();
+    expect(() => controller.flush()).not.toThrow();
+    expect(saved(7)).toBe(600_000);
   });
 
   it("saves every 5 s of position and on pause", async () => {

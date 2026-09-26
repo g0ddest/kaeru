@@ -2,7 +2,7 @@
 // WatchState track memory it reads.
 import { describe, expect, it } from "vitest";
 import type { Translation } from "./kodik";
-import { dubUsage, rememberDub, rememberedDub } from "./memory";
+import { dubUsage, mergeDub, onDubRemembered, rememberDub, rememberedDub, rememberedDubs } from "./memory";
 
 const KEY = "kaeru.dubs";
 
@@ -45,8 +45,8 @@ describe("dub memory", () => {
     expect(rememberedDub(21, storage)).toEqual({ id: 1978, title: "Studio Band" });
     expect(rememberedDub(999, storage)).toBeNull();
     expect(JSON.parse(storage.getItem(KEY) ?? "")).toEqual({
-      "1535": { id: 610, title: "AniLibria.TV" },
-      "21": { id: 1978, title: "Studio Band" },
+      "1535": { id: 610, title: "AniLibria.TV", at: expect.any(Number) },
+      "21": { id: 1978, title: "Studio Band", at: expect.any(Number) },
     });
   });
 
@@ -118,5 +118,54 @@ describe("dub memory", () => {
     expect(() => rememberDub(1535, { id: 610, title: "AniLibria.TV" }, storage)).not.toThrow();
     expect(rememberedDub(1535, storage)).toBeNull();
     expect(dubUsage(storage)).toEqual(new Map());
+  });
+
+  it("stamps each dub with when it was chosen, for sync", () => {
+    const storage = memoryStorage();
+    rememberDub(1535, { id: 610, title: "AniLibria.TV" }, storage, 5_000);
+
+    expect(JSON.parse(storage.getItem(KEY) ?? "")).toEqual({ "1535": { id: 610, title: "AniLibria.TV", at: 5_000 } });
+    expect(rememberedDubs(storage)).toEqual(new Map([[1535, { id: 610, title: "AniLibria.TV", at: 5_000 }]]));
+  });
+
+  it("reads entries written before the stamp as chosen at 0", () => {
+    const storage = memoryStorage();
+    storage.setItem(KEY, JSON.stringify({ "1535": { id: 610, title: "AniLibria.TV" }, "21": { id: 1978, title: "Studio Band", at: "x" } }));
+
+    expect(rememberedDub(1535, storage)).toEqual({ id: 610, title: "AniLibria.TV" });
+    expect(rememberedDubs(storage)).toEqual(
+      new Map([
+        [1535, { id: 610, title: "AniLibria.TV", at: 0 }],
+        [21, { id: 1978, title: "Studio Band", at: 0 }],
+      ]),
+    );
+  });
+
+  it("takes a dub from elsewhere only when it is newer than this browser's, without telling listeners", () => {
+    const storage = memoryStorage();
+    const heard: number[] = [];
+    const stop = onDubRemembered((animeId) => heard.push(animeId));
+    try {
+      rememberDub(1535, { id: 610, title: "AniLibria.TV" }, storage, 5_000);
+      expect(mergeDub(1535, { id: 1978, title: "Studio Band", at: 4_000 }, storage)).toBe(false);
+      expect(rememberedDub(1535, storage)).toEqual({ id: 610, title: "AniLibria.TV" });
+      expect(mergeDub(1535, { id: 1978, title: "Studio Band", at: 6_000 }, storage)).toBe(true);
+      expect(rememberedDub(1535, storage)).toEqual({ id: 1978, title: "Studio Band" });
+      expect(mergeDub(21, { id: 610, title: "AniLibria.TV", at: 1 }, storage)).toBe(true);
+      expect(heard).toEqual([1535]);
+    } finally {
+      stop();
+    }
+  });
+
+  it("tells listeners which storage a dub was remembered in", () => {
+    const storage = memoryStorage();
+    const heard: unknown[] = [];
+    const stop = onDubRemembered((animeId, dub, where) => heard.push([animeId, dub, where === storage]));
+    rememberDub(1535, { id: 610, title: "AniLibria.TV" }, storage, 7_000);
+    stop();
+    rememberDub(21, { id: 610, title: "AniLibria.TV" }, storage, 8_000);
+
+    expect(heard).toEqual([[1535, { id: 610, title: "AniLibria.TV", at: 7_000 }, true]]);
   });
 });

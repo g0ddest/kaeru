@@ -1,6 +1,8 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { sessionStore, type Session } from "../auth/session";
+import { ProgressStore } from "../library/progress";
+import { memoryStorage } from "../test/fakes";
 import { App } from "./App";
 import { createServices } from "./services";
 
@@ -53,6 +55,28 @@ describe("App", () => {
     sessionStore.setSession(SESSION);
     const services = openAt("/watch/7/2");
     await waitFor(() => expect(services.library.state().kind).toBe("ready"), { timeout: 3000 });
+  });
+
+  it("reads the synced positions once signed in, and stops following them when signed out", async () => {
+    const synced: string[] = [];
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/sync")) {
+        synced.push(init?.method ?? "GET");
+        return new Response(JSON.stringify({ titles: {} }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return emptyShikimori(input, init);
+    };
+    sessionStore.setSession(SESSION);
+    window.history.replaceState(null, "", "/");
+    const services = createServices({ fetch, progress: new ProgressStore(memoryStorage()) });
+    const view = render(<App services={services} />);
+    await waitFor(() => expect(synced).toEqual(["GET"]));
+
+    view.unmount();
+    services.progress.put({ animeId: 7, episode: 1, positionMs: 1_000, durationMs: 2_000, updatedAt: Date.now() });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(synced).toEqual(["GET"]);
   });
 
   it("opens the player full window at /watch/:id/:episode", async () => {

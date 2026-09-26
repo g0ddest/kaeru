@@ -7,6 +7,8 @@ import { progressStore, type ProgressStore } from "../library/progress";
 import { createAniSkip, type AniSkip } from "../player/aniskip";
 import { createEngine, type EngineFactory } from "../player/engine";
 import { createKodik, type Kodik } from "../player/kodik";
+import { createSyncClient } from "../sync/client";
+import { SyncService, type Sync } from "../sync/service";
 
 export interface Services {
   shikimori: Shikimori;
@@ -17,6 +19,8 @@ export interface Services {
   aniskip: AniSkip;
   /** Builds the engine for the player's one `<video>`. */
   engine: EngineFactory;
+  /** Positions and dubs shared with the other devices through the worker's /sync. */
+  sync: Sync;
 }
 
 /** The real object graph; tests pass a fake fetch or a separate session store. */
@@ -29,15 +33,11 @@ export function createServices(
   const shikimori = createShikimori(createShikimoriHttp(deps.fetch ? { fetch: deps.fetch } : undefined));
   // Writes and the list go through this store's token, whichever store the caller chose.
   const auth: typeof authorized = (call, options) => authorized(call, { ...options, store });
-  const library = new Library({
-    shikimori,
-    authorized: auth,
-    accountId: () => {
-      const access = store.get();
-      return access.kind === "signed_in" ? access.session.account.id : null;
-    },
-    progress,
-  });
+  const accountId = (): number | null => {
+    const access = store.get();
+    return access.kind === "signed_in" ? access.session.account.id : null;
+  };
+  const library = new Library({ shikimori, authorized: auth, accountId, progress });
   // An account the worker takes off its allow-list closes this store's session, as a refresh would.
   const kodik = createKodik({
     authorized: auth,
@@ -45,7 +45,13 @@ export function createServices(
     ...(deps.fetch ? { fetch: deps.fetch } : {}),
   });
   const aniskip = createAniSkip(deps.fetch ? { fetch: deps.fetch } : {});
-  return { shikimori, library, progress, kodik, aniskip, engine: createEngine };
+  const sync = new SyncService({
+    client: createSyncClient({ authorized: auth, ...(deps.fetch ? { fetch: deps.fetch } : {}) }),
+    progress,
+    library,
+    accountId,
+  });
+  return { shikimori, library, progress, kodik, aniskip, engine: createEngine, sync };
 }
 
 export const ServicesContext = createContext<Services | null>(null);

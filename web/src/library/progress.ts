@@ -27,14 +27,15 @@ function browserStorage(): Storage | null {
 }
 
 /**
- * Where the viewer stopped inside each episode. Per browser only, as positions are per device on
- * Android and iOS; Shikimori holds just the watched count.
+ * Where the viewer stopped inside each episode, kept in this browser. Shikimori holds just the
+ * watched count; the worker's /sync carries positions between devices (src/sync/service.ts).
  */
 export class ProgressStore {
   private readonly storage: Storage | null;
   private rows: Map<string, EpisodeProgress> | null = null;
   private readonly byAnime = new Map<number, EpisodeProgress[]>();
   private readonly listeners = new Set<() => void>();
+  private readonly watchers = new Set<(row: EpisodeProgress) => void>();
 
   constructor(storage?: Storage) {
     this.storage = storage ?? browserStorage();
@@ -52,9 +53,33 @@ export class ProgressStore {
     return rows;
   }
 
+  /** Every row across titles. */
+  list(): EpisodeProgress[] {
+    return [...this.all().values()];
+  }
+
+  /** A position this tab's player wrote: the one write sync sends on (restore and forget are quiet). */
   put(p: EpisodeProgress): void {
     this.all().set(rowKey(p.animeId, p.episode), { ...p });
     this.commit([p.animeId]);
+    for (const watcher of [...this.watchers]) watcher({ ...p });
+  }
+
+  /** Drops the title's rows written at or before `upTo`: a finished title another device closed. */
+  forget(animeId: number, upTo: number): void {
+    const stale = this.of(animeId).filter((row) => row.updatedAt <= upTo);
+    if (stale.length === 0) return;
+    const rows = this.all();
+    for (const row of stale) rows.delete(rowKey(row.animeId, row.episode));
+    this.commit([animeId]);
+  }
+
+  /** Hears put() only. */
+  watch(watcher: (row: EpisodeProgress) => void): () => void {
+    this.watchers.add(watcher);
+    return () => {
+      this.watchers.delete(watcher);
+    };
   }
 
   removeFrom(animeId: number, episode: number): EpisodeProgress[] {

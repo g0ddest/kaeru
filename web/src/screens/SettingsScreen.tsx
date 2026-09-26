@@ -62,7 +62,7 @@ function thresholdOptions(current: number): PillOption<number>[] {
 /** Account and sign-out, then playback: the watched threshold (decision 10), next episode, ending, quality. */
 export function SettingsScreen() {
   const access = useAccess();
-  const { progress } = useServices();
+  const { progress, sync } = useServices();
   const navigate = useNavigate();
   const [threshold, setThreshold] = useState(() => watchedThreshold());
   const [autoplay, setAutoplay] = useState(() => autoplayNext());
@@ -97,6 +97,8 @@ export function SettingsScreen() {
   }
 
   function signOut() {
+    // What this browser has not sent yet goes while the token still works.
+    sync.push({ keepalive: true });
     // The dialog promises the local cache goes: every position this browser kept, titles played
     // from search included, not only the ones in the loaded list (Android wipes it on sign-out).
     progress.clear();

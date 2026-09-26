@@ -15,7 +15,7 @@ import { Library } from "../library/library";
 import { ProgressStore } from "../library/progress";
 import type { Translation } from "../player/kodik";
 import { rememberDub, rememberedDub } from "../player/memory";
-import { noPlayback } from "../test/fakes";
+import { noPlayback, noSync } from "../test/fakes";
 import { ToastProvider } from "../ui/Toast";
 import { TitleScreen } from "./TitleScreen";
 
@@ -168,7 +168,7 @@ function start(details: Anime, rate?: { status: ListStatus; episodes: number }, 
     dubs.asked.push(animeId);
     return dubs.answer();
   };
-  services = { shikimori, library, progress, ...playback, kodik: { ...playback.kodik, translations } };
+  services = { shikimori, library, progress, ...playback, kodik: { ...playback.kodik, translations }, sync: noSync() };
 }
 
 function WatchProbe() {

@@ -21,7 +21,7 @@ import {
   watchedThreshold,
 } from "../library/prefs";
 import { ProgressStore } from "../library/progress";
-import { noPlayback } from "../test/fakes";
+import { noPlayback, noSync } from "../test/fakes";
 import { SettingsScreen } from "./SettingsScreen";
 
 const ACCOUNT: Account = { id: 1, nickname: "Лягушка", avatar: "https://shikimori.io/system/users/x160/1.png" };
@@ -75,8 +75,9 @@ function setup() {
   progress.put({ animeId: 99, episode: 1, positionMs: 90_000, durationMs: 1_440_000, updatedAt: 2 });
   // setup.ts clears localStorage after every test, so the next test starts signed out again.
   sessionStore.setSession({ account: ACCOUNT, tokens: TOKENS });
+  const sync = noSync();
   const view = render(
-    <ServicesContext.Provider value={{ shikimori, library, progress, ...noPlayback() }}>
+    <ServicesContext.Provider value={{ shikimori, library, progress, ...noPlayback(), sync }}>
       <MemoryRouter initialEntries={["/settings"]}>
         <Routes>
           <Route path="/settings" element={<SettingsScreen />} />
@@ -85,7 +86,7 @@ function setup() {
       </MemoryRouter>
     </ServicesContext.Provider>,
   );
-  return { progress, storage, user: userEvent.setup(), container: view.container };
+  return { progress, storage, sync, user: userEvent.setup(), container: view.container };
 }
 
 function thresholds(): HTMLElement {
@@ -225,7 +226,7 @@ describe("SettingsScreen", () => {
   });
 
   it("«Выйти» ends the session, forgets every position in this browser and goes home", async () => {
-    const { user, progress, storage } = setup();
+    const { user, progress, storage, sync } = setup();
     await user.click(screen.getByRole("button", { name: "Выйти из аккаунта" }));
     const dialog = screen.getByRole("dialog", { name: "Выйти из аккаунта?" });
     await user.click(within(dialog).getByRole("button", { name: "Выйти" }));
@@ -236,5 +237,7 @@ describe("SettingsScreen", () => {
     // Gone from storage as well, so a reload does not bring it back.
     expect(new ProgressStore(storage).of(99)).toEqual([]);
     expect(screen.getByText("Главная")).toBeInTheDocument();
+    // What was not yet sent to the other devices goes before the token does.
+    expect(sync.pushes).toEqual([{ keepalive: true }]);
   });
 });

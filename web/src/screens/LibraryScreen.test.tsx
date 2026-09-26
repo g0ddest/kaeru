@@ -12,7 +12,7 @@ import type { authorized } from "../auth/session";
 import type { Anime, ListStatus, UserRate } from "../domain/models";
 import { Library } from "../library/library";
 import { ProgressStore } from "../library/progress";
-import { noPlayback } from "../test/fakes";
+import { noPlayback, noSync } from "../test/fakes";
 import { LibraryScreen } from "./LibraryScreen";
 
 function anime(id: number, title: string): Anime {
@@ -88,7 +88,7 @@ function renderAt(path: string, shikimori: Shikimori) {
   const progress = new ProgressStore(memoryStorage());
   const library = new Library({ shikimori, authorized: signedIn, accountId: () => 1, progress });
   render(
-    <ServicesContext.Provider value={{ shikimori, library, progress, ...noPlayback() }}>
+    <ServicesContext.Provider value={{ shikimori, library, progress, ...noPlayback(), sync: noSync() }}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="/list" element={<LibraryScreen />} />

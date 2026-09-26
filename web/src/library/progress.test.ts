@@ -162,4 +162,41 @@ describe("ProgressStore", () => {
     progressStore.clear();
     expect(window.localStorage.getItem(KEY)).toBeNull();
   });
+
+  it("tells watchers of this tab's own writes, not of restored or forgotten rows", () => {
+    const store = new ProgressStore(memoryStorage());
+    const heard: EpisodeProgress[] = [];
+    const stop = store.watch((p) => heard.push(p));
+    store.put(row(1535, 1));
+    store.restore([row(1535, 2)]);
+    store.forget(1535, 10_000);
+    stop();
+    store.put(row(1535, 3));
+
+    expect(heard).toEqual([row(1535, 1)]);
+  });
+
+  it("forgets a title's positions written up to a moment, keeping later ones", () => {
+    const storage = memoryStorage();
+    const store = new ProgressStore(storage);
+    store.put({ ...row(1535, 1), updatedAt: 1_000 });
+    store.put({ ...row(1535, 2), updatedAt: 2_000 });
+    store.put({ ...row(1535, 3), updatedAt: 3_000 });
+    store.put({ ...row(21, 1), updatedAt: 1_000 });
+
+    store.forget(1535, 2_000);
+
+    expect(store.of(1535).map((p) => p.episode)).toEqual([3]);
+    expect(store.of(21)).toHaveLength(1);
+    expect(new ProgressStore(storage).of(1535).map((p) => p.episode)).toEqual([3]);
+  });
+
+  it("lists every row across titles", () => {
+    const store = new ProgressStore(memoryStorage());
+    store.put(row(1535, 1));
+    store.put(row(21, 2));
+
+    expect(store.list()).toEqual(expect.arrayContaining([row(1535, 1), row(21, 2)]));
+    expect(store.list()).toHaveLength(2);
+  });
 });

@@ -21,7 +21,7 @@ import type { Engine, EngineFactory } from "../player/engine";
 import type { EngineFailureKind } from "../player/errors";
 import { KodikError, type Kodik, type KodikStream, type Translation } from "../player/kodik";
 import { CONTROLS_HIDE_MS, NO_MARKS, type SkipMarks } from "../player/rules";
-import { memoryStorage } from "../test/fakes";
+import { memoryStorage, noSync } from "../test/fakes";
 import { ToastProvider } from "../ui/Toast";
 import { PlayerScreen } from "./PlayerScreen";
 
@@ -256,7 +256,7 @@ function pressF(): void {
 function services(): Services {
   const shikimori = server.api();
   const library = new Library({ shikimori, authorized: fakeAuthorized, accountId: () => 42, progress });
-  return { shikimori, library, progress, kodik, aniskip, engine: engines.factory };
+  return { shikimori, library, progress, kodik, aniskip, engine: engines.factory, sync: noSync() };
 }
 
 /** AuthCallbackScreen once Shikimori has signed the viewer in: the address they came for, replaced. */

@@ -1,0 +1,434 @@
+import type { EpisodeProgress, LibraryEntry, ListStatus } from "../domain/models";
+import type { Library } from "../library/library";
+import type { ProgressStore } from "../library/progress";
+import { mergeDub, onDubRemembered, rememberedDubs, type StampedDub } from "../player/memory";
+import type { SyncClient, SyncPosition, SyncTitle, SyncTitles } from "./client";
+
+/** What the player tells sync: it just paused, left, or moved on, so the batch goes now. */
+export interface SyncPort {
+  push(options?: { keepalive?: boolean }): void;
+}
+
+export interface Sync extends SyncPort {
+  /** Signed-in shell mounted: read the document, then follow local changes. */
+  start(): void;
+  stop(): void;
+}
+
+export interface SyncDeps {
+  client: SyncClient;
+  progress: ProgressStore;
+  library: Pick<Library, "state" | "subscribe" | "entry">;
+  /** The signed-in account, or null: nothing is sent or read without one. */
+  accountId: () => number | null;
+  /** For the dub memory and the outbox; the browser's own by default. */
+  storage?: Storage | null;
+}
+
+/** At most one batch a minute while watching (spec §3: D1's free tier writes). */
+export const PUSH_EVERY_MS = 60_000;
+/** Back from the background after this long: another device may have played meanwhile. */
+export const PULL_AFTER_HIDDEN_MS = 5 * 60_000;
+/** Changes not yet accepted by the worker, kept across reloads: `{ account, titles }`. */
+const OUTBOX_KEY = "kaeru.sync.outbox";
+/** Accounts whose positions this browser already sent once in full. */
+const SEEDED_KEY = "kaeru.sync.seeded";
+/** The worker keeps the 30 latest episodes of a title; older ones would only be trimmed again. */
+const EPISODES_PER_TITLE = 30;
+/** Titles per POST, well under the worker's 256 KB body with 30 episodes each. */
+const TITLES_PER_POST = 100;
+
+function browserStorage(): Storage | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function isEmpty(title: SyncTitle): boolean {
+  return title.dub === undefined && title.gone === undefined && (title.eps === undefined || Object.keys(title.eps).length === 0);
+}
+
+/** `patch` over `base`, the newer `at` winning per field and per episode. */
+function merge(base: SyncTitle | undefined, patch: SyncTitle): SyncTitle {
+  const out: SyncTitle = { ...base };
+  if (patch.dub !== undefined && (out.dub === undefined || out.dub.at <= patch.dub.at)) out.dub = patch.dub;
+  if (patch.gone !== undefined && (out.gone === undefined || out.gone <= patch.gone)) out.gone = patch.gone;
+  if (patch.eps !== undefined) {
+    const eps = { ...out.eps };
+    for (const [episode, position] of Object.entries(patch.eps)) {
+      const known = eps[episode];
+      if (known === undefined || known.at <= position.at) eps[episode] = position;
+    }
+    out.eps = eps;
+  }
+  return out;
+}
+
+/** `title` without what `sent` (or the server) already covers: anything no newer than it. */
+function without(title: SyncTitle, covered: SyncTitle): SyncTitle {
+  const out: SyncTitle = { ...title };
+  const floor = covered.gone ?? Number.NEGATIVE_INFINITY;
+  if (out.dub !== undefined && (out.dub.at <= floor || (covered.dub !== undefined && out.dub.at <= covered.dub.at))) delete out.dub;
+  if (out.gone !== undefined && out.gone <= floor) delete out.gone;
+  if (out.eps !== undefined) {
+    const eps: Record<string, SyncPosition> = {};
+    for (const [episode, position] of Object.entries(out.eps)) {
+      const known = covered.eps?.[episode];
+      if (position.at <= floor || (known !== undefined && position.at <= known.at)) continue;
+      eps[episode] = position;
+    }
+    if (Object.keys(eps).length > 0) out.eps = eps;
+    else delete out.eps;
+  }
+  return out;
+}
+
+function toPosition(row: EpisodeProgress): SyncPosition {
+  return { p: row.positionMs, d: row.durationMs, at: row.updatedAt };
+}
+
+/**
+ * Viewing sync through the worker (spec 2026-09-26-kaeru-sync-design.md §4): reads the document on
+ * start and after five minutes in the background and takes whatever is newer than this browser's;
+ * sends this browser's positions and dubs in batches — at most one a minute, at once on pause, on
+ * leaving the player, on a new episode and when the page goes away — and a tombstone for a title
+ * the list marks «completed». A batch that fails stays in the outbox for the next try. Nothing here
+ * ever throws at a caller or blocks the player.
+ */
+export class SyncService implements Sync {
+  private readonly deps: SyncDeps;
+  private readonly storage: Storage | null;
+  private running = false;
+  private cleanups: (() => void)[] = [];
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private lastPushAt = Number.NEGATIVE_INFINITY;
+  /** Batches on their way; a keepalive one may overlap the regular one. */
+  private inflight = 0;
+  /** Outboxes on their way, as sent: the player's pagehide and this one's must not send one twice. */
+  private readonly sending = new Set<string>();
+  /** The outbox when storage is blocked: kept for this page at least. */
+  private memoryOutbox: string | null = null;
+  private again = false;
+  private pulling: Promise<void> | null = null;
+  private hiddenAt: number | null = null;
+  /** Each listed title's status as last seen; null until the list is first known. */
+  private statuses: Map<number, ListStatus> | null = null;
+
+  constructor(deps: SyncDeps) {
+    this.deps = deps;
+    this.storage = deps.storage === undefined ? browserStorage() : deps.storage;
+  }
+
+  start(): void {
+    if (this.running) return;
+    this.running = true;
+    this.cleanups = [
+      this.deps.progress.watch(this.onPosition),
+      onDubRemembered(this.onDub),
+      this.deps.library.subscribe(this.onLibrary),
+    ];
+    if (typeof window !== "undefined") {
+      window.addEventListener("pagehide", this.onPageHide);
+      document.addEventListener("visibilitychange", this.onVisibility);
+      this.cleanups.push(() => {
+        window.removeEventListener("pagehide", this.onPageHide);
+        document.removeEventListener("visibilitychange", this.onVisibility);
+      });
+    }
+    this.onLibrary();
+    void this.pull();
+  }
+
+  stop(): void {
+    this.running = false;
+    for (const cleanup of this.cleanups) cleanup();
+    this.cleanups = [];
+    this.statuses = null;
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
+  }
+
+  push(options: { keepalive?: boolean } = {}): void {
+    if (!this.running) return;
+    void this.send(options.keepalive === true);
+  }
+
+  /** Reads the document and takes what is newer; one read at a time. */
+  pull(): Promise<void> {
+    if (this.pulling !== null) return this.pulling;
+    const run = this.read().finally(() => {
+      this.pulling = null;
+    });
+    this.pulling = run;
+    return run;
+  }
+
+  private async read(): Promise<void> {
+    const account = this.deps.accountId();
+    if (!this.running || account === null) return;
+    try {
+      const titles = await this.deps.client.get();
+      if (!this.running || this.deps.accountId() !== account) return;
+      this.apply(titles);
+      this.seed(account, titles);
+    } catch {
+      // Offline or refused: the next start or return from the background reads again.
+    }
+    this.schedule();
+  }
+
+  private readonly onPosition = (row: EpisodeProgress): void => {
+    if (this.finished(row.animeId)) return;
+    if (this.enqueue(row.animeId, { eps: { [String(row.episode)]: toPosition(row) } })) this.schedule();
+  };
+
+  private readonly onDub = (animeId: number, dub: StampedDub, storage: Storage | null): void => {
+    // Another storage is a test's or another store's, not this browser's memory.
+    if (storage !== this.storage || this.finished(animeId)) return;
+    if (this.enqueue(animeId, { dub: { id: dub.id, title: dub.title, at: dub.at } })) this.schedule();
+  };
+
+  /** A title turning «completed» leaves a tombstone; turning back before it went out takes it back. */
+  private readonly onLibrary = (): void => {
+    const entries = listed(this.deps.library.state());
+    if (entries === null) return;
+    const now = new Map(entries.map((entry) => [entry.anime.id, entry.rate.status]));
+    const before = this.statuses;
+    this.statuses = now;
+    // The first list seen is where things stand, not a change.
+    if (before === null) return;
+    for (const [animeId, status] of now) {
+      const was = before.get(animeId);
+      if (status === "completed" && was !== "completed") this.markGone(animeId);
+      else if (status !== "completed" && was === "completed") this.unmarkGone(animeId);
+    }
+  };
+
+  private readonly onPageHide = (): void => {
+    this.push({ keepalive: true });
+  };
+
+  private readonly onVisibility = (): void => {
+    if (document.visibilityState === "hidden") {
+      this.hiddenAt = Date.now();
+      this.push({ keepalive: true });
+      return;
+    }
+    const hiddenAt = this.hiddenAt;
+    this.hiddenAt = null;
+    if (hiddenAt !== null && Date.now() - hiddenAt >= PULL_AFTER_HIDDEN_MS) void this.pull();
+  };
+
+  private finished(animeId: number): boolean {
+    return this.deps.library.entry(animeId)?.rate.status === "completed";
+  }
+
+  private markGone(animeId: number): void {
+    const at = Date.now();
+    const outbox = this.readOutbox();
+    const id = String(animeId);
+    // Whatever was waiting for this title is older than the tombstone and would be refused anyway.
+    const kept = without(outbox[id] ?? {}, { gone: at });
+    outbox[id] = { ...kept, gone: at };
+    this.writeOutbox(outbox);
+    this.schedule();
+  }
+
+  private unmarkGone(animeId: number): void {
+    const outbox = this.readOutbox();
+    const title = outbox[String(animeId)];
+    if (title?.gone === undefined) return;
+    delete title.gone;
+    if (isEmpty(title)) delete outbox[String(animeId)];
+    this.writeOutbox(outbox);
+  }
+
+  /** What the server holds, taken where it is newer than this browser's. */
+  private apply(titles: SyncTitles): void {
+    const { progress } = this.deps;
+    const outbox = this.readOutbox();
+    let outboxChanged = false;
+    for (const [id, title] of Object.entries(titles)) {
+      const animeId = Number(id);
+      if (title.gone !== undefined) progress.forget(animeId, title.gone);
+      if (title.eps !== undefined) {
+        const local = new Map(progress.of(animeId).map((row) => [row.episode, row]));
+        const newer: EpisodeProgress[] = [];
+        for (const [episode, position] of Object.entries(title.eps)) {
+          const known = local.get(Number(episode));
+          // A position with no length cannot be resumed from; the players never write one.
+          if (position.d <= 0 || (known !== undefined && known.updatedAt >= position.at)) continue;
+          newer.push({ animeId, episode: Number(episode), positionMs: position.p, durationMs: position.d, updatedAt: position.at });
+        }
+        progress.restore(newer);
+      }
+      if (title.dub !== undefined) mergeDub(animeId, title.dub, this.storage ?? undefined);
+      const waiting = outbox[id];
+      if (waiting !== undefined) {
+        const left = without(waiting, title);
+        if (isEmpty(left)) delete outbox[id];
+        else outbox[id] = left;
+        outboxChanged = true;
+      }
+    }
+    if (outboxChanged) this.writeOutbox(outbox);
+  }
+
+  /** Once per account: what this browser kept before sync, where it is newer than the server's. */
+  private seed(account: number, remote: SyncTitles): void {
+    const seeded = this.readSeeded();
+    if (seeded.includes(account)) return;
+    const byTitle = new Map<number, EpisodeProgress[]>();
+    for (const row of this.deps.progress.list()) byTitle.set(row.animeId, [...(byTitle.get(row.animeId) ?? []), row]);
+    const batch: SyncTitles = {};
+    for (const [animeId, rows] of byTitle) {
+      if (this.finished(animeId)) continue;
+      const latest = [...rows].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, EPISODES_PER_TITLE);
+      const eps: Record<string, SyncPosition> = {};
+      for (const row of latest) eps[String(row.episode)] = toPosition(row);
+      batch[String(animeId)] = { eps };
+    }
+    for (const [animeId, dub] of rememberedDubs(this.storage ?? undefined)) {
+      if (this.finished(animeId)) continue;
+      batch[String(animeId)] = { ...batch[String(animeId)], dub };
+    }
+    let outbox = this.readOutbox();
+    for (const [id, title] of Object.entries(batch)) {
+      const left = without(title, remote[id] ?? {});
+      if (!isEmpty(left)) outbox = { ...outbox, [id]: merge(outbox[id], left) };
+    }
+    this.writeOutbox(outbox);
+    this.writeSeeded([...seeded, account]);
+  }
+
+  /** The next batch, no sooner than a minute after the last one. */
+  private schedule(): void {
+    if (!this.running || this.timer !== null || this.inflight > 0) return;
+    if (this.deps.accountId() === null || Object.keys(this.readOutbox()).length === 0) return;
+    const delay = Math.max(0, this.lastPushAt + PUSH_EVERY_MS - Date.now());
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      void this.send(false);
+    }, delay);
+  }
+
+  private async send(keepalive: boolean): Promise<void> {
+    if (!this.running || this.deps.accountId() === null) return;
+    // A batch on its way goes on; this one follows it. A page going away cannot wait for it.
+    if (this.inflight > 0 && !keepalive) {
+      this.again = true;
+      return;
+    }
+    const outbox = this.readOutbox();
+    const ids = Object.keys(outbox);
+    const sent = JSON.stringify(outbox);
+    if (ids.length === 0 || this.sending.has(sent)) return;
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
+    this.lastPushAt = Date.now();
+    this.inflight += 1;
+    this.sending.add(sent);
+    let failed = false;
+    try {
+      for (let start = 0; start < ids.length; start += TITLES_PER_POST) {
+        const batch: SyncTitles = {};
+        for (const id of ids.slice(start, start + TITLES_PER_POST)) batch[id] = outbox[id] as SyncTitle;
+        const answer = await this.deps.client.post(batch, { keepalive });
+        if (!this.running) return;
+        this.accepted(batch);
+        this.apply(answer);
+      }
+    } catch {
+      // Kept in the outbox; the next batch carries it a minute later.
+      failed = true;
+    } finally {
+      this.inflight -= 1;
+      this.sending.delete(sent);
+    }
+    if (this.again && !failed) {
+      this.again = false;
+      void this.send(false);
+      return;
+    }
+    this.again = false;
+    this.schedule();
+  }
+
+  /** Out of the outbox: what the worker took, unless it changed again meanwhile. */
+  private accepted(batch: SyncTitles): void {
+    const outbox = this.readOutbox();
+    for (const [id, sent] of Object.entries(batch)) {
+      const waiting = outbox[id];
+      if (waiting === undefined) continue;
+      const left = without(waiting, sent);
+      if (isEmpty(left)) delete outbox[id];
+      else outbox[id] = left;
+    }
+    this.writeOutbox(outbox);
+  }
+
+  private enqueue(animeId: number, change: SyncTitle): boolean {
+    if (this.deps.accountId() === null) return false;
+    const outbox = this.readOutbox();
+    outbox[String(animeId)] = merge(outbox[String(animeId)], change);
+    this.writeOutbox(outbox);
+    return true;
+  }
+
+  private readOutbox(): SyncTitles {
+    const account = this.deps.accountId();
+    try {
+      const raw = this.storage === null ? this.memoryOutbox : this.storage.getItem(OUTBOX_KEY);
+      const root = record(JSON.parse(raw ?? "null"));
+      // Another account's changes are never sent with this one's token.
+      if (root === null || root["account"] !== account) return {};
+      const titles = record(root["titles"]);
+      return titles === null ? {} : (titles as SyncTitles);
+    } catch {
+      return {};
+    }
+  }
+
+  private writeOutbox(titles: SyncTitles): void {
+    const raw = Object.keys(titles).length === 0 ? null : JSON.stringify({ account: this.deps.accountId(), titles });
+    if (this.storage === null) {
+      this.memoryOutbox = raw;
+      return;
+    }
+    try {
+      if (raw === null) this.storage.removeItem(OUTBOX_KEY);
+      else this.storage.setItem(OUTBOX_KEY, raw);
+    } catch {
+      // Blocked storage: this batch is simply not kept past this page.
+    }
+  }
+
+  private readSeeded(): number[] {
+    try {
+      const parsed: unknown = JSON.parse(this.storage?.getItem(SEEDED_KEY) ?? "[]");
+      return Array.isArray(parsed) ? parsed.filter((id): id is number => typeof id === "number") : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private writeSeeded(accounts: number[]): void {
+    try {
+      this.storage?.setItem(SEEDED_KEY, JSON.stringify(accounts));
+    } catch {
+      // Blocked storage: the next start sends the same positions again, which the worker ignores.
+    }
+  }
+}
+
+function listed(state: ReturnType<Library["state"]>): LibraryEntry[] | null {
+  if (state.kind === "ready") return state.entries;
+  if (state.kind === "loading" || state.kind === "error") return state.entries;
+  return null;
+}
