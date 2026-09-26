@@ -10,6 +10,21 @@ struct PlaybackPreferences: Codable, Equatable {
     var studios: [String] = []
     var appearance = "system"
     var notifications = false
+    /// Spatial audio for AirPods and the like: the sound anchored to where the device stands.
+    /// Optional so settings saved before it existed still decode; unset means the platform's
+    /// default — off on the Mac, where it made dialogue sound muffled and off to the side (a
+    /// browser plays the same stream as plain stereo), on elsewhere, as the system has it.
+    var spatialAudio: Bool?
+    var spatialAudioOn: Bool {
+        get {
+            #if os(macOS)
+            spatialAudio ?? false
+            #else
+            spatialAudio ?? true
+            #endif
+        }
+        set { spatialAudio = newValue }
+    }
 
     static let defaultStudios = ["AniLibria", "AniDUB", "Crunchyroll", "Amazing Dubbing", "AniBaza", "AniMaunt", "JAM", "Dream Cast", "SHIZA Project"]
 

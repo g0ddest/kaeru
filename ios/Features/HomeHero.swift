@@ -186,7 +186,7 @@ private struct HeroPage: View {
                alignment: sizeClass == .regular ? .leading : .bottomLeading)
         .background { Backdrop(anime: anime) }
         // Asked for here: a task on the backdrop, inside `.background`, never ran.
-        .task(id: anime.id) { if sizeClass == .regular { await model.loadStill(for: anime.id) } }
+        .onAppear { if sizeClass == .regular { model.loadStill(for: anime.id) } }
         // The status bar sits on this artwork — the hero runs under it on purpose — and a clock in
         // white over a pale poster is unreadable, in either appearance. One short fall of shadow
         // along the top, the same shadow the bottom of the hero already casts.

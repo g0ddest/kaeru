@@ -112,7 +112,7 @@ struct DetailView: View {
         }
         .frame(maxWidth: .infinity, minHeight: height, alignment: .bottomLeading)
         .background { Backdrop(anime: anime) }
-        .task(id: anime.id) { if sizeClass == .regular { await model.loadStill(for: anime.id) } }
+        .onAppear { if sizeClass == .regular { model.loadStill(for: anime.id) } }
     }
     /// One line of what this title is, in the order a viewer asks: year, length, rating, kind,
     /// studio.

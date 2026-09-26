@@ -34,6 +34,10 @@ struct SettingsView: View {
                 Section {
                     Toggle("Следующая серия автоматически", isOn: $model.autoNext)
                     Toggle("Пропускать эндинг автоматически", isOn: $model.preferences.autoSkipEnding)
+                    Toggle(isOn: $model.preferences.spatialAudioOn) {
+                        Text("Пространственный звук")
+                        Text("В AirPods звук привязан к положению устройства. Если голоса звучат приглушённо или сбоку — выключите.")
+                    }
                     // AVKit on the Mac cannot start picture in picture by itself; its button in the
                     // player is the only way in.
                     #if os(iOS)

@@ -122,17 +122,20 @@ import AuthenticationServices
     /// across a hero is a blur of pixels. Asked once per title per launch; none is remembered as none.
     private(set) var stills: [Int: URL] = [:]
     @ObservationIgnored private var stillsAsked = Set<Int>()
-    func loadStill(for id: Int) async {
+    func loadStill(for id: Int) {
         guard stillsAsked.insert(id).inserted else { return }
-        do {
-            let found = try await service.screenshots(id)
-            if let first = found.first, let url = URL(string: first) { stills[id] = url }
-        } catch {
-            // Cancelled (the hero redrew and restarted its task) or failed: asked again next time.
-            // Remembering it as asked left the first title of the carousel on its stretched poster.
-            stillsAsked.remove(id)
+        // Its own task, not the caller's: the hero's first page redraws and cancels whatever it
+        // started, and a cancelled ask left that title on its stretched poster for good.
+        Task {
+            do {
+                let found = try await service.screenshots(id)
+                if let first = found.first, let url = URL(string: first) { stills[id] = url }
+            } catch {
+                stillsAsked.remove(id) // a failure is asked again the next time the title is shown
+            }
         }
     }
+
 
 
     init(service: any AnimeService, store: any LocalStorage, configuration: AppConfiguration, session: Session? = nil,

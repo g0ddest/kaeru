@@ -228,3 +228,20 @@ private typealias Stream = Kaeru.Stream
         XCTAssertTrue(saved?.watched == true)
     }
 }
+
+final class SpatialAudioPreferenceTests: XCTestCase {
+    /// Settings saved before the switch existed have no key for it; they must still read, and the
+    /// switch then follows the platform: plain stereo on the Mac, the system's spatial audio elsewhere.
+    func testOlderSettingsReadAndFollowThePlatform() throws {
+        let old = #"{"playbackSpeed":1,"watchedThreshold":0.9,"autoSkipEnding":false,"skipSeconds":10,"backgroundPlayback":false,"pipOnLeave":true,"studios":[],"appearance":"system","notifications":false}"#
+        var preferences = try JSONDecoder().decode(PlaybackPreferences.self, from: Data(old.utf8))
+        #if os(macOS)
+        XCTAssertFalse(preferences.spatialAudioOn)
+        #else
+        XCTAssertTrue(preferences.spatialAudioOn)
+        #endif
+        preferences.spatialAudioOn.toggle()
+        let again = try JSONDecoder().decode(PlaybackPreferences.self, from: try JSONEncoder().encode(preferences))
+        XCTAssertEqual(again.spatialAudioOn, preferences.spatialAudioOn)
+    }
+}

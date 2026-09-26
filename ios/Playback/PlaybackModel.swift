@@ -312,6 +312,13 @@ enum PlaybackLocalAction {
         if notify { onLocalAction?(.seek(target)) }
     }
     func seek(by seconds: Double) { seek(to: safePosition + seconds) }
+    /// «Пространственный звук» off means plain stereo, as a browser plays it; on leaves the item to
+    /// the system, which spatialises it for AirPods. Applied to the playing item at once as well.
+    func applySpatialAudio(to item: AVPlayerItem? = nil) {
+        guard let item = item ?? player.currentItem else { return }
+        if !model.preferences.spatialAudioOn { item.allowedAudioSpatializationFormats = [] }
+        else { item.allowedAudioSpatializationFormats = .monoStereoAndMultichannel }
+    }
     func skipCurrent() {
         guard let offer = marks.offer(position: safePosition, duration: duration) else { return }
         switch offer.kind {
@@ -584,6 +591,7 @@ enum PlaybackLocalAction {
         // Existing app's measured header propagation covers HLS manifests and segments.
         let asset = AVURLAsset(url: url, options: headers.isEmpty ? nil : ["AVURLAssetHTTPHeaderFieldsKey": headers])
         let item = AVPlayerItem(asset: asset)
+        applySpatialAudio(to: item)
         installedEpisode = episode
         itemObservation = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
             Task { @MainActor in await self?.itemChanged(item, position: position, fence: fence) }
