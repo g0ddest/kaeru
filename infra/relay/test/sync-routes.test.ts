@@ -94,6 +94,14 @@ describe("/sync", () => {
     expect(Object.keys(title.eps).map(Number).sort((a, b) => a - b)).toEqual(Array.from({ length: 30 }, (_, i) => i + 6));
   });
 
+  it("answers a write with only the titles it wrote, so a big list is not read on every save", async () => {
+    const at = Date.now();
+    await call("POST", "merge-a", { titles: { "100": { dub: { id: 1, title: "A", at } }, "101": { dub: { id: 2, title: "B", at } } } });
+    const answer = (await (await call("POST", "merge-a", { titles: { "100": { eps: { "1": { p: 5, d: 10, at: at + 1 } } } } })).json()) as { titles: Record<string, unknown> };
+    expect(Object.keys(answer.titles)).toEqual(["100"]);
+    expect(answer.titles["100"]).toEqual({ dub: { id: 1, title: "A", at }, eps: { "1": { p: 5, d: 10, at: at + 1 } } });
+  });
+
   it("asks to sign in without a token or with one Shikimori refuses", async () => {
     expect((await call("GET", null)).status).toBe(401);
     expect(await (await call("GET", "nobody")).json()).toEqual({ error: "sign_in" });

@@ -92,21 +92,30 @@ function statements(db: D1Database, user: number, anime: number, title: Title): 
   if (newest > 0) {
     // Written after the title was finished: it is being watched again, and the tombstone goes.
     out.push(db.prepare("DELETE FROM gone WHERE user = ?1 AND anime = ?2 AND at < ?3").bind(user, anime, newest));
-    out.push(db.prepare(`DELETE FROM positions WHERE user = ?1 AND anime = ?2 AND episode NOT IN
-      (SELECT episode FROM positions WHERE user = ?1 AND anime = ?2 ORDER BY at DESC LIMIT ${MAX_EPISODES})`).bind(user, anime));
+  }
+  if (title.eps !== undefined && Object.keys(title.eps).length > 0) {
+    // Only past the limit: an OFFSET past the end deletes nothing and reads next to nothing.
+    out.push(db.prepare(`DELETE FROM positions WHERE user = ?1 AND anime = ?2 AND episode IN
+      (SELECT episode FROM positions WHERE user = ?1 AND anime = ?2 ORDER BY at DESC LIMIT -1 OFFSET ${MAX_EPISODES})`).bind(user, anime));
   }
   return out;
 }
 
 /** Everything stored for one viewer, in the wire shape the clients read. */
-async function document(db: D1Database, user: number, now: number): Promise<Record<string, Title>> {
+async function document(db: D1Database, user: number, now: number, only?: number[]): Promise<Record<string, Title>> {
   const titles: Record<string, Title> = {};
   const title = (anime: number) => (titles[String(anime)] ??= {});
+  // A write is answered with the titles it wrote, not the whole list: read on every minute's save,
+  // a list of a few hundred titles would spend D1's daily reads in a few dozen episodes.
+  const scope = only === undefined ? "" : " AND anime IN (SELECT value FROM json_each(?3))";
+  const ids = JSON.stringify(only ?? []);
+  const scoped = (sql: string) => db.prepare(only === undefined ? sql : sql + scope.replace("?3", "?2"));
+  const bind = (statement: D1PreparedStatement) => (only === undefined ? statement.bind(user) : statement.bind(user, ids));
   const [positions, dubs, secrets, gone] = await db.batch([
-    db.prepare("SELECT anime, episode, p, d, at FROM positions WHERE user = ?1").bind(user),
-    db.prepare("SELECT anime, id, title, at FROM dubs WHERE user = ?1").bind(user),
-    db.prepare('SELECT anime, "on", watched, at FROM secrets WHERE user = ?1').bind(user),
-    db.prepare("SELECT anime, at FROM gone WHERE user = ?1 AND at > ?2").bind(user, now - TOMBSTONE_TTL_MS),
+    bind(scoped("SELECT anime, episode, p, d, at FROM positions WHERE user = ?1")),
+    bind(scoped("SELECT anime, id, title, at FROM dubs WHERE user = ?1")),
+    bind(scoped('SELECT anime, "on", watched, at FROM secrets WHERE user = ?1')),
+    bind(scoped(`SELECT anime, at FROM gone WHERE user = ?1 AND at > ${now - TOMBSTONE_TTL_MS}`)),
   ]);
   for (const row of positions.results as { anime: number; episode: number; p: number; d: number; at: number }[]) {
     (title(row.anime).eps ??= {})[String(row.episode)] = { p: row.p, d: row.d, at: row.at };
@@ -144,8 +153,10 @@ export async function handleSync(request: Request, env: Cloudflare.Env, now = Da
     const incoming = parseTitles(body);
     if (incoming === null) return json({ error: "parameters" }, 400);
     const writes = Object.entries(incoming).flatMap(([anime, title]) => statements(db, viewer.id, Number(anime), title));
-    writes.push(db.prepare("DELETE FROM gone WHERE user = ?1 AND at <= ?2").bind(viewer.id, now - TOMBSTONE_TTL_MS));
-    await db.batch(writes);
+    // Old tombstones are swept now and then rather than on every save.
+    if (Math.random() < 0.02) writes.push(db.prepare("DELETE FROM gone WHERE user = ?1 AND at <= ?2").bind(viewer.id, now - TOMBSTONE_TTL_MS));
+    if (writes.length > 0) await db.batch(writes);
+    return json({ titles: await document(db, viewer.id, now, Object.keys(incoming).map(Number)) });
   }
   return json({ titles: await document(db, viewer.id, now) });
 }
