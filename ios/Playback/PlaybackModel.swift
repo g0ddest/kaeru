@@ -607,6 +607,11 @@ enum PlaybackLocalAction {
             let success = await player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
             guard isCurrent(fence), player.currentItem === item else { return }
             timeoutTask?.cancel(); restoring = false; loading = false
+            // The jump this seek causes is reported after `restoring` is already false, and it
+            // used to go to the friend as «перемотал» — read before the seek landed, so at 0:00:
+            // a guest joining a room at minute one sent the host back to the start. The player's
+            // own seek into place is quiet, like the ones the session asks for.
+            quietSeekAt = Date()
             if !success { fail("Не удалось восстановить позицию видео."); return }
             self.position = target; requestedPosition = target
             if intent.shouldPlay, !interruptionPaused { player.play() }
