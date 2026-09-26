@@ -252,6 +252,20 @@ describe("SyncService push", () => {
     expect(env.posts()[1]?.keepalive).toBe(false);
   });
 
+  it("closing the player sends the position just saved, in the same moment, with keepalive", async () => {
+    const env = started();
+    env.service.start();
+    await settle();
+    // What PlayerController.dispose() does: save the position, then ask for a batch at once.
+    env.progress.put(row(1535, 3, 845_000, Date.now()));
+    env.service.push({ keepalive: true });
+    await settle();
+
+    const last = env.posts().at(-1);
+    expect(last?.keepalive).toBe(true);
+    expect(last?.titles["1535"]?.eps?.["3"]?.p).toBe(845_000);
+  });
+
   it("sends with keepalive on pagehide and when the tab is hidden", async () => {
     const env = started();
     env.service.start();
