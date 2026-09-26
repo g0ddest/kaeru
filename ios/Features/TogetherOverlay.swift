@@ -366,7 +366,7 @@ struct TogetherHistorySheet: View {
                 }
             }
             .navigationTitle(TogetherCopy.history)
-            .navigationBarTitleDisplayMode(.inline)
+            .kaeruTitleDisplay(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button(TogetherCopy.close) { dismiss() } } }
         }
         .presentationDetents([.medium])

@@ -109,12 +109,12 @@ struct HomeView: View {
             // buttons — on iPad the sidebar toggle lives there — but loses its background and its
             // title, which the hero says better.
             .navigationTitle(hero.isEmpty ? "Главная" : "")
-            .navigationBarTitleDisplayMode(hero.isEmpty ? .large : .inline)
-            .toolbarBackground(hero.isEmpty ? .visible : .hidden, for: .navigationBar)
+            .kaeruTitleDisplay(hero.isEmpty ? .large : .inline)
+            .kaeruBarBackground(hero.isEmpty ? .visible : .hidden)
         }
         .refreshable { await model.reload(); revision += 1 }
         .task(id: "\(season.id)-\(revision)-\(offline)") { if !offline { await loadSeason() } }
-        .fullScreenCover(item: $route) { PlayerScreen(anime: $0.anime, episode: $0.episode, model: model) }
+        .playerPresentation(item: $route)
     }
     private var invitation: some View {
         VStack(alignment: .leading, spacing: 12) {

@@ -16,17 +16,37 @@ struct HeroCarousel: View {
     @State private var touched = false
 
     var body: some View {
+        pages
+        .frame(height: height)
+        .overlay(alignment: .bottom) { dots }
+        .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in touched = true })
+        .task(id: "\(index)/\(touched)") { await advance() }
+        .onChange(of: titles.map(\.id)) { _, ids in if index >= ids.count { index = 0 } }
+    }
+
+    /// One title to a page, swiped between. The Mac has no paged `TabView`; a paging scroll view is
+    /// the same gesture on a trackpad, and the same `index` drives it.
+    @ViewBuilder private var pages: some View {
+        #if os(iOS)
         TabView(selection: $index) {
             ForEach(Array(titles.enumerated()), id: \.element.id) { position, anime in
                 HeroPage(anime: anime) { play(anime) }.tag(position)
             }
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
-        .frame(height: height)
-        .overlay(alignment: .bottom) { dots }
-        .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in touched = true })
-        .task(id: "\(index)/\(touched)") { await advance() }
-        .onChange(of: titles.map(\.id)) { _, ids in if index >= ids.count { index = 0 } }
+        #else
+        ScrollView(.horizontal) {
+            LazyHStack(spacing: 0) {
+                ForEach(Array(titles.enumerated()), id: \.element.id) { position, anime in
+                    HeroPage(anime: anime) { play(anime) }.containerRelativeFrame(.horizontal).id(position)
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .scrollTargetBehavior(.paging)
+        .scrollIndicators(.hidden)
+        .scrollPosition(id: Binding<Int?>(get: { index }, set: { index = $0 ?? 0 }))
+        #endif
     }
 
     @ViewBuilder private var dots: some View {

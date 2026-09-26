@@ -85,13 +85,13 @@ struct RootView: View {
         .sheet(isPresented: $togetherOpen) {
             NavigationStack { TogetherView(manager: model.together) }
         }
-        .fullScreenCover(item: $deepLinkRoute) { PlayerScreen(anime: $0.anime, episode: $0.episode, model: model) }
+        .playerPresentation(item: $deepLinkRoute)
         // An invitation is not a player: it is somebody asking, and the answer is given here —
         // over everything, because it arrived from outside the app and there is nothing else to
         // do with it until it is answered.
-        .fullScreenCover(isPresented: Binding(get: { model.together.joining != nil },
-                                              set: { if !$0 { model.together.acceptJoin() } }),
-                         onDismiss: {
+        .kaeruCover(isPresented: Binding(get: { model.together.joining != nil },
+                                         set: { if !$0 { model.together.acceptJoin() } }),
+                    onDismiss: {
             // Once this screen is actually gone, and not a moment before.
             guard let episode = pendingWatch else { return }
             pendingWatch = nil
@@ -277,7 +277,13 @@ struct RootView: View {
     /// Looked at once per change of the pasteboard, and read only when the system says it holds
     /// something URL-shaped: reading is what shows the «Kaeru вставило из Telegram» banner, and
     /// a banner at every launch for a pasteboard full of somebody's shopping list is not on.
+    ///
+    /// Not on a Mac. There a read is not a banner but an alert that stops everything and asks —
+    /// macOS 15.4 and later ask every app that reads the pasteboard by itself, and nothing but the
+    /// read tells whether the URL in it is an invitation. A Mac user who copied one pastes it into
+    /// «Смотреть вместе», which is a paste the system never asks about.
     private func takeInvitationFromPasteboard() async {
+        #if os(iOS)
         let board = UIPasteboard.general
         guard board.changeCount != pasteboardSeen, board.hasStrings || board.hasURLs else { return }
         pasteboardSeen = board.changeCount
@@ -297,6 +303,7 @@ struct RootView: View {
         guard model.together.invitation?.roomID != invitation.roomID else { return }
         TogetherLog.write("invitation taken from the pasteboard")
         open(link)
+        #endif
     }
 
     private func openTitle(id: Int, episode: Int?) async {

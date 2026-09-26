@@ -46,8 +46,12 @@ enum Reporting {
         if FirebaseApp.app() == nil { FirebaseApp.configure() }
         apply(enabled)
         // The same property Android sets: an iPad and a phone are one kind of use, a television
-        // another, and the numbers are no use mixed.
+        // another, a Mac a third, and the numbers are no use mixed.
+        #if os(iOS)
         Analytics.setUserProperty("ios", forName: "device")
+        #else
+        Analytics.setUserProperty("macos", forName: "device")
+        #endif
         #endif
     }
 

@@ -75,7 +75,7 @@ final class ExpiringWork: @unchecked Sendable {
                         let model = try ApplicationRuntime.shared.loadModel()
                         await model.notifications.refreshAuthorization()
                         guard model.session != nil, model.notifications.isEnabled,
-                              [.authorized, .provisional, .ephemeral].contains(model.notifications.authorizationStatus) else {
+                              model.notifications.authorizationStatus.allowsPosting else {
                             task.setTaskCompleted(success: true); return
                         }
                         schedule(enabled: true)

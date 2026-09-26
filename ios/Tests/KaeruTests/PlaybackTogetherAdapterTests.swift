@@ -13,7 +13,7 @@ private typealias Stream = Kaeru.Stream
     func refresh(_ token: String) async throws -> Tokens { throw AppError.message("Нет сети") }
     func account(_ token: String) async throws -> Account { throw AppError.message("Нет сети") }
     func setRate(_ pending: PendingRate, userID: Int64, rateID: Int64, token: String) async throws -> LibraryItem { throw AppError.message("Нет сети") }
-    func translations(_ id: Int) async throws -> [Translation] { [] }
+    func translations(_ id: Int) async throws -> [Kaeru.Translation] { [] }
     func resolve(_ id: Int, translation: Int, episode: Int) async throws -> Stream { throw AppError.message("Нет сети") }
     func seasonal(year: Int, season: String) async throws -> [Anime] { [] }
     func configureKodikToken(_ token: String) {}

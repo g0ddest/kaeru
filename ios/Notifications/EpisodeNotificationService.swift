@@ -123,7 +123,7 @@ import UserNotifications
         categories.insert(category)
         center.setNotificationCategories(categories)
     }
-    private var canPost: Bool { authorizationStatus == .authorized || authorizationStatus == .provisional || authorizationStatus == .ephemeral }
+    private var canPost: Bool { authorizationStatus.allowsPosting }
     private func removeOurNotifications() async {
         let pending = await center.pendingNotificationRequests()
         let delivered = await center.deliveredNotifications()
@@ -145,4 +145,15 @@ private struct NotificationCatalog: Codable {
     var enabled = false
     var accounts: [String: EpisodeReleaseState] = [:]
     var requestIDs: [String] = []
+}
+
+extension UNAuthorizationStatus {
+    /// The system has said yes, outright or quietly. `.ephemeral` — an App Clip's — exists only on
+    /// iOS, and the background check reads the same rule, so it is written once.
+    var allowsPosting: Bool {
+        #if os(iOS)
+        if self == .ephemeral { return true }
+        #endif
+        return self == .authorized || self == .provisional
+    }
 }

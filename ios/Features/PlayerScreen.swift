@@ -49,7 +49,7 @@ struct PlayerScreen: View {
             // literal formats an `Int` argument in the device's locale — which turned the
             // 1118th episode of a long-running show into «Серия 1.118».
             .navigationTitle(Text(verbatim: "Серия \(playback.episode)"))
-            .navigationBarTitleDisplayMode(.inline)
+            .kaeruTitleDisplay(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Готово") { playback.close(); dismiss() }
@@ -60,15 +60,18 @@ struct PlayerScreen: View {
                 // it is decided here, on the episode, and a button nobody finds is a feature
                 // nobody has. The slot that used to hold it stood empty until a session existed,
                 // which took the title with it and left a hole beside «Готово».
-                ToolbarItem(placement: .topBarTrailing) { together }
-                ToolbarItem(placement: .topBarTrailing) { CastButton(manager: playback.castManager) }
+                ToolbarItem(placement: .kaeruTrailing) { together }
+                // Google Cast has no SDK for the Mac.
+                #if os(iOS)
+                ToolbarItem(placement: .kaeruTrailing) { CastButton(manager: playback.castManager) }
+                #endif
                 ToolbarItem(placement: .primaryAction) { options }
             }
             // No strip of its own: what is behind these controls is the picture, and AVKit's own
             // controls sit on nothing but a gradient. They go away together, too — see
             // `PlaybackModel.chromeVisible`.
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbar(playback.chromeVisible ? .visible : .hidden, for: .navigationBar)
+            .kaeruBarBackground(.hidden)
+            .kaeruBar(playback.chromeVisible ? .visible : .hidden)
             .animation(.easeInOut(duration: 0.25), value: playback.chromeVisible)
             .tint(.white)
             // A room nobody was invited to is a room for one. Android raises the share sheet the
@@ -82,13 +85,20 @@ struct PlayerScreen: View {
 
         .onDisappear {
             model.playerDisappeared()
+            #if os(iOS)
             if !playback.pictureInPicture { playback.close() }
+            #else
+            // On a phone the episode goes on in picture in picture after its screen has gone. On a
+            // Mac the floating picture belongs to the player view that has just been taken down,
+            // and a player left open would be a sound with nothing on screen to stop it.
+            playback.close()
+            #endif
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { playback.becameActive() }
             // Inactive includes Control Center and the PiP transition. Pausing there interrupts
             // ordinary native controls and stops PiP before the system can start it.
-            else if phase == .background { playback.suspend() }
+            else if phase == .background, OperatingSystem.suspendsAppsInBackground { playback.suspend() }
         }
     }
     /// What the native controls cannot say: that the episode is nearly over and the next one is
@@ -229,8 +239,12 @@ struct PlayerScreen: View {
                 // is not a `@Sendable` function value, and `Binding`'s setter wants one.
                 Toggle("Следующая серия автоматически", isOn: Binding(get: { playback.autoNext }, set: { playback.setAutoNext($0) }))
                 Toggle("Пропускать эндинг", isOn: Binding(get: { playback.autoSkipEnding }, set: { playback.setAutoSkipEnding($0) }))
+                // Neither means anything on a Mac: AVKit there cannot start picture in picture by
+                // itself, and nothing suspends an app whose window is behind another.
+                #if os(iOS)
                 Toggle("Картинка в картинке при выходе", isOn: Binding(get: { playback.pipOnLeave }, set: { playback.setPiPOnLeave($0) }))
                 Toggle("Фоновое воспроизведение", isOn: Binding(get: { playback.backgroundPlayback }, set: { playback.setBackgroundPlayback($0) }))
+                #endif
             }
             Section {
                 if playback.isLocal { Label("Скачанная серия", systemImage: "checkmark.circle") }

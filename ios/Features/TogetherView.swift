@@ -25,7 +25,7 @@ struct TogetherView: View {
                     Button("Создать комнату", systemImage: "plus.circle") { Task { await manager.create() } }
                         .disabled(manager.phase == .connecting)
                     TextField("Ссылка приглашения", text: $invitation, axis: .vertical)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .kaeruPlainTextInput()
                     Button("Войти в комнату", systemImage: "arrow.right.circle") { join() }
                         .disabled(invitation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || manager.phase == .connecting)
                     // A swallowed error here was a button that did nothing at all: the one thing
@@ -52,8 +52,9 @@ struct TogetherView: View {
                 }
             }
         }
+        .kaeruGroupedForm()
         .navigationTitle(TogetherCopy.watchTogether)
-        .navigationBarTitleDisplayMode(.inline)
+        .kaeruTitleDisplay(.inline)
         .toolbar { if !embedded { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } } }
     }
 

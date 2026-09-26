@@ -43,7 +43,7 @@ private typealias Stream = Kaeru.Stream
         if writeFailure { throw AppError.message("Offline") }
         return LibraryItem(id: 55, anime: pending.anime, status: pending.status, episodes: pending.episodes)
     }
-    func translations(_ id: Int) async throws -> [Translation] { [] }
+    func translations(_ id: Int) async throws -> [Kaeru.Translation] { [] }
     func resolve(_ id: Int, translation: Int, episode: Int) async throws -> Stream { throw AppError.message("No fixture") }
 }
 

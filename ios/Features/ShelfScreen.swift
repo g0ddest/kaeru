@@ -32,8 +32,8 @@ struct ShelfScreen: View {
         }
         .background(Palette.canvas)
         .navigationTitle(route.title)
-        .navigationBarTitleDisplayMode(.inline)
-        .fullScreenCover(item: $playing) { PlayerScreen(anime: $0.anime, episode: $0.episode, model: model) }
+        .kaeruTitleDisplay(.inline)
+        .playerPresentation(item: $playing)
     }
     private func play(_ item: DownloadedShelf.Item) {
         model.beginPlayback(anime: item.anime)

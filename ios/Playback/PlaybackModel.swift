@@ -170,6 +170,9 @@ enum PlaybackLocalAction {
                   Date().timeIntervalSince(playback.quietPlayingChangeAt) > 3 else { return }
             playback.onLocalAction?(.seek(playback.safePosition))
         }
+        // A call, an alarm, headphones pulled out: all the audio session's to announce, and a Mac
+        // has no audio session.
+        #if os(iOS)
         observe(AVAudioSession.interruptionNotification, reading: { AudioInterruption($0) }) { playback, interruption in
             playback.handleInterruption(interruption)
         }
@@ -178,6 +181,7 @@ enum PlaybackLocalAction {
             guard reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue else { return }
             playback.setPlaying(false)
         }
+        #endif
     }
 
     func start() async {
@@ -199,8 +203,10 @@ enum PlaybackLocalAction {
         } catch { fail(error.localizedDescription) }
     }
     private func activateAudio() throws {
+        #if os(iOS)
         try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         try AVAudioSession.sharedInstance().setActive(true)
+        #endif
     }
     private func resumePosition(for episode: Int) -> Double {
         guard let progress = model.progressFor(animeID: anime.id, episode: episode) else { return 0 }
@@ -362,7 +368,9 @@ enum PlaybackLocalAction {
         togetherAdapter?.close(); togetherAdapter = nil
         player.replaceCurrentItem(with: nil)
         model.downloads.endPlayback()
+        #if os(iOS)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        #endif
     }
 
     private var safePosition: Double {
@@ -637,6 +645,7 @@ enum PlaybackLocalAction {
         (notification.object as? AVPlayerItem).map(ObjectIdentifier.init)
     }
     private var currentItemID: ObjectIdentifier? { player.currentItem.map(ObjectIdentifier.init) }
+    #if os(iOS)
     private func handleInterruption(_ interruption: AudioInterruption) {
         guard let type = interruption.type else { return }
         if type == .began { interruptionPaused = true; save(); player.pause() }
@@ -647,9 +656,11 @@ enum PlaybackLocalAction {
             }
         }
     }
+    #endif
     private func updateMediaControls() { mediaControls?.update(snapshot: snapshot, title: anime.title, skipSeconds: skipSeconds, hasNext: hasNext) }
 }
 
+#if os(iOS)
 /// What an audio-interruption notification says, as the two flags this app reads out of one.
 ///
 /// A value rather than the notification, so the answer can cross onto the main actor: the call has
@@ -665,3 +676,4 @@ private struct AudioInterruption: Sendable {
             .map(AVAudioSession.InterruptionOptions.init(rawValue:)) ?? []
     }
 }
+#endif

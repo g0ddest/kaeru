@@ -147,8 +147,9 @@ private struct DownloadSettingsView: View {
                     Text("Лимит проверяется перед добавлением загрузок и не удаляет сохранённые эпизоды. Просмотренный эпизод удаляется после завершения воспроизведения или перехода к следующему.")
                 }
             }
+            .kaeruGroupedForm()
             .navigationTitle("Загрузки")
-            .navigationBarTitleDisplayMode(.inline)
+            .kaeruTitleDisplay(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } }
         }
     }

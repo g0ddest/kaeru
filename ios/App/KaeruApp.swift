@@ -2,7 +2,11 @@ import SwiftUI
 
 @main
 struct KaeruApp: App {
+    #if os(iOS)
     @UIApplicationDelegateAdaptor(KaeruAppDelegate.self) private var appDelegate
+    #else
+    @NSApplicationDelegateAdaptor(KaeruAppDelegate.self) private var appDelegate
+    #endif
     @State private var model: AppModel?
     @State private var startupError: String?
     var body: some Scene {

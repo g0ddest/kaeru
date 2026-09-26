@@ -73,7 +73,7 @@ struct LibraryView: View {
                 .refreshable { await model.reloadLibrary(); await model.flush() }
                 .toolbar {
                     if mode == .list {
-                        ToolbarItem(placement: .topBarTrailing) {
+                        ToolbarItem(placement: .kaeruTrailing) {
                             Menu {
                                 Picker("Сортировка", selection: $sort) { ForEach(LibraryOrder.allCases) { Text($0.label).tag($0) } }
                             } label: { Label("Сортировка", systemImage: "arrow.up.arrow.down") }

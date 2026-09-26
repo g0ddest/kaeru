@@ -15,6 +15,9 @@ ui_tests.add_dependency(app)
 # Kotlin/Native would hand over its simulator build of KaeruShared. Product and module are `Kaeru`,
 # as on iOS, so `Kaeru.app` and `@testable import Kaeru` read the same on both.
 mac = project.new_target(:application, 'KaeruMac', :osx, '15.0', nil, nil, 'Kaeru')
+# The same unit tests, run on the Mac against the Mac build of the same sources.
+mac_tests = project.new_target(:unit_test_bundle, 'KaeruMacTests', :osx, '15.0')
+mac_tests.add_dependency(mac)
 group = project.new_group('Kaeru', '..')
 # Only public OAuth configuration belongs in the application. Never copy the secret.
 properties_path = ARGV.first || File.join(root, '..', 'local.properties')
@@ -80,15 +83,18 @@ gtm_product.package = gtm_package
 gtm_product.product_name = 'GTMSessionFetcherCore'
 app.package_product_dependencies << gtm_product
 # Swift that only one of the two applications compiles, whole files: the Cast SDK, the camera's QR
-# scanner, UIKit's delegate and BGTaskScheduler exist only on iOS, and anything in a `Mac` folder
-# only on the Mac. The rest is shared, with `#if os(…)` where a few lines differ.
-ios_only = %w[App/KaeruAppDelegate.swift Cast/GoogleCastTransport.swift Features/QRScannerView.swift]
+# scanner, UIKit's delegate with BGTaskScheduler and AVPlayerViewController exist only on iOS, and
+# anything in a `Mac` folder only on the Mac — its delegate, the cast that never connects, the
+# player over AVPlayerView. The rest is shared, with `#if os(…)` where a few lines differ.
+ios_only = %w[App/KaeruAppDelegate.swift Cast/GoogleCastTransport.swift Features/QRScannerView.swift Playback/NativePlayer.swift]
 Dir[File.join(root, '**', '*.swift')].sort.each do |file|
   next if file.match?(%r{/(build[^/]*|Dependencies|Scripts)/})
   path = file.delete_prefix(root + '/')
   reference = group.new_file(path)
   if file.include?('/UITests/') then ui_tests.add_file_references([reference])
-  elsif file.include?('/Tests/') then tests.add_file_references([reference])
+  elsif file.include?('/Tests/')
+    tests.add_file_references([reference])
+    mac_tests.add_file_references([reference])
   else
     app.add_file_references([reference]) unless path.split('/').include?('Mac')
     mac.add_file_references([reference]) unless ios_only.include?(path)
@@ -209,6 +215,17 @@ mac.build_configurations.each do |config|
     'INFOPLIST_KEY_CFBundleDisplayName' => 'Kaeru'
   })
 end
+mac_tests.build_configurations.each do |config|
+  config.build_settings.merge!(shared_settings.transform_values(&:dup)).merge!({
+    'MACOSX_DEPLOYMENT_TARGET' => '15.0',
+    'PRODUCT_BUNDLE_IDENTIFIER' => 'app.kaeru.mac.kaerumactests',
+    'LD_RUNPATH_SEARCH_PATHS' => ['$(inherited)', '@executable_path/../Frameworks', '@loader_path/../Frameworks'],
+    'DEVELOPMENT_TEAM' => team,
+    'CODE_SIGN_STYLE' => 'Automatic',
+    'TEST_HOST' => '$(BUILT_PRODUCTS_DIR)/Kaeru.app/Contents/MacOS/Kaeru',
+    'BUNDLE_LOADER' => '$(TEST_HOST)'
+  })
+end
 project.save
 scheme = Xcodeproj::XCScheme.new
 scheme.add_build_target(app)
@@ -227,4 +244,9 @@ mac_scheme = Xcodeproj::XCScheme.new
 mac_scheme.add_build_target(mac)
 mac_scheme.set_launch_target(mac)
 mac_scheme.save_as(project_path, 'KaeruMac', true)
+mac_tests_scheme = Xcodeproj::XCScheme.new
+mac_tests_scheme.add_build_target(mac)
+mac_tests_scheme.add_test_target(mac_tests)
+mac_tests_scheme.set_launch_target(mac)
+mac_tests_scheme.save_as(project_path, 'KaeruMacTests', true)
 puts "Generated #{project_path}"

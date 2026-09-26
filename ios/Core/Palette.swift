@@ -36,16 +36,34 @@ enum Palette {
     }
 
     private static func adaptive(dark: Int, light: Int) -> Color {
+        #if os(iOS)
         Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(rgb: dark) : UIColor(rgb: light) })
+        #else
+        // The provider is asked while drawing, on whatever thread draws, so it holds the two
+        // numbers and nothing else. `bestMatch` rather than comparing names: the high-contrast
+        // appearances are dark or light too, and a plain `==` would paint them light.
+        Color(nsColor: NSColor(name: nil) { appearance in
+            NSColor(rgb: appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light)
+        })
+        #endif
     }
 }
 
+#if os(iOS)
 private extension UIColor {
     convenience init(rgb: Int) {
         self.init(red: CGFloat((rgb >> 16) & 0xFF) / 255, green: CGFloat((rgb >> 8) & 0xFF) / 255,
                   blue: CGFloat(rgb & 0xFF) / 255, alpha: 1)
     }
 }
+#else
+private extension NSColor {
+    convenience init(rgb: Int) {
+        self.init(srgbRed: CGFloat((rgb >> 16) & 0xFF) / 255, green: CGFloat((rgb >> 8) & 0xFF) / 255,
+                  blue: CGFloat(rgb & 0xFF) / 255, alpha: 1)
+    }
+}
+#endif
 
 /// Distances. A screen picks its numbers from here and nowhere else, so the gutter down the left of
 /// the home screen is the same line as the gutter on the library and on a title.

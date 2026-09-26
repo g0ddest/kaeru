@@ -19,15 +19,19 @@ struct DevicePairingView: View {
         Form {
             if let invitation = coordinator.invitation { television(invitation) } else { search }
         }
+        .kaeruGroupedForm()
         .navigationTitle("Телевизор")
-        .navigationBarTitleDisplayMode(.inline)
+        .kaeruTitleDisplay(.inline)
         .toolbar { if !embedded { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } } }
+        // A Mac's camera faces the person at it, not the television across the room.
+        #if os(iOS)
         .sheet(isPresented: $scanning) {
             QRScannerView { code in
                 scanning = false
                 open(code)
             }
         }
+        #endif
         // A hand-off that finished belongs to the visit that made it; a fresh visit starts over.
         .task { if coordinator.stage == .done { coordinator.dismiss() } }
     }
@@ -36,7 +40,11 @@ struct DevicePairingView: View {
         Section {
             LabeledContent("Телевизор", value: invitation.name.isEmpty ? "Android TV" : invitation.name)
         } footer: {
+            #if os(iOS)
             Text("Телефон откроет вход в Shikimori и передаст результат телевизору сам. Код с экрана телевизора вводить не нужно.")
+            #else
+            Text("Mac откроет вход в Shikimori и передаст результат телевизору сам. Код с экрана телевизора вводить не нужно.")
+            #endif
         }
         Section {
             switch coordinator.stage {
@@ -60,6 +68,7 @@ struct DevicePairingView: View {
     }
 
     @ViewBuilder private var search: some View {
+        #if os(iOS)
         Section {
             Button("Сканировать QR-код", systemImage: "qrcode.viewfinder") { scanning = true }
         } header: {
@@ -67,9 +76,10 @@ struct DevicePairingView: View {
         } footer: {
             Text("Откройте на телевизоре «Войти в Shikimori» и наведите камеру на QR-код.")
         }
+        #endif
         Section {
             TextField("Ссылка с телевизора", text: $typed, axis: .vertical)
-                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                .kaeruPlainTextInput()
                 .accessibilityIdentifier("pairing-link")
             Button("Продолжить по ссылке") { open(typed) }
                 .disabled(typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -77,9 +87,17 @@ struct DevicePairingView: View {
                 Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary)
             }
         } header: {
+            #if os(iOS)
             Text("Ссылка вручную")
+            #else
+            Text("Телевизор")
+            #endif
         } footer: {
+            #if os(iOS)
             Text("Если камера недоступна, перепишите ссылку, напечатанную под QR-кодом.")
+            #else
+            Text("Откройте на телевизоре «Войти в Shikimori» и перепишите сюда ссылку, напечатанную под QR-кодом.")
+            #endif
         }
     }
 

@@ -2,16 +2,31 @@ import AVFoundation
 import MediaPlayer
 
 /// Session-scoped commands avoid taking ownership of another player's global handlers.
+///
+/// The Mac has no now-playing session: its media keys, the menu bar's Now Playing and the
+/// headphones all read the process's one command centre and one info centre. There is only ever
+/// one player at a time, so that is the same thing — plus `playbackState`, which the Mac reads
+/// where iOS reads the session's activity.
 @MainActor final class PlaybackMediaControls: NSObject {
     private weak var playback: PlaybackModel?
+    #if os(iOS)
     private let session: MPNowPlayingSession
     private var activeRequested = false
+    private var commands: MPRemoteCommandCenter { session.remoteCommandCenter }
+    private var nowPlaying: MPNowPlayingInfoCenter { session.nowPlayingInfoCenter }
+    #else
+    private var commands: MPRemoteCommandCenter { .shared() }
+    private var nowPlaying: MPNowPlayingInfoCenter { .default() }
+    #endif
     init(playback: PlaybackModel) {
         self.playback = playback
+        #if os(iOS)
         session = MPNowPlayingSession(players: [playback.player])
+        #endif
         super.init()
+        #if os(iOS)
         session.automaticallyPublishesNowPlayingInfo = false
-        let commands = session.remoteCommandCenter
+        #endif
         commands.playCommand.addTarget(self, action: #selector(play(_:)))
         commands.pauseCommand.addTarget(self, action: #selector(pause(_:)))
         commands.togglePlayPauseCommand.addTarget(self, action: #selector(toggle(_:)))
@@ -23,7 +38,6 @@ import MediaPlayer
         commands.changePlaybackRateCommand.supportedPlaybackRates = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
     }
     func update(snapshot: PlaybackSnapshot, title: String, skipSeconds: Int, hasNext: Bool) {
-        let commands = session.remoteCommandCenter
         commands.playCommand.isEnabled = snapshot.ready
         commands.pauseCommand.isEnabled = snapshot.ready
         commands.togglePlayPauseCommand.isEnabled = snapshot.ready
@@ -34,7 +48,7 @@ import MediaPlayer
         commands.changePlaybackRateCommand.isEnabled = snapshot.ready
         commands.skipForwardCommand.preferredIntervals = [NSNumber(value: skipSeconds)]
         commands.skipBackwardCommand.preferredIntervals = [NSNumber(value: skipSeconds)]
-        session.nowPlayingInfoCenter.nowPlayingInfo = [
+        nowPlaying.nowPlayingInfo = [
             MPMediaItemPropertyTitle: title,
             MPMediaItemPropertyAlbumTitle: "Серия \(snapshot.episode)",
             MPMediaItemPropertyPlaybackDuration: snapshot.duration,
@@ -43,19 +57,25 @@ import MediaPlayer
             MPNowPlayingInfoPropertyDefaultPlaybackRate: snapshot.speed,
             MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.video.rawValue
         ]
+        #if os(iOS)
         if snapshot.isPlaying, !activeRequested {
             activeRequested = true
             session.becomeActiveIfPossible { [weak self] active in
                 Task { @MainActor in if !active { self?.activeRequested = false } }
             }
         }
+        #else
+        nowPlaying.playbackState = snapshot.isPlaying ? .playing : snapshot.ready ? .paused : .stopped
+        #endif
     }
     func close() {
-        let commands = session.remoteCommandCenter
         [commands.playCommand, commands.pauseCommand, commands.togglePlayPauseCommand,
          commands.changePlaybackPositionCommand, commands.skipForwardCommand, commands.skipBackwardCommand,
          commands.nextTrackCommand, commands.changePlaybackRateCommand].forEach { $0.removeTarget(self) }
-        session.nowPlayingInfoCenter.nowPlayingInfo = nil
+        nowPlaying.nowPlayingInfo = nil
+        #if os(macOS)
+        nowPlaying.playbackState = .stopped
+        #endif
         playback = nil
     }
     @objc private func play(_ event: MPRemoteCommandEvent) -> MPRemoteCommandHandlerStatus {

@@ -69,10 +69,14 @@ enum VoiceLimits {
         let target = FileManager.default.temporaryDirectory
             .appendingPathComponent("\(Self.prefix)\(Int(Date().timeIntervalSince1970 * 1000)).m4a")
         do {
+            // A Mac has no audio session: the recorder takes the default input, and the episode
+            // goes on playing through the default output while it does.
+            #if os(iOS)
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
             try session.setActive(true)
             restoreSession = true
+            #endif
             let value = try AVAudioRecorder(url: target, settings: [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
                 AVSampleRateKey: 16_000,
@@ -147,8 +151,10 @@ enum VoiceLimits {
     private func releaseSession() {
         guard restoreSession else { return }
         restoreSession = false
+        #if os(iOS)
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         try? AVAudioSession.sharedInstance().setActive(true)
+        #endif
     }
 
     /// Clears clips nothing is going to come back for: one is read and deleted the moment

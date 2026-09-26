@@ -418,7 +418,7 @@ struct TranslationChooser: View {
                     }
                 }
             }
-            .navigationTitle("Озвучка").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Озвучка").kaeruTitleDisplay(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } }
             .task(id: revision) {
                 loading = true; failure = nil

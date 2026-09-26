@@ -34,7 +34,11 @@ struct SettingsView: View {
                 Section {
                     Toggle("Следующая серия автоматически", isOn: $model.autoNext)
                     Toggle("Пропускать эндинг автоматически", isOn: $model.preferences.autoSkipEnding)
+                    // AVKit on the Mac cannot start picture in picture by itself; its button in the
+                    // player is the only way in.
+                    #if os(iOS)
                     Toggle("Картинка в картинке при выходе", isOn: $model.preferences.pipOnLeave)
+                    #endif
                     Picker("Качество по умолчанию", selection: $model.preferredQuality) {
                         Text("Авто").tag(0)
                         ForEach([360, 480, 720, 1080], id: \.self) { Text("\($0)p").tag($0) }
@@ -61,17 +65,22 @@ struct SettingsView: View {
                     if model.notifications.authorizationStatus == .denied {
                         Text("Уведомления запрещены в настройках системы.").font(.footnote).foregroundStyle(.secondary)
                         Button("Открыть настройки") {
-                            if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                            if let url = OperatingSystem.notificationSettings { openURL(url) }
                         }
                     }
                     if let message = model.notifications.errorMessage { Text(message).font(.footnote).foregroundStyle(.secondary) }
                 } header: { Text("Уведомления") } footer: {
+                    #if os(iOS)
                     Text("Kaeru сообщит о новых сериях того, что вы смотрите. Время фоновой проверки определяет система.")
+                    #else
+                    Text("Kaeru сообщит о новых сериях того, что вы смотрите. Проверка идёт раз в несколько часов, пока Kaeru запущен.")
+                    #endif
                 }
                 // Real downloads surface is supplied by the offline worker. Device/social entry points remain owned by parent integration.
                 Section {
                     NavigationLink { DownloadsView(manager: model.downloads) } label: { Label("Загрузки", systemImage: "arrow.down.circle") }
                 }
+                #if os(iOS)
                 Section("Трансляция") {
                     HStack {
                         Label(model.cast.receiverName ?? "Chromecast", systemImage: "tv")
@@ -85,6 +94,7 @@ struct SettingsView: View {
                         }
                     }
                 }
+                #endif
                 Section("Устройства") {
                     NavigationLink { DevicePairingView() } label: {
                         Label("Подключить Android TV", systemImage: "tv.and.arrow.forward")
@@ -113,7 +123,7 @@ struct SettingsView: View {
                 }
                 Section {
                     SecureField("Свой токен Kodik", text: $model.kodikToken)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("kodik-token")
+                        .kaeruPlainTextInput().accessibilityIdentifier("kodik-token")
                     if !model.kodikToken.isEmpty { Button("Очистить токен", role: .destructive) { model.kodikToken = "" } }
                 } header: { Text("Источник видео") } footer: { Text("Свой токен нужен, только если публичный токен Kodik перестал работать. Оставьте поле пустым для автоматического выбора.") }
                 Section {
@@ -123,7 +133,11 @@ struct SettingsView: View {
                         ForEach(AppAppearance.allCases) { Text($0.title).tag($0) }
                     }.accessibilityIdentifier("appearance")
                 } header: { Text("Оформление") } footer: {
+                    #if os(iOS)
                     Text("«Как в системе» следует настройке iOS, включая расписание автоматической тёмной темы.")
+                    #else
+                    Text("«Как в системе» следует настройке macOS, включая автоматическую смену оформления.")
+                    #endif
                 }
                 Section("О приложении") {
                     LabeledContent("Kaeru", value: version).textSelection(.enabled)
@@ -138,7 +152,8 @@ struct SettingsView: View {
                     }
                 }
             }
-            .navigationTitle("Настройки").navigationBarTitleDisplayMode(.inline)
+            .kaeruGroupedForm()
+            .navigationTitle("Настройки").kaeruTitleDisplay(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } }
             .confirmationDialog("Выйти из Shikimori?", isPresented: $confirmLogout, titleVisibility: .visible) {
                 Button("Выйти", role: .destructive) { model.signOut() }
@@ -159,7 +174,9 @@ struct SettingsView: View {
 private struct StudioPreferencesView: View {
     @Environment(AppModel.self) private var model
     @State private var typed = ""
+    #if os(iOS)
     @State private var editMode: EditMode = .inactive
+    #endif
     private var studios: [String] { model.preferences.studios.isEmpty ? PlaybackPreferences.defaultStudios : model.preferences.studios }
     private var candidate: String { typed.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var canAdd: Bool { !candidate.isEmpty && !studios.contains { $0.caseInsensitiveCompare(candidate) == .orderedSame } }
@@ -172,6 +189,10 @@ private struct StudioPreferencesView: View {
                             if let index = studios.firstIndex(of: studio) {
                                 Button("Поднять", systemImage: "arrow.up") { move(index, by: -1) }.disabled(index == 0)
                                 Button("Опустить", systemImage: "arrow.down") { move(index, by: 1) }.disabled(index == studios.count - 1)
+                                // A Mac list has no swipe to delete and no «Править»: this is the way.
+                                #if os(macOS)
+                                Button("Удалить", systemImage: "trash", role: .destructive) { remove(index) }.disabled(studios.count <= 1)
+                                #endif
                             }
                         }
                 }
@@ -180,7 +201,13 @@ private struct StudioPreferencesView: View {
                     var values = studios; values.remove(atOffsets: offsets)
                     if !values.isEmpty { save(values) }
                 }
-            } footer: { Text("Выше — предпочтительнее. Нажмите «Править», чтобы менять порядок и удалять студии.") }
+            } footer: {
+                #if os(iOS)
+                Text("Выше — предпочтительнее. Нажмите «Править», чтобы менять порядок и удалять студии.")
+                #else
+                Text("Выше — предпочтительнее. Перетащите студию, чтобы изменить порядок; удалить её можно из меню по правому щелчку.")
+                #endif
+            }
             Section {
                 TextField("Добавить студию", text: $typed).autocorrectionDisabled().onSubmit(add)
                 Button("Добавить", systemImage: "plus", action: add).disabled(!canAdd)
@@ -189,12 +216,20 @@ private struct StudioPreferencesView: View {
                 Section { Button("Сбросить порядок") { save([]) } }
             }
         }
-        .navigationTitle("Приоритет озвучек").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Приоритет озвучек").kaeruTitleDisplay(.inline)
+        #if os(iOS)
         .toolbar { EditButton() }
         .environment(\.editMode, $editMode)
+        #endif
     }
     private func add() { guard canAdd else { return }; save(studios + [candidate]); typed = "" }
     private func save(_ values: [String]) { model.preferences.studios = values; model.savePreferences() }
+    #if os(macOS)
+    private func remove(_ index: Int) {
+        var values = studios; values.remove(at: index)
+        if !values.isEmpty { save(values) }
+    }
+    #endif
     private func move(_ index: Int, by offset: Int) {
         var values = studios
         guard values.indices.contains(index + offset) else { return }

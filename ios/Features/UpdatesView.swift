@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 /// Where the home row and the settings row both lead. A route rather than a sheet: this is a page
 /// somebody went looking for, and it belongs in the stack they walked to get here.
@@ -50,12 +49,12 @@ struct UpdatesView: View {
         }
         .background(Palette.canvas)
         .navigationTitle(UpdateCopy.title)
-        .navigationBarTitleDisplayMode(.inline)
+        .kaeruTitleDisplay(.inline)
         .task {
             guard updates == nil else { return }
             let value = UpdateModel(repository: model.updateRepository,
                                     installedVersion: model.updateRepository.installedVersion) { url in
-                await UIApplication.shared.open(url)
+                await OperatingSystem.open(url)
             }
             updates = value
             // Unforced: the app already asked at launch, and a second request a minute later would

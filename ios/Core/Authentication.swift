@@ -1,5 +1,9 @@
 import AuthenticationServices
+#if os(iOS)
 import UIKit
+#else
+import AppKit
+#endif
 
 @MainActor final class Authentication: NSObject, ASWebAuthenticationPresentationContextProviding {
     private var browser: ASWebAuthenticationSession?
@@ -37,6 +41,14 @@ import UIKit
         }
     }
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        #if os(iOS)
         UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first(where: \.isKeyWindow) ?? ASPresentationAnchor()
+        #else
+        // The window the press came from — Settings, the main window, a sheet over it. A bare
+        // `ASPresentationAnchor()` is a new window nobody can see, and the sign-in sheet would hang
+        // off it.
+        NSApplication.shared.keyWindow ?? NSApplication.shared.mainWindow
+            ?? NSApplication.shared.windows.first(where: \.isVisible) ?? ASPresentationAnchor()
+        #endif
     }
 }
