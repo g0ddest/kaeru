@@ -18,6 +18,8 @@ struct NativePlayer<Overlay: View>: View {
     /// reads the same on both.
     var onDoubleTap: (PlayerTapZone) -> Void = { _ in }
     @ViewBuilder var overlay: () -> Overlay
+    /// The screen stays on while the episode plays.
+    @State private var awake = DisplayAwake()
     /// How far down from the top the window's toolbar reaches over the picture.
     private let toolbarBand: CGFloat = 56
     var body: some View {
@@ -42,7 +44,11 @@ struct NativePlayer<Overlay: View>: View {
             .pointerVisibility(playback.chromeVisible ? .automatic : .hidden)
             // Up when the episode starts or stops, gone three seconds into playing — without
             // anybody having to move the pointer first. The iPad waits for a tap instead.
-            .onChange(of: playback.isPlaying, initial: true) { _, _ in playback.showChrome() }
+            .onChange(of: playback.isPlaying, initial: true) { _, playing in
+                playback.showChrome()
+                awake.set(playing)
+            }
+            .onDisappear { awake.set(false) }
     }
 }
 
