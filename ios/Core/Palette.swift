@@ -96,10 +96,13 @@ extension Font {
     // The Mac's text styles are fixed and a size or two below the iPad's, so each role has its own
     // Mac size (see the kaeru* styles in Features/Compat.swift); iPhone and iPad keep Dynamic Type.
     static func kaeruHero(_ compact: Bool = false) -> Font {
+        // Wide screens set the title large and at full width, as the web does; a phone keeps the
+        // condensed face, which holds a long Russian title on its narrow hero.
         #if os(macOS)
-        .system(size: 40, weight: .heavy).width(.condensed)
+        .system(size: 44, weight: .bold)
         #else
-        .system(.largeTitle, design: .default, weight: .heavy).width(.condensed)
+        compact ? .system(.largeTitle, design: .default, weight: .heavy).width(.condensed)
+                : .system(size: 44, weight: .bold)
         #endif
     }
     static func kaeruShelf(_ compact: Bool) -> Font {

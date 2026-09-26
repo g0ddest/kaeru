@@ -133,6 +133,11 @@ private struct HeroPage: View {
         }
         return target.position > 0 ? "Продолжить \(target.episode) серию" : "Смотреть \(target.episode) серию"
     }
+    /// The button's words on a wide screen, where there is room to say which episode.
+    private var action: String {
+        if target.rewatch { return "Пересмотреть" }
+        return target.position > 0 ? "Продолжить \(target.episode) серию" : "Смотреть \(target.episode) серию"
+    }
     var body: some View {
         // Bottom-left on a phone, where the artwork is behind the type; vertically centred on a
         // wide screen, where the picture has room beside it and a low caption leaves a void.
@@ -147,18 +152,33 @@ private struct HeroPage: View {
                     .font(.kaeruSubheadline).foregroundStyle(.white.opacity(0.85))
                     .lineLimit(typeSize.isAccessibilitySize ? 4 : 2)
                     .fixedSize(horizontal: false, vertical: true)
-                Button(action: play) {
-                    Label(target.position > 0 ? "Продолжить" : "Смотреть", systemImage: "play.fill")
-                        .font(.kaeruHeadline).lineLimit(1).minimumScaleFactor(0.6)
-                        .padding(.horizontal, 22).padding(.vertical, 12)
-                        .background(.white, in: Capsule())
-                        .foregroundStyle(.black)
+                HStack(spacing: 12) {
+                    Button(action: play) {
+                        Label(sizeClass == .regular ? action : (target.position > 0 ? "Продолжить" : "Смотреть"), systemImage: "play.fill")
+                            .font(.kaeruHeadline).lineLimit(1).minimumScaleFactor(0.6)
+                            .padding(.horizontal, 22).padding(.vertical, 12)
+                            .background(sizeClass == .regular ? AnyShapeStyle(Palette.accent) : AnyShapeStyle(.white),
+                                        in: RoundedRectangle(cornerRadius: sizeClass == .regular ? 12 : 26, style: .continuous))
+                            .foregroundStyle(sizeClass == .regular ? AnyShapeStyle(Palette.onAccent) : AnyShapeStyle(.black))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("home-resume")
+                    // A wide screen has room for the way into the title as well, as on the web.
+                    if sizeClass == .regular {
+                        NavigationLink(value: anime) {
+                            Text("Подробнее")
+                                .font(.kaeruHeadline).lineLimit(1)
+                                .padding(.horizontal, 22).padding(.vertical, 12)
+                                .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.white.opacity(0.18)))
+                                .foregroundStyle(.white)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("home-resume")
                 .padding(.top, 4)
             }
-            .frame(maxWidth: 560, alignment: .leading)
+            .frame(maxWidth: sizeClass == .regular ? 720 : 560, alignment: .leading)
             .padding(.horizontal, Metrics.gutter(sizeClass))
             .padding(.bottom, sizeClass == .regular ? 0 : 34)
         }
