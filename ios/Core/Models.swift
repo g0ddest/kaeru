@@ -15,7 +15,7 @@ struct Anime: Codable, Identifiable, Hashable {
     var kind: String? = nil
     var studios: [String]? = nil
     var availableEpisodes: Int { status == "released" ? max(episodes, episodesAired) : episodesAired }
-    var nextAirDate: Date? { ISO8601DateFormatter().date(from: nextEpisodeAt) }
+    var nextAirDate: Date? { ISODate.parse(nextEpisodeAt, fractional: false) }
     var subtitle: String { [year, episodes > 0 ? "\(episodes) эп." : nil, score.isEmpty ? nil : "★ \(score)"].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ") }
     var plainDescription: String {
         description.replacingOccurrences(of: "\\[/?[^\\]]+\\]", with: "", options: .regularExpression)
@@ -146,5 +146,22 @@ struct OAuthAttempt {
         guard codes.count == 1, states.count == 1, states[0].value == expected,
               let code = codes[0].value, !code.isEmpty else { throw AppError.invalidCallback }
         return code
+    }
+}
+
+/// Shikimori's timestamps, parsed by two formatters made once. A formatter is expensive to make, and
+/// the home screen sorts its shelves by these dates on every redraw — a new one per comparison held
+/// the main thread long enough for the Mac to call the app not responding while an episode played.
+/// `ISO8601DateFormatter` is safe to share between threads (Apple documents it as thread-safe).
+enum ISODate {
+    nonisolated(unsafe) private static let plain = ISO8601DateFormatter()
+    nonisolated(unsafe) private static let fractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions.insert(.withFractionalSeconds)
+        return formatter
+    }()
+    static func parse(_ value: String, fractional allowFraction: Bool = true) -> Date? {
+        if let date = plain.date(from: value) { return date }
+        return allowFraction ? fractional.date(from: value) : nil
     }
 }

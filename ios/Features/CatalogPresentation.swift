@@ -27,10 +27,7 @@ enum CatalogPresentation {
     }
     static func date(_ value: String?) -> Date {
         guard let value else { return .distantPast }
-        let formatter = ISO8601DateFormatter()
-        if let date = formatter.date(from: value) { return date }
-        formatter.formatOptions.insert(.withFractionalSeconds)
-        return formatter.date(from: value) ?? .distantPast
+        return ISODate.parse(value) ?? .distantPast
     }
     static func timestamp(_ seconds: Double) -> String {
         guard seconds.isFinite, seconds >= 0 else { return "0:00" }

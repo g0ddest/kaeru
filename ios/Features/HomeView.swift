@@ -17,9 +17,7 @@ struct HomeView: View {
         }
     }
     private var active: [LibraryItem] {
-        model.library.filter { ["watching", "rewatching"].contains($0.status) }.sorted {
-            CatalogPresentation.date($0.updatedAt) > CatalogPresentation.date($1.updatedAt)
-        }
+        Self.newestFirst(model.library.filter { ["watching", "rewatching"].contains($0.status) })
     }
     private func waitingTitles(ongoing: Bool) -> [Anime] {
         let inProgress = Set(continuing.map(\.id))
@@ -51,8 +49,12 @@ struct HomeView: View {
     private var notices: Bool { offline || model.availableUpdate != nil }
     private var planned: [Anime] {
         let inProgress = Set(continuing.map(\.id))
-        return model.library.filter { $0.status == "planned" && !inProgress.contains($0.anime.id) }
-            .sorted { CatalogPresentation.date($0.updatedAt) > CatalogPresentation.date($1.updatedAt) }.map(\.anime)
+        return Self.newestFirst(model.library.filter { $0.status == "planned" && !inProgress.contains($0.anime.id) }).map(\.anime)
+    }
+    /// Each date parsed once rather than twice per comparison: the shelves are rebuilt on every
+    /// redraw, and during playback that is every tick of the position.
+    private static func newestFirst(_ items: [LibraryItem]) -> [LibraryItem] {
+        items.map { ($0, CatalogPresentation.date($0.updatedAt)) }.sorted { $0.1 > $1.1 }.map(\.0)
     }
     /// What the carousel shows: the episodes waiting to be resumed, then the ones that just aired.
     private func heroTitles(_ fresh: [Anime], _ next: [Anime]) -> [Anime] {
