@@ -93,14 +93,29 @@ enum Metrics {
 /// The type roles. Display type is condensed: Russian anime titles are long, and the narrower face
 /// keeps them on one line while giving the headings a weight the body text never reaches.
 extension Font {
+    // The Mac's text styles are fixed and a size or two below the iPad's, so each role has its own
+    // Mac size (see the kaeru* styles in Features/Compat.swift); iPhone and iPad keep Dynamic Type.
     static func kaeruHero(_ compact: Bool = false) -> Font {
+        #if os(macOS)
+        .system(size: 40, weight: .heavy).width(.condensed)
+        #else
         .system(.largeTitle, design: .default, weight: .heavy).width(.condensed)
+        #endif
     }
     static func kaeruShelf(_ compact: Bool) -> Font {
+        #if os(macOS)
+        .system(size: 26, weight: .bold).width(.condensed)
+        #else
         .system(compact ? .title3 : .title2, design: .default, weight: .bold).width(.condensed)
+        #endif
     }
+    #if os(macOS)
+    static let kaeruCardTitle = Font.system(size: 15, weight: .semibold)
+    static let kaeruCardCaption = Font.system(size: 13, weight: .medium)
+    #else
     static let kaeruCardTitle = Font.subheadline.weight(.semibold)
     static let kaeruCardCaption = Font.caption.weight(.medium)
+    #endif
 }
 
 extension View {

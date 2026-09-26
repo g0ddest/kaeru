@@ -105,6 +105,20 @@ private typealias Stream = Kaeru.Stream
         XCTAssertEqual(model.completionSuggestion?.id, 7)
         await model.flush()
     }
+    /// Shikimori's announced count is sometimes behind the schedule: 12 announced, a 13th in four
+    /// days. The last of the announced is then not the end, and «завершить» is the wrong question.
+    func testNoCompletionOfferWhileAnotherEpisodeIsScheduled() async throws {
+        let service = StubService(); service.writeFailure = true
+        let model = AppModel(service: service, store: try LocalStore(inMemory: true), configuration: configuration, session: session(), saveSession: { _ in })
+        let airing = Anime(id: 7, title: "Test", episodes: 12, episodesAired: 12, status: "ongoing",
+                           nextEpisodeAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(4 * 24 * 3600)))
+        model.queueRate(anime: airing, status: "watching", episodes: 11)
+        model.preferences.watchedThreshold = 0.8
+        model.saveProgress(EpisodeProgress(animeID: 7, episode: 12, position: 810, duration: 1000), anime: airing, account: model.accountKey)
+        XCTAssertEqual(model.rate(for: 7)?.episodes, 12)
+        XCTAssertNil(model.completionSuggestion)
+        await model.flush()
+    }
     func testStartingTitlePreservesChosenStatusAndRemembersTrackPerAccount() async throws {
         let service = StubService(); service.writeFailure = true
         let model = AppModel(service: service, store: try LocalStore(inMemory: true), configuration: configuration, session: session(), saveSession: { _ in })

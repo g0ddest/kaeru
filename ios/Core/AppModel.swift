@@ -276,7 +276,7 @@ import AuthenticationServices
             else {
                 for number in episode...max(episode, rate?.episodes ?? episode) { downloadManager?.unmarkWatched(animeID: anime.id, episode: number) }
             }
-            if watched && anime.episodes > 0 && episode >= anime.episodes { completionSuggestion = anime }
+            if watched && anime.endsWith(episode) { completionSuggestion = anime }
             Task { await flush() }
         } catch { restore(previous); suppressedMarks = previousSuppressed; self.error = error.localizedDescription }
     }
@@ -345,7 +345,7 @@ import AuthenticationServices
         if shouldQueue {
             mutationRevision += 1
             downloadManager?.onWatched(animeID: anime.id, episode: value.episode)
-            if anime.episodes > 0 && value.episode >= anime.episodes { completionSuggestion = anime }
+            if anime.endsWith(value.episode) { completionSuggestion = anime }
             Task { await flush() }
         }
     }

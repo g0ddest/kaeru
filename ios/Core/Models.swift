@@ -16,6 +16,14 @@ struct Anime: Codable, Identifiable, Hashable {
     var studios: [String]? = nil
     var availableEpisodes: Int { status == "released" ? max(episodes, episodesAired) : episodesAired }
     var nextAirDate: Date? { ISODate.parse(nextEpisodeAt, fractional: false) }
+    /// Whether `episode` is the last one: the announced count reached, and no next episode on the
+    /// schedule. Shikimori's announced count lags behind a show that got longer — 12 announced, a
+    /// 13th in four days — and offering «завершить» there was wrong.
+    func endsWith(_ episode: Int, now: Date = Date()) -> Bool {
+        guard episodes > 0, episode >= episodes else { return false }
+        if let next = nextAirDate, next > now { return false }
+        return true
+    }
     var subtitle: String { [year, episodes > 0 ? "\(episodes) эп." : nil, score.isEmpty ? nil : "★ \(score)"].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ") }
     var plainDescription: String {
         description.replacingOccurrences(of: "\\[/?[^\\]]+\\]", with: "", options: .regularExpression)
