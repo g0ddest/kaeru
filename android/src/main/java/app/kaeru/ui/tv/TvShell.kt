@@ -41,6 +41,7 @@ import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.DrawerValue
 import androidx.tv.material3.Icon
@@ -276,6 +277,11 @@ private fun TvHome(
     val home = viewModel.uiState.collectAsStateWithLifecycle().value
     // The catalogue rows are loaded by the screen that draws them, and the television draws them.
     LaunchedEffect(viewModel) { viewModel.loadDiscover() }
+    // Brought back from the background, perhaps days later: the list is read again if it is old.
+    LifecycleStartEffect(viewModel) {
+        viewModel.onForeground()
+        onStopOrDispose {}
+    }
     TvHomeScreen(
         state = home,
         onRefresh = viewModel::refresh,

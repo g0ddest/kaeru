@@ -31,6 +31,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Clock
+import java.time.Duration
+import java.time.Instant
 import java.time.ZoneId
 import javax.inject.Inject
 
@@ -157,7 +159,19 @@ class HomeViewModel @Inject constructor(
         initialValue = HomeUiState(feed = HomeFeed.EMPTY, discover = discoverState.value.toUiState()),
     )
 
+    private var lastSync: Instant? = null
+
     init { syncLibrary() }
+
+    /**
+     * The app came back to the front. A television keeps it in the background for days, and the
+     * list it then showed was the one from when this screen was made: the sync runs in `init`.
+     * A few minutes away costs nothing; longer, and the list is read again.
+     */
+    fun onForeground() {
+        val last = lastSync ?: return
+        if (Duration.between(last, clock.instant()) >= FOREGROUND_RESYNC) syncLibrary()
+    }
 
     /**
      * Start the catalogue rows. Called by the screen that draws them, once — both home screens do.
@@ -232,6 +246,7 @@ class HomeViewModel @Inject constructor(
 
     private fun syncLibrary() {
         if (refreshJob?.isActive == true) return
+        lastSync = clock.instant()
         refreshJob = viewModelScope.launch {
             refreshState.value = RefreshState(active = true)
             val result = repository.refresh()
@@ -288,3 +303,6 @@ class HomeViewModel @Inject constructor(
         }
     }
 }
+
+/** How long the app may sit in the background before coming back reads the list again. */
+private val FOREGROUND_RESYNC: Duration = Duration.ofMinutes(5)

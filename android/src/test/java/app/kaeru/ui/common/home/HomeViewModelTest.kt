@@ -144,8 +144,9 @@ class HomeViewModelTest {
         discover: FakeDiscoverRepository = FakeDiscoverRepository(),
         prefs: FakePlaybackPreferences = FakePlaybackPreferences(),
         updates: FakeUpdateRepository = FakeUpdateRepository(),
+        clock: Clock = Clock.fixed(now, ZoneOffset.UTC),
     ) = HomeViewModel(
-        library, discover, HomeFeedBuilder(), Clock.fixed(now, ZoneOffset.UTC), prefs,
+        library, discover, HomeFeedBuilder(), clock, prefs,
         prefetching(prefs), FakeDownloadRepository(), updates, FakeConnectivity(),
         main.dispatcher,
     )
@@ -232,6 +233,28 @@ class HomeViewModelTest {
         assertFalse(vm.uiState.value.isLoading)
         assertEquals(7, vm.uiState.value.feed.top?.entry?.anime?.id)
         assertEquals(1, repo.refreshCalls)
+    }
+
+    /**
+     * A television keeps the app in the background for days. Brought back, it showed the list as
+     * it was then: the sync ran only when the screen was first made.
+     */
+    @Test
+    fun `coming back to the app after a while syncs the list again`() = runTest(main.dispatcher) {
+        val repo = FakeLibraryRepository().also { it.entries.value = listOf(entry()) }
+        val clock = MutableClock(now)
+        val vm = viewModel(repo, clock = clock)
+        advanceUntilIdle()
+
+        clock.now = now.plusSeconds(60)
+        vm.onForeground()
+        advanceUntilIdle()
+        assertEquals(1, repo.refreshCalls)
+
+        clock.now = now.plusSeconds(10 * 60)
+        vm.onForeground()
+        advanceUntilIdle()
+        assertEquals(2, repo.refreshCalls)
     }
 
     @Test

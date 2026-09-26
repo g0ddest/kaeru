@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -148,6 +149,11 @@ fun MobileShell(
                 val vm: HomeViewModel = hiltViewModel()
                 // The catalogue rows are loaded by the screen that draws them, and this one does.
                 LaunchedEffect(vm) { vm.loadDiscover() }
+                // Back from the background after a while: the list is read again.
+                LifecycleStartEffect(vm) {
+                    vm.onForeground()
+                    onStopOrDispose {}
+                }
                 val state = vm.uiState.collectAsStateWithLifecycle().value
                 // Once the hero is on screen, resolve what it offers: the viewer spends a few
                 // seconds reading it, and that is exactly what the press after it used to cost.
