@@ -11,10 +11,17 @@ final class PlayerKeyTests: XCTestCase {
         /// Where QWERTY has A and Y: the letters «ф» and «н» in the Russian layout.
         static let a: UInt16 = 0, y: UInt16 = 16, returnKey: UInt16 = 36
     }
+    private func route(_ code: UInt16, _ modifiers: PlayerKeyModifiers = [], repeating: Bool = false,
+                       typing: Bool = false, fullScreen: Bool = false) -> PlayerKeyRoute {
+        PlayerKeys.route(PlayerKeyPress(keyCode: code, modifiers: modifiers, isRepeat: repeating),
+                         state: PlayerKeyState(typing: typing, fullScreen: fullScreen))
+    }
+    /// What the key does to the player, if anything.
     private func action(_ code: UInt16, _ modifiers: PlayerKeyModifiers = [], repeating: Bool = false,
                         typing: Bool = false, fullScreen: Bool = false) -> PlayerKeyAction? {
-        PlayerKeys.action(PlayerKeyPress(keyCode: code, modifiers: modifiers, isRepeat: repeating),
-                          state: PlayerKeyState(typing: typing, fullScreen: fullScreen))
+        guard case .perform(let action) = route(code, modifiers, repeating: repeating, typing: typing, fullScreen: fullScreen)
+        else { return nil }
+        return action
     }
 
     func testEachKeyDoesWhatTheWebPlayersDoes() {
@@ -51,6 +58,29 @@ final class PlayerKeyTests: XCTestCase {
         for code in [Code.space, Code.f, Code.m, Code.n] {
             XCTAssertNil(action(code, repeating: true))
         }
+    }
+
+    /// …and it goes nowhere else either. Let through, a held Space reached the bare-Space item in
+    /// «Воспроизведение» and paused and played the episode — and the friend's — several times a
+    /// second; a held N skipped episode after episode.
+    func testAHeldPlayerKeyIsKeptFromTheMenus() {
+        for code in [Code.space, Code.f, Code.m, Code.n] {
+            XCTAssertEqual(route(code, repeating: true), .swallow)
+            XCTAssertEqual(route(code, .shift, repeating: true), .swallow)
+        }
+        XCTAssertEqual(route(Code.f, [.control, .command], repeating: true), .swallow)
+        XCTAssertEqual(route(Code.escape, repeating: true, fullScreen: true), .swallow)
+    }
+
+    /// What is not the player's key is not the player's when held either: a letter held in the
+    /// composer, a menu's combination, Esc in a window.
+    func testAHeldKeyThatIsNotThePlayersPassesOn() {
+        XCTAssertEqual(route(Code.a, repeating: true), .pass)
+        XCTAssertEqual(route(Code.space, repeating: true, typing: true), .pass)
+        XCTAssertEqual(route(Code.n, .command, repeating: true), .pass)
+        XCTAssertEqual(route(Code.escape, repeating: true), .pass)
+        XCTAssertEqual(route(Code.escape), .pass)
+        XCTAssertEqual(route(Code.space, typing: true), .pass)
     }
 
     /// The together composer: a space, an «а» or an arrow typed there is text and caret, never a

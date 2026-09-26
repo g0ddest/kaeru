@@ -19,6 +19,14 @@ import UserNotifications
     /// go on, and the Dock brings the window back.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
+    /// A click on the Dock icon. With no window up, the system's own answer — a new main window —
+    /// is the right one. With only the player's window or Settings up the system does nothing,
+    /// and the catalogue would stay closed for as long as the episode played.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if flag, CatalogueWindow.shared.window == nil { CatalogueWindow.shared.show() }
+        return true
+    }
+
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         if let url = EpisodeNotificationService.url(for: response) { ApplicationRuntime.shared.pendingURL = url }
         completionHandler()

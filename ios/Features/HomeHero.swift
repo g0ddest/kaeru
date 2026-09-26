@@ -68,7 +68,11 @@ struct HeroCarousel: View {
             }
             .padding(.bottom, 14)
             .animation(.easeOut(duration: 0.25), value: index)
+            // On a phone or an iPad a count of pages, which the swipe turns. On the Mac they are
+            // buttons, and the ‹ › come only with a pointer: each says which title it shows.
+            #if os(iOS)
             .accessibilityHidden(true)
+            #endif
         }
     }
 
@@ -78,8 +82,12 @@ struct HeroCarousel: View {
         circle
         #else
         // Somewhere to click, not only something to count.
+        let title = titles[position].title
         Button { show(position) } label: { circle.padding(4).contentShape(Rectangle()) }
             .buttonStyle(.plain)
+            .accessibilityLabel(title)
+            .accessibilityAddTraits(position == index ? .isSelected : [])
+            .help(title)
         #endif
     }
 

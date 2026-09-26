@@ -67,8 +67,16 @@ struct DetailView: View {
         } message: {
             Text("Серия \(unwatchEpisode ?? 1) и все серии после неё станут непросмотренными. Их сохранённые позиции сбросятся. Это действие можно отменить.")
         }
-        .modifier(CompletionSuggestionPresentation(enabled: route == nil))
+        .modifier(CompletionSuggestionPresentation(enabled: !playerShowing))
     }
+    /// An episode is on, and the question about finishing the title waits for its player to go.
+    /// The Mac hands the route to the player's window at once and plays there, so the question
+    /// waits for that window to close, as it waits for the cover on the iPad.
+    #if os(macOS)
+    private var playerShowing: Bool { route != nil || model.playersOpen > 0 }
+    #else
+    private var playerShowing: Bool { route != nil }
+    #endif
     /// The title, its artwork, and the one thing you came here to press.
     private func header(height: CGFloat) -> some View {
         // No Spacer here: inside a scroll view one grows to the whole proposed height and the

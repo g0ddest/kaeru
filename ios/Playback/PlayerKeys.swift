@@ -32,7 +32,19 @@ struct PlayerKeyState: Equatable {
     var fullScreen = false
 }
 
-/// The player's shortcut for a key, or nil when the key is not the player's to take.
+/// What becomes of a key that goes down in the player's window.
+enum PlayerKeyRoute: Equatable {
+    /// The player's, and this is what it does.
+    case perform(PlayerKeyAction)
+    /// The player's, held down: it does nothing, and nothing else gets it either. Passed on, a
+    /// held Space reached the bare-Space item in «Воспроизведение» — or AVKit, which plays and
+    /// pauses behind the model's back — and the episode flipped several times a second.
+    case swallow
+    /// Not the player's: the menus, the text field, the sheet have it.
+    case pass
+}
+
+/// Where a key goes.
 ///
 /// Pure, so the rules that are easy to get wrong are the ones that are tested: a key typed into
 /// the chat is never a pause, a combination is the menus' (all but ⌃⌘F, the system's own full
@@ -50,15 +62,16 @@ enum PlayerKeys {
     /// A held arrow keeps seeking; anything else held would undo itself.
     private static let repeats: Set<PlayerKeyAction> = [.back, .forward]
 
-    static func action(_ press: PlayerKeyPress, state: PlayerKeyState) -> PlayerKeyAction? {
+    static func route(_ press: PlayerKeyPress, state: PlayerKeyState) -> PlayerKeyRoute {
         // ⌃⌘F: the system's full screen, and a window's command rather than a key typed — so the
         // composer does not keep it either.
         let chord = press.modifiers.subtracting(.shift)
-        if press.keyCode == 3, chord == [.control, .command] { return press.isRepeat ? nil : .fullScreen }
+        if press.keyCode == 3, chord == [.control, .command] { return press.isRepeat ? .swallow : .perform(.fullScreen) }
         guard !state.typing, press.modifiers.isDisjoint(with: [.command, .control, .option]),
-              let action = byCode[press.keyCode] else { return nil }
-        if press.isRepeat, !repeats.contains(action) { return nil }
-        if action == .exitFullScreen, !state.fullScreen { return nil }
-        return action
+              let action = byCode[press.keyCode] else { return .pass }
+        // Before the repeat: in a window Esc is nobody's, held or not — a menu or a sheet may want it.
+        if action == .exitFullScreen, !state.fullScreen { return .pass }
+        if press.isRepeat, !repeats.contains(action) { return .swallow }
+        return .perform(action)
     }
 }

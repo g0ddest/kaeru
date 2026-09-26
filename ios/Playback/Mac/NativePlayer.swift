@@ -27,9 +27,16 @@ struct NativePlayer<Overlay: View>: View {
             .ignoresSafeArea()
             .overlay { overlay() }
             .onContinuousHover { phase in
-                guard case .active(let point) = phase else { return }
-                // A pointer resting on the toolbar is on its way to a button there.
-                if point.y < toolbarBand { playback.holdChrome() } else { playback.showChrome() }
+                switch phase {
+                case .active(let point):
+                    // A pointer resting on the toolbar is on its way to a button there.
+                    if point.y < toolbarBand { playback.holdChrome() } else { playback.showChrome() }
+                case .ended:
+                    // Gone out of the window — through the toolbar, say, to the menu bar — and on
+                    // its way to no button here: the controls go in their three seconds, rather
+                    // than staying over the picture until the pointer comes back.
+                    playback.showChrome()
+                }
             }
             // The pointer goes with the controls, as in every player on this system.
             .pointerVisibility(playback.chromeVisible ? .automatic : .hidden)

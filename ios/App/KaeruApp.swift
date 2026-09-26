@@ -18,13 +18,14 @@ struct KaeruApp: App {
         // are removed, which takes that item and leaves Close (⌘W) to the Window menu. Emptying
         // `.newItem` instead took the whole File menu with it, Close included. A group rather than
         // a single `Window` all the same: closing it does not quit an app whose player is still
-        // playing, and the Dock brings it back.
-        WindowGroup { root.frame(minWidth: 900, minHeight: 600) }
+        // playing. «Каталог» (⌘0) and the Dock bring it back (Mac/CatalogueWindow.swift).
+        WindowGroup(id: CatalogueWindow.id) { root.frame(minWidth: 900, minHeight: 600).catalogueWindow() }
             .defaultSize(width: 1280, height: 820)
             .windowResizability(.contentMinSize)
             .commandsRemoved()
             .commands {
                 SidebarCommands()
+                CatalogueCommands()
                 PlayerCommands()
             }
         // The player: one window, as there is one playback at a time (`AppModel.playersOpen`).

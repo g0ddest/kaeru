@@ -35,6 +35,8 @@ struct PlayerWindow: View {
     let playback: PlaybackModel
     /// The together composer is open, and every key is its.
     var typing = false
+    /// A sheet is over the player — the conversation's history, a dialog — with keys of its own.
+    private(set) var covered = false
     /// For the menu's wording. The keys read the window itself: this follows the end of the
     /// animation, and Esc pressed during it has to count too.
     private(set) var fullScreen = false
@@ -61,11 +63,16 @@ struct PlayerWindow: View {
         guard window === self.window else { return }
         fullScreen = value
     }
+    func sheetChanged(_ window: NSWindow, _ value: Bool) {
+        guard window === self.window else { return }
+        covered = value
+    }
 
     /// AppKit offers a key to the menus before the window's first responder hears it, so Space in
     /// «Воспроизведение» would be a pause even typed into the composer. This hears every key
     /// first: the player's — by where it is on the keyboard, so the Russian layout's «а» is still
-    /// F — when the player's window has the keyboard and no text field in it does.
+    /// F — when the player's window has the keyboard and no text field in it does. A player's key
+    /// held down is kept here too, doing nothing (`PlayerKeyRoute.swallow`).
     func startListening() {
         guard monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -84,9 +91,11 @@ struct PlayerWindow: View {
         // The flag covers the composer; the field editor covers any other field that ever appears.
         let state = PlayerKeyState(typing: typing || window.firstResponder is NSText,
                                    fullScreen: window.styleMask.contains(.fullScreen))
-        guard let action = PlayerKeys.action(PlayerKeyPress(event), state: state) else { return false }
-        perform(action)
-        return true
+        switch PlayerKeys.route(PlayerKeyPress(event), state: state) {
+        case .perform(let action): perform(action); return true
+        case .swallow: return true
+        case .pass: return false
+        }
     }
 }
 
@@ -135,6 +144,12 @@ private struct PlayerWindowControls: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
                 if let window = note.object as? NSWindow { controls.fullScreenChanged(window, false) }
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.willBeginSheetNotification)) { note in
+                if let window = note.object as? NSWindow { controls.sheetChanged(window, true) }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEndSheetNotification)) { note in
+                if let window = note.object as? NSWindow { controls.sheetChanged(window, false) }
+            }
             // In full screen there is no title bar to hide the toolbar in; it slides down when the
             // pointer goes to the top, as the system's own players do.
             .windowToolbarFullScreenVisibility(.onHover)
@@ -142,7 +157,7 @@ private struct PlayerWindowControls: ViewModifier {
 }
 
 /// Hands over the window a view is in, once it is in one.
-private struct WindowReader: NSViewRepresentable {
+struct WindowReader: NSViewRepresentable {
     let found: (NSWindow) -> Void
     func makeNSView(context: Context) -> NSView { Probe(found: found) }
     func updateNSView(_ view: NSView, context: Context) {}
@@ -162,7 +177,8 @@ private struct WindowReader: NSViewRepresentable {
 
 /// «Воспроизведение» in the menu bar: the player's keys where they can be read, and the player's
 /// «…» menu where a Mac user looks for it. Live while the player's window has the keyboard — and
-/// never while the composer does: a disabled item leaves its key to the field.
+/// never while the composer or a sheet over the picture does: a disabled item leaves its key to
+/// the field, and a bare Space in the history is not a pause.
 struct PlayerCommands: Commands {
     @FocusedValue(PlayerControls.self) private var controls
     var body: some Commands {
@@ -172,7 +188,7 @@ struct PlayerCommands: Commands {
 
 private struct PlayerMenu: View {
     let controls: PlayerControls?
-    private var off: Bool { controls.map { $0.typing } ?? true }
+    private var off: Bool { controls.map { $0.typing || $0.covered } ?? true }
     var body: some View {
         let playback = controls?.playback
         let skip = playback?.skipSeconds ?? 10
@@ -184,10 +200,12 @@ private struct PlayerMenu: View {
             Button("Вперёд на \(skip) с") { controls?.perform(.forward) }
                 .keyboardShortcut(.rightArrow, modifiers: [])
             Divider()
-            Button(controls?.fullScreen == true ? "Выйти из полноэкранного режима" : "Во весь экран") {
+            // F goes both ways; in full screen the item says Esc, the key every Mac app leaves it by.
+            let fullScreen = controls?.fullScreen == true
+            Button(fullScreen ? "Выйти из полноэкранного режима" : "Во весь экран") {
                 controls?.perform(.fullScreen)
             }
-            .keyboardShortcut("f", modifiers: [])
+            .keyboardShortcut(fullScreen ? .escape : "f", modifiers: [])
             Toggle("Без звука", isOn: Binding(get: { playback?.muted ?? false }, set: { playback?.setMuted($0) }))
                 .keyboardShortcut("m", modifiers: [])
             Button("Следующая серия") { controls?.perform(.next) }
