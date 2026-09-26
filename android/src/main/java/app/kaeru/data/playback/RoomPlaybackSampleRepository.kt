@@ -7,6 +7,7 @@ import app.kaeru.di.IoDispatcher
 import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.WatchState
 import app.kaeru.domain.repository.PlaybackSampleRepository
+import app.kaeru.domain.viewsync.ViewingSyncEvents
 import kotlinx.coroutines.CoroutineDispatcher
 import java.time.Instant
 import javax.inject.Inject
@@ -26,10 +27,14 @@ class RoomPlaybackSampleRepository @Inject constructor(
     private val database: KaeruDatabase,
     private val session: AccountSession,
     @param:IoDispatcher private val io: CoroutineDispatcher,
+    /** Told of every position written, for viewing sync to send on; it never waits on sync. */
+    private val sync: ViewingSyncEvents = ViewingSyncEvents(),
 ) : PlaybackSampleRepository {
 
-    override suspend fun save(watch: WatchState, progress: EpisodeProgress) =
+    override suspend fun save(watch: WatchState, progress: EpisodeProgress) {
         accountWrite(session, io) { database.savePlaybackSample(watch.toEntity(), progress.toEntity()) }
+        sync.positionSaved(progress)
+    }
 
     override suspend fun forgetFrom(animeId: Int, episode: Int, at: Instant) =
         accountWrite(session, io) { database.forgetProgressFrom(animeId, episode, at) }

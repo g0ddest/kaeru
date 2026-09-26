@@ -27,6 +27,8 @@ data class SettingsUiState(
     val skipEnding: Boolean = false,
     /** Whether leaving the app with an episode playing folds it into a floating window. */
     val pipOnLeave: Boolean = true,
+    /** Whether positions and dubs travel to the viewer's other devices. Off until turned on. */
+    val viewingSync: Boolean = false,
     /**
      * Whether the switch reads «on»: the setting and Android's permission, which are two things.
      *

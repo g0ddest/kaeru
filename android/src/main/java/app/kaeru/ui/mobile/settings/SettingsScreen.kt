@@ -40,6 +40,8 @@ import app.kaeru.ui.common.settings.SettingNote
 import app.kaeru.ui.common.settings.SettingSwitchRow
 import app.kaeru.ui.common.settings.SettingsSection
 import app.kaeru.ui.common.settings.SettingsUiState
+import app.kaeru.ui.common.settings.VIEWING_SYNC
+import app.kaeru.ui.common.settings.VIEWING_SYNC_NOTE
 import app.kaeru.ui.common.settings.StudioRow
 import app.kaeru.ui.common.settings.qualityOptions
 import app.kaeru.ui.common.settings.thresholdChosen
@@ -76,6 +78,7 @@ private const val THRESHOLD_NOTE = "Серия считается просмот
 
 private const val NOTIFICATIONS = "Уведомления"
 private const val NEW_EPISODES = "Новые серии"
+private const val SYNC = "Синхронизация"
 private const val NEW_EPISODES_NOTE =
     "Приложение само проверяет, не вышла ли следующая серия того, что вы смотрите, и говорит об этом"
 private const val NEW_EPISODES_BLOCKED =
@@ -146,6 +149,7 @@ fun SettingsScreen(
     onUpdates: () -> Unit,
     /** Android will not allow notifications, so the switch cannot honestly read «on». */
     notificationsBlocked: Boolean = false,
+    onViewingSync: (Boolean) -> Unit = {},
 ) {
     var confirming by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
@@ -162,6 +166,7 @@ fun SettingsScreen(
             AccountSection(state, onRetryAccount, onSignOutPressed = { confirming = true })
             PlaybackSection(state, onAutoplay, onSkipEnding, onPipOnLeave, onQuality, onThreshold)
             NotificationsSection(state.newEpisodes, notificationsBlocked, onNewEpisodes)
+            ViewingSyncSection(state.viewingSync, onViewingSync)
             TogetherSection()
             ReportingSection()
             DownloadsSection(onDownloads)
@@ -221,6 +226,15 @@ private fun TogetherSection() {
             app.kaeru.data.together.TogetherLog.setEnabled(on)
             journal = on
         })
+    }
+}
+
+/** Positions and dubs on the viewer's other devices, through Kaeru's server. Off until turned on. */
+@Composable
+private fun ViewingSyncSection(enabled: Boolean, onViewingSync: (Boolean) -> Unit) {
+    SettingsSection(SYNC) {
+        SettingNote(VIEWING_SYNC_NOTE)
+        SettingSwitchRow(VIEWING_SYNC, enabled, onViewingSync)
     }
 }
 

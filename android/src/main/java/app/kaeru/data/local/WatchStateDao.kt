@@ -36,4 +36,21 @@ interface WatchStateDao {
 
     @Query("DELETE FROM watch_state")
     suspend fun deleteAll()
+
+    @Query("SELECT * FROM watch_state")
+    suspend fun all(): List<WatchStateEntity>
+
+    /**
+     * The pointer of a title finished on another device, back to the start of its episode when it
+     * was written at or before that moment. The track stays: finishing a show does not forget its voice.
+     */
+    @Query(
+        "UPDATE watch_state SET positionMs = 0, durationMs = 0 " +
+            "WHERE animeId = :animeId AND updatedAt <= :at",
+    )
+    suspend fun rewindUpTo(animeId: Int, at: Instant)
+
+    /** Another device's dub for a title this one already has a row for. */
+    @Query("UPDATE watch_state SET translationId = :translationId, translationTitle = :title WHERE animeId = :animeId")
+    suspend fun setTranslation(animeId: Int, translationId: Int, title: String?)
 }

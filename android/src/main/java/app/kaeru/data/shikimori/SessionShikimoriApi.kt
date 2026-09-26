@@ -3,6 +3,7 @@ package app.kaeru.data.shikimori
 import app.kaeru.data.auth.AuthTokens
 import app.kaeru.data.auth.TokenSnapshot
 import app.kaeru.data.auth.TokenStore
+import app.kaeru.data.viewsync.BearerSession
 import app.kaeru.shared.ApiException
 import app.kaeru.shared.data.shikimori.AnimeDto
 import app.kaeru.shared.data.shikimori.ScreenshotDto
@@ -35,7 +36,7 @@ class SessionShikimoriApi @Inject constructor(
     private val client: ShikimoriClient,
     private val store: TokenStore,
     private val clock: Clock,
-) : ShikimoriApi {
+) : ShikimoriApi, BearerSession {
     /** One refresh at a time: the second request to hit a 401 finds the first one's answer. */
     private val refreshing = Mutex()
 
@@ -62,6 +63,9 @@ class SessionShikimoriApi @Inject constructor(
 
     override suspend fun updateUserRate(id: Long, status: String?, episodes: Int?): UserRateDto =
         authorized { client.updateUserRate(id, status, episodes, it) }
+
+    /** The same session for the relay's viewing sync, which speaks Shikimori's bearer too. */
+    override suspend fun <T> withBearer(call: suspend (token: String) -> T): T = authorized(call)
 
     /** [call] with the session's bearer, and once more with a rotated one after a 401. */
     private suspend fun <T> authorized(call: suspend (token: String) -> T): T {

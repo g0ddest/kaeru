@@ -58,6 +58,15 @@ interface SettingsStore {
     suspend fun setPipOnLeave(enabled: Boolean)
 
     /**
+     * Whether where each episode stopped and the dub chosen for a title go to Kaeru's server and
+     * come back on the viewer's other devices. Off until somebody turns it on: it is the one
+     * setting that sends something of the viewer's somewhere other than Shikimori.
+     */
+    val viewingSync: Flow<Boolean>
+
+    suspend fun setViewingSync(enabled: Boolean)
+
+    /**
      * Whether the app looks in the background for a new episode of something being watched, and
      * says so when it finds one.
      *

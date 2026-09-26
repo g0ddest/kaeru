@@ -187,6 +187,22 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `viewing sync is off until turned on, and the switch writes through once`() = runTest(main.dispatcher) {
+        val store = FakeSettingsStore()
+        val vm = viewModel(store)
+        advanceUntilIdle()
+        assertFalse(vm.uiState.value.viewingSync)
+
+        vm.setViewingSync(true)
+        advanceUntilIdle()
+        vm.setViewingSync(true)
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.viewingSync)
+        assertEquals(listOf("sync=true"), store.writes)
+    }
+
+    @Test
     fun `the switch reads off while Android refuses, whatever the setting says`() = runTest(main.dispatcher) {
         val vm = viewModel()
         advanceUntilIdle()

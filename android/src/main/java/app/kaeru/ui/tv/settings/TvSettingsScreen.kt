@@ -51,6 +51,8 @@ import app.kaeru.ui.common.settings.SettingLabel
 import app.kaeru.ui.common.settings.SettingNote
 import app.kaeru.ui.common.settings.SettingSwitchRow
 import app.kaeru.ui.common.settings.SettingsUiState
+import app.kaeru.ui.common.settings.VIEWING_SYNC
+import app.kaeru.ui.common.settings.VIEWING_SYNC_NOTE
 import app.kaeru.ui.common.settings.StudioRow
 import app.kaeru.ui.common.settings.qualityOptions
 import app.kaeru.ui.common.settings.studioKeys
@@ -155,6 +157,7 @@ fun TvSettingsScreen(
     onUpdates: () -> Unit,
     modifier: Modifier = Modifier,
     listState: LazyListState = rememberLazyListState(),
+    onViewingSync: (Boolean) -> Unit = {},
 ) {
     var confirming by rememberSaveable { mutableStateOf(false) }
     val first = remember { FocusRequester() }
@@ -210,6 +213,12 @@ fun TvSettingsScreen(
             Column(verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space2)) {
                 SettingSwitchRow(SKIP_ENDING, state.skipEnding, onSkipEnding, inset = RingInset)
                 SettingNote(SKIP_ENDING_NOTE, Modifier.padding(horizontal = RingInset))
+            }
+        }
+        row("viewing-sync", bleed = RingInset) {
+            Column(verticalArrangement = Arrangement.spacedBy(KaeruTokens.Space2)) {
+                SettingSwitchRow(VIEWING_SYNC, state.viewingSync, onViewingSync, inset = RingInset)
+                SettingNote(VIEWING_SYNC_NOTE, Modifier.padding(horizontal = RingInset))
             }
         }
         // A label and the chips it names are one item: they are read together, and splitting them

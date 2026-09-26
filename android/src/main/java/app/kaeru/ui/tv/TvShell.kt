@@ -333,6 +333,7 @@ private fun TvSettings(onUpdates: () -> Unit) {
         onSignOut = viewModel::signOut,
         onAutoplay = viewModel::setAutoplayNext,
         onSkipEnding = viewModel::setSkipEnding,
+        onViewingSync = viewModel::setViewingSync,
         onQuality = viewModel::setDefaultQuality,
         onThreshold = viewModel::setWatchedThreshold,
         onStudioUp = viewModel::moveStudioUp,

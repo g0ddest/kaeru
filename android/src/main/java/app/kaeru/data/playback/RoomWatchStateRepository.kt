@@ -6,6 +6,8 @@ import app.kaeru.data.local.toEntity
 import app.kaeru.di.IoDispatcher
 import app.kaeru.domain.model.WatchState
 import app.kaeru.domain.repository.WatchStateRepository
+import app.kaeru.domain.viewsync.RememberedDub
+import app.kaeru.domain.viewsync.ViewingSyncEvents
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -26,6 +28,8 @@ class RoomWatchStateRepository @Inject constructor(
     private val dao: WatchStateDao,
     private val session: AccountSession,
     @param:IoDispatcher private val io: CoroutineDispatcher,
+    /** Told when a title's dub changes, for viewing sync to send on; it never waits on sync. */
+    private val sync: ViewingSyncEvents = ViewingSyncEvents(),
 ) : WatchStateRepository {
 
     override fun observe(animeId: Int): Flow<WatchState?> = dao.observeByAnimeId(animeId)
@@ -41,7 +45,22 @@ class RoomWatchStateRepository @Inject constructor(
         .map { rows -> rows.map { it.toDomain() } }
         .distinctUntilChanged()
 
-    override suspend fun save(state: WatchState) = accountWrite(session, io) { dao.upsert(state.toEntity()) }
+    /**
+     * A changed track is a dub chosen — from the title screen, the player's voice list, or the first
+     * resolve of a title — and viewing sync hears of it once it is written. The same track written
+     * again, as every resolve does, is not news; nor is a track nobody has named yet, since the
+     * other devices could not show it.
+     */
+    override suspend fun save(state: WatchState) {
+        var previous: Int? = null
+        accountWrite(session, io) {
+            previous = dao.getByAnimeId(state.animeId)?.translationId
+            dao.upsert(state.toEntity())
+        }
+        val id = state.translationId ?: return
+        val title = state.translationTitle ?: return
+        if (previous != id) sync.dubChosen(state.animeId, RememberedDub(id, title))
+    }
 
     override suspend fun clear(animeId: Int) = accountWrite(session, io) { dao.deleteByAnimeId(animeId) }
 }

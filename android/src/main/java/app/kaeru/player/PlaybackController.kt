@@ -29,6 +29,8 @@ import app.kaeru.domain.playback.SkipRules
 import app.kaeru.domain.playback.WatchProgress
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.together.LocalAction
+import app.kaeru.domain.viewsync.SyncReason
+import app.kaeru.domain.viewsync.ViewingSyncEvents
 import java.io.IOException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -224,6 +226,11 @@ class DefaultPlaybackController @Inject constructor(
     private val skipMarks: SkipMarksSource,
     @param:PlaybackScope private val scope: CoroutineScope,
     @param:IoDispatcher private val io: CoroutineDispatcher,
+    /**
+     * Told when the batch of positions should go to the other devices now rather than within the
+     * minute: a pause, another episode, the player going away. Never waited on.
+     */
+    private val sync: ViewingSyncEvents = ViewingSyncEvents(),
 ) : PlaybackController {
 
     /** One position, ready to be written, taken before whatever is about to change the row. */
@@ -405,6 +412,8 @@ class DefaultPlaybackController @Inject constructor(
             val plan = Opening(target, freshEpisode = true, local = origin == ActionOrigin.LOCAL, origin = origin)
             opening = plan
             flushProgressNow()
+            // The episode being left is on disk; the other devices hear of it now.
+            if (_state.value.target != null) sync.push(SyncReason.EPISODE_CHANGE)
             _state.value = PlaybackState(
                 target = target,
                 isBuffering = true,
@@ -674,7 +683,10 @@ class DefaultPlaybackController @Inject constructor(
         screenAttached = true
     }
 
-    override fun reportProgress() = flushProgress()
+    override fun reportProgress() {
+        flushProgress()
+        pushAfterWriting(SyncReason.LEAVING)
+    }
 
     override fun release() {
         // The screen is going away either way, and what it was showing decides the rest.
@@ -685,11 +697,13 @@ class DefaultPlaybackController @Inject constructor(
         // «Отключить» — ending the session — is the control that stops it.
         if (casting) {
             flushProgress()
+            pushAfterWriting(SyncReason.LEAVING)
             return
         }
         transition?.cancel()
         transition = null
         flushProgress()
+        pushAfterWriting(SyncReason.LEAVING)
         engine.release()
         goIdle()
     }
@@ -913,6 +927,7 @@ class DefaultPlaybackController @Inject constructor(
         // Awaited, not launched: resolving the next episode writes this anime's row itself, and
         // the position of the episode just finished has to be on disk before that happens.
         flushProgressNow()
+        sync.push(SyncReason.EPISODE_CHANGE)
         open(plan).onFailure(::announceNextUnavailable)
     }
 
@@ -988,6 +1003,11 @@ class DefaultPlaybackController @Inject constructor(
         if (lengthKnown) {
             askForMarks(target, duration)
             reportIfDue(position, duration, paused = wasPlaying && !engineState.isPlaying)
+            // A pause the viewer made, not a stall: a buffering player is not paused, and a bad
+            // network would otherwise send a batch every few seconds.
+            if (wasPlaying && !engineState.isPlaying && !engineState.isBuffering) {
+                pushAfterWriting(SyncReason.PAUSE)
+            }
             markIfWatched(position, duration)
             skipEndingIfDue(position, duration)
         }
@@ -1191,6 +1211,15 @@ class DefaultPlaybackController @Inject constructor(
     private fun launchWrite(sample: Sample) {
         val job = scope.launch { write(sample) }
         if (writing?.isActive != true) writing = job
+    }
+
+    /** Asks sync to send once the write in flight — the one just launched — is on disk. */
+    private fun pushAfterWriting(reason: SyncReason) {
+        val write = writing
+        scope.launch {
+            write?.join()
+            sync.push(reason)
+        }
     }
 
     private fun currentSample(): Sample? = _state.value.let { sampleAt(it.positionMs, it.durationMs) }

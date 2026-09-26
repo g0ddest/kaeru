@@ -64,6 +64,52 @@ abstract class KaeruDatabase : RoomDatabase() {
         episodeProgressDao().upsertAll(progress)
     }
 
+    /**
+     * What viewing sync brought from another device, in one transaction: tombstones first, then
+     * positions — each only over an older one, checked here rather than trusted from a read made
+     * before a sample could land — then dubs. A dub for a title with no row yet starts one at the
+     * beginning of [dubEpisodes]' episode, which is where a press of the watch button would start.
+     */
+    suspend fun applySynced(
+        tombstones: Map<Int, Instant>,
+        positions: List<EpisodeProgressEntity>,
+        dubs: Map<Int, Pair<Int, String?>>,
+        dubEpisodes: Map<Int, Int>,
+    ): Boolean = withTransaction {
+        var written = false
+        for ((animeId, at) in tombstones) {
+            episodeProgressDao().deleteUpTo(animeId, at)
+            watchStateDao().rewindUpTo(animeId, at)
+            written = true
+        }
+        for (row in positions) {
+            val here = episodeProgressDao().get(row.animeId, row.episode)
+            if (here != null && !here.updatedAt.isBefore(row.updatedAt)) continue
+            episodeProgressDao().upsert(row)
+            written = true
+        }
+        for ((animeId, dub) in dubs) {
+            if (watchStateDao().getByAnimeId(animeId) != null) {
+                watchStateDao().setTranslation(animeId, dub.first, dub.second)
+            } else {
+                watchStateDao().upsert(
+                    WatchStateEntity(
+                        animeId = animeId,
+                        episode = dubEpisodes[animeId] ?: 1,
+                        positionMs = 0,
+                        durationMs = 0,
+                        translationId = dub.first,
+                        kodikSeason = null,
+                        updatedAt = Instant.EPOCH,
+                        translationTitle = dub.second,
+                    ),
+                )
+            }
+            written = true
+        }
+        written
+    }
+
     suspend fun clearAccountData() = withTransaction {
         userRateDao().deleteAll()
         watchStateDao().deleteAll()

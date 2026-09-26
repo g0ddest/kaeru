@@ -52,6 +52,7 @@ class SettingsViewModel @Inject constructor(
         val autoplay: Boolean? = null,
         val skipEnding: Boolean? = null,
         val pipOnLeave: Boolean? = null,
+        val viewingSync: Boolean? = null,
         val newEpisodes: Boolean? = null,
         val quality: Quality? = null,
         /** Quality's own null means «Авто», so whether an override exists is a separate fact. */
@@ -71,6 +72,7 @@ class SettingsViewModel @Inject constructor(
         val pipOnLeave: Boolean = true,
         val newEpisodes: Boolean = true,
         val skipEnding: Boolean = false,
+        val viewingSync: Boolean = false,
     )
 
     private data class AccountState(val loaded: Boolean, val account: Account?)
@@ -105,8 +107,9 @@ class SettingsViewModel @Inject constructor(
         settings.pipOnLeave,
         settings.newEpisodeNotifications,
         settings.skipEnding,
-    ) { playback, pipOnLeave, newEpisodes, skipEnding ->
-        playback.copy(pipOnLeave = pipOnLeave, newEpisodes = newEpisodes, skipEnding = skipEnding)
+        settings.viewingSync,
+    ) { playback, pipOnLeave, newEpisodes, skipEnding, viewingSync ->
+        playback.copy(pipOnLeave = pipOnLeave, newEpisodes = newEpisodes, skipEnding = skipEnding, viewingSync = viewingSync)
     }
 
     private val accountState = accounts.account
@@ -131,6 +134,7 @@ class SettingsViewModel @Inject constructor(
                 autoplayNext = chosen.autoplay ?: settings.autoplay,
                 skipEnding = chosen.skipEnding ?: settings.skipEnding,
                 pipOnLeave = chosen.pipOnLeave ?: settings.pipOnLeave,
+                viewingSync = chosen.viewingSync ?: settings.viewingSync,
                 newEpisodes = wantsNewEpisodes && allowed,
                 newEpisodesBlocked = wantsNewEpisodes && !allowed,
                 defaultQuality = if (chosen.qualityChosen) chosen.quality else settings.quality,
@@ -181,6 +185,13 @@ class SettingsViewModel @Inject constructor(
         if (enabled == uiState.value.pipOnLeave) return
         overrides.update { it.copy(pipOnLeave = enabled) }
         viewModelScope.launch { settings.setPipOnLeave(enabled) }
+    }
+
+    /** Viewing sync on or off; the service follows the store by itself. */
+    fun setViewingSync(enabled: Boolean) {
+        if (enabled == uiState.value.viewingSync) return
+        overrides.update { it.copy(viewingSync = enabled) }
+        viewModelScope.launch { settings.setViewingSync(enabled) }
     }
 
     /** What the screen reports after every return to it, and after the system's own dialog. */

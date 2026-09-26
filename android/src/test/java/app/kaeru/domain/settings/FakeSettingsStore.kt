@@ -27,6 +27,7 @@ class FakeSettingsStore(
     override val autoplayNext = MutableStateFlow(autoplay)
     override val skipEnding = MutableStateFlow(skipEnding)
     override val pipOnLeave = MutableStateFlow(pip)
+    override val viewingSync = MutableStateFlow(false)
     override val newEpisodeNotifications = MutableStateFlow(newEpisodes)
     override val defaultQuality = MutableStateFlow(quality)
     override val watchedThreshold = MutableStateFlow(threshold)
@@ -53,6 +54,11 @@ class FakeSettingsStore(
     override suspend fun setPipOnLeave(enabled: Boolean) {
         writes += "pip=$enabled"
         if (echo) pipOnLeave.value = enabled
+    }
+
+    override suspend fun setViewingSync(enabled: Boolean) {
+        writes += "sync=$enabled"
+        if (echo) viewingSync.value = enabled
     }
 
     override suspend fun setNewEpisodeNotifications(enabled: Boolean) {

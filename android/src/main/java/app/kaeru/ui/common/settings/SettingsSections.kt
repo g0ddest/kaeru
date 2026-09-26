@@ -42,6 +42,10 @@ import app.kaeru.ui.common.theme.KaeruSecondary
 import app.kaeru.ui.common.theme.KaeruText
 
 private const val SHIKIMORI = "Shikimori"
+
+/** The switch for viewing sync, the same words on the phone and on the television. */
+const val VIEWING_SYNC = "Синхронизация между устройствами"
+const val VIEWING_SYNC_NOTE = "Позиция в серии и выбранная озвучка — на всех ваших устройствах через сервер Kaeru"
 private const val NO_NAME = "Имя не загрузилось"
 private const val MOVE_UP = "Поднять"
 private const val MOVE_DOWN = "Опустить"

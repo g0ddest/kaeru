@@ -16,6 +16,7 @@ import app.kaeru.data.notify.NewEpisodesStarter
 import app.kaeru.data.update.UpdateCheckStarter
 import app.kaeru.domain.download.DeferredDownloadRemoval
 import app.kaeru.di.ApplicationScope
+import app.kaeru.domain.viewsync.ViewingSync
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
@@ -51,6 +52,8 @@ class KaeruApp : Application(), SingletonImageLoader.Factory, Configuration.Prov
 
     @Inject lateinit var newEpisodes: NewEpisodesStarter
 
+    @Inject lateinit var viewingSync: ViewingSync
+
     /** What lets a `@HiltWorker` be built with the rest of the graph behind it. */
     @Inject lateinit var workerFactory: HiltWorkerFactory
 
@@ -80,6 +83,10 @@ class KaeruApp : Application(), SingletonImageLoader.Factory, Configuration.Prov
         // than decides once: signing out has to take the work off, and signing back in has to put
         // it on again, and neither happens with a screen around to ask.
         newEpisodes.start(appScope)
+        // Positions and dubs to and from the viewer's other devices, when they have turned it on.
+        // It follows the account and the switch by itself; what it needs from here is when the
+        // app goes out of sight and comes back.
+        viewingSync.start()
         registerActivityLifecycleCallbacks(ForegroundWatch())
     }
 
@@ -94,12 +101,25 @@ class KaeruApp : Application(), SingletonImageLoader.Factory, Configuration.Prov
      * have; the engine ignores the call unless a start was actually refused.
      */
     private inner class ForegroundWatch : ActivityLifecycleCallbacks {
+        /** Activities on screen. Zero is the app in the background, whichever of them was last. */
+        private var visible = 0
+
         override fun onActivityResumed(activity: Activity) = downloads.onForeground()
 
         override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
-        override fun onActivityStarted(activity: Activity) = Unit
+
+        override fun onActivityStarted(activity: Activity) {
+            if (visible++ == 0) viewingSync.becameActive()
+        }
+
         override fun onActivityPaused(activity: Activity) = Unit
-        override fun onActivityStopped(activity: Activity) = Unit
+
+        override fun onActivityStopped(activity: Activity) {
+            visible = (visible - 1).coerceAtLeast(0)
+            // A rotation stops and starts the same screen; that is not the app going anywhere.
+            if (visible == 0 && !activity.isChangingConfigurations) viewingSync.wentToBackground()
+        }
+
         override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
         override fun onActivityDestroyed(activity: Activity) = Unit
     }

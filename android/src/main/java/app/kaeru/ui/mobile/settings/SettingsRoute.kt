@@ -66,6 +66,7 @@ fun SettingsRoute(
         onAutoplay = vm::setAutoplayNext,
         onSkipEnding = vm::setSkipEnding,
         onPipOnLeave = vm::setPipOnLeave,
+        onViewingSync = vm::setViewingSync,
         onNewEpisodes = { wanted ->
             when (pressOfNewEpisodes(wanted, Build.VERSION.SDK_INT, notificationsGranted(context))) {
                 NewEpisodesPress.TURN_ON -> {

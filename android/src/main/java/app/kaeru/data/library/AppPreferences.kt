@@ -45,6 +45,7 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
     private val autoplayNextKey = booleanPreferencesKey("autoplay_next")
     private val skipEndingKey = booleanPreferencesKey("skip_ending")
     private val pipOnLeaveKey = booleanPreferencesKey("pip_on_leave")
+    private val viewingSyncKey = booleanPreferencesKey("viewing_sync")
     private val newEpisodeNotificationsKey = booleanPreferencesKey("new_episode_notifications")
     private val defaultQualityKey = intPreferencesKey("default_quality")
     private val notificationsAskedKey = booleanPreferencesKey("notifications_asked")
@@ -153,6 +154,13 @@ class AppPreferences @Inject constructor(@param:Named("prefs") private val dataS
 
     override suspend fun setPipOnLeave(enabled: Boolean) {
         dataStore.edit { it[pipOnLeaveKey] = enabled }
+    }
+
+    /** Off until somebody turns it on: positions and dubs leave the device only when asked to. */
+    override val viewingSync: Flow<Boolean> = dataStore.data.map { it[viewingSyncKey] ?: false }
+
+    override suspend fun setViewingSync(enabled: Boolean) {
+        dataStore.edit { it[viewingSyncKey] = enabled }
     }
 
     /** On until somebody says otherwise; turning it off also takes the background check off. */
