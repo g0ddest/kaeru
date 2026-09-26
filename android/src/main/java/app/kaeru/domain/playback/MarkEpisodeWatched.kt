@@ -53,12 +53,15 @@ class MarkEpisodeWatched(
         }
 
         val announced = entry?.anime?.episodes ?: 0
+        // Shikimori's announced count lags behind a show that got longer — 12 announced, a 13th in
+        // four days. A next episode on the schedule means this one was not the end.
+        val moreScheduled = entry?.anime?.nextEpisodeAt?.isAfter(clock.instant()) == true
         return Result.success(
             WatchedOutcome(
                 markedEpisode = episode,
                 movedToWatching = pickUp,
                 // Nothing new was counted, so the dialog was already offered when it was.
-                suggestCompleted = !alreadyCounted && announced > 0 && episode >= announced,
+                suggestCompleted = !alreadyCounted && !moreScheduled && announced > 0 && episode >= announced,
             ),
         )
     }

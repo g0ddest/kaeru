@@ -108,6 +108,18 @@ class MarkEpisodeWatchedTest {
     }
 
     @Test
+    fun `the last announced episode is not the end while another is on the schedule`() = runTest {
+        // Shikimori announced 12, and a 13th airs in four days.
+        val longer = anime(status = AnimeStatus.ONGOING).copy(nextEpisodeAt = now.plusSeconds(4 * 24 * 3600))
+        seed(episodes = 11, anime = longer)
+
+        val outcome = mark(animeId = 100, episode = 12).getOrThrow()
+
+        assertEquals(listOf("episodes:100:12"), library.calls)
+        assertFalse(outcome.suggestCompleted)
+    }
+
+    @Test
     fun `an episode shikimori already counted is not sent again`() = runTest {
         seed(episodes = 5)
 

@@ -75,7 +75,10 @@ function picksUp(rate: UserRate): boolean {
   return rate.status === "planned" || rate.status === "on_hold";
 }
 
+// The announced count lags behind a show that got longer (12 announced, a 13th in four days), so a
+// scheduled next episode means this one was not the end.
 function completes(anime: Anime, counted: number): boolean {
+  if (anime.nextEpisodeAt !== null && anime.nextEpisodeAt > Date.now()) return false;
   return anime.episodes > 0 && counted >= anime.episodes;
 }
 

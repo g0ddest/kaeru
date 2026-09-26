@@ -596,6 +596,13 @@ describe("Library.markWatched", () => {
     expect(open.server.writes()).toEqual(["PATCH 102 episodes=30 tok"]);
   });
 
+  it("does not suggest completing while another episode is on the schedule", async () => {
+    // Shikimori announced 12, and a 13th airs in four days: the 12th is not the end.
+    const longer = ongoing(4, { episodes: 12, episodesAired: 12, nextEpisodeAt: Date.now() + 4 * 24 * 3600 * 1000 });
+    const s = await holding(longer, "watching", 11);
+    expect(await s.library.markWatched(longer, 12)).toEqual({ suggestCompleted: false });
+  });
+
   it("suggests completing only when the last announced episode is newly counted", async () => {
     const twelve = anime(1, { episodes: 12 });
     const finale = await holding(twelve, "watching", 11);
