@@ -52,9 +52,8 @@ struct Backdrop: View {
             if sizeClass == .regular, let still = model.stills[anime.id] { wide(still) } else { layers }
         }
         .clipped().accessibilityHidden(true)
-        // Wide windows get a frame from the episodes: the poster, drawn half a window across, was
-        // stretched well past its pixels. A phone keeps the poster, which fits its hero.
-        .task(id: anime.id) { if sizeClass == .regular { await model.loadStill(for: anime.id) } }
+        // Wide windows get a frame from the episodes (asked for by the hero and the title header):
+        // the poster, drawn half a window across, was stretched well past its pixels.
     }
     private func wide(_ still: URL) -> some View {
         ZStack {

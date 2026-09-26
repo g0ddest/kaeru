@@ -124,9 +124,16 @@ import AuthenticationServices
     @ObservationIgnored private var stillsAsked = Set<Int>()
     func loadStill(for id: Int) async {
         guard stillsAsked.insert(id).inserted else { return }
-        guard let first = try? await service.screenshots(id).first, let url = URL(string: first) else { return }
-        stills[id] = url
+        do {
+            let found = try await service.screenshots(id)
+            if let first = found.first, let url = URL(string: first) { stills[id] = url }
+        } catch {
+            // Cancelled (the hero redrew and restarted its task) or failed: asked again next time.
+            // Remembering it as asked left the first title of the carousel on its stretched poster.
+            stillsAsked.remove(id)
+        }
     }
+
 
     init(service: any AnimeService, store: any LocalStorage, configuration: AppConfiguration, session: Session? = nil,
          saveSession: @escaping (Session?) throws -> Void = { try KeychainSession.write($0) }) {
