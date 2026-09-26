@@ -251,24 +251,24 @@ struct PlayerOptionsMenu: View {
         Section(playback.anime.title) {
             Menu("Серия") {
                 ForEach(1...max(1, playback.episodeCount), id: \.self) { value in
-                    Button { playback.selectEpisode(value) } label: { menuLabel("Серия \(value)", selected: value == playback.episode) }
+                    choice("Серия \(value)", selected: value == playback.episode) { playback.selectEpisode(value) }
                 }
             }.disabled(playback.episodeCount == 0)
             Menu("Озвучка") {
                 ForEach(playback.translations) { value in
-                    Button { playback.selectTranslation(value.id) } label: { menuLabel(value.title, selected: value.id == playback.translation) }
+                    choice(value.title, selected: value.id == playback.translation) { playback.selectTranslation(value.id) }
                         .disabled(value.episodes > 0 && value.episodes < playback.episode)
                 }
             }.disabled(playback.translations.isEmpty)
             Menu("Качество") {
-                Button { playback.selectQuality(0) } label: { menuLabel("Авто", selected: playback.selectedQuality == 0) }
+                choice("Авто", selected: playback.selectedQuality == 0) { playback.selectQuality(0) }
                 ForEach(playback.qualities, id: \.self) { value in
-                    Button { playback.selectQuality(value) } label: { menuLabel("\(value)p", selected: value == playback.selectedQuality) }
+                    choice("\(value)p", selected: value == playback.selectedQuality) { playback.selectQuality(value) }
                 }
             }.disabled(playback.isLocal || playback.qualities.isEmpty)
             Menu("Скорость") {
                 ForEach([0.5, 0.75, 1, 1.25, 1.5, 1.75, 2], id: \.self) { value in
-                    Button { playback.setSpeed(value) } label: { menuLabel("\(value.formatted())×", selected: value == playback.speed) }
+                    choice("\(value.formatted())×", selected: value == playback.speed) { playback.setSpeed(value) }
                 }
             }
         }
@@ -293,7 +293,9 @@ struct PlayerOptionsMenu: View {
             if offersNext, playback.hasNext { Button("Следующая серия") { playback.nextNow() } }
         }
     }
-    @ViewBuilder private func menuLabel(_ text: String, selected: Bool) -> some View {
-        if selected { Label(text, systemImage: "checkmark") } else { Text(text) }
+    /// One choice among several, ticked when it is the current one. A toggle rather than a button
+    /// with a checkmark image: a Mac menu shows no images, and the tick was lost there.
+    private func choice(_ text: String, selected: Bool, _ pick: @escaping () -> Void) -> some View {
+        Toggle(text, isOn: Binding(get: { selected }, set: { if $0 { pick() } }))
     }
 }

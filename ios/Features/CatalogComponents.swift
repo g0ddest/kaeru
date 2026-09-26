@@ -383,12 +383,10 @@ struct LibraryStatusMenu: View {
     var body: some View {
         Menu {
             ForEach(WatchStatus.allCases) { status in
-                Button {
-                    model.queueRate(anime: anime, status: status.rawValue, episodes: rate?.episodes ?? 0)
-                } label: {
-                    if rate?.status == status.rawValue { Label(status.title, systemImage: "checkmark") }
-                    else { Text(status.title) }
-                }
+                // A toggle ticks the current status on the Mac too, whose menus show no images.
+                Toggle(status.title, isOn: Binding(get: { rate?.status == status.rawValue }, set: { on in
+                    if on { model.queueRate(anime: anime, status: status.rawValue, episodes: rate?.episodes ?? 0) }
+                }))
             }
         } label: {
             Label(WatchStatus(rawValue: rate?.status ?? "")?.title ?? "В мой список", systemImage: rate == nil ? "plus" : "checkmark")
