@@ -55,15 +55,30 @@ enum PlaybackLocalAction {
         chromeVisible = true
         scheduleChromeHide()
     }
+    /// Up, and staying up: a pointer resting on the Mac's toolbar is somebody about to press it.
+    func holdChrome() {
+        chromeVisible = true
+        chromeTimer?.cancel(); chromeTimer = nil
+    }
+    #if os(iOS)
+    private static let chromeDelay = Duration.seconds(4)
+    #else
+    /// The web player's three seconds (web/src/player/rules.ts): on a desktop the pointer stopping
+    /// is the viewer settling in to watch, and there is no finger on the glass to wait for.
+    private static let chromeDelay = Duration.seconds(3)
+    #endif
     private func scheduleChromeHide() {
         chromeTimer?.cancel()
         chromeTimer = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(4))
+            try? await Task.sleep(for: Self.chromeDelay)
             guard !Task.isCancelled, let self, self.isPlaying, self.error == nil else { return }
             self.chromeVisible = false
         }
     }
     private(set) var pictureInPicture = false
+    /// The sound is off — by AVKit's own button or by this app. Only this player's: watching
+    /// together turns the friend's voice up by turning the episode down, not off (`setDucked`).
+    private(set) var muted = false
     private(set) var finished = false
     private(set) var nextEpisode = NextEpisodeState()
     private(set) var skipOffer: SkipOffer?
@@ -104,6 +119,7 @@ enum PlaybackLocalAction {
     private var request = UUID()
     private var itemObservation: NSKeyValueObservation?
     private var statusObservation: NSKeyValueObservation?
+    private var muteObservation: NSKeyValueObservation?
     private var timer: Any?
     private var observations: [NSObjectProtocol] = []
     private var loadTask: Task<Void, Never>?
@@ -150,6 +166,10 @@ enum PlaybackLocalAction {
         statusObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
             let status = player.timeControlStatus
             Task { @MainActor in self?.statusChanged(status) }
+        }
+        muteObservation = player.observe(\.isMuted, options: [.new]) { [weak self] player, _ in
+            let muted = player.isMuted
+            Task { @MainActor in self?.muted = muted }
         }
         observe(.AVPlayerItemDidPlayToEndTime, reading: { PlaybackModel.item($0) }) { playback, item in
             guard let item, playback.currentItemID == item else { return }
@@ -331,6 +351,7 @@ enum PlaybackLocalAction {
     /// The same figure as Android's `ExoPlaybackEngine.DUCKED_VOLUME`, and set explicitly because
     /// the system ducks other apps rather than this one against itself.
     func setDucked(_ on: Bool) { player.volume = on ? 0.2 : 1 }
+    func setMuted(_ value: Bool) { player.isMuted = value; muted = value }
     func setSynchronizationControlled(_ value: Bool) { synchronizationControlled = value }
     func applySynchronization(position: Double, isPlaying: Bool, speed: Double? = nil) {
         if let speed { setSpeed(speed, remember: false, notify: false) }
@@ -361,7 +382,7 @@ enum PlaybackLocalAction {
         guard !closed else { return }
         save(); closed = true; request = UUID()
         loadTask?.cancel(); timeoutTask?.cancel(); marksTask?.cancel(); stallTask?.cancel()
-        player.pause(); itemObservation = nil; statusObservation = nil
+        player.pause(); itemObservation = nil; statusObservation = nil; muteObservation = nil
         if let timer { player.removeTimeObserver(timer); self.timer = nil }
         observations.forEach { NotificationCenter.default.removeObserver($0) }; observations = []
         mediaControls?.close(); mediaControls = nil

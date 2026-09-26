@@ -5,7 +5,8 @@ import SwiftUI
 ///
 /// Three to five titles take turns every seven seconds. The turn-taking stops for good the moment a
 /// finger lands on it, and never starts at all when the viewer has asked the system to reduce
-/// motion — a picture that moves under a reader is worse than one that does not move at all.
+/// motion — a picture that moves under a reader is worse than one that does not move at all. On a
+/// Mac it also holds still while the pointer is over it: somebody is reading it.
 struct HeroCarousel: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -14,18 +15,18 @@ struct HeroCarousel: View {
     let play: (Anime) -> Void
     @State private var index = 0
     @State private var touched = false
+    @State private var hovering = false
 
     var body: some View {
         pages
         .frame(height: height)
         .overlay(alignment: .bottom) { dots }
         .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in touched = true })
-        .task(id: "\(index)/\(touched)") { await advance() }
+        .task(id: "\(index)/\(touched)/\(hovering)") { await advance() }
         .onChange(of: titles.map(\.id)) { _, ids in if index >= ids.count { index = 0 } }
     }
 
-    /// One title to a page, swiped between. The Mac has no paged `TabView`; a paging scroll view is
-    /// the same gesture on a trackpad, and the same `index` drives it.
+    /// One title to a page, swiped between.
     @ViewBuilder private var pages: some View {
         #if os(iOS)
         TabView(selection: $index) {
@@ -35,26 +36,35 @@ struct HeroCarousel: View {
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         #else
-        ScrollView(.horizontal) {
-            LazyHStack(spacing: 0) {
-                ForEach(Array(titles.enumerated()), id: \.element.id) { position, anime in
-                    HeroPage(anime: anime) { play(anime) }.containerRelativeFrame(.horizontal).id(position)
-                }
+        // The Mac has no paged `TabView`, and a mouse cannot swipe. One title at a time, the next
+        // dissolving in over it; the dots and ‹ › at the edges turn it by hand.
+        ZStack {
+            if titles.indices.contains(index) {
+                let anime = titles[index]
+                HeroPage(anime: anime) { play(anime) }
+                    .id(anime.id)
+                    .transition(.opacity)
             }
-            .scrollTargetLayout()
         }
-        .scrollTargetBehavior(.paging)
-        .scrollIndicators(.hidden)
-        .scrollPosition(id: Binding<Int?>(get: { index }, set: { index = $0 ?? 0 }))
+        .overlay {
+            if hovering && titles.count > 1 {
+                HStack {
+                    turn(-1, systemImage: "chevron.left", label: "Предыдущий")
+                    Spacer(minLength: 0)
+                    turn(1, systemImage: "chevron.right", label: "Следующий")
+                }
+                .padding(.horizontal, 12)
+                .transition(.opacity)
+            }
+        }
+        .onHover { inside in withAnimation(.easeOut(duration: 0.15)) { hovering = inside } }
         #endif
     }
 
     @ViewBuilder private var dots: some View {
         if titles.count > 1 {
             HStack(spacing: 7) {
-                ForEach(titles.indices, id: \.self) { position in
-                    Circle().fill(.white.opacity(position == index ? 0.95 : 0.35)).frame(width: 7, height: 7)
-                }
+                ForEach(titles.indices, id: \.self) { position in dot(position) }
             }
             .padding(.bottom, 14)
             .animation(.easeOut(duration: 0.25), value: index)
@@ -62,12 +72,42 @@ struct HeroCarousel: View {
         }
     }
 
+    @ViewBuilder private func dot(_ position: Int) -> some View {
+        let circle = Circle().fill(.white.opacity(position == index ? 0.95 : 0.35)).frame(width: 7, height: 7)
+        #if os(iOS)
+        circle
+        #else
+        // Somewhere to click, not only something to count.
+        Button { show(position) } label: { circle.padding(4).contentShape(Rectangle()) }
+            .buttonStyle(.plain)
+        #endif
+    }
+
     private func advance() async {
-        guard titles.count > 1, !touched, !reduceMotion else { return }
+        guard titles.count > 1, !touched, !hovering, !reduceMotion else { return }
         try? await Task.sleep(for: .seconds(7))
-        guard !Task.isCancelled, !touched else { return }
+        guard !Task.isCancelled, !touched, !hovering else { return }
         withAnimation(.easeInOut(duration: 0.55)) { index = (index + 1) % titles.count }
     }
+
+    #if os(macOS)
+    /// Turned by hand, which — like a finger on the iPad — stops it turning by itself.
+    private func show(_ position: Int) {
+        touched = true
+        withAnimation(.easeInOut(duration: 0.35)) { index = position }
+    }
+    private func turn(_ step: Int, systemImage: String, label: String) -> some View {
+        Button { show((index + step + titles.count) % titles.count) } label: {
+            Image(systemName: systemImage)
+                .font(.title3.weight(.semibold)).foregroundStyle(.white)
+                .frame(width: 36, height: 36)
+                .background(.black.opacity(0.4), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .help(label)
+    }
+    #endif
 }
 
 private struct HeroPage: View {

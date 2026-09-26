@@ -95,6 +95,7 @@ struct AnimeCard: View {
                             .padding(.horizontal, 8).padding(.bottom, 8)
                     }
                 }
+                .kaeruHover(.lift)
             VStack(alignment: .leading, spacing: 2) {
                 // Two lines whether or not there are two: a shelf where one title wraps and its
                 // neighbour does not is a shelf whose captions sit at two different heights.
@@ -117,6 +118,9 @@ struct EpisodeCard: View {
     var target: ContinueTarget
     var progress: EpisodeProgress?
     var play: () -> Void
+    /// Whether the pointer is over the card. A Mac shows the ellipsis only then: a column of
+    /// dark discs over every picture in a shelf is noise to somebody who can right-click instead.
+    @State private var hovering = false
     private var fraction: Double? {
         guard target.position > 0, let progress, progress.duration > 0 else { return nil }
         return min(1, max(0, target.position / progress.duration))
@@ -146,7 +150,9 @@ struct EpisodeCard: View {
                     }
             }
             .buttonStyle(.plain)
-            .overlay(alignment: .topTrailing) { menu }
+            .kaeruHover(.lift)
+            .overlay(alignment: .topTrailing) { menu.opacity(menuShown ? 1 : 0) }
+            .kaeruContextMenu { EpisodeCardActions(anime: anime, episode: target.episode) }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(anime.title). \(caption)")
             .accessibilityHint(target.position > 0 ? "Продолжить просмотр" : "Смотреть")
@@ -159,6 +165,16 @@ struct EpisodeCard: View {
                     .multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
             }.buttonStyle(.plain)
         }
+        #if os(macOS)
+        .onHover { inside in withAnimation(.easeOut(duration: 0.15)) { hovering = inside } }
+        #endif
+    }
+    private var menuShown: Bool {
+        #if os(iOS)
+        true
+        #else
+        hovering
+        #endif
     }
     private var menu: some View {
         Menu {
@@ -171,6 +187,7 @@ struct EpisodeCard: View {
         }
         .padding(8)
         .accessibilityLabel("Ещё: \(anime.title)")
+        .kaeruHelp("Ещё")
     }
 }
 
@@ -419,6 +436,7 @@ struct TranslationChooser: View {
                 }
             }
             .navigationTitle("Озвучка").kaeruTitleDisplay(.inline)
+            .kaeruSheetSize(minWidth: 420, minHeight: 520)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } }
             .task(id: revision) {
                 loading = true; failure = nil

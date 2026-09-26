@@ -61,7 +61,7 @@ struct DownloadsView: View {
         .confirmationDialog("Удалить все загруженные эпизоды?", isPresented: $deletingAll, titleVisibility: .visible) {
             Button("Удалить все", role: .destructive) { manager.removeAll() }
         }
-        .sheet(isPresented: $showsSettings) { DownloadSettingsView(manager: manager) }
+        .sheet(isPresented: $showsSettings) { DownloadSettingsView(manager: manager).kaeruSheetSize(minWidth: 440, minHeight: 480) }
     }
 
     private func downloadRow(_ entry: DownloadEntry) -> some View {
@@ -77,9 +77,11 @@ struct DownloadsView: View {
                     Button { onPlay(entry) } label: { Image(systemName: "play.circle.fill").font(.title2) }
                         .buttonStyle(.borderless)
                         .accessibilityLabel("Смотреть серию \(entry.episode)")
+                        .kaeruHelp("Смотреть серию \(entry.episode)")
                 } else {
                     Menu { actions(entry) } label: { Image(systemName: "ellipsis.circle").font(.title3) }
                         .accessibilityLabel("Действия с серией \(entry.episode)")
+                        .kaeruHelp("Действия с серией \(entry.episode)")
                 }
             }
             if entry.state.isPending || entry.state == .paused {

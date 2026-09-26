@@ -32,6 +32,9 @@ struct SearchView: View {
                         ForEach(results) { anime in
                             VStack(alignment: .leading, spacing: 10) {
                                 NavigationLink(value: anime) { AnimeCard(anime: anime) }.buttonStyle(.plain).accessibilityIdentifier("anime-\(anime.id)")
+                                    // The status menu every other poster in the app has on a right
+                                    // click; a phone adds from here with the button below.
+                                    .kaeruContextMenu { if model.session != nil { LibraryStatusMenu(anime: anime) } }
                                 if model.rate(for: anime.id) != nil {
                                     Label("В списке", systemImage: "checkmark").font(.caption).foregroundStyle(Palette.inkSoft)
                                 } else if model.session != nil {

@@ -15,6 +15,11 @@ enum TogetherCopy {
     static let watchTogether = "Смотреть вместе"
     static let leave = "Выйти из совместного просмотра"
     static let share = "Поделиться приглашением"
+    /// A Mac copies the invitation rather than raising a share sheet, and says so over the picture.
+    static let copyInvitation = "Скопировать приглашение"
+    static let invitationCopied = "Приглашение скопировано — вставьте его в чат"
+    /// The tooltip on the player's button that opens a room.
+    static let inviteHelp = "Пригласить: создать комнату и скопировать ссылку"
     /// The one name for somebody Shikimori never named.
     static let somebody = "Друг"
     // --- waiting ----------------------------------------------------------------------------

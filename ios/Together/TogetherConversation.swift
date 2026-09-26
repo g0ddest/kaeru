@@ -100,6 +100,9 @@ enum TogetherConversationTiming {
     private(set) var history: [TogetherSaid] = []
     private(set) var reactions: [TogetherFlyingReaction] = []
     var historyOpen = false
+    /// The field for writing is open. Every key belongs to it then: on a Mac the player's own keys
+    /// — Space, the arrows, F, M, N — stand aside until it closes.
+    var composing = false
     /// A clip to put through the speaker right now, once.
     private(set) var playing: TogetherSaid?
     /// One line said once and then forgotten — «Нужен доступ к микрофону», a goodbye.

@@ -5,6 +5,11 @@ import Observation
     static let shared = ApplicationRuntime()
     private(set) var model: AppModel?
     var pendingURL: URL?
+    #if os(macOS)
+    /// The episode in the player's window. The Mac plays in a window of its own rather than over
+    /// the screen that asked, and a window is opened by id — so what it is to show waits here.
+    var nowPlaying: PlaybackRoute?
+    #endif
 
     func loadModel(discardingCache: Bool = false) throws -> AppModel {
         if let model, !discardingCache { return model }

@@ -154,7 +154,10 @@ struct SettingsView: View {
             }
             .kaeruGroupedForm()
             .navigationTitle("Настройки").kaeruTitleDisplay(.inline)
+            // A settings window on a Mac is closed like any other window.
+            #if os(iOS)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } }
+            #endif
             .confirmationDialog("Выйти из Shikimori?", isPresented: $confirmLogout, titleVisibility: .visible) {
                 Button("Выйти", role: .destructive) { model.signOut() }
             } message: { Text("Прогресс останется на устройстве. Несинхронизированные изменения отправятся при следующем входе в этот аккаунт.") }

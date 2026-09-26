@@ -70,13 +70,14 @@ struct LibraryView: View {
                 }
                 .background(Palette.canvas)
                 .searchable(text: $query, prompt: mode == .recent ? "Среди недавних" : "В моём списке")
-                .refreshable { await model.reloadLibrary(); await model.flush() }
+                .kaeruRefreshable { await model.reloadLibrary(); await model.flush() }
                 .toolbar {
                     if mode == .list {
                         ToolbarItem(placement: .kaeruTrailing) {
                             Menu {
                                 Picker("Сортировка", selection: $sort) { ForEach(LibraryOrder.allCases) { Text($0.label).tag($0) } }
                             } label: { Label("Сортировка", systemImage: "arrow.up.arrow.down") }
+                            .kaeruHelp("Сортировка")
                         }
                     }
                 }

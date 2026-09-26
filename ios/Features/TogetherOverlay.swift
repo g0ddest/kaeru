@@ -205,55 +205,65 @@ private struct Controls: View {
     @FocusState private var writing: Bool
 
     var body: some View {
-        if composing {
+        Group {
+            if composing { composer } else { row }
+        }
+        // Said to the conversation, so the player knows its keys are the field's while it is open.
+        .onChange(of: composing, initial: true) { _, open in manager.conversation.composing = open }
+        .onDisappear { manager.conversation.composing = false }
+    }
+
+    private var composer: some View {
+        HStack(spacing: 8) {
+            TextField(TogetherCopy.writePlaceholder, text: $draft)
+                .textFieldStyle(.plain).foregroundStyle(OnVideo.ink).tint(Palette.accent)
+                .submitLabel(.send).focused($writing)
+                .onSubmit(send)
+                .kaeruExitCommand(close)
+                .padding(.horizontal, 12).padding(.vertical, 10)
+                .onVideoChip()
+            Button(TogetherCopy.send, action: send)
+                .font(.footnote.weight(.semibold)).foregroundStyle(Palette.accent)
+                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            Button(TogetherCopy.close, action: close)
+                .font(.footnote).foregroundStyle(OnVideo.muted)
+        }
+        .frame(width: OnVideo.columnWidth)
+        .onAppear { writing = true }
+    }
+
+    private var row: some View {
+        ScrollView(.horizontal) {
             HStack(spacing: 8) {
-                TextField(TogetherCopy.writePlaceholder, text: $draft)
-                    .textFieldStyle(.plain).foregroundStyle(OnVideo.ink).tint(Palette.accent)
-                    .submitLabel(.send).focused($writing)
-                    .onSubmit(send)
-                    .padding(.horizontal, 12).padding(.vertical, 10)
-                    .onVideoChip()
-                Button(TogetherCopy.send, action: send)
-                    .font(.footnote.weight(.semibold)).foregroundStyle(Palette.accent)
-                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                Button(TogetherCopy.close) { composing = false; draft = "" }
-                    .font(.footnote).foregroundStyle(OnVideo.muted)
-            }
-            .frame(width: OnVideo.columnWidth)
-            .onAppear { writing = true }
-        } else {
-            ScrollView(.horizontal) {
-                HStack(spacing: 8) {
-                    disc("😀", label: TogetherCopy.reactions) { picking.toggle(); pickerRevision += 1 }
-                    VoiceButton(send: { manager.send(voice: $0) },
-                                denied: { manager.conversation.message = TogetherCopy.micDenied }, failed: { manager.conversation.message = TogetherCopy.voiceFailed },
-                                openChanged: { microphoneOpen = $0 })
-                    if picking {
-                        ForEach(TogetherReaction.allCases, id: \.self) { reaction in
-                            disc(reaction.symbol, label: TogetherCopy.reactionName(reaction)) {
-                                manager.send(reaction: reaction)
-                                picking = false
-                            }
+                disc("😀", label: TogetherCopy.reactions) { picking.toggle(); pickerRevision += 1 }
+                VoiceButton(send: { manager.send(voice: $0) },
+                            denied: { manager.conversation.message = TogetherCopy.micDenied }, failed: { manager.conversation.message = TogetherCopy.voiceFailed },
+                            openChanged: { microphoneOpen = $0 })
+                if picking {
+                    ForEach(TogetherReaction.allCases, id: \.self) { reaction in
+                        disc(reaction.symbol, label: TogetherCopy.reactionName(reaction)) {
+                            manager.send(reaction: reaction)
+                            picking = false
                         }
-                    } else {
-                        ForEach(TogetherCopy.presets, id: \.self) { preset in
-                            pill(preset) { manager.send(chat: preset) }
-                        }
-                        pill(TogetherCopy.writePlaceholder, muted: true) { composing = true }
                     }
+                } else {
+                    ForEach(TogetherCopy.presets, id: \.self) { preset in
+                        pill(preset) { manager.send(chat: preset) }
+                    }
+                    pill(TogetherCopy.writePlaceholder, muted: true) { composing = true }
                 }
-                .padding(.vertical, 2)
             }
-            .scrollIndicators(.hidden)
-            .frame(maxWidth: OnVideo.columnWidth, alignment: .leading)
-            .animation(.easeInOut(duration: 0.15), value: picking)
-            // The row of six closes itself when nobody picks one.
-            .task(id: pickerRevision) {
-                guard picking else { return }
-                try? await Task.sleep(for: .seconds(4))
-                guard !Task.isCancelled else { return }
-                picking = false
-            }
+            .padding(.vertical, 2)
+        }
+        .scrollIndicators(.hidden)
+        .frame(maxWidth: OnVideo.columnWidth, alignment: .leading)
+        .animation(.easeInOut(duration: 0.15), value: picking)
+        // The row of six closes itself when nobody picks one.
+        .task(id: pickerRevision) {
+            guard picking else { return }
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            picking = false
         }
     }
 
@@ -261,11 +271,13 @@ private struct Controls: View {
         manager.send(chat: draft)
         draft = ""; composing = false; writing = false
     }
+    private func close() { composing = false; draft = "" }
     private func disc(_ glyph: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(glyph).font(.title3).frame(width: 44, height: 44).onVideoDisc()
         }
         .buttonStyle(.plain).accessibilityLabel(label)
+        .kaeruHover(.chip).kaeruHelp(label)
     }
     private func pill(_ text: String, muted: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -273,6 +285,7 @@ private struct Controls: View {
                 .lineLimit(1).padding(.horizontal, 16).frame(height: 44)
                 .onVideoChip(OnVideo.disc)
         }.buttonStyle(.plain)
+        .kaeruHover(.chip)
     }
 }
 
@@ -369,6 +382,7 @@ struct TogetherHistorySheet: View {
             .kaeruTitleDisplay(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button(TogetherCopy.close) { dismiss() } } }
         }
+        .kaeruSheetSize(minWidth: 380, minHeight: 440)
         .presentationDetents([.medium])
     }
 }
@@ -384,6 +398,12 @@ struct TogetherChip: View {
         if let label = TogetherCopy.sessionChip(phase: manager.phase, peerName: manager.peerName) {
             Menu {
                 if let invitation {
+                    #if os(macOS)
+                    Button(TogetherCopy.copyInvitation, systemImage: "doc.on.doc") {
+                        Pasteboard.copy(invitation)
+                        manager.conversation.message = TogetherCopy.invitationCopied
+                    }
+                    #endif
                     ShareLink(item: invitation) { Label(TogetherCopy.share, systemImage: "square.and.arrow.up") }
                 }
                 Button(TogetherCopy.leave, systemImage: "person.badge.minus", role: .destructive) {

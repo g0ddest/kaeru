@@ -10,8 +10,10 @@ struct PlayerScreen: View {
     /// Which way the last double tap went, while its label is still up.
     @State private var seekHinted: PlayerTapZone?
     @State private var hintRevision = 0
+    #if os(iOS)
     /// The invitation to hand somebody, the moment there is one to hand over.
     @State private var sharing: TogetherShare?
+    #endif
     init(anime: Anime, episode: Int, model: AppModel) {
         self.model = model
         _playback = State(initialValue: PlaybackModel(anime: anime, episode: episode, model: model))
@@ -49,11 +51,18 @@ struct PlayerScreen: View {
             // literal formats an `Int` argument in the device's locale — which turned the
             // 1118th episode of a long-running show into «Серия 1.118».
             .navigationTitle(Text(verbatim: "Серия \(playback.episode)"))
+            #if os(macOS)
+            // «Серия 7 — Название» in the title bar, the Window menu and Mission Control.
+            .navigationSubtitle(playback.anime.title)
+            #endif
             .kaeruTitleDisplay(.inline)
             .toolbar {
+                // A Mac window closes itself — the red button, ⌘W — and that is this.
+                #if os(iOS)
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Готово") { playback.close(); dismiss() }
                 }
+                #endif
                 // Trailing, in reading order and ending in the menu: «Готово» owns the left of a
                 // modal, and the rest sits where the Android client puts it — at the other end of
                 // the bar. Watching with somebody is in it rather than in the «…» menu, because
@@ -74,11 +83,16 @@ struct PlayerScreen: View {
             .kaeruBar(playback.chromeVisible ? .visible : .hidden)
             .animation(.easeInOut(duration: 0.25), value: playback.chromeVisible)
             .tint(.white)
+            #if os(iOS)
             // A room nobody was invited to is a room for one. Android raises the share sheet the
             // moment the room exists; so does this.
             .sheet(item: $sharing) { ShareSheet(items: [$0.text]) }
+            #endif
         }
         .preferredColorScheme(.dark)
+        #if os(macOS)
+        .playerWindowControls(playback: playback, typing: model.together.conversation.composing) { seekFeedback($0) }
+        #endif
         .task { await playback.start() }
         .onAppear { Reporting.screen("player") }
         .onAppear { model.playerAppeared() }
@@ -199,64 +213,85 @@ struct PlayerScreen: View {
                 Task {
                     await model.together.create()
                     guard let invitation else { return }
+                    #if os(iOS)
                     sharing = TogetherShare(text: invitation)
+                    #else
+                    // A Mac has no share sheet to raise without a press, and a link on a Mac goes
+                    // into a chat by way of the pasteboard anyway. So it is there already, and the
+                    // picture says so; the chip's menu still offers Messages and Mail.
+                    Pasteboard.copy(invitation)
+                    model.together.conversation.message = TogetherCopy.invitationCopied
+                    #endif
                 }
             } label: {
                 Image(systemName: "person.2")
             }
             .accessibilityLabel(TogetherCopy.watchTogether)
+            .kaeruHelp(TogetherCopy.inviteHelp)
             .disabled(playback.loading || model.together.phase == .connecting)
         }
     }
     private var options: some View {
         Menu {
-            Section(playback.anime.title) {
-                Menu("Серия") {
-                    ForEach(1...max(1, playback.episodeCount), id: \.self) { value in
-                        Button { playback.selectEpisode(value) } label: { menuLabel("Серия \(value)", selected: value == playback.episode) }
-                    }
-                }.disabled(playback.episodeCount == 0)
-                Menu("Озвучка") {
-                    ForEach(playback.translations) { value in
-                        Button { playback.selectTranslation(value.id) } label: { menuLabel(value.title, selected: value.id == playback.translation) }
-                            .disabled(value.episodes > 0 && value.episodes < playback.episode)
-                    }
-                }.disabled(playback.translations.isEmpty)
-                Menu("Качество") {
-                    Button { playback.selectQuality(0) } label: { menuLabel("Авто", selected: playback.selectedQuality == 0) }
-                    ForEach(playback.qualities, id: \.self) { value in
-                        Button { playback.selectQuality(value) } label: { menuLabel("\(value)p", selected: value == playback.selectedQuality) }
-                    }
-                }.disabled(playback.isLocal || playback.qualities.isEmpty)
-                Menu("Скорость") {
-                    ForEach([0.5, 0.75, 1, 1.25, 1.5, 1.75, 2], id: \.self) { value in
-                        Button { playback.setSpeed(value) } label: { menuLabel("\(value.formatted())×", selected: value == playback.speed) }
-                    }
-                }
-            }
-            Section {
-                // Closures rather than bare method references: a reference to a main-actor method
-                // is not a `@Sendable` function value, and `Binding`'s setter wants one.
-                Toggle("Следующая серия автоматически", isOn: Binding(get: { playback.autoNext }, set: { playback.setAutoNext($0) }))
-                Toggle("Пропускать эндинг", isOn: Binding(get: { playback.autoSkipEnding }, set: { playback.setAutoSkipEnding($0) }))
-                // Neither means anything on a Mac: AVKit there cannot start picture in picture by
-                // itself, and nothing suspends an app whose window is behind another.
-                #if os(iOS)
-                Toggle("Картинка в картинке при выходе", isOn: Binding(get: { playback.pipOnLeave }, set: { playback.setPiPOnLeave($0) }))
-                Toggle("Фоновое воспроизведение", isOn: Binding(get: { playback.backgroundPlayback }, set: { playback.setBackgroundPlayback($0) }))
-                #endif
-            }
-            Section {
-                if playback.isLocal { Label("Скачанная серия", systemImage: "checkmark.circle") }
-                else {
-                    Button { playback.downloadCurrent() } label: { Label("Скачать серию", systemImage: "arrow.down.circle") }
-                        .disabled(playback.translation <= 0)
-                }
-                if playback.hasNext { Button("Следующая серия") { playback.nextNow() } }
-            }
+            PlayerOptionsMenu(playback: playback)
         } label: { Image(systemName: "ellipsis") }
         .accessibilityLabel("Настройки воспроизведения")
+        .kaeruHelp("Настройки воспроизведения")
         .disabled(playback.loading)
+    }
+}
+
+/// The episode's settings: which episode, voice, quality and speed, what happens by itself, and the
+/// download. The «…» in the player's bar, and on a Mac the same again under «Воспроизведение».
+struct PlayerOptionsMenu: View {
+    let playback: PlaybackModel
+    /// «Следующая серия» at the end. The menu bar has its own, with N beside it.
+    var offersNext = true
+    var body: some View {
+        Section(playback.anime.title) {
+            Menu("Серия") {
+                ForEach(1...max(1, playback.episodeCount), id: \.self) { value in
+                    Button { playback.selectEpisode(value) } label: { menuLabel("Серия \(value)", selected: value == playback.episode) }
+                }
+            }.disabled(playback.episodeCount == 0)
+            Menu("Озвучка") {
+                ForEach(playback.translations) { value in
+                    Button { playback.selectTranslation(value.id) } label: { menuLabel(value.title, selected: value.id == playback.translation) }
+                        .disabled(value.episodes > 0 && value.episodes < playback.episode)
+                }
+            }.disabled(playback.translations.isEmpty)
+            Menu("Качество") {
+                Button { playback.selectQuality(0) } label: { menuLabel("Авто", selected: playback.selectedQuality == 0) }
+                ForEach(playback.qualities, id: \.self) { value in
+                    Button { playback.selectQuality(value) } label: { menuLabel("\(value)p", selected: value == playback.selectedQuality) }
+                }
+            }.disabled(playback.isLocal || playback.qualities.isEmpty)
+            Menu("Скорость") {
+                ForEach([0.5, 0.75, 1, 1.25, 1.5, 1.75, 2], id: \.self) { value in
+                    Button { playback.setSpeed(value) } label: { menuLabel("\(value.formatted())×", selected: value == playback.speed) }
+                }
+            }
+        }
+        Section {
+            // Closures rather than bare method references: a reference to a main-actor method
+            // is not a `@Sendable` function value, and `Binding`'s setter wants one.
+            Toggle("Следующая серия автоматически", isOn: Binding(get: { playback.autoNext }, set: { playback.setAutoNext($0) }))
+            Toggle("Пропускать эндинг", isOn: Binding(get: { playback.autoSkipEnding }, set: { playback.setAutoSkipEnding($0) }))
+            // Neither means anything on a Mac: AVKit there cannot start picture in picture by
+            // itself, and nothing suspends an app whose window is behind another.
+            #if os(iOS)
+            Toggle("Картинка в картинке при выходе", isOn: Binding(get: { playback.pipOnLeave }, set: { playback.setPiPOnLeave($0) }))
+            Toggle("Фоновое воспроизведение", isOn: Binding(get: { playback.backgroundPlayback }, set: { playback.setBackgroundPlayback($0) }))
+            #endif
+        }
+        Section {
+            if playback.isLocal { Label("Скачанная серия", systemImage: "checkmark.circle") }
+            else {
+                Button { playback.downloadCurrent() } label: { Label("Скачать серию", systemImage: "arrow.down.circle") }
+                    .disabled(playback.translation <= 0)
+            }
+            if offersNext, playback.hasNext { Button("Следующая серия") { playback.nextNow() } }
+        }
     }
     @ViewBuilder private func menuLabel(_ text: String, selected: Bool) -> some View {
         if selected { Label(text, systemImage: "checkmark") } else { Text(text) }

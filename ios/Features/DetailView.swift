@@ -52,7 +52,7 @@ struct DetailView: View {
         .navigationTitle("").kaeruTitleDisplay(.inline)
         .task(id: "\(initial.id)-\(revision)") { await loadDetails() }
         .onAppear { Reporting.screen("details") }
-        .refreshable { await loadDetails() }
+        .kaeruRefreshable { await loadDetails() }
         .safeAreaInset(edge: .bottom, spacing: 0) { EpisodeUndoBar() }
         .sheet(isPresented: $translationsOpen) { TranslationChooser(anime: anime) }
         .playerPresentation(item: $route)
@@ -187,6 +187,7 @@ struct DetailView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain).disabled(!available)
+        .kaeruHover(.row)
         .accessibilityValue(watched ? "Просмотрено" : "")
         .accessibilityIdentifier("episode-\(episode)")
         .contextMenu {

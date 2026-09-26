@@ -42,6 +42,9 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.scenePhase) private var scenePhase
+    #if os(macOS)
+    @Environment(\.openSettings) private var openSettings
+    #endif
     @State private var selection: AppSection = .home
     @State private var settings = false
     /// One navigation path per section, so a deep link can put a title on screen without taking
@@ -74,16 +77,19 @@ struct RootView: View {
         // The viewer's choice, and by default the system's. What stood here forced dark on every
         // iPad: it overruled a phone deliberately set to light, and repainted the whole app on
         // screen whenever a Split View divider changed the size class.
-        .preferredColorScheme(scheme)
+        .preferredColorScheme(AppAppearance(stored: model.preferences.appearance).colorScheme)
+        // A Mac has a window for settings (Kaeru ▸ Настройки…, ⌘,), and nothing to raise here.
+        #if os(iOS)
         .sheet(isPresented: $settings) { SettingsView() }
+        #endif
         .alert("Kaeru", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK", role: .cancel) { model.error = nil }
         } message: { Text(model.error ?? "") }
         .sheet(isPresented: $pairingOpen) {
-            NavigationStack { DevicePairingView() }
+            NavigationStack { DevicePairingView() }.kaeruSheetSize(minWidth: 460, minHeight: 520)
         }
         .sheet(isPresented: $togetherOpen) {
-            NavigationStack { TogetherView(manager: model.together) }
+            NavigationStack { TogetherView(manager: model.together) }.kaeruSheetSize(minWidth: 460, minHeight: 520)
         }
         .playerPresentation(item: $deepLinkRoute)
         // An invitation is not a player: it is somebody asking, and the answer is given here —
@@ -167,7 +173,13 @@ struct RootView: View {
     }
 
     private var viewerRow: some View {
-        Button { settings = true } label: {
+        Button {
+            #if os(iOS)
+            settings = true
+            #else
+            openSettings()
+            #endif
+        } label: {
             HStack(spacing: 10) {
                 AsyncImage(url: URL(string: model.session?.account.avatar ?? "")) { image in
                     image.resizable().scaledToFill()
@@ -184,16 +196,10 @@ struct RootView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Аккаунт и настройки")
+        .kaeruHelp("Аккаунт и настройки")
         .background(.bar)
     }
 
-    private var scheme: ColorScheme? {
-        switch AppAppearance(stored: model.preferences.appearance) {
-        case .system: nil
-        case .light: .light
-        case .dark: .dark
-        }
-    }
     private func path(_ section: AppSection) -> Binding<NavigationPath> {
         Binding(get: { paths[section] ?? NavigationPath() }, set: { paths[section] = $0 })
     }
@@ -315,5 +321,16 @@ struct RootView: View {
         let playable = max(anime.availableEpisodes, model.rate(for: id)?.episodes ?? 0)
         guard playable > 0 else { return }
         deepLinkRoute = PlaybackRoute(anime: anime, episode: min(episode, playable))
+    }
+}
+
+extension AppAppearance {
+    /// The viewer's choice, and by default the system's.
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
     }
 }

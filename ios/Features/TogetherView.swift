@@ -19,6 +19,9 @@ struct TogetherView: View {
             Section("Комната") {
                 if let link = manager.invitation?.shareURL.absoluteString {
                     Text(link).font(.footnote).textSelection(.enabled)
+                    #if os(macOS)
+                    Button(TogetherCopy.copyInvitation, systemImage: "doc.on.doc") { Pasteboard.copy(link) }
+                    #endif
                     ShareLink(item: link) { Label("Поделиться приглашением", systemImage: "square.and.arrow.up") }
                     Button("Завершить комнату", role: .destructive) { Task { await manager.leave() } }
                 } else {

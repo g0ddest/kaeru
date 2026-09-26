@@ -112,7 +112,7 @@ struct HomeView: View {
             .kaeruTitleDisplay(hero.isEmpty ? .large : .inline)
             .kaeruBarBackground(hero.isEmpty ? .visible : .hidden)
         }
-        .refreshable { await model.reload(); revision += 1 }
+        .kaeruRefreshable { await model.reload(); revision += 1 }
         .task(id: "\(season.id)-\(revision)-\(offline)") { if !offline { await loadSeason() } }
         .playerPresentation(item: $route)
     }
@@ -167,6 +167,7 @@ struct HomeView: View {
                             }
                             .padding(.vertical, 9)
                         }.buttonStyle(.plain)
+                        .kaeruHover(.row)
                     }
                 }
                 .padding(.horizontal, Metrics.gutter(sizeClass))
