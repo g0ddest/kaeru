@@ -2,18 +2,70 @@ import { whoami } from "./whitelist";
 
 /**
  * Viewing sync: where each episode stopped, the dub chosen for a title, and the titles watched
- * «украдкой» — rows per Shikimori user in D1 (migrations/0001_sync.sql;
- * docs/superpowers/specs/2026-09-26-kaeru-sync-design.md). Every row carries the device's own `at`;
- * a newer one wins, field by field and episode by episode, in one upsert each — no read-modify-write.
+ * «украдкой» — one JSON document per Shikimori user, one row in D1 (migrations/0002;
+ * docs/superpowers/specs/2026-09-26-kaeru-sync-design.md). A save is one read and one write; the
+ * row's `version` makes a save that raced another device's start over instead of losing it.
+ * Every field carries the device's own `at`; the newer one wins, field by field and episode by episode.
  */
 export interface Position { p: number; d: number; at: number }
 export interface Dub { id: number; title: string; at: number }
 export interface Secret { on: boolean; watched: number; at: number }
 export interface Title { dub?: Dub; eps?: Record<string, Position>; secret?: Secret; gone?: number }
+export interface SyncDocument { v: 1; titles: Record<string, Title> }
 
+export const EMPTY: SyncDocument = { v: 1, titles: {} };
 export const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_EPISODES = 30;
+const MAX_TITLES = 1000;
 const MAX_BODY = 256 * 1024;
+const SAVE_ATTEMPTS = 3;
+
+function newest<T extends { at: number }>(a: T | undefined, b: T | undefined): T | undefined {
+  if (a === undefined) return b;
+  if (b === undefined) return a;
+  return b.at > a.at ? b : a;
+}
+
+function latestAt(title: Title): number {
+  let at = Math.max(title.dub?.at ?? 0, title.secret?.at ?? 0);
+  for (const position of Object.values(title.eps ?? {})) at = Math.max(at, position.at);
+  return at;
+}
+
+function mergeTitle(stored: Title | undefined, incoming: Title): Title {
+  // A tombstone stands against anything written before it, and gives way to anything after.
+  const gone = Math.max(stored?.gone ?? 0, incoming.gone ?? 0);
+  const keep = <T extends { at: number }>(value: T | undefined) => (value !== undefined && value.at > gone ? value : undefined);
+  const eps: Record<string, Position> = {};
+  for (const source of [stored?.eps ?? {}, incoming.eps ?? {}]) {
+    for (const [episode, position] of Object.entries(source)) {
+      const chosen = keep(newest(eps[episode], position));
+      if (chosen !== undefined) eps[episode] = chosen;
+    }
+  }
+  const newestEps = Object.entries(eps).sort((a, b) => b[1].at - a[1].at).slice(0, MAX_EPISODES);
+  const title: Title = {};
+  const dub = keep(newest(stored?.dub, incoming.dub));
+  if (dub !== undefined) title.dub = dub;
+  if (newestEps.length > 0) title.eps = Object.fromEntries(newestEps);
+  const secret = keep(newest(stored?.secret, incoming.secret));
+  if (secret !== undefined) title.secret = secret;
+  if (Object.keys(title).length === 0 && gone > 0) return { gone };
+  return title;
+}
+
+/** The stored document with `incoming` folded in, and anything past its time let go. */
+export function merge(stored: SyncDocument, incoming: Record<string, Title>, now: number): SyncDocument {
+  const titles: Record<string, Title> = {};
+  for (const id of new Set([...Object.keys(stored.titles), ...Object.keys(incoming)])) {
+    const title = incoming[id] === undefined ? stored.titles[id] : mergeTitle(stored.titles[id], incoming[id]);
+    if (title === undefined) continue;
+    if (title.gone !== undefined && Object.keys(title).length === 1 && now - title.gone > TOMBSTONE_TTL_MS) continue;
+    titles[id] = title;
+  }
+  const kept = Object.entries(titles).sort((a, b) => Math.max(latestAt(b[1]), b[1].gone ?? 0) - Math.max(latestAt(a[1]), a[1].gone ?? 0)).slice(0, MAX_TITLES);
+  return { v: 1, titles: Object.fromEntries(kept) };
+}
 
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 
@@ -59,50 +111,8 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json; charset=utf-8" } });
 }
 
-/** A write that a tombstone at least as new as it does not forbid. */
-const NOT_GONE = "WHERE NOT EXISTS (SELECT 1 FROM gone WHERE user = ?1 AND anime = ?2 AND at >= ?AT)";
-
-function statements(db: D1Database, user: number, anime: number, title: Title): D1PreparedStatement[] {
-  const out: D1PreparedStatement[] = [];
-  if (title.gone !== undefined) {
-    out.push(db.prepare("INSERT INTO gone (user, anime, at) VALUES (?1, ?2, ?3) ON CONFLICT (user, anime) DO UPDATE SET at = excluded.at WHERE excluded.at > gone.at").bind(user, anime, title.gone));
-    for (const table of ["positions", "dubs", "secrets"]) {
-      out.push(db.prepare(`DELETE FROM ${table} WHERE user = ?1 AND anime = ?2 AND at <= (SELECT at FROM gone WHERE user = ?1 AND anime = ?2)`).bind(user, anime));
-    }
-  }
-  let newest = 0;
-  for (const [episode, position] of Object.entries(title.eps ?? {})) {
-    newest = Math.max(newest, position.at);
-    out.push(db.prepare(`INSERT INTO positions (user, anime, episode, p, d, at) SELECT ?1, ?2, ?3, ?4, ?5, ?6 ${NOT_GONE.replace("?AT", "?6")}
-      ON CONFLICT (user, anime, episode) DO UPDATE SET p = excluded.p, d = excluded.d, at = excluded.at WHERE excluded.at > positions.at`)
-      .bind(user, anime, Number(episode), Math.round(position.p), Math.round(position.d), position.at));
-  }
-  if (title.dub !== undefined) {
-    newest = Math.max(newest, title.dub.at);
-    out.push(db.prepare(`INSERT INTO dubs (user, anime, id, title, at) SELECT ?1, ?2, ?3, ?4, ?5 ${NOT_GONE.replace("?AT", "?5")}
-      ON CONFLICT (user, anime) DO UPDATE SET id = excluded.id, title = excluded.title, at = excluded.at WHERE excluded.at > dubs.at`)
-      .bind(user, anime, title.dub.id, title.dub.title, title.dub.at));
-  }
-  if (title.secret !== undefined) {
-    newest = Math.max(newest, title.secret.at);
-    out.push(db.prepare(`INSERT INTO secrets (user, anime, "on", watched, at) SELECT ?1, ?2, ?3, ?4, ?5 ${NOT_GONE.replace("?AT", "?5")}
-      ON CONFLICT (user, anime) DO UPDATE SET "on" = excluded."on", watched = excluded.watched, at = excluded.at WHERE excluded.at > secrets.at`)
-      .bind(user, anime, title.secret.on ? 1 : 0, title.secret.watched, title.secret.at));
-  }
-  if (newest > 0) {
-    // Written after the title was finished: it is being watched again, and the tombstone goes.
-    out.push(db.prepare("DELETE FROM gone WHERE user = ?1 AND anime = ?2 AND at < ?3").bind(user, anime, newest));
-  }
-  if (title.eps !== undefined && Object.keys(title.eps).length > 0) {
-    // Only past the limit: an OFFSET past the end deletes nothing and reads next to nothing.
-    out.push(db.prepare(`DELETE FROM positions WHERE user = ?1 AND anime = ?2 AND episode IN
-      (SELECT episode FROM positions WHERE user = ?1 AND anime = ?2 ORDER BY at DESC LIMIT -1 OFFSET ${MAX_EPISODES})`).bind(user, anime));
-  }
-  return out;
-}
-
-/** Everything stored for one viewer, in the wire shape the clients read. */
-async function document(db: D1Database, user: number, now: number, only?: number[]): Promise<Record<string, Title>> {
+/** What the first version kept for one viewer in four tables (migrations/0001), in the wire shape. */
+async function legacy(db: D1Database, user: number, now: number, only?: number[]): Promise<Record<string, Title>> {
   const titles: Record<string, Title> = {};
   const title = (anime: number) => (titles[String(anime)] ??= {});
   // A write is answered with the titles it wrote, not the whole list: read on every minute's save,
@@ -132,9 +142,38 @@ async function document(db: D1Database, user: number, now: number, only?: number
   return titles;
 }
 
+/** The viewer's document and its version; the first read moves the first version's rows into it. */
+async function load(db: D1Database, user: number, now: number): Promise<{ doc: SyncDocument; version: number }> {
+  const row = await db.prepare("SELECT doc, version FROM documents WHERE user = ?1").bind(user).first<{ doc: string; version: number }>();
+  if (row !== null) {
+    try {
+      const doc = JSON.parse(row.doc) as SyncDocument;
+      if (doc.v === 1 && typeof doc.titles === "object" && doc.titles !== null) return { doc, version: row.version };
+    } catch { /* an unreadable document starts over below */ }
+    return { doc: EMPTY, version: row.version };
+  }
+  const moved = merge(EMPTY, await legacy(db, user, now), now);
+  // Once: the document takes the rows over (or starts empty), and the old tables forget this
+  // viewer — from then on every read is this one query.
+  await db.batch([
+    db.prepare("INSERT OR IGNORE INTO documents (user, doc, version) VALUES (?1, ?2, 1)").bind(user, JSON.stringify(moved)),
+    ...["positions", "dubs", "secrets", "gone"].map((table) => db.prepare(`DELETE FROM ${table} WHERE user = ?1`).bind(user)),
+  ]);
+  return load(db, user, now);
+}
+
+/** Writes `doc` if nobody else has since `version`; false means another save got in first. */
+async function store(db: D1Database, user: number, doc: SyncDocument, version: number): Promise<boolean> {
+  const text = JSON.stringify(doc);
+  const result = version === 0
+    ? await db.prepare("INSERT OR IGNORE INTO documents (user, doc, version) VALUES (?1, ?2, 1)").bind(user, text).run()
+    : await db.prepare("UPDATE documents SET doc = ?2, version = version + 1 WHERE user = ?1 AND version = ?3").bind(user, text, version).run();
+  return result.meta.changes === 1;
+}
+
 /**
  * `GET /sync` and `POST /sync`, for any Shikimori user: the web whitelist does not apply here —
- * the apps' viewers sync too. The token only says whose rows they are.
+ * the apps' viewers sync too. The token only says whose document it is.
  */
 export async function handleSync(request: Request, env: Cloudflare.Env, now = Date.now()): Promise<Response> {
   const header = request.headers.get("Authorization") ?? "";
@@ -145,18 +184,24 @@ export async function handleSync(request: Request, env: Cloudflare.Env, now = Da
   if (viewer === null) return json({ error: "sign_in" }, 401);
   const db = env.SYNC_DB;
 
-  if (request.method === "POST") {
-    const text = await request.text();
-    if (text.length > MAX_BODY) return json({ error: "parameters" }, 400);
-    let body: unknown;
-    try { body = JSON.parse(text); } catch { return json({ error: "parameters" }, 400); }
-    const incoming = parseTitles(body);
-    if (incoming === null) return json({ error: "parameters" }, 400);
-    const writes = Object.entries(incoming).flatMap(([anime, title]) => statements(db, viewer.id, Number(anime), title));
-    // Old tombstones are swept now and then rather than on every save.
-    if (Math.random() < 0.02) writes.push(db.prepare("DELETE FROM gone WHERE user = ?1 AND at <= ?2").bind(viewer.id, now - TOMBSTONE_TTL_MS));
-    if (writes.length > 0) await db.batch(writes);
-    return json({ titles: await document(db, viewer.id, now, Object.keys(incoming).map(Number)) });
+  if (request.method === "GET") {
+    const { doc } = await load(db, viewer.id, now);
+    return json({ titles: merge(doc, {}, now).titles });
   }
-  return json({ titles: await document(db, viewer.id, now) });
+  const text = await request.text();
+  if (text.length > MAX_BODY) return json({ error: "parameters" }, 400);
+  let body: unknown;
+  try { body = JSON.parse(text); } catch { return json({ error: "parameters" }, 400); }
+  const incoming = parseTitles(body);
+  if (incoming === null) return json({ error: "parameters" }, 400);
+  for (let attempt = 0; attempt < SAVE_ATTEMPTS; attempt += 1) {
+    const { doc, version } = await load(db, viewer.id, now);
+    const merged = merge(doc, incoming, now);
+    if (await store(db, viewer.id, merged, version)) {
+      // Only what was written goes back: the client merges it, and the rest it already has.
+      const written = Object.fromEntries(Object.keys(incoming).filter((id) => merged.titles[id] !== undefined).map((id) => [id, merged.titles[id]]));
+      return json({ titles: written });
+    }
+  }
+  return json({ error: "unavailable" }, 502);
 }

@@ -1,4 +1,4 @@
-import { SELF } from "cloudflare:test";
+import { env, SELF } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const SITE = "https://kaeru.vitaliy.velikodniy.name";
@@ -14,6 +14,7 @@ beforeEach(() => {
       if (auth === "Bearer sync-friend") return Response.json({ id: 5002, nickname: "friend" });
       const merge = /^Bearer merge-([a-e])$/.exec(auth ?? "");
       if (merge) return Response.json({ id: 6000 + merge[1].charCodeAt(0), nickname: "merge" });
+      if (auth === "Bearer merge-f") return Response.json({ id: 6100 + "f".charCodeAt(0), nickname: "legacy" });
       return new Response("", { status: 401 });
     }
     return realFetch(input, init);
@@ -100,6 +101,19 @@ describe("/sync", () => {
     const answer = (await (await call("POST", "merge-a", { titles: { "100": { eps: { "1": { p: 5, d: 10, at: at + 1 } } } } })).json()) as { titles: Record<string, unknown> };
     expect(Object.keys(answer.titles)).toEqual(["100"]);
     expect(answer.titles["100"]).toEqual({ dub: { id: 1, title: "A", at }, eps: { "1": { p: 5, d: 10, at: at + 1 } } });
+  });
+
+  it("moves what the first version kept in four tables into the viewer's document", async () => {
+    const at = Date.now();
+    await env.SYNC_DB.batch([
+      env.SYNC_DB.prepare("INSERT INTO positions (user, anime, episode, p, d, at) VALUES (?1, 7, 3, 861000, 1440000, ?2)").bind(6100 + "f".charCodeAt(0), at),
+      env.SYNC_DB.prepare("INSERT INTO dubs (user, anime, id, title, at) VALUES (?1, 7, 610, 'AniLibria.TV', ?2)").bind(6100 + "f".charCodeAt(0), at),
+    ]);
+    expect(await titleOf("merge-f", "7")).toEqual({ dub: { id: 610, title: "AniLibria.TV", at }, eps: { "3": { p: 861000, d: 1440000, at } } });
+    // Moved once: gone from the old tables, still there afterwards.
+    const left = await env.SYNC_DB.prepare("SELECT COUNT(*) AS n FROM positions WHERE user = ?1").bind(6100 + "f".charCodeAt(0)).first<{ n: number }>();
+    expect(left?.n).toBe(0);
+    expect(await titleOf("merge-f", "7")).toEqual({ dub: { id: 610, title: "AniLibria.TV", at }, eps: { "3": { p: 861000, d: 1440000, at } } });
   });
 
   it("asks to sign in without a token or with one Shikimori refuses", async () => {
