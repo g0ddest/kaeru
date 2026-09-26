@@ -255,6 +255,7 @@ enum PlaybackLocalAction {
     func selectEpisode(_ value: Int, position: Double? = nil, play: Bool = true, notify: Bool = true) {
         guard !closed, value > 0, value <= episodeCount, value != episode else { return }
         save(); policy.resetEpisode(); completedEpisode = nil
+        model.pushSync(.episodeChange)
         episode = value; retried = false; finished = false
         if notify { onLocalAction?(.episode(value)) }
         beginResolve(position: position ?? resumePosition(for: value), play: play)
@@ -413,6 +414,7 @@ enum PlaybackLocalAction {
     func close() {
         guard !closed else { return }
         save(); closed = true; request = UUID()
+        model.pushSync(.leaving)
         loadTask?.cancel(); timeoutTask?.cancel(); marksTask?.cancel(); stallTask?.cancel()
         player.pause(); itemObservation = nil; statusObservation = nil; muteObservation = nil
         if let timer { player.removeTimeObserver(timer); self.timer = nil }
@@ -453,7 +455,12 @@ enum PlaybackLocalAction {
         if isPlaying, !beganLibraryPlayback, account == model.accountKey {
             beganLibraryPlayback = true; model.beginPlayback(anime: anime)
         }
-        if status == .paused { save() }
+        if status == .paused {
+            save()
+            // A pause the viewer can see — not the engine stopping between items — is where
+            // another device would want to pick up from.
+            if !loading, !restoring, !seeking { model.pushSync(.pause) }
+        }
         updateMediaControls()
     }
     private func tick(ended: Bool = false) {
@@ -544,7 +551,9 @@ enum PlaybackLocalAction {
                       return URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(path).standardizedFileURL == local.standardizedFileURL
                   }) else { continue }
             isLocal = true; stream = nil; qualities = []; quality = entry.quality; translation = entry.translation
-            if explicitTranslation == entry.translation { model.rememberTranslation(entry.translation, for: anime.id) }
+            if explicitTranslation == entry.translation {
+                model.rememberTranslation(entry.translation, title: translations.first { $0.id == entry.translation }?.title ?? "", for: anime.id)
+            }
             install(url: local, headers: [:], position: position, fence: fence)
             return
         }
@@ -573,7 +582,9 @@ enum PlaybackLocalAction {
             guard result.episode == episode else { throw AppError.message("Источник вернул другую серию.") }
             stream = result; translation = result.translation.id
             qualities = result.urls.map(\.quality).filter { $0 > 0 }.sorted(by: >)
-            if let explicitTranslation, result.translation.id == explicitTranslation { model.rememberTranslation(explicitTranslation, for: anime.id) }
+            if let explicitTranslation, result.translation.id == explicitTranslation {
+                model.rememberTranslation(explicitTranslation, title: result.translation.title, for: anime.id)
+            }
             install(result, position: position, fence: fence)
         } catch {
             TogetherLog.write("resolve failed: \(error.localizedDescription)")

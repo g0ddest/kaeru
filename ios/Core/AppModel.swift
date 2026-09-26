@@ -22,7 +22,10 @@ import AuthenticationServices
     var downloads: DownloadManager {
         if let downloadManager { return downloadManager }
         let manager = DownloadManager(service: service)
-        manager.onConnectivityRestored = { [weak self] in Task { await self?.flush() } }
+        manager.onConnectivityRestored = { [weak self] in
+            self?.viewingSync?.push(.reconnected)
+            Task { await self?.flush() }
+        }
         downloadManager = manager
         return manager
     }
@@ -85,6 +88,11 @@ import AuthenticationServices
     private(set) var pending: [PendingRate] = []
     private(set) var episodeHistory: [String: EpisodeProgress] = [:]
     private(set) var titleTranslations: [Int: Int] = [:]
+    /// When each remembered dub was chosen and what it is called, for sync. See `DubStamp`.
+    private(set) var dubStamps: [Int: DubStamp] = [:]
+    /// Positions and dubs shared with the viewer's other devices through the worker. Nil in a
+    /// build without a relay, and inert without an account.
+    @ObservationIgnored private(set) var viewingSync: SyncService?
     var preferences = PlaybackPreferences()
     var kodikToken = ""
     var completionSuggestion: Anime?
@@ -139,8 +147,13 @@ import AuthenticationServices
 
 
     init(service: any AnimeService, store: any LocalStorage, configuration: AppConfiguration, session: Session? = nil,
-         saveSession: @escaping (Session?) throws -> Void = { try KeychainSession.write($0) }) {
+         saveSession: @escaping (Session?) throws -> Void = { try KeychainSession.write($0) },
+         sync: SyncEnvironment? = nil) {
         self.service = service; self.store = store; self.configuration = configuration; self.session = session; self.saveSession = saveSession
+        if let environment = sync ?? (configuration.togetherRelayURL.isEmpty ? nil : .live),
+           let client = SyncClient(relayURL: configuration.togetherRelayURL, transport: environment.transport) {
+            viewingSync = SyncService(model: self, client: client, environment: environment)
+        }
         do {
             catalog = try store.read([Anime].self, key: "catalog") ?? []
             preferredQuality = try store.read(Int.self, key: "quality") ?? 0
@@ -162,6 +175,7 @@ import AuthenticationServices
         // Nothing here waits on GitHub: an app that blocked its first frame on a question about
         // whether a newer build exists would start slowly on the one network where it matters least.
         Task { await checkForUpdates() }
+        viewingSync?.start()
         await reload()
     }
     func reload() async {
@@ -207,6 +221,7 @@ import AuthenticationServices
             try restoreAccount()
             notificationService?.setAccount(accountKey)
             EpisodeBackgroundRefresh.schedule(enabled: notifications.isEnabled)
+            viewingSync?.start()
             await reloadLibrary(); await flush()
         } catch let failure as ASWebAuthenticationSessionError where failure.code == .canceledLogin {} catch {
             if fence == generation { self.error = errorMessage(error) }
@@ -315,11 +330,18 @@ import AuthenticationServices
         let usage = titleTranslations.values.reduce(into: [Int: Int]()) { $0[$1, default: 0] += 1 }
         return TranslationPreference.pick(available, episode: episode, remembered: titleTranslations[animeID], studios: preferences.studios, usage: usage)
     }
-    func rememberTranslation(_ id: Int, for animeID: Int) {
+    func rememberTranslation(_ id: Int, title: String = "", for animeID: Int) {
         guard id > 0 else { return }
-        let previous = titleTranslations
+        let previous = titleTranslations, previousStamps = dubStamps
+        let name = title.isEmpty && titleTranslations[animeID] == id ? dubStamps[animeID]?.title ?? "" : title
+        let stamp = DubStamp(title: name, at: (viewingSync?.now() ?? Date()).syncMilliseconds)
         titleTranslations[animeID] = id
-        do { try persistLibrary() } catch { titleTranslations = previous; self.error = error.localizedDescription }
+        dubStamps[animeID] = stamp
+        do { try persistLibrary() } catch {
+            titleTranslations = previous; dubStamps = previousStamps
+            self.error = error.localizedDescription; return
+        }
+        viewingSync?.dubChosen(animeID, SyncDub(id: id, title: stamp.title, at: stamp.at))
     }
     func queueRate(anime: Anime, status: String, episodes: Int) {
         guard session != nil else { return }
@@ -352,6 +374,7 @@ import AuthenticationServices
             episodeHistory = previous.episodeHistory
             self.error = error.localizedDescription; return
         }
+        viewingSync?.positionSaved(value)
         if shouldQueue {
             mutationRevision += 1
             downloadManager?.onWatched(animeID: anime.id, episode: value.episode)
@@ -392,6 +415,64 @@ import AuthenticationServices
             }
         }
     }
+    // MARK: - viewing sync
+
+    /// The player paused, moved to another episode or went away: the batch goes now.
+    func pushSync(_ reason: SyncReason) { viewingSync?.push(reason) }
+    func appWentToBackground() { viewingSync?.wentToBackground() }
+    func appBecameActive() { viewingSync?.becameActive() }
+    func isFinished(_ animeID: Int) -> Bool { rate(for: animeID)?.status == "completed" }
+    /// Every remembered dub as sync sends it; one chosen before sync existed carries 0.
+    func stampedDubs() -> [Int: SyncDub] {
+        titleTranslations.reduce(into: [:]) { result, row in
+            let stamp = dubStamps[row.key]
+            result[row.key] = SyncDub(id: row.value, title: stamp?.title ?? "", at: stamp?.at ?? 0)
+        }
+    }
+    /// A request to the worker with this account's token, refreshed once on a 401 like any other.
+    func syncAuthorized(_ operation: (String) async throws -> SyncTitles) async throws -> SyncTitles {
+        try await authorized(operation)
+    }
+    /// What another device did, already found to be newer than this one's: tombstones first, then
+    /// positions and dubs. Written as they are, without passing through `saveProgress`, so nothing
+    /// is marked on Shikimori and nothing goes back to the worker.
+    func applySynced(positions: [EpisodeProgress], tombstones: [Int: Date], dubs: [Int: SyncDub]) {
+        let previous = snapshot
+        for (animeID, gone) in tombstones {
+            episodeHistory = episodeHistory.filter { $0.value.animeID != animeID || $0.value.updatedAt > gone }
+        }
+        var unknown = Set<Int>()
+        for value in positions {
+            episodeHistory["\(value.animeID):\(value.episode)"] = value
+            if recentAnime[value.animeID] == nil {
+                if let known = rate(for: value.animeID)?.anime ?? catalog.first(where: { $0.id == value.animeID }) {
+                    recentAnime[value.animeID] = known
+                } else { unknown.insert(value.animeID) }
+            }
+        }
+        for (animeID, dub) in dubs where dub.id != 0 {
+            let local = dubStamps[animeID]?.at ?? (titleTranslations[animeID] == nil ? nil : 0)
+            if let local, local >= dub.at { continue }
+            titleTranslations[animeID] = dub.id
+            dubStamps[animeID] = DubStamp(title: dub.title, at: dub.at)
+        }
+        guard previous.episodeHistory != episodeHistory || previous.translations != titleTranslations
+                || previous.dubs != dubStamps || previous.recent != recentAnime else { return }
+        targets.invalidate()
+        progress = latestPerTitle()
+        do { try persist(from: previous) } catch { restore(previous); return }
+        // «Продолжить» shows a title by its card; one started on another device may not be known here.
+        let account = accountKey
+        for animeID in unknown {
+            Task {
+                guard let anime = try? await service.details(animeID), account == accountKey, recentAnime[animeID] == nil else { return }
+                let before = snapshot
+                recentAnime[animeID] = anime
+                do { try persist(from: before) } catch { recentAnime[animeID] = nil }
+            }
+        }
+    }
+
     private func authorized<T>(_ operation: (String) async throws -> T) async throws -> T {
         guard let session else { throw AppError.signedOut }
         let fence = generation
@@ -463,7 +544,10 @@ import AuthenticationServices
 
     /// The list, the outbox and the remembered dubs. Everything that changes when the viewer does
     /// something to their list, and nothing that changes while an episode simply plays.
-    private func persistLibrary() throws { try store.write(snapshot, key: snapshotKey) }
+    private func persistLibrary() throws {
+        try store.write(snapshot, key: snapshotKey)
+        viewingSync?.libraryChanged(library)
+    }
 
     /// Writes what actually moved since `previous`.
     ///
@@ -480,24 +564,25 @@ import AuthenticationServices
         for (id, value) in recentAnime where previous.recent[id] != value {
             try store.write(value, key: animeKey(id))
         }
-        if previous.library != library || previous.pending != pending || previous.translations != titleTranslations {
+        if previous.library != library || previous.pending != pending || previous.translations != titleTranslations || previous.dubs != dubStamps {
             try persistLibrary()
         }
     }
     private var snapshot: AccountSnapshot {
-        AccountSnapshot(library: library, pending: pending, progress: progress, recent: recentAnime, episodeHistory: episodeHistory, translations: titleTranslations)
+        AccountSnapshot(library: library, pending: pending, progress: progress, recent: recentAnime, episodeHistory: episodeHistory, translations: titleTranslations, dubs: dubStamps)
     }
     private func restore(_ snapshot: AccountSnapshot) {
         targets.invalidate()
         library = snapshot.library; pending = snapshot.pending; progress = snapshot.progress; recentAnime = snapshot.recent
-        episodeHistory = snapshot.episodeHistory; titleTranslations = snapshot.translations
+        episodeHistory = snapshot.episodeHistory; titleTranslations = snapshot.translations; dubStamps = snapshot.dubs
     }
     private func restoreAccount() throws {
         targets.invalidate()
+        viewingSync?.accountChanged()
         undoChange = nil; suppressedMarks = [:]; completionSuggestion = nil
-        library = []; pending = []; progress = [:]; recentAnime = [:]; episodeHistory = [:]; titleTranslations = [:]
+        library = []; pending = []; progress = [:]; recentAnime = [:]; episodeHistory = [:]; titleTranslations = [:]; dubStamps = [:]
         let stored = try store.read(AccountSnapshot.self, key: snapshotKey) ?? AccountSnapshot()
-        library = stored.library; pending = stored.pending; titleTranslations = stored.translations
+        library = stored.library; pending = stored.pending; titleTranslations = stored.translations; dubStamps = stored.dubs
         let prefix = episodePrefix, animes = animePrefix
         episodeHistory = try store.readAll(EpisodeProgress.self, prefix: prefix)
             .reduce(into: [:]) { $0[String($1.key.dropFirst(prefix.count))] = $1.value }
@@ -511,7 +596,7 @@ import AuthenticationServices
         if !stored.episodeHistory.isEmpty || !stored.recent.isEmpty {
             let legacy = AccountSnapshot(library: library, pending: pending, progress: [:],
                                          recent: recentAnime, episodeHistory: episodeHistory,
-                                         translations: titleTranslations)
+                                         translations: titleTranslations, dubs: dubStamps)
             episodeHistory.merge(stored.episodeHistory) { current, _ in current }
             recentAnime.merge(stored.recent) { current, _ in current }
             try persist(from: legacy)
@@ -519,6 +604,7 @@ import AuthenticationServices
         }
         progress = latestPerTitle()
         mutationRevision += 1
+        viewingSync?.libraryChanged(library)
     }
 
     /// Where each title was left, which is the most recent of its episodes. Derived rather than

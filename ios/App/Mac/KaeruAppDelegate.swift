@@ -19,6 +19,11 @@ import UserNotifications
     /// go on, and the Dock brings the window back.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
+    /// Another app in front is the Mac's «background»: what is waiting goes to the worker, and
+    /// coming back after a while reads what the other devices did meanwhile.
+    func applicationDidResignActive(_ notification: Notification) { ApplicationRuntime.shared.model?.appWentToBackground() }
+    func applicationDidBecomeActive(_ notification: Notification) { ApplicationRuntime.shared.model?.appBecameActive() }
+
     /// A click on the Dock icon. With no window up, the system's own answer — a new main window —
     /// is the right one. With only the player's window or Settings up the system does nothing,
     /// and the catalogue would stay closed for as long as the episode played.

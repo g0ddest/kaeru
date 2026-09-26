@@ -435,7 +435,7 @@ struct TranslationChooser: View {
                 else {
                     ForEach(ordered) { translation in
                         Button {
-                            model.rememberTranslation(translation.id, for: anime.id)
+                            model.rememberTranslation(translation.id, title: translation.title, for: anime.id)
                             if model.titleTranslations[anime.id] == translation.id { dismiss() }
                         } label: {
                             HStack {

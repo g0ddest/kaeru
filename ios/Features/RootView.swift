@@ -149,6 +149,11 @@ struct RootView: View {
             // that then looks stuck — a room gone quiet, an episode that never opens — is the
             // system freezing the app, not the app failing.
             TogetherLog.write("scene \(phase)")
+            #if os(iOS)
+            // The Mac hears this from its application delegate: a window's phase there is not
+            // whether the app is in front.
+            if phase == .active { model.appBecameActive() } else if phase == .background { model.appWentToBackground() }
+            #endif
             if phase == .active { Task { await model.flush(); await takeInvitationFromPasteboard() } }
         }
     }

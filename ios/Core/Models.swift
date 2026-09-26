@@ -77,6 +77,13 @@ struct EpisodeProgress: Codable, Equatable {
     var watched: Bool { duration.isFinite && duration > 0 && position.isFinite && position >= duration * 0.9 }
 }
 
+/// When a title's dub was chosen, and what it is called: what sync needs beside the id, which is
+/// all the player ever used. At 0 for a choice made before sync existed, as on the web.
+struct DubStamp: Codable, Equatable {
+    var title: String
+    var at: Int64
+}
+
 struct PendingRate: Codable, Identifiable, Equatable {
     var id: Int { anime.id }
     var anime: Anime
@@ -99,12 +106,13 @@ struct AccountSnapshot: Codable {
     var recent: [Int: Anime] = [:]
     var episodeHistory: [String: EpisodeProgress] = [:]
     var translations: [Int: Int] = [:]
+    var dubs: [Int: DubStamp] = [:]
 
-    init(library: [LibraryItem] = [], pending: [PendingRate] = [], progress: [Int: EpisodeProgress] = [:], recent: [Int: Anime] = [:], episodeHistory: [String: EpisodeProgress] = [:], translations: [Int: Int] = [:]) {
+    init(library: [LibraryItem] = [], pending: [PendingRate] = [], progress: [Int: EpisodeProgress] = [:], recent: [Int: Anime] = [:], episodeHistory: [String: EpisodeProgress] = [:], translations: [Int: Int] = [:], dubs: [Int: DubStamp] = [:]) {
         self.library = library; self.pending = pending; self.progress = progress; self.recent = recent
-        self.episodeHistory = episodeHistory; self.translations = translations
+        self.episodeHistory = episodeHistory; self.translations = translations; self.dubs = dubs
     }
-    private enum CodingKeys: String, CodingKey { case library, pending, progress, recent, episodeHistory, translations }
+    private enum CodingKeys: String, CodingKey { case library, pending, progress, recent, episodeHistory, translations, dubs }
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         library = try values.decodeIfPresent([LibraryItem].self, forKey: .library) ?? []
@@ -113,17 +121,19 @@ struct AccountSnapshot: Codable {
         recent = try values.decodeIfPresent([Int: Anime].self, forKey: .recent) ?? [:]
         episodeHistory = try values.decodeIfPresent([String: EpisodeProgress].self, forKey: .episodeHistory) ?? [:]
         translations = try values.decodeIfPresent([Int: Int].self, forKey: .translations) ?? [:]
+        dubs = try values.decodeIfPresent([Int: DubStamp].self, forKey: .dubs) ?? [:]
         for value in progress.values where episodeHistory["\(value.animeID):\(value.episode)"] == nil {
             episodeHistory["\(value.animeID):\(value.episode)"] = value
         }
     }
-    /// Only the three fields that are still this record's own. What playback writes every few
+    /// Only the four fields that are still this record's own. What playback writes every few
     /// seconds is not among them, which is the whole reason this method is written out by hand.
     func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encode(library, forKey: .library)
         try values.encode(pending, forKey: .pending)
         try values.encode(translations, forKey: .translations)
+        try values.encode(dubs, forKey: .dubs)
     }
 }
 
