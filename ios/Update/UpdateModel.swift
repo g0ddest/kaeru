@@ -45,7 +45,7 @@ enum UpdateStage: Equatable, Sendable {
     private(set) var message: String?
 
     @ObservationIgnored private let repository: any UpdateRepository
-    /// Hands a link to iOS. Answers whether anything took it — nothing else here can know.
+    /// Hands a link to the system. Answers whether anything took it — nothing else here can know.
     @ObservationIgnored private let open: (URL) async -> Bool
     @ObservationIgnored private var checking: Task<Void, Never>?
 
@@ -78,7 +78,7 @@ enum UpdateStage: Equatable, Sendable {
     ///
     /// One press either way: a viewer who asked for the newer version has said what they want, and
     /// iOS asks its own question after this — it always does, and nothing here can or should
-    /// change that.
+    /// change that. On the Mac the press is a download, and the rest is the viewer's.
     func install() {
         guard let target = release?.install ?? release?.page else { return }
         Task { [weak self] in

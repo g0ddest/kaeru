@@ -21,9 +21,25 @@ enum UpdateCopy {
     static let upToDate = "У вас последняя версия"
     static let unknown = "Пока ничего не известно о новых версиях"
     static let check = "Проверить"
+    #if os(macOS)
+    /// The Mac installs nothing from here: the press downloads the image, and the viewer does the
+    /// rest. A button that said «Установить» would promise what the next minute does not keep.
+    static let install = "Скачать"
+    #else
     static let install = "Установить"
+    #endif
     static let openPage = "Открыть страницу выпуска"
 
+    #if os(macOS)
+    /// What is left to do once the image has downloaded, said before the press rather than after.
+    ///
+    /// Nothing on the Mac asks a question here the way iOS does: the browser saves the image and
+    /// the rest is the viewer's, so the sentence is the steps. Kaeru is closed first, so the copy
+    /// being replaced is not the one that is running.
+    static let installNote = "Браузер скачает образ диска — откройте его, закройте Kaeru и перетащите новую версию в «Программы» с заменой"
+    /// What is offered when the release has no disk image to install from.
+    static let pageNote = "У этого выпуска нет образа для Mac — страница выпуска на GitHub"
+    #else
     /// The one sentence that explains a system prompt before it arrives.
     ///
     /// Android's counterpart warns about the «unknown apps» permission. iOS asks something else —
@@ -32,6 +48,7 @@ enum UpdateCopy {
     static let installNote = "iOS спросит, можно ли установить приложение, и поставит его поверх текущего"
     /// What is offered when the release has no manifest to install from.
     static let pageNote = "У этого выпуска нет файла для установки на iPhone — страница выпуска на GitHub"
+    #endif
 
     /// `Kaeru 0.5.1` — the same line the settings page shows, so the two agree on sight.
     static func installedLine(_ version: String) -> String { "Kaeru \(version)" }
@@ -62,7 +79,11 @@ enum UpdateCopy {
         switch reason {
         case .noNetwork: "Нет связи"
         case .rateLimited: "GitHub ограничил запросы, попробуйте через час"
+        #if os(macOS)
+        case .installerRefused: "Не удалось открыть загрузку"
+        #else
         case .installerRefused: "iOS не открыла установку"
+        #endif
         case .unknown: "Не удалось проверить обновления"
         }
     }

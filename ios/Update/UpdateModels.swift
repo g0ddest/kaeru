@@ -6,11 +6,13 @@ import Foundation
 /// release that reaches this type has passed the questions that have assets and flags in them, and
 /// the screen above it should not be re-deciding them while it draws.
 ///
-/// The one place iOS parts company with Android is `manifest`. An iOS app cannot install anything
-/// itself — there is no equivalent of handing an APK to a system installer — so the best this app
-/// can do is hand iOS an over-the-air manifest and let *it* do the installing. A release that
-/// carries no manifest still has a page, and the page is offered instead: a viewer who is told
-/// there is a new version and given no way to reach it is worse off than one who is given a link.
+/// The one place this app parts company with Android is `install`. It cannot install anything
+/// itself — there is no equivalent of handing an APK to a system installer — so the best it can do
+/// is hand the system a link: on iOS an over-the-air manifest, and iOS does the installing; on the
+/// Mac the disk image, which the browser downloads and the viewer drags into place. A release that
+/// carries nothing for this system still has a page, and the page is offered instead: a viewer who
+/// is told there is a new version and given no way to reach it is worse off than one who is given
+/// a link.
 struct UpdateRelease: Codable, Equatable, Sendable {
     /// Without the leading `v`: what the screen shows, and what is compared against the install.
     var version: String
@@ -18,25 +20,18 @@ struct UpdateRelease: Codable, Equatable, Sendable {
     var publishedAt: Date?
     /// The release body as plain text: no markdown left in it, line breaks and bullets kept.
     var notes: String
-    /// The `.plist` attached to the release — an over-the-air manifest, when there is one.
-    var manifest: URL?
+    /// The link that installs this release on this system, or nil when nothing here can: the
+    /// manifest's `itms-services` link on iOS, the disk image itself on the Mac. Resolved when the
+    /// release is picked (`ReleasePlatform.install(from:)`), as everything else here is.
+    ///
+    /// A record stored before this field existed reads back without it, and offers the page until
+    /// the next check that gets through — which the first launch of a newer build asks for anyway.
+    var install: URL?
     /// The release's own page on GitHub. Always present, and always somewhere to send somebody.
     var page: URL?
-    /// The size of the `.ipa` as GitHub reports it, or zero when the release has no build attached.
+    /// The size of this system's build as GitHub reports it — the `.ipa`, the `.dmg` — or zero when
+    /// the release has none attached.
     var sizeBytes: Int64
-
-    /// The link that makes iOS install this release, or nil when nothing here can.
-    ///
-    /// `itms-services` is the only door there is, and it opens only onto an `https` manifest —
-    /// iOS refuses a plain `http` one without a word. Refusing it here instead means the screen
-    /// offers the release page rather than a button that silently does nothing.
-    var install: URL? {
-        guard let manifest, manifest.scheme?.lowercased() == "https" else { return nil }
-        var encoded = CharacterSet.alphanumerics
-        encoded.insert(charactersIn: "-._~")
-        guard let escaped = manifest.absoluteString.addingPercentEncoding(withAllowedCharacters: encoded) else { return nil }
-        return URL(string: "itms-services://?action=download-manifest&url=\(escaped)")
-    }
 }
 
 /// What one completed check found, and when.
@@ -65,7 +60,7 @@ enum UpdateFailure: Equatable, Sendable {
     case noNetwork
     /// GitHub turned the unauthenticated request away: sixty an hour, per address.
     case rateLimited
-    /// iOS did not open the link that installs the release.
+    /// The system did not open the link that installs the release.
     case installerRefused
     /// Something else — an answer that would not parse, a status nobody expected.
     case unknown

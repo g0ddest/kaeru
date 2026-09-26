@@ -78,11 +78,78 @@ xcodebuild -project ios/App/Kaeru.xcodeproj -scheme Kaeru \
 в Shikimori. Автотесты не используют реальные учётные данные и не меняют
 библиотеку пользователя. Физические iPhone/iPad в текущем прогоне не проверялись.
 
+## macOS
+
+Из тех же исходников собирается нативное приложение для Mac (не Catalyst): цель
+**KaeruMac** в том же `generate_project.rb`, `Kaeru.app` с bundle id `app.kaeru.mac`,
+macOS 15+, только Apple silicon. Плеер открывается отдельным окном, у него своё меню
+«Воспроизведение» и клавиши; Chromecast, сканера QR-кода и «PiP при выходе» на Mac нет.
+Приложение работает в App Sandbox: база, загрузки и кэш лежат в
+`~/Library/Containers/app.kaeru.mac`, а не в общих папках пользователя.
+
+### Сборка и запуск
+
+```sh
+ruby ios/App/generate_project.rb
+export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+export ANDROID_HOME="$HOME/Library/Android/sdk"
+xcodebuild -project ios/App/Kaeru.xcodeproj -scheme KaeruMac \
+  -destination 'platform=macOS,arch=arm64' -derivedDataPath ios/build/mac-dev build
+open ios/build/mac-dev/Build/Products/Debug/Kaeru.app
+```
+
+В Xcode — схема **KaeruMac** и «My Mac». Схема **KaeruMacTests** гоняет на Mac те же
+XCTest, что и iOS (`-scheme KaeruMacTests … test`). Подпись автоматическая, команда
+TXY49DW96F, сертификат Apple Development; профиль не нужен, пока сборка без
+универсальных ссылок. `MAC_ASSOCIATED_DOMAINS=1` (окружение или `local.properties`)
+включает их — тогда первый раз нужен `-allowProvisioningUpdates`: Xcode сам заведёт
+App ID с Associated Domains и профиль. Firebase подключается, только если есть
+`ios/App/Mac/GoogleService-Info.plist` — это отдельное приложение `app.kaeru.mac` в
+проекте kaeru-fceb3.
+
+### Выпуск
+
+```sh
+ios/Scripts/release-mac.sh --dry-run   # собрать, подписать и упаковать, в нотаризацию не отправлять
+ios/Scripts/release-mac.sh             # то же, затем нотаризация и билет в образе
+```
+
+Скрипт собирает архив Release, экспортирует его с подписью Developer ID, кладёт в
+образ `Kaeru-<версия>-mac.dmg` приложение и ссылку на «Программы», подписывает образ,
+отправляет его в `notarytool submit --wait` и степлит билет (`stapler staple`). Всё
+складывается в `ios/build/mac` (другая папка — `--out`); версия берётся из
+`android/build.gradle.kts`, а настоящий выпуск собирается только из закоммиченного кода.
+Сборка по умолчанию с универсальными ссылками, поэтому скрипт разрешает Xcode обратиться
+к порталу разработчика (`-allowProvisioningUpdates`: App ID, профиль Developer ID);
+`MAC_ASSOCIATED_DOMAINS=0` собирает без ссылок и без портала. Чтобы ссылки-приглашения
+открывали приложение, сайт должен называть `TXY49DW96F.app.kaeru.mac` в
+`docs/cast/.well-known/apple-app-site-association` — публикация `web/scripts/publish-site.sh`,
+скрипт выпуска предупредит, если Apple этого ещё не видит.
+
+Образ прикладывается к тому же выпуску `v<версия>` на GitHub, что и APK:
+`gh release upload v<версия> ios/build/mac/Kaeru-<версия>-mac.dmg`. Экран «Обновления»
+на Mac берёт у самого нового выпуска файл `.dmg` и открывает его в браузере; у выпуска
+без образа — страницу выпуска.
+
+### Один раз, владельцу команды
+
+1. **Сертификат Developer ID Application** с закрытым ключом в связке ключей этого Mac:
+   Xcode → Settings → Accounts → команда TXY49DW96F → Manage Certificates… → «+» →
+   Developer ID Application. Сохраните его копию (`.p12`) из «Связки ключей».
+2. **Профиль нотаризации `kaeru-notary`**: пароль приложения на account.apple.com →
+   «Вход и безопасность» → «Пароли приложений», затем
+   `xcrun notarytool store-credentials kaeru-notary --apple-id <Apple ID> --team-id TXY49DW96F`.
+
+Без любого из них `release-mac.sh` останавливается и пишет, чего не хватает и как это
+сделать; `--dry-run` при этом собирает всё, что можно собрать до этого шага.
+
 ## Структура
 
 `App/` — точка входа, Xcode-проект и генератор; `Core/` — Swift-модели,
 адаптер KMP, авторизация и хранилище; `Features/` — экраны и плеер;
-`Tests/` — XCTest/XCUITest; `Scripts/` — интеграция Gradle.
+`Tests/` — XCTest/XCUITest; `Scripts/` — интеграция Gradle, иконка Mac и
+выпуск для Mac. Файлы только для Mac лежат в папках `Mac/` рядом со своими
+iOS-двойниками; генератор отдаёт их одной цели KaeruMac.
 
 Kodik-заголовки передаются через `AVURLAssetHTTPHeaderFieldsKey`, как проверено
 спайком; это недокументированный ключ AVFoundation, и его поведение необходимо

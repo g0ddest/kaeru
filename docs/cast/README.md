@@ -7,7 +7,7 @@
 | Путь | Зачем |
 | --- | --- |
 | `.well-known/assetlinks.json` | Android App Links: отпечатки релизного и отладочного ключей и `app.kaeru`. Без него ссылка `https://kaeru.vitaliy.velikodniy.name/w/<room>` открывается в браузере, а не в приложении. |
-| `.well-known/apple-app-site-association` | iOS Universal Links: appID `TXY49DW96F.app.kaeru.ios` и путь `/w/*`. Apple забирает файл через свой CDN (`https://app-site-association.cdn-apple.com/a/v1/kaeru.vitaliy.velikodniy.name`), устройство читает его при установке приложения. |
+| `.well-known/apple-app-site-association` | Universal Links: appID `TXY49DW96F.app.kaeru.ios` (iPhone, iPad) и `TXY49DW96F.app.kaeru.mac` (Mac), путь `/w/*` у обоих. Apple забирает файл через свой CDN (`https://app-site-association.cdn-apple.com/a/v1/kaeru.vitaliy.velikodniy.name`), устройство читает его при установке приложения. Mac-приложение просит домен только в сборке с `MAC_ASSOCIATED_DOMAINS=1` — так собирает `ios/Scripts/release-mac.sh`. |
 | `w/index.html` | Посадочная страница приглашения. Короткий `<script data-route>` в её `<head>` отправляет в веб-клиент любой путь, кроме `/` и `/w/…`: `/anime/1535` → `/?p=%2Fanime%2F1535`, фрагмент `#…` остаётся фрагментом; клиент при запуске возвращает адрес на место. |
 | `404.html` | Та же страница байт в байт: Pages — статика без рерайтов, и `/w/<room>` — не файл, поэтому реальные ссылки попадают именно сюда. Сюда же попадают глубокие ссылки веб-клиента (`/anime/…`, `/auth?code=…`), и `<script data-route>` уводит их в клиент. |
 

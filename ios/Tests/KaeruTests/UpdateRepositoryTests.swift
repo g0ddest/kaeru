@@ -75,34 +75,86 @@ import XCTest
         XCTAssertEqual(result.release?.version, "0.6.0")
     }
 
-    // MARK: - the iOS difference
+    // MARK: - what each system installs from
 
-    func testAManifestBecomesAnInstallLink() async throws {
-        let repo = repository(MemoryStore()) { [self] in
-            [release("0.6.0", assets: [asset("Kaeru-0.6.0.ipa", size: 31_457_280, url: "https://example.test/Kaeru.ipa"),
-                                       asset("manifest.plist", url: "https://example.test/m.plist")])]
-        }
-        let offered = try await repo.check(force: false).get().release
-        XCTAssertEqual(offered?.manifest?.absoluteString, "https://example.test/m.plist")
-        XCTAssertEqual(offered?.install?.absoluteString,
+    func testAManifestBecomesAnInstallLink() {
+        let offered = ReleaseSelection.release(from: release("0.6.0", assets: [
+            asset("Kaeru-0.6.0.ipa", size: 31_457_280, url: "https://example.test/Kaeru.ipa"),
+            asset("manifest.plist", url: "https://example.test/m.plist")
+        ]), for: .iOS)
+        XCTAssertEqual(offered.install?.absoluteString,
                        "itms-services://?action=download-manifest&url=https%3A%2F%2Fexample.test%2Fm.plist")
         // The build is named only so the screen can say what the release weighs.
-        XCTAssertEqual(offered?.sizeBytes, 31_457_280)
+        XCTAssertEqual(offered.sizeBytes, 31_457_280)
     }
 
     /// iOS refuses a plain `http` manifest without a word, so the button that would do nothing is
     /// never offered — the release page is.
-    func testAnInsecureManifestIsNotAnInstallLink() async throws {
-        let repo = repository(MemoryStore()) { [self] in
-            [release("0.6.0", assets: [asset("manifest.plist", url: "http://example.test/m.plist")])]
-        }
-        let offered = try await repo.check(force: false).get().release
-        XCTAssertNil(offered?.install)
-        XCTAssertEqual(offered?.page?.absoluteString, "https://example.test/r")
+    func testAnInsecureManifestIsNotAnInstallLink() {
+        let offered = ReleaseSelection.release(from: release("0.6.0", assets: [
+            asset("manifest.plist", url: "http://example.test/m.plist")
+        ]), for: .iOS)
+        XCTAssertNil(offered.install)
+        XCTAssertEqual(offered.page?.absoluteString, "https://example.test/r")
     }
 
-    /// Android calls a release with no file attached a failure. Here it is still an offer: every
-    /// release has a page, and a page is somewhere to send somebody.
+    /// One release carries every system's files. The Mac takes the disk image — the browser
+    /// downloads it, and the viewer drags Kaeru out of it — and never the iPhone's manifest or the
+    /// APK; the same release still hands the iPhone its own.
+    func testTheMacTakesTheDiskImage() {
+        let published = release("0.7.0", assets: [
+            asset("Kaeru-0.7.0.apk", size: 23_068_672, url: "https://example.test/Kaeru-0.7.0.apk"),
+            asset("Kaeru-0.7.0.ipa", size: 31_457_280, url: "https://example.test/Kaeru-0.7.0.ipa"),
+            asset("manifest.plist", url: "https://example.test/m.plist"),
+            asset("Kaeru-0.7.0-mac.dmg", size: 9_437_184, url: "https://example.test/Kaeru-0.7.0-mac.dmg")
+        ])
+        let mac = ReleaseSelection.release(from: published, for: .macOS)
+        XCTAssertEqual(mac.install?.absoluteString, "https://example.test/Kaeru-0.7.0-mac.dmg")
+        XCTAssertEqual(mac.sizeBytes, 9_437_184)
+        let phone = ReleaseSelection.release(from: published, for: .iOS)
+        XCTAssertEqual(phone.install?.scheme, "itms-services")
+        XCTAssertEqual(phone.sizeBytes, 31_457_280)
+    }
+
+    /// Every release so far carries an APK and nothing a Mac can open. It is still offered — through
+    /// its page, as a release with no manifest is on the iPhone — and it weighs nothing it can name.
+    func testAReleaseWithNoDiskImageSendsTheMacToItsPage() {
+        let offered = ReleaseSelection.release(from: release("0.7.0", assets: [
+            asset("Kaeru-0.7.0.apk", size: 23_068_672, url: "https://example.test/Kaeru-0.7.0.apk"),
+            asset("Kaeru-0.7.0.ipa", size: 31_457_280, url: "https://example.test/Kaeru-0.7.0.ipa"),
+            asset("manifest.plist", url: "https://example.test/m.plist")
+        ]), for: .macOS)
+        XCTAssertNil(offered.install)
+        XCTAssertEqual(offered.sizeBytes, 0)
+        XCTAssertEqual(offered.page?.absoluteString, "https://example.test/r")
+    }
+
+    /// A disk image anybody on the way could swap is not one to hand a Mac to install: the page,
+    /// which is https, is offered instead.
+    func testAnInsecureDiskImageIsNotAnInstallLink() {
+        let offered = ReleaseSelection.release(from: release("0.7.0", assets: [
+            asset("Kaeru-0.7.0-mac.dmg", url: "http://example.test/Kaeru-0.7.0-mac.dmg")
+        ]), for: .macOS)
+        XCTAssertNil(offered.install)
+        XCTAssertEqual(offered.page?.absoluteString, "https://example.test/r")
+    }
+
+    /// Which system's file is offered is the build's to say, not the release's.
+    func testTheCheckOffersTheFileOfTheSystemItRunsOn() async throws {
+        let repo = repository(MemoryStore()) { [self] in
+            [release("0.7.0", assets: [asset("manifest.plist", url: "https://example.test/m.plist"),
+                                       asset("Kaeru-0.7.0-mac.dmg", url: "https://example.test/Kaeru-0.7.0-mac.dmg")])]
+        }
+        let offered = try await repo.check(force: false).get().release
+        #if os(macOS)
+        XCTAssertEqual(offered?.install?.absoluteString, "https://example.test/Kaeru-0.7.0-mac.dmg")
+        #else
+        XCTAssertEqual(offered?.install?.scheme, "itms-services")
+        #endif
+    }
+
+    /// Android calls a release with no file attached a failure. Here it is still an offer, on
+    /// either system: every release has a page, and a page is somewhere to send somebody.
     func testAReleaseWithNoManifestIsStillOfferedThroughItsPage() async throws {
         let repo = repository(MemoryStore()) { [self] in [release("0.6.0")] }
         let offered = try await repo.check(force: false).get().release

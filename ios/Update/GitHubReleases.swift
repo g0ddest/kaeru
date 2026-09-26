@@ -114,13 +114,55 @@ struct GitHubReleaseSource: UpdateSource {
     }
 }
 
+/// Which system a release is picked for, and what that system installs from.
+///
+/// One release carries every system's files, and each app takes its own and never another's. iOS
+/// installs nothing an app hands it but an over-the-air manifest: the `.plist` is the file, and the
+/// `.ipa` it names is never fetched here — only weighed, so the screen can say what it costs. The
+/// Mac installs by hand: the browser downloads the `.dmg`, and the viewer drags Kaeru out of it
+/// over the old copy, so there the disk image is both the file and the weight.
+enum ReleasePlatform: Sendable {
+    case iOS, macOS
+
+    /// The system this build runs on. A build is for one of them, and a release has no say in it.
+    static var current: ReleasePlatform {
+        #if os(macOS)
+        .macOS
+        #else
+        .iOS
+        #endif
+    }
+
+    /// The file the system installs from.
+    var installerSuffix: String { self == .iOS ? ".plist" : ".dmg" }
+    /// The file whose size is what the download costs.
+    var buildSuffix: String { self == .iOS ? ".ipa" : ".dmg" }
+
+    /// The link that has the system install from `installer`, or nil when it would not.
+    ///
+    /// An `https` file only, on either system. `itms-services` is the only door iOS has, and it
+    /// opens only onto an `https` manifest — iOS refuses a plain `http` one without a word, and
+    /// refusing it here instead means the screen offers the release page rather than a button that
+    /// silently does nothing. A Mac would download an `http` image, and that is the reason to
+    /// refuse it there: a disk image anybody on the way could have swapped is not one to drag over
+    /// the app.
+    func install(from installer: URL) -> URL? {
+        guard installer.scheme?.lowercased() == "https" else { return nil }
+        switch self {
+        case .iOS:
+            var encoded = CharacterSet.alphanumerics
+            encoded.insert(charactersIn: "-._~")
+            guard let escaped = installer.absoluteString.addingPercentEncoding(withAllowedCharacters: encoded) else { return nil }
+            return URL(string: "itms-services://?action=download-manifest&url=\(escaped)")
+        case .macOS:
+            // The image itself: the default browser downloads it, and Finder opens it from there.
+            return installer
+        }
+    }
+}
+
 /// Which of the releases GitHub listed is the one to offer, and what this app makes of it.
 enum ReleaseSelection {
-    /// The over-the-air manifest, which is the only kind of file iOS will install from.
-    private static let manifestSuffix = ".plist"
-    /// The build itself. Never fetched here — it is named only so the screen can say what it weighs.
-    private static let buildSuffix = ".ipa"
-
     /// Which of the releases GitHub listed is the one to offer.
     ///
     /// Drafts are left out: a draft is a maintainer's scratch space, visible only to them, and it
@@ -145,21 +187,22 @@ enum ReleaseSelection {
         return best?.release ?? first
     }
 
-    /// A release as this app uses it.
+    /// A release as this app uses it, on the system it is picked for.
     ///
     /// Never nil, unlike Android's, and that is the platform difference in one line: there a
     /// release with no APK on it is a failure, because there is nothing left to do with it. Here
-    /// the page is always a destination, so a release with no manifest is still a release worth
-    /// telling somebody about.
-    static func release(from release: GitHubRelease) -> UpdateRelease {
-        let manifest = release.assets.first { $0.name.lowercased().hasSuffix(manifestSuffix) && !$0.browserDownloadURL.isEmpty }
-        let build = release.assets.first { $0.name.lowercased().hasSuffix(buildSuffix) }
+    /// the page is always a destination, so a release with nothing this system installs from is
+    /// still a release worth telling somebody about — on the Mac, that is every release published
+    /// before the first disk image.
+    static func release(from release: GitHubRelease, for platform: ReleasePlatform = .current) -> UpdateRelease {
+        let installer = release.assets.first { $0.name.lowercased().hasSuffix(platform.installerSuffix) && !$0.browserDownloadURL.isEmpty }
+        let build = release.assets.first { $0.name.lowercased().hasSuffix(platform.buildSuffix) }
         var version = release.tagName.trimmingCharacters(in: .whitespacesAndNewlines)
         if version.hasPrefix("v") || version.hasPrefix("V") { version.removeFirst() }
         return UpdateRelease(version: version,
                              publishedAt: publishedTime(release.publishedAt),
                              notes: ReleaseNotes.plain(release.body),
-                             manifest: manifest.flatMap { URL(string: $0.browserDownloadURL) },
+                             install: installer.flatMap { URL(string: $0.browserDownloadURL) }.flatMap(platform.install(from:)),
                              page: release.htmlURL.flatMap(URL.init(string:)),
                              sizeBytes: build?.size ?? 0)
     }

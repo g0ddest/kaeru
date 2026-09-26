@@ -23,10 +23,13 @@ import XCTest
     private var opened: [URL] = []
     private var opens = true
 
-    private func release(_ version: String, manifest: String? = nil,
+    /// A link already resolved for its system. The model hands it over as it is, whichever it is.
+    private let installLink = "itms-services://?action=download-manifest&url=https%3A%2F%2Fexample.test%2Fm.plist"
+
+    private func release(_ version: String, install: String? = nil,
                          page: String? = "https://example.test/r") -> UpdateRelease {
         UpdateRelease(version: version, publishedAt: epoch, notes: "Что нового",
-                      manifest: manifest.flatMap(URL.init(string:)), page: page.flatMap(URL.init(string:)),
+                      install: install.flatMap(URL.init(string:)), page: page.flatMap(URL.init(string:)),
                       sizeBytes: 31_457_280)
     }
     private func model(_ repository: StubRepository, installed: String = "0.5.1") -> UpdateModel {
@@ -123,22 +126,22 @@ import XCTest
 
     // MARK: - what the press does
 
-    func testAManifestIsHandedToTheSystemAsAnInstallLink() async {
+    func testTheInstallLinkIsHandedToTheSystem() async {
         let repository = StubRepository()
         repository.outcome = .success(UpdateResult(checkedAt: epoch, installedVersion: "0.5.1",
-                                                   release: release("0.6.0", manifest: "https://example.test/m.plist")))
+                                                   release: release("0.6.0", install: installLink)))
         let model = model(repository)
         model.check(force: false)
         await settle()
         model.install()
         await settle()
-        XCTAssertEqual(opened.map(\.scheme), ["itms-services"])
+        XCTAssertEqual(opened.map(\.absoluteString), [installLink])
         XCTAssertNil(model.message)
     }
 
-    /// The platform difference: with no manifest there is still a page, and a page is somewhere to
-    /// send somebody.
-    func testWithNoManifestThePageIsOpenedInstead() async {
+    /// The platform difference: with nothing to install from there is still a page, and a page is
+    /// somewhere to send somebody.
+    func testWithNothingToInstallFromThePageIsOpenedInstead() async {
         let repository = StubRepository()
         repository.outcome = .success(UpdateResult(checkedAt: epoch, installedVersion: "0.5.1", release: release("0.6.0")))
         let model = model(repository)
@@ -153,16 +156,35 @@ import XCTest
         opens = false
         let repository = StubRepository()
         repository.outcome = .success(UpdateResult(checkedAt: epoch, installedVersion: "0.5.1",
-                                                   release: release("0.6.0", manifest: "https://example.test/m.plist")))
+                                                   release: release("0.6.0", install: installLink)))
         let model = model(repository)
         model.check(force: false)
         await settle()
         model.install()
         await settle()
+        #if os(macOS)
+        XCTAssertEqual(model.message, "Не удалось открыть загрузку")
+        #else
         XCTAssertEqual(model.message, "iOS не открыла установку")
+        #endif
     }
 
     // MARK: - the words
+
+    /// The press and the sentence over it say what this system does with the release: the iPhone
+    /// installs it, the Mac only downloads it — the viewer drags it into place.
+    func testThePressSaysWhatThisSystemDoes() {
+        #if os(macOS)
+        XCTAssertEqual(UpdateCopy.install, "Скачать")
+        XCTAssertEqual(UpdateCopy.installNote,
+                       "Браузер скачает образ диска — откройте его, закройте Kaeru и перетащите новую версию в «Программы» с заменой")
+        XCTAssertEqual(UpdateCopy.pageNote, "У этого выпуска нет образа для Mac — страница выпуска на GitHub")
+        #else
+        XCTAssertEqual(UpdateCopy.install, "Установить")
+        XCTAssertEqual(UpdateCopy.installNote, "iOS спросит, можно ли установить приложение, и поставит его поверх текущего")
+        XCTAssertEqual(UpdateCopy.pageNote, "У этого выпуска нет файла для установки на iPhone — страница выпуска на GitHub")
+        #endif
+    }
 
     func testTheRowAndTheHeadlineAreOneSentence() {
         XCTAssertEqual(UpdateCopy.available("0.6.0"), "Доступна версия 0.6.0")
