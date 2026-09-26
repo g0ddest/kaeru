@@ -30,11 +30,13 @@ release.properties
 # в истории от него один шум и гарантированные конфликты при любом переносе файлов.
 /ios/App/Kaeru.xcodeproj/
 /ios/App/Configuration.plist
+/ios/App/Mac/Kaeru.entitlements
 /ios/Dependencies/
 
 # Firebase: конфигурация проекта, у каждого своя
 android/google-services.json
 ios/App/GoogleService-Info.plist
+ios/App/Mac/GoogleService-Info.plist
 
 # Web client: dependencies and build output
 web/node_modules/

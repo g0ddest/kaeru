@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <!-- The Mac app's half of ../Info.plist: what means something on a Mac. No Cast discovery, no
+         camera, no background modes or BGTaskScheduler identifiers. -->
+    <key>CFBundleDevelopmentRegion</key><string>ru</string>
+    <key>CFBundleLocalizations</key><array><string>ru</string><string>en</string></array>
+    <!-- kaeru://oauth for signing in to Shikimori; kaeru://watch and kaeru://anime for links. -->
+    <key>CFBundleURLTypes</key><array><dict>
+        <key>CFBundleURLName</key><string>app.kaeru.oauth</string>
+        <key>CFBundleURLSchemes</key><array><string>kaeru</string></array>
+    </dict></array>
+    <key>LSApplicationCategoryType</key><string>public.app-category.entertainment</string>
+    <key>NSAppTransportSecurity</key><dict>
+        <key>NSAllowsArbitraryLoadsForMedia</key><true/>
+        <key>NSAllowsLocalNetworking</key><true/>
+    </dict>
+    <!-- The app's own pairing and watch-together sockets on the local network. -->
+    <key>NSBonjourServices</key><array><string>_kaeru._tcp</string></array>
+    <key>NSLocalNetworkUsageDescription</key><string>Kaeru подключается к телевизору, чтобы войти на нём в Shikimori, и к другим устройствам для совместного просмотра в вашей сети.</string>
+    <key>NSMicrophoneUsageDescription</key><string>Микрофон используется только при записи голосового сообщения в совместном просмотре.</string>
+    <!-- Without it AppKit swallows an Objective-C exception raised in an event handler: the app
+         carries on half-broken and Crashlytics never hears of it. -->
+    <key>NSApplicationCrashOnExceptions</key><true/>
+    <!-- Firebase starts with both collectors off; Reporting.install switches them on only when the
+         viewer has not said no in Settings, so a «no» holds from the first frame. -->
+    <key>FIREBASE_ANALYTICS_COLLECTION_ENABLED</key><false/>
+    <key>FirebaseCrashlyticsCollectionEnabled</key><false/>
+</dict></plist>
