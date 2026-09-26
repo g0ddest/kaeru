@@ -81,13 +81,15 @@ struct PlayerWindow: View {
             return taken ? nil : event
         }
         // The pointer brings the controls — and the window's own buttons, hidden with them — back.
-        // SwiftUI's hover over AVKit's view stopped hearing it once the next episode replaced the
+        // SwiftUI's hover over the picture's view stopped hearing it once the next episode replaced the
         // picture, and the window was left with no way to close, minimise or zoom it.
         pointer = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] event in
             MainActor.assumeIsolated {
                 guard let self, let window = self.window, event.window === window else { return }
-                // Resting on the title bar strip is reaching for a button there: keep it up.
-                if event.locationInWindow.y > window.contentLayoutRect.maxY - 56 { self.playback.holdChrome() }
+                // Resting on the title bar strip or on the bar along the bottom is reaching for a
+                // button there: keep it up.
+                let y = event.locationInWindow.y
+                if y > window.contentLayoutRect.maxY - 56 || self.onBar(event, in: window) { self.playback.holdChrome() }
                 else { self.playback.showChrome() }
             }
             return event
@@ -98,6 +100,14 @@ struct PlayerWindow: View {
         if let pointer { NSEvent.removeMonitor(pointer) }
         monitor = nil
         pointer = nil
+    }
+
+    /// The pointer is on the player's own bar (Playback/Mac/PlayerBar.swift).
+    private func onBar(_ event: NSEvent, in window: NSWindow) -> Bool {
+        guard let content = window.contentView else { return false }
+        let point = content.convert(event.locationInWindow, from: nil)
+        let top = content.isFlipped ? point.y : content.bounds.height - point.y
+        return PlayerBarLayout.contains(CGPoint(x: point.x, y: top), in: window)
     }
 
     private func take(_ event: NSEvent) -> Bool {

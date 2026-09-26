@@ -72,6 +72,11 @@ enum PlaybackLocalAction {
         chromeTimer = Task { [weak self] in
             try? await Task.sleep(for: Self.chromeDelay)
             guard !Task.isCancelled, let self, self.isPlaying, self.error == nil else { return }
+            #if os(macOS)
+            // The picture is in its floating window, and what is left in this one is the bar that
+            // brings it back: nothing to hide it for.
+            if self.pictureInPicture { return }
+            #endif
             self.chromeVisible = false
         }
     }
@@ -201,6 +206,8 @@ enum PlaybackLocalAction {
             guard reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue else { return }
             playback.setPlaying(false)
         }
+        #else
+        applyVolume()
         #endif
     }
 
@@ -357,7 +364,25 @@ enum PlaybackLocalAction {
     /// A fifth of the volume while somebody talks over the episode, and all of it back after.
     /// The same figure as Android's `ExoPlaybackEngine.DUCKED_VOLUME`, and set explicitly because
     /// the system ducks other apps rather than this one against itself.
+    #if os(iOS)
     func setDucked(_ on: Bool) { player.volume = on ? 0.2 : 1 }
+    #else
+    func setDucked(_ on: Bool) { ducked = on; applyVolume() }
+    /// The viewer's own volume, from the Mac player's bar (Playback/Mac/PlayerBar.swift). An iPad
+    /// has the hardware buttons for that; a Mac's keys turn the whole machine up and down.
+    private(set) var volume: Float = PlaybackModel.lastVolume
+    @ObservationIgnored private var ducked = false
+    /// Where the slider was left, for the next episode's window. For as long as the app is open.
+    private static var lastVolume: Float = 1
+    func setVolume(_ value: Float) {
+        volume = value.isFinite ? min(1, max(0, value)) : 1
+        Self.lastVolume = volume
+        // Turning the sound up is asking to hear it.
+        if volume > 0, muted { setMuted(false) }
+        applyVolume()
+    }
+    private func applyVolume() { player.volume = PlayerBarRules.effectiveVolume(user: volume, ducked: ducked) }
+    #endif
     func setMuted(_ value: Bool) { player.isMuted = value; muted = value }
     func setSynchronizationControlled(_ value: Bool) { synchronizationControlled = value }
     func applySynchronization(position: Double, isPlaying: Bool, speed: Double? = nil) {
