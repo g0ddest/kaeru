@@ -8,6 +8,7 @@ import {
   autoplayNext,
   defaultQuality,
   setAutoplayNext,
+  syncEnabled,
   setDefaultQuality,
   setSkipEnding,
   setWatchedThreshold,
@@ -28,6 +29,8 @@ const THRESHOLD = "Порог просмотра";
 const THRESHOLD_NOTE = "Серия считается просмотренной после этой доли";
 const AUTOPLAY = "Следующая серия автоматически";
 const SKIP_ENDING = "Пропускать эндинг";
+const SYNC = "Синхронизация между устройствами";
+const SYNC_NOTE = "Позиция в серии и выбранная озвучка — на всех ваших устройствах через сервер Kaeru";
 // Said under the switch: closing the player after the last episode would otherwise read as a crash.
 const SKIP_ENDING_NOTE =
   "Через 10 секунд начнётся следующая серия. После последней плеер закроется и вернёт на карточку";
@@ -67,6 +70,7 @@ export function SettingsScreen() {
   const [threshold, setThreshold] = useState(() => watchedThreshold());
   const [autoplay, setAutoplay] = useState(() => autoplayNext());
   const [skipsEnding, setSkipsEnding] = useState(() => skipEnding());
+  const [syncing, setSyncing] = useState(() => syncEnabled());
   const [quality, setQuality] = useState(() => defaultQuality());
   const [confirming, setConfirming] = useState(false);
   const account = access.kind === "signed_in" ? access.session.account : null;
@@ -84,6 +88,11 @@ export function SettingsScreen() {
   function chooseAutoplay(on: boolean) {
     setAutoplayNext(on);
     setAutoplay(autoplayNext());
+  }
+
+  function chooseSync(on: boolean) {
+    sync.setEnabled(on);
+    setSyncing(syncEnabled());
   }
 
   function chooseSkipEnding(on: boolean) {
@@ -149,6 +158,7 @@ export function SettingsScreen() {
           <div className="set-group">
             <Switch label={AUTOPLAY} checked={autoplay} onChange={chooseAutoplay} />
             <Switch label={SKIP_ENDING} note={SKIP_ENDING_NOTE} checked={skipsEnding} onChange={chooseSkipEnding} />
+            <Switch label={SYNC} note={SYNC_NOTE} checked={syncing} onChange={chooseSync} />
           </div>
           <div className="set-group">
             <p className="t-title-sm">{QUALITY}</p>

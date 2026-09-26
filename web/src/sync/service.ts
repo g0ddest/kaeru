@@ -1,3 +1,4 @@
+import { setSyncEnabled, syncEnabled } from "../library/prefs";
 import type { EpisodeProgress, LibraryEntry, ListStatus } from "../domain/models";
 import type { Library } from "../library/library";
 import type { ProgressStore } from "../library/progress";
@@ -13,6 +14,8 @@ export interface Sync extends SyncPort {
   /** Signed-in shell mounted: read the document, then follow local changes. */
   start(): void;
   stop(): void;
+  /** «Синхронизация между устройствами» switched: on starts it (read, then the first upload), off stops it and drops the queue. */
+  setEnabled(on: boolean): void;
 }
 
 export interface SyncDeps {
@@ -129,7 +132,30 @@ export class SyncService implements Sync {
     this.claim();
   }
 
+  /** The signed-in shell is up; sync runs only while the setting is on as well. */
+  private mounted = false;
+
   start(): void {
+    this.mounted = true;
+    if (syncEnabled(this.storage ?? undefined)) this.begin();
+  }
+
+  setEnabled(on: boolean): void {
+    setSyncEnabled(on, this.storage ?? undefined);
+    if (on) {
+      if (this.mounted) this.begin();
+      return;
+    }
+    this.end();
+    this.memoryOutbox = null;
+    try {
+      this.storage?.removeItem(OUTBOX_KEY);
+    } catch {
+      // Nothing more will be sent either way: the service is stopped.
+    }
+  }
+
+  private begin(): void {
     if (this.running) return;
     this.running = true;
     this.cleanups = [
@@ -182,6 +208,11 @@ export class SyncService implements Sync {
   }
 
   stop(): void {
+    this.mounted = false;
+    this.end();
+  }
+
+  private end(): void {
     this.running = false;
     for (const cleanup of this.cleanups) cleanup();
     this.cleanups = [];

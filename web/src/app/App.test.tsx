@@ -58,6 +58,8 @@ describe("App", () => {
   });
 
   it("reads the synced positions once signed in, and stops following them when signed out", async () => {
+    // Sync is opt-in («Синхронизация между устройствами»); these tests are about it switched on.
+    localStorage.setItem("kaeru.sync", "true");
     const synced: string[] = [];
     const fetch: typeof globalThis.fetch = async (input, init) => {
       const url = String(input);

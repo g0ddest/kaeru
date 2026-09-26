@@ -64,8 +64,10 @@ function row(animeId: number, episode: number, positionMs: number, updatedAt: nu
   return { animeId, episode, positionMs, durationMs: 1_440_000, updatedAt };
 }
 
-function setup(options: { account?: number | null; storage?: Storage } = {}) {
+function setup(options: { account?: number | null; storage?: Storage; enabled?: boolean } = {}) {
   const storage = options.storage ?? memoryStorage();
+  // Most tests are about sync itself, so it is switched on for them; the switch has its own tests.
+  if (options.enabled !== false) storage.setItem("kaeru.sync", "true");
   const progress = new ProgressStore(storage);
   const fake = fakeClient();
   const library = fakeLibrary();
@@ -543,5 +545,40 @@ describe("SyncService signed out", () => {
     await settle(MINUTE);
 
     expect(env.posts()).toEqual([]);
+  });
+});
+
+describe("SyncService switch", () => {
+  it("is off by default: no reads, no sends, nothing queued", async () => {
+    const env = started({ enabled: false });
+    env.service.start();
+    await settle();
+    env.progress.put(row(1535, 1, 10_000, Date.now()));
+    env.service.push({ keepalive: true });
+    await settle(120_000);
+    expect(env.calls.filter((call) => call.kind === "get").length).toBe(0);
+    expect(env.posts()).toHaveLength(0);
+    expect(env.storage.getItem("kaeru.sync.outbox")).toBeNull();
+  });
+
+  it("turned on, reads and uploads; turned off again, sends nothing more and drops the queue", async () => {
+    const env = started({ enabled: false });
+    env.service.start();
+    await settle();
+    env.progress.put(row(1535, 1, 10_000, Date.now()));
+    env.service.setEnabled(true);
+    await settle();
+    expect(env.calls.filter((call) => call.kind === "get").length).toBe(1);
+    expect(env.posts().some((post) => post.titles["1535"]?.eps?.["1"]?.p === 10_000)).toBe(true);
+    expect(env.storage.getItem("kaeru.sync")).toBe("true");
+
+    env.service.setEnabled(false);
+    const sent = env.posts().length;
+    env.progress.put(row(1535, 1, 20_000, Date.now()));
+    env.service.push();
+    await settle(120_000);
+    expect(env.posts()).toHaveLength(sent);
+    expect(env.storage.getItem("kaeru.sync.outbox")).toBeNull();
+    expect(env.storage.getItem("kaeru.sync")).toBe("false");
   });
 });

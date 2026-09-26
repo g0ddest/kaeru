@@ -240,4 +240,13 @@ describe("SettingsScreen", () => {
     // What was not yet sent to the other devices goes before the token does.
     expect(sync.pushes).toEqual([{ keepalive: true }]);
   });
+
+  it("offers sync between devices, off by default, and switches the service", async () => {
+    const env = setup();
+    const toggle = screen.getByRole("switch", { name: "Синхронизация между устройствами" });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    await userEvent.setup().click(toggle);
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    expect(env.sync.enabled).toEqual([true]);
+  });
 });

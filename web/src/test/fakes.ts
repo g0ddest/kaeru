@@ -1,3 +1,4 @@
+import { setSyncEnabled } from "../library/prefs";
 // Shared test doubles. Kept out of production code: nothing under src/ except tests imports this file.
 import type { AniSkip } from "../player/aniskip";
 import type { EngineFactory } from "../player/engine";
@@ -43,12 +44,19 @@ export function noPlayback(): { kodik: Kodik; aniskip: AniSkip; engine: EngineFa
 }
 
 /** Viewing sync that sends and reads nothing: screens under test make no /sync requests. */
-export function noSync(): Sync & { pushes: { keepalive?: boolean }[] } {
+export function noSync(): Sync & { pushes: { keepalive?: boolean }[]; enabled: boolean[] } {
   const pushes: { keepalive?: boolean }[] = [];
+  const enabled: boolean[] = [];
   return {
     pushes,
+    enabled,
     start: () => {},
     stop: () => {},
+    // Writes the setting as the real service does, so a screen reading it back sees the change.
+    setEnabled: (on) => {
+      enabled.push(on);
+      setSyncEnabled(on);
+    },
     push: (options = {}) => {
       pushes.push(options);
     },

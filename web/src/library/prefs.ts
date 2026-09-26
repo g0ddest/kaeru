@@ -44,6 +44,7 @@ export function setWatchedThreshold(value: number, storage?: Storage): void {
 const AUTOPLAY_KEY = "kaeru.autoplay";
 const SKIP_ENDING_KEY = "kaeru.skipEnding";
 const QUALITY_KEY = "kaeru.quality";
+const SYNC_KEY = "kaeru.sync";
 
 // Only the two words this module writes; anything else reads as the default.
 function readSwitch(key: string, fallback: boolean, storage: Storage | undefined): boolean {
@@ -72,6 +73,18 @@ export function autoplayNext(storage?: Storage): boolean {
 
 export function setAutoplayNext(on: boolean, storage?: Storage): void {
   writeSwitch(AUTOPLAY_KEY, on, storage);
+}
+
+/**
+ * «Синхронизация между устройствами», off by default: the worker's database is shared by everyone,
+ * and a viewer with one device has nothing to gain from a request a minute.
+ */
+export function syncEnabled(storage?: Storage): boolean {
+  return readSwitch(SYNC_KEY, false, storage);
+}
+
+export function setSyncEnabled(on: boolean, storage?: Storage): void {
+  writeSwitch(SYNC_KEY, on, storage);
 }
 
 /** «Пропускать эндинг», off by default as on Android. */

@@ -92,6 +92,8 @@ describe("services", () => {
   });
 
   it("sync viewing through the worker with the chosen store's token", async () => {
+    // Sync is opt-in («Синхронизация между устройствами»); these tests are about it switched on.
+    localStorage.setItem("kaeru.sync", "true");
     const calls: { url: string; method: string; authorization: string | null }[] = [];
     const fakeFetch: typeof fetch = async (input, init) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
