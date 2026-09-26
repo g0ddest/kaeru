@@ -2,67 +2,18 @@ import { whoami } from "./whitelist";
 
 /**
  * Viewing sync: where each episode stopped, the dub chosen for a title, and the titles watched
- * «украдкой» — one JSON document per Shikimori user in KV (docs/superpowers/specs/2026-09-26-kaeru-sync-design.md).
- * Every field carries the device's own `at`; the newer one wins, field by field and episode by episode.
+ * «украдкой» — rows per Shikimori user in D1 (migrations/0001_sync.sql;
+ * docs/superpowers/specs/2026-09-26-kaeru-sync-design.md). Every row carries the device's own `at`;
+ * a newer one wins, field by field and episode by episode, in one upsert each — no read-modify-write.
  */
 export interface Position { p: number; d: number; at: number }
 export interface Dub { id: number; title: string; at: number }
 export interface Secret { on: boolean; watched: number; at: number }
 export interface Title { dub?: Dub; eps?: Record<string, Position>; secret?: Secret; gone?: number }
-export interface SyncDocument { v: 1; titles: Record<string, Title> }
 
-export const EMPTY: SyncDocument = { v: 1, titles: {} };
 export const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_EPISODES = 30;
-const MAX_TITLES = 1000;
 const MAX_BODY = 256 * 1024;
-
-function newest<T extends { at: number }>(a: T | undefined, b: T | undefined): T | undefined {
-  if (a === undefined) return b;
-  if (b === undefined) return a;
-  return b.at > a.at ? b : a;
-}
-
-function latestAt(title: Title): number {
-  let at = Math.max(title.dub?.at ?? 0, title.secret?.at ?? 0);
-  for (const position of Object.values(title.eps ?? {})) at = Math.max(at, position.at);
-  return at;
-}
-
-function mergeTitle(stored: Title | undefined, incoming: Title): Title {
-  // A tombstone stands against anything written before it, and gives way to anything after.
-  const gone = Math.max(stored?.gone ?? 0, incoming.gone ?? 0);
-  const keep = <T extends { at: number }>(value: T | undefined) => (value !== undefined && value.at > gone ? value : undefined);
-  const eps: Record<string, Position> = {};
-  for (const source of [stored?.eps ?? {}, incoming.eps ?? {}]) {
-    for (const [episode, position] of Object.entries(source)) {
-      const chosen = keep(newest(eps[episode], position));
-      if (chosen !== undefined) eps[episode] = chosen;
-    }
-  }
-  const newestEps = Object.entries(eps).sort((a, b) => b[1].at - a[1].at).slice(0, MAX_EPISODES);
-  const title: Title = {};
-  const dub = keep(newest(stored?.dub, incoming.dub));
-  if (dub !== undefined) title.dub = dub;
-  if (newestEps.length > 0) title.eps = Object.fromEntries(newestEps);
-  const secret = keep(newest(stored?.secret, incoming.secret));
-  if (secret !== undefined) title.secret = secret;
-  if (Object.keys(title).length === 0 && gone > 0) return { gone };
-  return title;
-}
-
-/** The stored document with `incoming` folded in, and anything past its time let go. */
-export function merge(stored: SyncDocument, incoming: Record<string, Title>, now: number): SyncDocument {
-  const titles: Record<string, Title> = {};
-  for (const id of new Set([...Object.keys(stored.titles), ...Object.keys(incoming)])) {
-    const title = incoming[id] === undefined ? stored.titles[id] : mergeTitle(stored.titles[id], incoming[id]);
-    if (title === undefined) continue;
-    if (title.gone !== undefined && Object.keys(title).length === 1 && now - title.gone > TOMBSTONE_TTL_MS) continue;
-    titles[id] = title;
-  }
-  const kept = Object.entries(titles).sort((a, b) => Math.max(latestAt(b[1]), b[1].gone ?? 0) - Math.max(latestAt(a[1]), a[1].gone ?? 0)).slice(0, MAX_TITLES);
-  return { v: 1, titles: Object.fromEntries(kept) };
-}
 
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 
@@ -108,14 +59,73 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json; charset=utf-8" } });
 }
 
-async function read(env: Cloudflare.Env, key: string): Promise<SyncDocument> {
-  const stored = await env.SYNC.get<SyncDocument>(key, "json");
-  return stored !== null && stored.v === 1 && typeof stored.titles === "object" ? stored : EMPTY;
+/** A write that a tombstone at least as new as it does not forbid. */
+const NOT_GONE = "WHERE NOT EXISTS (SELECT 1 FROM gone WHERE user = ?1 AND anime = ?2 AND at >= ?AT)";
+
+function statements(db: D1Database, user: number, anime: number, title: Title): D1PreparedStatement[] {
+  const out: D1PreparedStatement[] = [];
+  if (title.gone !== undefined) {
+    out.push(db.prepare("INSERT INTO gone (user, anime, at) VALUES (?1, ?2, ?3) ON CONFLICT (user, anime) DO UPDATE SET at = excluded.at WHERE excluded.at > gone.at").bind(user, anime, title.gone));
+    for (const table of ["positions", "dubs", "secrets"]) {
+      out.push(db.prepare(`DELETE FROM ${table} WHERE user = ?1 AND anime = ?2 AND at <= (SELECT at FROM gone WHERE user = ?1 AND anime = ?2)`).bind(user, anime));
+    }
+  }
+  let newest = 0;
+  for (const [episode, position] of Object.entries(title.eps ?? {})) {
+    newest = Math.max(newest, position.at);
+    out.push(db.prepare(`INSERT INTO positions (user, anime, episode, p, d, at) SELECT ?1, ?2, ?3, ?4, ?5, ?6 ${NOT_GONE.replace("?AT", "?6")}
+      ON CONFLICT (user, anime, episode) DO UPDATE SET p = excluded.p, d = excluded.d, at = excluded.at WHERE excluded.at > positions.at`)
+      .bind(user, anime, Number(episode), Math.round(position.p), Math.round(position.d), position.at));
+  }
+  if (title.dub !== undefined) {
+    newest = Math.max(newest, title.dub.at);
+    out.push(db.prepare(`INSERT INTO dubs (user, anime, id, title, at) SELECT ?1, ?2, ?3, ?4, ?5 ${NOT_GONE.replace("?AT", "?5")}
+      ON CONFLICT (user, anime) DO UPDATE SET id = excluded.id, title = excluded.title, at = excluded.at WHERE excluded.at > dubs.at`)
+      .bind(user, anime, title.dub.id, title.dub.title, title.dub.at));
+  }
+  if (title.secret !== undefined) {
+    newest = Math.max(newest, title.secret.at);
+    out.push(db.prepare(`INSERT INTO secrets (user, anime, "on", watched, at) SELECT ?1, ?2, ?3, ?4, ?5 ${NOT_GONE.replace("?AT", "?5")}
+      ON CONFLICT (user, anime) DO UPDATE SET "on" = excluded."on", watched = excluded.watched, at = excluded.at WHERE excluded.at > secrets.at`)
+      .bind(user, anime, title.secret.on ? 1 : 0, title.secret.watched, title.secret.at));
+  }
+  if (newest > 0) {
+    // Written after the title was finished: it is being watched again, and the tombstone goes.
+    out.push(db.prepare("DELETE FROM gone WHERE user = ?1 AND anime = ?2 AND at < ?3").bind(user, anime, newest));
+    out.push(db.prepare(`DELETE FROM positions WHERE user = ?1 AND anime = ?2 AND episode NOT IN
+      (SELECT episode FROM positions WHERE user = ?1 AND anime = ?2 ORDER BY at DESC LIMIT ${MAX_EPISODES})`).bind(user, anime));
+  }
+  return out;
+}
+
+/** Everything stored for one viewer, in the wire shape the clients read. */
+async function document(db: D1Database, user: number, now: number): Promise<Record<string, Title>> {
+  const titles: Record<string, Title> = {};
+  const title = (anime: number) => (titles[String(anime)] ??= {});
+  const [positions, dubs, secrets, gone] = await db.batch([
+    db.prepare("SELECT anime, episode, p, d, at FROM positions WHERE user = ?1").bind(user),
+    db.prepare("SELECT anime, id, title, at FROM dubs WHERE user = ?1").bind(user),
+    db.prepare('SELECT anime, "on", watched, at FROM secrets WHERE user = ?1').bind(user),
+    db.prepare("SELECT anime, at FROM gone WHERE user = ?1 AND at > ?2").bind(user, now - TOMBSTONE_TTL_MS),
+  ]);
+  for (const row of positions.results as { anime: number; episode: number; p: number; d: number; at: number }[]) {
+    (title(row.anime).eps ??= {})[String(row.episode)] = { p: row.p, d: row.d, at: row.at };
+  }
+  for (const row of dubs.results as { anime: number; id: number; title: string; at: number }[]) {
+    title(row.anime).dub = { id: row.id, title: row.title, at: row.at };
+  }
+  for (const row of secrets.results as { anime: number; on: number; watched: number; at: number }[]) {
+    title(row.anime).secret = { on: row.on === 1, watched: row.watched, at: row.at };
+  }
+  for (const row of gone.results as { anime: number; at: number }[]) {
+    if (titles[String(row.anime)] === undefined) titles[String(row.anime)] = { gone: row.at };
+  }
+  return titles;
 }
 
 /**
  * `GET /sync` and `POST /sync`, for any Shikimori user: the web whitelist does not apply here —
- * the apps' viewers sync too. The token only says whose document it is.
+ * the apps' viewers sync too. The token only says whose rows they are.
  */
 export async function handleSync(request: Request, env: Cloudflare.Env, now = Date.now()): Promise<Response> {
   const header = request.headers.get("Authorization") ?? "";
@@ -124,18 +134,18 @@ export async function handleSync(request: Request, env: Cloudflare.Env, now = Da
   const viewer = await whoami(token, (input, init) => fetch(input, init), Date.now);
   if (viewer === "unavailable") return json({ error: "unavailable" }, 502);
   if (viewer === null) return json({ error: "sign_in" }, 401);
-  const key = `u:${viewer.id}`;
+  const db = env.SYNC_DB;
 
-  if (request.method === "GET") {
-    return json({ titles: merge(await read(env, key), {}, now).titles });
+  if (request.method === "POST") {
+    const text = await request.text();
+    if (text.length > MAX_BODY) return json({ error: "parameters" }, 400);
+    let body: unknown;
+    try { body = JSON.parse(text); } catch { return json({ error: "parameters" }, 400); }
+    const incoming = parseTitles(body);
+    if (incoming === null) return json({ error: "parameters" }, 400);
+    const writes = Object.entries(incoming).flatMap(([anime, title]) => statements(db, viewer.id, Number(anime), title));
+    writes.push(db.prepare("DELETE FROM gone WHERE user = ?1 AND at <= ?2").bind(viewer.id, now - TOMBSTONE_TTL_MS));
+    await db.batch(writes);
   }
-  const text = await request.text();
-  if (text.length > MAX_BODY) return json({ error: "parameters" }, 400);
-  let body: unknown;
-  try { body = JSON.parse(text); } catch { return json({ error: "parameters" }, 400); }
-  const incoming = parseTitles(body);
-  if (incoming === null) return json({ error: "parameters" }, 400);
-  const merged = merge(await read(env, key), incoming, now);
-  await env.SYNC.put(key, JSON.stringify(merged));
-  return json({ titles: merged.titles });
+  return json({ titles: await document(db, viewer.id, now) });
 }

@@ -1,4 +1,4 @@
-import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
+import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import { defineConfig } from "vitest/config";
 
 // Tests run inside workerd through Miniflare, with the bindings from wrangler.toml,
@@ -8,6 +8,8 @@ import { defineConfig } from "vitest/config";
 // client id in wrangler.toml is public but irrelevant to a test, and the client secret
 // only ever exists as a `wrangler secret`, so a test needs one of its own. Neither of
 // these strings is a credential of anything.
+const migrations = await readD1Migrations("./migrations") // relative to infra/relay, where the tests run;
+
 export default defineConfig({
   plugins: [
     cloudflareTest({
@@ -17,8 +19,10 @@ export default defineConfig({
           SHIKIMORI_CLIENT_ID: "test-client-id",
           SHIKIMORI_CLIENT_SECRET: "test-client-secret",
           WEB_ALLOWED_SHIKIMORI_IDS: "42, 100",
+          TEST_MIGRATIONS: migrations,
         },
       },
     }),
   ],
+  test: { setupFiles: ["./test/apply-migrations.ts"] },
 });
