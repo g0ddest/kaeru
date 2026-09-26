@@ -24,7 +24,7 @@ struct QRScannerView: View {
                     VStack {
                         Spacer()
                         Text("Наведите камеру на QR-код на экране телевизора")
-                            .font(.callout).multilineTextAlignment(.center).foregroundStyle(.white)
+                            .font(.kaeruCallout).multilineTextAlignment(.center).foregroundStyle(.white)
                             .padding(16).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
                             .padding(24)
                     }

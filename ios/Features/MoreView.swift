@@ -17,12 +17,12 @@ struct MoreView: View {
                         }
                         .frame(width: 46, height: 46).clipShape(Circle())
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(model.session?.account.nickname ?? "Гость").font(.headline).foregroundStyle(Palette.ink)
+                            Text(model.session?.account.nickname ?? "Гость").font(.kaeruHeadline).foregroundStyle(Palette.ink)
                             Text(model.session == nil ? "Войдите в Shikimori" : "Аккаунт и настройки")
-                                .font(.footnote).foregroundStyle(Palette.inkSoft)
+                                .font(.kaeruFootnote).foregroundStyle(Palette.inkSoft)
                         }
                         Spacer(minLength: 0)
-                        Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                        Image(systemName: "chevron.right").font(.kaeruCaption.weight(.semibold))
                             .foregroundStyle(Palette.inkSoft).accessibilityHidden(true)
                     }
                     .padding(.vertical, 6).contentShape(Rectangle())

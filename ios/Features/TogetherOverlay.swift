@@ -113,7 +113,7 @@ private struct Notice: View {
     let text: String
     var body: some View {
         Text(text)
-            .font(.footnote.weight(.medium)).foregroundStyle(OnVideo.ink).lineLimit(1)
+            .font(.kaeruFootnote.weight(.medium)).foregroundStyle(OnVideo.ink).lineLimit(1)
             .padding(.horizontal, 12).padding(.vertical, 8)
             .onVideoChip()
             // Read out as it arrives, without taking focus off whatever the viewer was on.
@@ -131,9 +131,9 @@ private struct Wait: View {
     var exit: () -> Void
     var body: some View {
         HStack(spacing: 4) {
-            Text(wait.text).font(.footnote.weight(.medium)).foregroundStyle(OnVideo.ink).lineLimit(1)
+            Text(wait.text).font(.kaeruFootnote.weight(.medium)).foregroundStyle(OnVideo.ink).lineLimit(1)
             Button(TogetherCopy.exitLabel(wait.exit), action: exit)
-                .font(.footnote.weight(.semibold)).foregroundStyle(Palette.accent)
+                .font(.kaeruFootnote.weight(.semibold)).foregroundStyle(Palette.accent)
                 .padding(.horizontal, 6)
         }
         .padding(.leading, 12).padding(.trailing, 4).padding(.vertical, 6)
@@ -172,16 +172,16 @@ private struct Bubble: View {
     var replay: () -> Void
     var body: some View {
         HStack(spacing: 8) {
-            Text(item.author).font(.footnote.weight(.medium))
+            Text(item.author).font(.kaeruFootnote.weight(.medium))
                 .foregroundStyle(item.mine ? OnVideo.muted : Palette.accent).lineLimit(1)
             if let clip = item.clip {
                 Button(action: replay) {
                     Label(TogetherCopy.clipLength(clip.durationMs), systemImage: "play.fill")
-                        .font(.footnote).foregroundStyle(OnVideo.ink).monospacedDigit()
+                        .font(.kaeruFootnote).foregroundStyle(OnVideo.ink).monospacedDigit()
                 }
                 .buttonStyle(.plain).accessibilityLabel(TogetherCopy.replay)
             } else {
-                Text(item.text ?? "").font(.subheadline).foregroundStyle(OnVideo.ink).lineLimit(2)
+                Text(item.text ?? "").font(.kaeruSubheadline).foregroundStyle(OnVideo.ink).lineLimit(2)
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
@@ -223,10 +223,10 @@ private struct Controls: View {
                 .padding(.horizontal, 12).padding(.vertical, 10)
                 .onVideoChip()
             Button(TogetherCopy.send, action: send)
-                .font(.footnote.weight(.semibold)).foregroundStyle(Palette.accent)
+                .font(.kaeruFootnote.weight(.semibold)).foregroundStyle(Palette.accent)
                 .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             Button(TogetherCopy.close, action: close)
-                .font(.footnote).foregroundStyle(OnVideo.muted)
+                .font(.kaeruFootnote).foregroundStyle(OnVideo.muted)
         }
         .frame(width: OnVideo.columnWidth)
         .onAppear { writing = true }
@@ -274,14 +274,14 @@ private struct Controls: View {
     private func close() { composing = false; draft = "" }
     private func disc(_ glyph: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(glyph).font(.title3).frame(width: 44, height: 44).onVideoDisc()
+            Text(glyph).font(.kaeruTitle3).frame(width: 44, height: 44).onVideoDisc()
         }
         .buttonStyle(.plain).accessibilityLabel(label)
         .kaeruHover(.chip).kaeruHelp(label)
     }
     private func pill(_ text: String, muted: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(text).font(.footnote.weight(.medium)).foregroundStyle(muted ? OnVideo.muted : OnVideo.ink)
+            Text(text).font(.kaeruFootnote.weight(.medium)).foregroundStyle(muted ? OnVideo.muted : OnVideo.ink)
                 .lineLimit(1).padding(.horizontal, 16).frame(height: 44)
                 .onVideoChip(OnVideo.disc)
         }.buttonStyle(.plain)
@@ -356,7 +356,7 @@ struct TogetherHistorySheet: View {
                 } else {
                     List(conversation.history) { item in
                         HStack(alignment: .firstTextBaseline, spacing: 12) {
-                            Text(item.author).font(.caption.weight(.medium))
+                            Text(item.author).font(.kaeruCaption.weight(.medium))
                                 .foregroundStyle(item.mine ? Palette.inkSoft : Palette.accent)
                                 .frame(width: 72, alignment: .leading)
                             if let clip = item.clip {
@@ -373,7 +373,7 @@ struct TogetherHistorySheet: View {
                             }
                             Spacer(minLength: 0)
                             Text(item.at, format: .dateTime.hour().minute())
-                                .font(.caption).foregroundStyle(Palette.inkSoft).monospacedDigit()
+                                .font(.kaeruCaption).foregroundStyle(Palette.inkSoft).monospacedDigit()
                         }
                     }
                 }
@@ -411,7 +411,7 @@ struct TogetherChip: View {
                 }
             } label: {
                 Label(label, systemImage: "person.2.fill")
-                    .font(.footnote.weight(.medium)).lineLimit(1)
+                    .font(.kaeruFootnote.weight(.medium)).lineLimit(1)
                     .padding(.horizontal, 10).padding(.vertical, 5)
                     .onVideoChip(OnVideo.disc)
             }

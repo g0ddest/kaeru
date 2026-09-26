@@ -18,7 +18,7 @@ struct Artwork: View {
                 image.resizable().scaledToFill()
             } placeholder: {
                 Rectangle().fill(Palette.elevated)
-                    .overlay { Image(systemName: "film").font(.title).foregroundStyle(Palette.inkSoft) }
+                    .overlay { Image(systemName: "film").font(.kaeruTitle).foregroundStyle(Palette.inkSoft) }
             }
             .frame(width: proxy.size.width, height: proxy.size.width / shape.ratio)
             .clipped()
@@ -42,12 +42,31 @@ struct PosterView: View {
 /// White type on this holds in both appearances — it is a picture, not a surface of the page.
 struct Backdrop: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(AppModel.self) private var model
     let anime: Anime
     var body: some View {
         // Drawn inside a clear view of the offered size: a fill-scaled image is bigger than what it
         // was offered, and a stack that measures itself by it hands the caller a backdrop taller
         // than the frame it was asked for.
-        Color.clear.overlay { layers }.clipped().accessibilityHidden(true)
+        Color.clear.overlay {
+            if sizeClass == .regular, let still = model.stills[anime.id] { wide(still) } else { layers }
+        }
+        .clipped().accessibilityHidden(true)
+        // Wide windows get a frame from the episodes: the poster, drawn half a window across, was
+        // stretched well past its pixels. A phone keeps the poster, which fits its hero.
+        .task(id: anime.id) { if sizeClass == .regular { await model.loadStill(for: anime.id) } }
+    }
+    private func wide(_ still: URL) -> some View {
+        ZStack {
+            Palette.elevated
+            AsyncImage(url: still) { image in image.resizable().scaledToFill() } placeholder: { layers }
+            LinearGradient(stops: [
+                .init(color: .black.opacity(0.8), location: 0),
+                .init(color: .black.opacity(0.45), location: 0.45),
+                .init(color: .black.opacity(0.1), location: 1)
+            ], startPoint: .leading, endPoint: .trailing)
+            Palette.scrim(0.9)
+        }
     }
     private var layers: some View {
         ZStack {
@@ -138,7 +157,7 @@ struct EpisodeCard: View {
                     .overlay(alignment: .bottom) { Palette.scrim().clipShape(RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous)) }
                     .overlay(alignment: .bottomLeading) {
                         HStack(spacing: 7) {
-                            Image(systemName: "play.fill").font(.caption2)
+                            Image(systemName: "play.fill").font(.kaeruCaption2)
                             Text(caption).font(.kaeruCardCaption).monospacedDigit().lineLimit(1).minimumScaleFactor(0.55)
                         }
                         .foregroundStyle(.white)
@@ -181,7 +200,7 @@ struct EpisodeCard: View {
             EpisodeCardActions(anime: anime, episode: target.episode)
         } label: {
             Image(systemName: "ellipsis")
-                .font(.footnote.weight(.bold)).foregroundStyle(.white)
+                .font(.kaeruFootnote.weight(.bold)).foregroundStyle(.white)
                 .frame(width: 30, height: 30)
                 .background(.black.opacity(0.45), in: Circle())
         }
@@ -293,7 +312,7 @@ struct OfflineStrip: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     var body: some View {
         Text("Нет сети — доступны скачанные серии")
-            .font(.subheadline).foregroundStyle(Palette.inkSoft)
+            .font(.kaeruSubheadline).foregroundStyle(Palette.inkSoft)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Metrics.gutter(sizeClass)).padding(.vertical, 12)
             // Carried up behind the status bar, so the line and the clock above it read as one
@@ -314,7 +333,7 @@ struct ShelfHeader: View {
                 NavigationLink(value: route) {
                     HStack(spacing: 4) {
                         label
-                        Image(systemName: "chevron.right").font(.footnote.weight(.bold)).foregroundStyle(Palette.inkSoft)
+                        Image(systemName: "chevron.right").font(.kaeruFootnote.weight(.bold)).foregroundStyle(Palette.inkSoft)
                     }
                 }
                 .buttonStyle(.plain)
@@ -384,7 +403,7 @@ struct EpisodeUndoBar: View {
     var body: some View {
         if model.canUndoEpisodeChange {
             HStack(spacing: 16) {
-                Text("Просмотренные серии изменены").font(.subheadline)
+                Text("Просмотренные серии изменены").font(.kaeruSubheadline)
                 Spacer(minLength: 0)
                 Button("Отменить") { model.undoEpisodeChange() }.fontWeight(.semibold)
             }
@@ -412,7 +431,7 @@ struct TranslationChooser: View {
     var body: some View {
         NavigationStack {
             List {
-                Section { Text(anime.title).font(.headline) } footer: { Text("Выбор сохраняется для этого аниме.") }
+                Section { Text(anime.title).font(.kaeruHeadline) } footer: { Text("Выбор сохраняется для этого аниме.") }
                 if loading { ProgressView("Загружаем озвучки…") }
                 else if let failure { CatalogRetry(message: failure) { revision += 1 } }
                 else if translations.isEmpty { Text("Источник не предложил озвучки для этого аниме.").foregroundStyle(.secondary) }
@@ -425,8 +444,8 @@ struct TranslationChooser: View {
                             HStack {
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(translation.title).foregroundStyle(.primary)
-                                    if let kind = translation.kind { Text(kind == "subtitles" ? "Субтитры" : "Озвучка").font(.caption).foregroundStyle(.secondary) }
-                                    if translation.episodes > 0 { Text(verbatim: "\(translation.episodes) серий").font(.caption).foregroundStyle(.secondary) }
+                                    if let kind = translation.kind { Text(kind == "subtitles" ? "Субтитры" : "Озвучка").font(.kaeruCaption).foregroundStyle(.secondary) }
+                                    if translation.episodes > 0 { Text(verbatim: "\(translation.episodes) серий").font(.kaeruCaption).foregroundStyle(.secondary) }
                                 }
                                 Spacer()
                                 if model.titleTranslations[anime.id] == translation.id { Image(systemName: "checkmark").accessibilityLabel("Выбрано") }

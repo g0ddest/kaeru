@@ -104,9 +104,9 @@ struct VoiceButton: View {
                 }
             }
             .frame(width: CGFloat(VoiceLimits.bars) * 4, height: 22, alignment: .leading)
-            Text(TogetherCopy.clipLength(recorder.elapsedMs)).font(.footnote).monospacedDigit()
+            Text(TogetherCopy.clipLength(recorder.elapsedMs)).font(.kaeruFootnote).monospacedDigit()
                 .foregroundStyle(recorder.elapsedMs >= VoiceLimits.warningMs ? Color.orange : .white)
-            Text(TogetherCopy.voiceCancel).font(.caption)
+            Text(TogetherCopy.voiceCancel).font(.kaeruCaption)
                 .foregroundStyle(cancelling ? Color.red : Color.white.opacity(0.7))
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
@@ -126,7 +126,7 @@ struct VoiceButton: View {
     /// A press too short to be speech is a tap, and a tap on this button means the person does not
     /// know it is held. Saying so is the only affordance a sighted viewer gets.
     private var hint: some View {
-        Text(TogetherCopy.voiceHint).font(.caption).foregroundStyle(.white)
+        Text(TogetherCopy.voiceHint).font(.kaeruCaption).foregroundStyle(.white)
             .padding(.horizontal, 10).padding(.vertical, 6)
             .background(Color.black.opacity(0.62), in: Capsule())
             .fixedSize()

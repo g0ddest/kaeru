@@ -24,7 +24,7 @@ struct SettingsView: View {
                             AsyncImage(url: URL(string: account.avatar)) { image in image.resizable().scaledToFill() } placeholder: {
                                 Image(systemName: "person.crop.circle.fill").resizable().foregroundStyle(.secondary)
                             }.frame(width: 44, height: 44).clipShape(Circle()).accessibilityHidden(true)
-                            Text(account.nickname).font(.headline)
+                            Text(account.nickname).font(.kaeruHeadline)
                         }
                         if !model.pending.isEmpty { Text("Ожидает синхронизации: \(model.pending.count)").foregroundStyle(.secondary) }
                         Button("Синхронизировать") { Task { await model.flush(); await model.reloadLibrary() } }.disabled(model.syncing)
@@ -63,12 +63,12 @@ struct SettingsView: View {
                         }
                     })).disabled(updatingNotifications)
                     if model.notifications.authorizationStatus == .denied {
-                        Text("Уведомления запрещены в настройках системы.").font(.footnote).foregroundStyle(.secondary)
+                        Text("Уведомления запрещены в настройках системы.").font(.kaeruFootnote).foregroundStyle(.secondary)
                         Button("Открыть настройки") {
                             if let url = OperatingSystem.notificationSettings { openURL(url) }
                         }
                     }
-                    if let message = model.notifications.errorMessage { Text(message).font(.footnote).foregroundStyle(.secondary) }
+                    if let message = model.notifications.errorMessage { Text(message).font(.kaeruFootnote).foregroundStyle(.secondary) }
                 } header: { Text("Уведомления") } footer: {
                     #if os(iOS)
                     Text("Kaeru сообщит о новых сериях того, что вы смотрите. Время фоновой проверки определяет система.")
@@ -105,20 +105,20 @@ struct SettingsView: View {
                         Label(TogetherCopy.watchTogether, systemImage: "person.2.wave.2")
                     }
                     if model.together.phase == .live, let peer = model.together.peerName {
-                        Text("Подключён: \(peer)").font(.footnote).foregroundStyle(.secondary)
+                        Text("Подключён: \(peer)").font(.kaeruFootnote).foregroundStyle(.secondary)
                     }
                     // For the evening something goes wrong: what the room said and did, without
                     // the key. Off by default — nobody wants a file that grows on every viewing.
                     Toggle("Журнал сессии", isOn: Binding(get: { TogetherLog.enabled }, set: { TogetherLog.setEnabled($0) }))
                     Text("Для разбора неполадок: адрес комнаты, кадры и состояние плеера, без ключей. Файл — Library/Caches/together.log.")
-                        .font(.footnote).foregroundStyle(.secondary)
+                        .font(.kaeruFootnote).foregroundStyle(.secondary)
                 }
                 // Absent from a build made without a Firebase project, where it would change nothing.
                 if Reporting.available {
                     Section("Статистика") {
                         Toggle("Отправлять статистику и отчёты о сбоях", isOn: Binding(get: { Reporting.enabled }, set: { Reporting.setEnabled($0) }))
                         Text("Какие экраны открываются, какие серии запускаются и что ломается — без ников, комнат и переписки. Помогает чинить приложение.")
-                            .font(.footnote).foregroundStyle(.secondary)
+                            .font(.kaeruFootnote).foregroundStyle(.secondary)
                     }
                 }
                 Section {

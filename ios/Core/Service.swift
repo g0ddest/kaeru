@@ -14,11 +14,13 @@ import KaeruShared
     func resolve(_ id: Int, translation: Int, episode: Int) async throws -> Stream
     func seasonal(year: Int, season: String) async throws -> [Anime]
     func configureKodikToken(_ token: String)
+    func screenshots(_ id: Int) async throws -> [String]
 }
 
 extension AnimeService {
     func seasonal(year: Int, season: String) async throws -> [Anime] { try await discover() }
     func configureKodikToken(_ token: String) {}
+    func screenshots(_ id: Int) async throws -> [String] { [] }
 }
 
 /// A request the server answered with something other than success, carried as a number.
@@ -77,6 +79,7 @@ struct AppConfiguration {
     func configureKodikToken(_ token: String) { api.configureKodikToken(token: token) }
     func search(_ query: String) async throws -> [Anime] { try await decode([Anime].self) { api.search(query: query, completionHandler: $0) } }
     func details(_ id: Int) async throws -> Anime { try await decode(Anime.self) { api.details(animeId: Int32(id), completionHandler: $0) } }
+    func screenshots(_ id: Int) async throws -> [String] { try await decode([String].self) { api.screenshots(animeId: Int32(id), completionHandler: $0) } }
     func library(_ userID: Int64, token: String) async throws -> [LibraryItem] { try await decode([LibraryItem].self) { api.library(userId: userID, accessToken: token, completionHandler: $0) } }
     func exchange(_ code: String) async throws -> Tokens { try await decode(Tokens.self) { api.exchange(code: code, completionHandler: $0) } }
     func refresh(_ token: String) async throws -> Tokens { try await decode(Tokens.self) { api.refresh(refreshToken: token, completionHandler: $0) } }

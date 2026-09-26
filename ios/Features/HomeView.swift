@@ -160,11 +160,11 @@ struct HomeView: View {
                                     Text(verbatim: "\(anime.episodesAired + 1) серия").font(.kaeruCardCaption).foregroundStyle(Palette.inkSoft)
                                     if let date = anime.nextAirDate {
                                         Text(date, format: .dateTime.weekday().day().month().hour().minute())
-                                            .font(.caption).foregroundStyle(Palette.inkSoft)
+                                            .font(.kaeruCaption).foregroundStyle(Palette.inkSoft)
                                     }
                                 }
                                 Spacer(minLength: 0)
-                                Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                                Image(systemName: "chevron.right").font(.kaeruCaption.weight(.semibold))
                                     .foregroundStyle(Palette.inkSoft).accessibilityHidden(true)
                             }
                             .padding(.vertical, 9)

@@ -162,7 +162,7 @@ struct RootView: View {
                         Label(section.title, systemImage: section.icon).tag(section)
                     }
                 } header: {
-                    if let title = group.0 { Text(title).font(.footnote.weight(.semibold)).foregroundStyle(Palette.inkSoft) }
+                    if let title = group.0 { Text(title).font(.kaeruFootnote.weight(.semibold)).foregroundStyle(Palette.inkSoft) }
                 }
             }
         }
@@ -188,7 +188,7 @@ struct RootView: View {
                 }
                 .frame(width: 30, height: 30).clipShape(Circle())
                 Text(model.session?.account.nickname ?? "Гость")
-                    .font(.subheadline.weight(.medium)).foregroundStyle(Palette.ink).lineLimit(1)
+                    .font(.kaeruSubheadline.weight(.medium)).foregroundStyle(Palette.ink).lineLimit(1)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 18).padding(.vertical, 12)

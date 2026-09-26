@@ -68,18 +68,18 @@ struct DownloadsView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(verbatim: "\(entry.episode) серия").font(.headline)
+                    Text(verbatim: "\(entry.episode) серия").font(.kaeruHeadline)
                     Text("\(entry.quality > 0 ? "\(entry.quality)p" : "Лучшее качество") · \(entry.translationTitle ?? "Озвучка \(entry.translation)")")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.kaeruCaption).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 12)
                 if entry.state == .completed, let onPlay {
-                    Button { onPlay(entry) } label: { Image(systemName: "play.circle.fill").font(.title2) }
+                    Button { onPlay(entry) } label: { Image(systemName: "play.circle.fill").font(.kaeruTitle2) }
                         .buttonStyle(.borderless)
                         .accessibilityLabel("Смотреть серию \(entry.episode)")
                         .kaeruHelp("Смотреть серию \(entry.episode)")
                 } else {
-                    Menu { actions(entry) } label: { Image(systemName: "ellipsis.circle").font(.title3) }
+                    Menu { actions(entry) } label: { Image(systemName: "ellipsis.circle").font(.kaeruTitle3) }
                         .accessibilityLabel("Действия с серией \(entry.episode)")
                         .kaeruHelp("Действия с серией \(entry.episode)")
                 }
@@ -94,7 +94,7 @@ struct DownloadsView: View {
                     .foregroundStyle(entry.state == .failed ? Color.red : Color.secondary)
                 Spacer()
                 if entry.bytes > 0 { Text(ByteCountFormatter.string(fromByteCount: entry.bytes, countStyle: .file)).foregroundStyle(.secondary) }
-            }.font(.caption)
+            }.font(.kaeruCaption)
         }.padding(.vertical, 4)
     }
 

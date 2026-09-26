@@ -41,6 +41,10 @@ class NativeApi internal constructor(
     /** A trimmed, nonblank token overrides automatic lookup; blank resets it and clears its cache. */
     fun configureKodikToken(token: String) = kodik.configureToken(token)
 
+    /** A JSON array of absolute image addresses; empty when the title has no screenshots. */
+    @Throws(Exception::class)
+    suspend fun screenshots(animeId: Int): String = wireJson.encodeToString(shikimori.screenshots(animeId))
+
     @Throws(Exception::class)
     suspend fun details(animeId: Int): String = wireJson.encodeToString(shikimori.details(animeId))
 

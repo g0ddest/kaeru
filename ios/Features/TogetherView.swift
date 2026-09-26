@@ -18,7 +18,7 @@ struct TogetherView: View {
             }
             Section("Комната") {
                 if let link = manager.invitation?.shareURL.absoluteString {
-                    Text(link).font(.footnote).textSelection(.enabled)
+                    Text(link).font(.kaeruFootnote).textSelection(.enabled)
                     #if os(macOS)
                     Button(TogetherCopy.copyInvitation, systemImage: "doc.on.doc") { Pasteboard.copy(link) }
                     #endif
@@ -34,14 +34,14 @@ struct TogetherView: View {
                     // A swallowed error here was a button that did nothing at all: the one thing
                     // that can be wrong with a pasted invitation is the invitation, and saying so
                     // is the difference between a typo and a broken app.
-                    if let linkError { Text(linkError).font(.footnote).foregroundStyle(.red) }
+                    if let linkError { Text(linkError).font(.kaeruFootnote).foregroundStyle(.red) }
                 }
             }
             if manager.phase == .live {
                 Section("Чат") {
                     ForEach(Array(manager.messages.filter { $0.t == .chat }.suffix(30)), id: \.seq) { item in
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(item.name ?? "Собеседник").font(.caption).foregroundStyle(.secondary)
+                            Text(item.name ?? "Собеседник").font(.kaeruCaption).foregroundStyle(.secondary)
                             Text(item.text ?? "")
                         }
                     }

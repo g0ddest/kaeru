@@ -119,7 +119,7 @@ struct CastControlsView: View {
             Section {
                 Label(manager.receiverName ?? "Chromecast", systemImage: "tv")
                 if let selection = manager.state.selection {
-                    Text(selection.anime.title).font(.headline)
+                    Text(selection.anime.title).font(.kaeruHeadline)
                     Text("Серия \(selection.episode)").foregroundStyle(.secondary)
                 }
                 if case .suspended = manager.connection {
@@ -150,7 +150,7 @@ struct CastControlsView: View {
                         Text(time(scrubbing ? scrubPosition : manager.state.position))
                         Spacer()
                         Text(time(manager.state.duration))
-                    }.font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    }.font(.kaeruCaption.monospacedDigit()).foregroundStyle(.secondary)
                 }
                 HStack(spacing: 32) {
                     Spacer()
@@ -163,7 +163,7 @@ struct CastControlsView: View {
                     Button { manager.seek(to: manager.state.position + 10) } label: { Image(systemName: "goforward.10") }
                         .accessibilityLabel("Вперёд на 10 секунд")
                     Spacer()
-                }.font(.title2).buttonStyle(.borderless).frame(minHeight: 44).disabled(busy)
+                }.font(.kaeruTitle2).buttonStyle(.borderless).frame(minHeight: 44).disabled(busy)
             }
             if manager.state.selection != nil {
                 Section {
@@ -209,7 +209,7 @@ struct CastMiniControls: View {
                     Label {
                         VStack(alignment: .leading) {
                             Text(manager.state.selection?.anime.title ?? "Chromecast").lineLimit(1)
-                            Text(manager.receiverName ?? "").font(.caption).foregroundStyle(.secondary)
+                            Text(manager.receiverName ?? "").font(.kaeruCaption).foregroundStyle(.secondary)
                         }
                     } icon: { Image(systemName: "tv") }
                 }.buttonStyle(.plain)

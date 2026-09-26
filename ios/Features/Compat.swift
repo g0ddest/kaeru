@@ -278,3 +278,64 @@ enum OperatingSystem {
         #endif
     }
 }
+
+/// SwiftUI text styles, sized for reading on a Mac. On macOS the styles are fixed and small — body
+/// 13 pt against the iPad's 17 — and ignore Dynamic Type, so the Mac gets sizes of its own here;
+/// iPhone and iPad keep the system styles and everything Dynamic Type does to them.
+extension Font {
+    #if os(macOS)
+    static let kaeruLargeTitle: Font = .system(size: 30, weight: .bold)
+    #else
+    static let kaeruLargeTitle: Font = .largeTitle
+    #endif
+    #if os(macOS)
+    static let kaeruTitle: Font = .system(size: 26, weight: .bold)
+    #else
+    static let kaeruTitle: Font = .title
+    #endif
+    #if os(macOS)
+    static let kaeruTitle2: Font = .system(size: 21, weight: .bold)
+    #else
+    static let kaeruTitle2: Font = .title2
+    #endif
+    #if os(macOS)
+    static let kaeruTitle3: Font = .system(size: 18, weight: .semibold)
+    #else
+    static let kaeruTitle3: Font = .title3
+    #endif
+    #if os(macOS)
+    static let kaeruHeadline: Font = .system(size: 15, weight: .semibold)
+    #else
+    static let kaeruHeadline: Font = .headline
+    #endif
+    #if os(macOS)
+    static let kaeruBody: Font = .system(size: 15)
+    #else
+    static let kaeruBody: Font = .body
+    #endif
+    #if os(macOS)
+    static let kaeruCallout: Font = .system(size: 14)
+    #else
+    static let kaeruCallout: Font = .callout
+    #endif
+    #if os(macOS)
+    static let kaeruSubheadline: Font = .system(size: 14)
+    #else
+    static let kaeruSubheadline: Font = .subheadline
+    #endif
+    #if os(macOS)
+    static let kaeruFootnote: Font = .system(size: 13)
+    #else
+    static let kaeruFootnote: Font = .footnote
+    #endif
+    #if os(macOS)
+    static let kaeruCaption: Font = .system(size: 12)
+    #else
+    static let kaeruCaption: Font = .caption
+    #endif
+    #if os(macOS)
+    static let kaeruCaption2: Font = .system(size: 11)
+    #else
+    static let kaeruCaption2: Font = .caption2
+    #endif
+}

@@ -80,7 +80,12 @@ class KodikClient(
 
     /** A trimmed, nonblank token overrides the scraped one; blank resets it and clears its cache. */
     fun configureToken(token: String) {
-        tokens.store(TokenState(configured = token.trim().takeIf { it.isNotEmpty() }))
+        val configured = token.trim().takeIf { it.isNotEmpty() }
+        // Settings are saved often and send the same value each time. Only a different key starts
+        // over; the same blank one would throw away the public key and fetch it again on the next
+        // episode, a whole extra round trip to Kodik before the picture.
+        if (tokens.load().configured == configured) return
+        tokens.store(TokenState(configured = configured))
     }
 
     /** The tracks Kodik offers for an anime, in the order it lists them. */

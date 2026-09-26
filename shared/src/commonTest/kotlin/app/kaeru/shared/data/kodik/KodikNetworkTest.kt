@@ -181,10 +181,12 @@ class KodikNetworkTest {
             api.configureKodikToken(" ")
             api.forgetTranslations(42); api.translations(42)
             api.forgetTranslations(42); api.translations(42)
+            // The apps send the same blank value again every time settings are saved: that is not
+            // a change, and must not throw away the key already fetched.
             api.configureKodikToken("")
             api.forgetTranslations(42); api.translations(42)
-            assertEquals(listOf("public1", "private-first", "private-second", "public2", "public2", "public3"), sent)
-            assertEquals(3, scripts)
+            assertEquals(listOf("public1", "private-first", "private-second", "public2", "public2", "public2"), sent)
+            assertEquals(2, scripts)
         } finally { api.close() }
     }
 

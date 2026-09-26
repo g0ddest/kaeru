@@ -16,16 +16,10 @@ struct LibraryView: View {
         var id: Self { self }
         var label: String { self == .updated ? "По обновлению" : "По названию" }
     }
-    private var entries: [LibraryItem] {
-        model.library.filter {
-            (mode == .recent || $0.status == status.rawValue)
-                && (query.isEmpty || $0.anime.title.localizedCaseInsensitiveContains(query) || $0.anime.originalTitle.localizedCaseInsensitiveContains(query))
-        }.sorted {
-            let lhs = CatalogPresentation.date($0.updatedAt), rhs = CatalogPresentation.date($1.updatedAt)
-            if (mode == .recent || sort == .updated) && lhs != rhs { return lhs > rhs }
-            if $0.anime.title == $1.anime.title { return $0.anime.id < $1.anime.id }
-            return CatalogPresentation.titlePrecedes($0.anime.title, $1.anime.title)
-        }
+    @State private var listing: LibraryListing?
+    @State private var listingKey = 0
+    private var request: LibraryQuery {
+        LibraryQuery(recent: mode == .recent, status: status.rawValue, text: self.query, byTitle: sort == .title)
     }
     var body: some View {
         Group {
@@ -37,13 +31,16 @@ struct LibraryView: View {
                         .buttonStyle(.borderedProminent).tint(Palette.accent).disabled(model.signingIn)
                 }
             } else {
+                let key = LibraryListingCache.key(model.library, request)
+                // The list built for exactly this, or the last one while the new one is built.
+                let current = LibraryListingCache[key] ?? listing
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
                         HStack {
                             if mode == .list {
                                 Picker("Статус", selection: $status) {
                                     ForEach(WatchStatus.allCases) { value in
-                                        Text("\(value.title) (\(model.library.filter { $0.status == value.rawValue }.count))").tag(value)
+                                        Text("\(value.title) (\(current?.counts[value.rawValue] ?? 0))").tag(value)
                                     }
                                 }.pickerStyle(.menu).tint(Palette.inkSoft).accessibilityIdentifier("library-filter")
                             }
@@ -51,10 +48,11 @@ struct LibraryView: View {
                             if model.syncing { ProgressView().controlSize(.small).accessibilityLabel("Синхронизация") }
                             else if !model.pending.isEmpty { Image(systemName: "icloud.and.arrow.up").foregroundStyle(Palette.inkSoft).accessibilityLabel("Ожидает синхронизации") }
                         }
-                        if entries.isEmpty { empty }
+                        if let current, listingKey == key || LibraryListingCache[key] != nil {
+                        if current.items.isEmpty { empty }
                         else {
                             CatalogGrid {
-                                ForEach(entries, id: \.anime.id) { item in
+                                ForEach(current.items, id: \.anime.id) { item in
                                     let total = max(item.anime.episodes, item.anime.availableEpisodes, item.episodes)
                                     NavigationLink(value: item.anime) {
                                         AnimeCard(anime: item.anime, caption: total > 0 ? "\(item.episodes) из \(total) серий" : "Серии ещё не вышли",
@@ -64,11 +62,23 @@ struct LibraryView: View {
                                 }
                             }
                         }
+                        } else {
+                            ProgressView("Загружаем список…").frame(maxWidth: .infinity).padding(.top, 40)
+                        }
                     }
                     .padding(.horizontal, Metrics.gutter(sizeClass)).padding(.vertical, 16)
                     .frame(maxWidth: Metrics.contentWidth).frame(maxWidth: .infinity)
                 }
                 .background(Palette.canvas)
+                .task(id: key) {
+                    if let cached = LibraryListingCache[key] { listing = cached; listingKey = key; return }
+                    let library = model.library, request = request
+                    let built = await Task.detached(priority: .userInitiated) { LibraryListing.build(library, request) }.value
+                    guard !Task.isCancelled else { return }
+                    LibraryListingCache[key] = built
+                    listing = built
+                    listingKey = key
+                }
                 .searchable(text: $query, prompt: mode == .recent ? "Среди недавних" : "В моём списке")
                 .kaeruRefreshable { await model.reloadLibrary(); await model.flush() }
                 .toolbar {

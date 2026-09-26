@@ -125,7 +125,7 @@ struct PlayerScreen: View {
     @ViewBuilder private var offers: some View {
         VStack(alignment: .trailing, spacing: 12) {
             if playback.finished && !playback.nextEpisode.offered {
-                Text("Серия просмотрена").font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                Text("Серия просмотрена").font(.kaeruSubheadline.weight(.semibold)).foregroundStyle(.white)
                     .padding(.horizontal, 14).padding(.vertical, 9)
                     .background(.black.opacity(0.62), in: Capsule())
             }
@@ -151,7 +151,7 @@ struct PlayerScreen: View {
                 if hint == .forward { Spacer(minLength: 0) }
                 Label(hint == .back ? "−\(playback.skipSeconds) с" : "+\(playback.skipSeconds) с",
                       systemImage: hint == .back ? "gobackward" : "goforward")
-                    .font(.headline).monospacedDigit().foregroundStyle(.white)
+                    .font(.kaeruHeadline).monospacedDigit().foregroundStyle(.white)
                     .padding(.horizontal, 18).padding(.vertical, 12)
                     .background(.black.opacity(0.55), in: Capsule())
                 if hint == .back { Spacer(minLength: 0) }
@@ -179,10 +179,10 @@ struct PlayerScreen: View {
     }
     private var nextEpisodeLabel: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(verbatim: "Серия \(playback.episode + 1)").font(.headline)
+            Text(verbatim: "Серия \(playback.episode + 1)").font(.kaeruHeadline)
             if let countdown = playback.nextEpisode.countdown {
-                Text("Начнётся через \(countdown) с").font(.subheadline).monospacedDigit()
-            } else { Text("Следующая серия").font(.subheadline).foregroundStyle(.secondary) }
+                Text("Начнётся через \(countdown) с").font(.kaeruSubheadline).monospacedDigit()
+            } else { Text("Следующая серия").font(.kaeruSubheadline).foregroundStyle(.secondary) }
         }.accessibilityElement(children: .combine)
     }
     private var nextEpisodeButtons: some View {

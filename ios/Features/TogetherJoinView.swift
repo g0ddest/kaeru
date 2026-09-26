@@ -65,7 +65,7 @@ struct TogetherJoinView: View {
                     }
                     // A poster-shaped placeholder rather than a spinner in a box: what is missing
                     // here is the artwork, and the column must not resize when it lands.
-                    .overlay { Image(systemName: "person.2.fill").font(.largeTitle).foregroundStyle(Palette.inkSoft) }
+                    .overlay { Image(systemName: "person.2.fill").font(.kaeruLargeTitle).foregroundStyle(Palette.inkSoft) }
             }
         }
         .frame(width: posterWidth, height: posterWidth * 1.5)
@@ -75,9 +75,9 @@ struct TogetherJoinView: View {
     private var waiting: some View {
         VStack(spacing: 12) {
             ProgressView()
-            Text(TogetherCopy.connecting).font(.headline).foregroundStyle(Palette.ink)
+            Text(TogetherCopy.connecting).font(.kaeruHeadline).foregroundStyle(Palette.ink)
             Text("Ждём, что скажет друг — какую серию и с какой минуты.")
-                .font(.subheadline).foregroundStyle(Palette.inkSoft).multilineTextAlignment(.center)
+                .font(.kaeruSubheadline).foregroundStyle(Palette.inkSoft).multilineTextAlignment(.center)
             Button(TogetherCopy.notNow) { onDismiss() }
                 .buttonStyle(.plain).foregroundStyle(Palette.accent).padding(.top, 8)
         }
@@ -86,10 +86,10 @@ struct TogetherJoinView: View {
     private func invitation(_ episode: TogetherEpisode) -> some View {
         VStack(spacing: 12) {
             Text(TogetherCopy.invites(target.peerName))
-                .font(.title2.weight(.semibold)).foregroundStyle(Palette.ink)
+                .font(.kaeruTitle2.weight(.semibold)).foregroundStyle(Palette.ink)
                 .multilineTextAlignment(.center)
             Text(line(episode))
-                .font(.subheadline).foregroundStyle(Palette.inkSoft).multilineTextAlignment(.center)
+                .font(.kaeruSubheadline).foregroundStyle(Palette.inkSoft).multilineTextAlignment(.center)
             Button { onWatch(episode) } label: {
                 Text(TogetherCopy.join).frame(maxWidth: .infinity)
             }
@@ -101,7 +101,7 @@ struct TogetherJoinView: View {
             // Said here rather than at the first press of the microphone: this is the moment a
             // person decides whether to be in a conversation at all.
             Text(TogetherCopy.micNote)
-                .font(.footnote).foregroundStyle(Palette.inkSoft)
+                .font(.kaeruFootnote).foregroundStyle(Palette.inkSoft)
                 .multilineTextAlignment(.center).padding(.top, 8)
         }
     }
@@ -109,7 +109,7 @@ struct TogetherJoinView: View {
     private func failed(_ message: String) -> some View {
         VStack(spacing: 12) {
             Text(message)
-                .font(.headline).foregroundStyle(Palette.ink).multilineTextAlignment(.center)
+                .font(.kaeruHeadline).foregroundStyle(Palette.ink).multilineTextAlignment(.center)
             if target.retryable {
                 Button { onRetry() } label: { Text(TogetherCopy.retry).frame(maxWidth: .infinity) }
                     .buttonStyle(.borderedProminent).tint(Palette.accent).foregroundStyle(Palette.onAccent)

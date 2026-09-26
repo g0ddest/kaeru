@@ -20,6 +20,12 @@ internal class ShikimoriFacade(private val client: ShikimoriClient) {
         return client.catalogue(season = "${season}_$year").map(::anime).distinctBy { it.id }.withRealPosters()
     }
 
+    /** Frames from the episodes, full size where Shikimori has it: the wide artwork a poster is not. */
+    suspend fun screenshots(animeId: Int): List<String> {
+        require(animeId > 0) { "Anime id must be positive." }
+        return client.screenshots(animeId).mapNotNull { shikimoriUrl(it.original?.ifBlank { null } ?: it.preview) }
+    }
+
     suspend fun details(animeId: Int): Anime {
         require(animeId > 0) { "Anime id must be positive." }
         return listOf(anime(client.anime(animeId))).withRealPosters().single()

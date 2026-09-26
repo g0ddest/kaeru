@@ -52,6 +52,19 @@ class NativeApiTest {
         } finally { api.close() }
     }
 
+    @Test fun screenshotsGiveAbsoluteFullSizeFramesAndPreviewOnlyAsFallback() = runTest {
+        val api = api { request ->
+            assertEquals("/api/animes/21/screenshots", request.url.encodedPath)
+            respond("""[{"original":"/system/screenshots/original/a.jpg","preview":"/system/screenshots/x332/a.jpg"},{"preview":"/system/screenshots/x332/b.jpg"},{}]""", headers = headers)
+        }
+        try {
+            assertEquals(
+                listOf("https://shikimori.io/system/screenshots/original/a.jpg", "https://shikimori.io/system/screenshots/x332/b.jpg"),
+                api.screenshots(21).array().map { it.jsonPrimitive.content },
+            )
+        } finally { api.close() }
+    }
+
     @Test fun discoverLoadsOnlyPopularOngoing() = runTest {
         val statuses = mutableListOf<String>()
         val api = api { request ->

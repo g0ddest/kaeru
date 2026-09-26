@@ -107,7 +107,7 @@ struct HeroCarousel: View {
     private func turn(_ step: Int, systemImage: String, label: String) -> some View {
         Button { show((index + step + titles.count) % titles.count) } label: {
             Image(systemName: systemImage)
-                .font(.title3.weight(.semibold)).foregroundStyle(.white)
+                .font(.kaeruTitle3.weight(.semibold)).foregroundStyle(.white)
                 .frame(width: 36, height: 36)
                 .background(.black.opacity(0.4), in: Circle())
         }
@@ -144,12 +144,12 @@ private struct HeroPage: View {
                     .lineLimit(3).minimumScaleFactor(0.7)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(caption)
-                    .font(.subheadline).foregroundStyle(.white.opacity(0.85))
+                    .font(.kaeruSubheadline).foregroundStyle(.white.opacity(0.85))
                     .lineLimit(typeSize.isAccessibilitySize ? 4 : 2)
                     .fixedSize(horizontal: false, vertical: true)
                 Button(action: play) {
                     Label(target.position > 0 ? "Продолжить" : "Смотреть", systemImage: "play.fill")
-                        .font(.headline).lineLimit(1).minimumScaleFactor(0.6)
+                        .font(.kaeruHeadline).lineLimit(1).minimumScaleFactor(0.6)
                         .padding(.horizontal, 22).padding(.vertical, 12)
                         .background(.white, in: Capsule())
                         .foregroundStyle(.black)

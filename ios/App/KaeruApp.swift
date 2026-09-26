@@ -19,7 +19,7 @@ struct KaeruApp: App {
         // `.newItem` instead took the whole File menu with it, Close included. A group rather than
         // a single `Window` all the same: closing it does not quit an app whose player is still
         // playing. «Каталог» (⌘0) and the Dock bring it back (Mac/CatalogueWindow.swift).
-        WindowGroup(id: CatalogueWindow.id) { root.frame(minWidth: 900, minHeight: 600).catalogueWindow() }
+        WindowGroup(id: CatalogueWindow.id) { root.frame(minWidth: 900, minHeight: 600).font(.kaeruBody).catalogueWindow() }
             .defaultSize(width: 1280, height: 820)
             .windowResizability(.contentMinSize)
             .commandsRemoved()
@@ -31,7 +31,7 @@ struct KaeruApp: App {
         // The player: one window, as there is one playback at a time (`AppModel.playersOpen`).
         // Never brought back at launch — an empty player is nothing to restore — and not in the
         // Window menu, which would open it with nothing to show.
-        Window("Плеер", id: PlayerWindow.id) { PlayerWindow() }
+        Window("Плеер", id: PlayerWindow.id) { PlayerWindow().font(.kaeruBody) }
             // A window of the first rank. A single `Window` is otherwise an associated one, which
             // only follows another window into full screen: the green button, F and a double
             // click did nothing at all.

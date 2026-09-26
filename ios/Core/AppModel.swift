@@ -118,6 +118,16 @@ import AuthenticationServices
         }
     }
 
+    /// A frame from the episodes for each title that asked, for wide artwork: a poster stretched
+    /// across a hero is a blur of pixels. Asked once per title per launch; none is remembered as none.
+    private(set) var stills: [Int: URL] = [:]
+    @ObservationIgnored private var stillsAsked = Set<Int>()
+    func loadStill(for id: Int) async {
+        guard stillsAsked.insert(id).inserted else { return }
+        guard let first = try? await service.screenshots(id).first, let url = URL(string: first) else { return }
+        stills[id] = url
+    }
+
     init(service: any AnimeService, store: any LocalStorage, configuration: AppConfiguration, session: Session? = nil,
          saveSession: @escaping (Session?) throws -> Void = { try KeychainSession.write($0) }) {
         self.service = service; self.store = store; self.configuration = configuration; self.session = session; self.saveSession = saveSession

@@ -36,10 +36,10 @@ struct SearchView: View {
                                     // click; a phone adds from here with the button below.
                                     .kaeruContextMenu { if model.session != nil { LibraryStatusMenu(anime: anime) } }
                                 if model.rate(for: anime.id) != nil {
-                                    Label("В списке", systemImage: "checkmark").font(.caption).foregroundStyle(Palette.inkSoft)
+                                    Label("В списке", systemImage: "checkmark").font(.kaeruCaption).foregroundStyle(Palette.inkSoft)
                                 } else if model.session != nil {
                                     Button("В планы", systemImage: "plus") { model.queueRate(anime: anime, status: "planned", episodes: 0) }
-                                        .font(.subheadline).buttonStyle(.bordered).tint(Palette.accent)
+                                        .font(.kaeruSubheadline).buttonStyle(.bordered).tint(Palette.accent)
                                         .accessibilityLabel("Добавить \(anime.title) в планы")
                                 }
                             }

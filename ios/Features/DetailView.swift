@@ -29,7 +29,7 @@ struct DetailView: View {
                 VStack(alignment: .leading, spacing: 26) {
                     header(height: max(proxy.size.height * 0.38, headerFloor))
                     summary.padding(.horizontal, Metrics.gutter(sizeClass))
-                    if loading { ProgressView("Обновляем информацию…").font(.footnote).padding(.horizontal, Metrics.gutter(sizeClass)) }
+                    if loading { ProgressView("Обновляем информацию…").font(.kaeruFootnote).padding(.horizontal, Metrics.gutter(sizeClass)) }
                     if let failure { CatalogRetry(message: failure) { revision += 1 }.padding(.horizontal, Metrics.gutter(sizeClass)) }
                     episodeSection.padding(.horizontal, Metrics.gutter(sizeClass))
                     if !anime.plainDescription.isEmpty {
@@ -38,7 +38,7 @@ struct DetailView: View {
                             Text(anime.plainDescription).foregroundStyle(Palette.inkSoft)
                                 .lineLimit(descriptionExpanded ? nil : 4).textSelection(.enabled)
                             Button(descriptionExpanded ? "Свернуть" : "Читать полностью") { descriptionExpanded.toggle() }
-                                .font(.subheadline.weight(.semibold)).tint(Palette.accent)
+                                .font(.kaeruSubheadline.weight(.semibold)).tint(Palette.accent)
                         }.padding(.horizontal, Metrics.gutter(sizeClass))
                     }
                 }
@@ -86,14 +86,14 @@ struct DetailView: View {
                 Text(anime.title).font(.kaeruHero(sizeClass != .regular)).foregroundStyle(.white)
                     .lineLimit(3).minimumScaleFactor(0.7).fixedSize(horizontal: false, vertical: true)
                 if !anime.originalTitle.isEmpty {
-                    Text(anime.originalTitle).font(.subheadline).foregroundStyle(.white.opacity(0.75)).lineLimit(2)
+                    Text(anime.originalTitle).font(.kaeruSubheadline).foregroundStyle(.white.opacity(0.75)).lineLimit(2)
                 }
-                Text(facts).font(.footnote).foregroundStyle(.white.opacity(0.85))
+                Text(facts).font(.kaeruFootnote).foregroundStyle(.white.opacity(0.85))
                     .lineLimit(3).fixedSize(horizontal: false, vertical: true)
                 if target.canPlay {
                     Button { play(target.episode) } label: {
                         Label(playLabel, systemImage: "play.fill")
-                            .font(.headline).lineLimit(1).minimumScaleFactor(0.8)
+                            .font(.kaeruHeadline).lineLimit(1).minimumScaleFactor(0.8)
                             .padding(.horizontal, 22).padding(.vertical, 12)
                             .background(.white, in: Capsule()).foregroundStyle(.black)
                     }
@@ -103,7 +103,7 @@ struct DetailView: View {
                         Label(waitingLabel, systemImage: "calendar")
                         if let date = anime.nextAirDate { Text(date, format: .dateTime.day().month().hour().minute()) }
                     }
-                    .font(.subheadline).foregroundStyle(.white.opacity(0.9)).padding(.top, 4)
+                    .font(.kaeruSubheadline).foregroundStyle(.white.opacity(0.9)).padding(.top, 4)
                 }
             }
             .frame(maxWidth: 560, alignment: .leading)
@@ -131,7 +131,7 @@ struct DetailView: View {
                 LibraryStatusMenu(anime: anime).buttonStyle(.bordered).tint(Palette.inkSoft).controlSize(.large)
                 if let rate {
                     Stepper("Просмотрено: \(rate.episodes)", value: Binding(get: { model.rate(for: anime.id)?.episodes ?? 0 }, set: { model.setEpisodes(anime: anime, count: $0) }), in: 0...max(totalEpisodes, rate.episodes))
-                        .font(.subheadline).foregroundStyle(Palette.ink).accessibilityIdentifier("watched-episodes")
+                        .font(.kaeruSubheadline).foregroundStyle(Palette.ink).accessibilityIdentifier("watched-episodes")
                 }
             }
         }
@@ -140,7 +140,7 @@ struct DetailView: View {
         if totalEpisodes > 0 {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Серии").font(.kaeruShelf(sizeClass != .regular)).foregroundStyle(Palette.ink)
-                Text(verbatim: "Просмотрено \(rate?.episodes ?? 0) из \(totalEpisodes)").font(.subheadline).foregroundStyle(Palette.inkSoft)
+                Text(verbatim: "Просмотрено \(rate?.episodes ?? 0) из \(totalEpisodes)").font(.kaeruSubheadline).foregroundStyle(Palette.inkSoft)
                 // Rows, not tiles. A grid gives every tile in a row the height of the tallest, so a
                 // progress bar on one episode meant an empty track under all the others — sixteen
                 // dark boxes with a blank line in each, which read as a form nobody had filled in.
@@ -171,17 +171,17 @@ struct DetailView: View {
             VStack(spacing: 0) {
                 HStack(spacing: 14) {
                     Image(systemName: watched ? "checkmark.circle.fill" : available ? "play.circle" : "clock")
-                        .font(.title3)
+                        .font(.kaeruTitle3)
                         .foregroundStyle(watched ? Palette.accent : Palette.inkSoft)
                         .frame(width: 28)
                         .accessibilityHidden(true)
                     Text("\(episode) серия")
-                        .font(.body.weight(.medium)).monospacedDigit()
+                        .font(.kaeruBody.weight(.medium)).monospacedDigit()
                         .foregroundStyle(available ? Palette.ink : Palette.inkSoft)
                     Spacer(minLength: 8)
                     if let caption {
                         Text(caption.text)
-                            .font(.subheadline).monospacedDigit().foregroundStyle(Palette.inkSoft).lineLimit(1)
+                            .font(.kaeruSubheadline).monospacedDigit().foregroundStyle(Palette.inkSoft).lineLimit(1)
                             .accessibilityLabel(caption.spoken)
                     }
                 }

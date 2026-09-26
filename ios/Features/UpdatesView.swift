@@ -31,7 +31,7 @@ struct UpdatesView: View {
                         // Under the block it is about, never in place of it: a release already
                         // found stays on screen when the check that would have refreshed it fails.
                         if let message = updates.message {
-                            Text(message).font(.subheadline).foregroundStyle(.red)
+                            Text(message).font(.kaeruSubheadline).foregroundStyle(.red)
                                 .accessibilityIdentifier("update-error")
                         }
                         if updates.canCheck {
@@ -80,7 +80,7 @@ struct UpdatesView: View {
                 headline(UpdateCopy.available(release.version))
                 if let line = UpdateCopy.releaseLine(release) { note(line) }
                 if !release.notes.isEmpty {
-                    Text(release.notes).font(.subheadline).foregroundStyle(Palette.inkSoft)
+                    Text(release.notes).font(.kaeruSubheadline).foregroundStyle(Palette.inkSoft)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 // One press either way, and the sentence above it says which door it opens: iOS
@@ -97,19 +97,19 @@ struct UpdatesView: View {
 
     /// What this part of the page is about: a version, an outcome, a state.
     private func headline(_ text: String) -> some View {
-        Text(text).font(.headline).foregroundStyle(Palette.ink)
+        Text(text).font(.kaeruHeadline).foregroundStyle(Palette.ink)
     }
 
     /// The quiet line under it: a date, a size, a sentence saying what happens next.
     private func note(_ text: String) -> some View {
-        Text(text).font(.subheadline).foregroundStyle(Palette.inkSoft)
+        Text(text).font(.kaeruSubheadline).foregroundStyle(Palette.inkSoft)
             .fixedSize(horizontal: false, vertical: true)
     }
 
     /// One named part of the page: a quiet heading and prose under it, no card and no rule.
     private func section<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(title).font(.footnote.weight(.semibold)).foregroundStyle(Palette.inkSoft)
+            Text(title).font(.kaeruFootnote.weight(.semibold)).foregroundStyle(Palette.inkSoft)
                 .textCase(.uppercase).kerning(0.6)
             content()
         }
@@ -133,8 +133,8 @@ struct UpdateStrip: View {
         NavigationLink(value: UpdatesRoute()) {
             HStack(spacing: 8) {
                 Text(UpdateCopy.available(version))
-                    .font(.subheadline).foregroundStyle(Palette.inkSoft).lineLimit(1)
-                Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                    .font(.kaeruSubheadline).foregroundStyle(Palette.inkSoft).lineLimit(1)
+                Image(systemName: "chevron.right").font(.kaeruCaption.weight(.semibold))
                     .foregroundStyle(Palette.inkSoft).accessibilityHidden(true)
                 Spacer(minLength: 0)
             }
