@@ -8,7 +8,8 @@ plugins {
 
 kotlin {
     androidTarget()
-    listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->
+    // The Mac app is Apple silicon only: macosX64 is deprecated in Kotlin 2.3, so Xcode keeps ARCHS = arm64.
+    listOf(iosArm64(), iosSimulatorArm64(), macosArm64()).forEach { target ->
         target.binaries.framework {
             baseName = "KaeruShared"
             isStatic = true
@@ -21,7 +22,7 @@ kotlin {
             implementation(libs.coroutines.core)
         }
         androidMain.dependencies { implementation(libs.ktor.client.okhttp) }
-        iosMain.dependencies { implementation(libs.ktor.client.darwin) }
+        appleMain.dependencies { implementation(libs.ktor.client.darwin) }
         commonTest {
             kotlin.srcDir(layout.buildDirectory.dir("generated/testFixtures"))
             dependencies {
