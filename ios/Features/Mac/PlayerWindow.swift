@@ -1,3 +1,4 @@
+import KaeruShared
 import SwiftUI
 import AppKit
 

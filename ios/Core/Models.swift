@@ -14,15 +14,15 @@ struct Anime: Codable, Identifiable, Hashable {
     var nextEpisodeAt = ""
     var kind: String? = nil
     var studios: [String]? = nil
-    var availableEpisodes: Int { status == "released" ? max(episodes, episodesAired) : episodesAired }
+    /// Episodes there to watch: aired so far while it airs, the announced total once it is out,
+    /// nothing for an announcement (the shared rule, as on Android).
+    var availableEpisodes: Int { EpisodeQueue.availableEpisodes(status: status, episodes: episodes, episodesAired: episodesAired) }
     var nextAirDate: Date? { ISODate.parse(nextEpisodeAt, fractional: false) }
     /// Whether `episode` is the last one: the announced count reached, and no next episode on the
     /// schedule. Shikimori's announced count lags behind a show that got longer — 12 announced, a
     /// 13th in four days — and offering «завершить» there was wrong.
     func endsWith(_ episode: Int, now: Date = Date()) -> Bool {
-        guard episodes > 0, episode >= episodes else { return false }
-        if let next = nextAirDate, next > now { return false }
-        return true
+        EpisodeQueue.offerCompletion(episode: episode, announced: episodes, nextEpisodeAt: nextAirDate, now: now)
     }
     var subtitle: String { [year, episodes > 0 ? "\(episodes) эп." : nil, score.isEmpty ? nil : "★ \(score)"].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ") }
     var plainDescription: String {
@@ -96,7 +96,7 @@ struct EpisodeProgress: Codable, Equatable {
     var position: Double
     var duration: Double
     var updatedAt = Date()
-    var watched: Bool { duration.isFinite && duration > 0 && position.isFinite && position >= duration * 0.9 }
+    var watched: Bool { isWatched(threshold: 0.9) }
 }
 
 /// When a title's dub was chosen, and what it is called: what sync needs beside the id, which is

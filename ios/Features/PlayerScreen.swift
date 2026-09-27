@@ -1,3 +1,4 @@
+import KaeruShared
 import SwiftUI
 
 struct PlayerScreen: View {
@@ -255,9 +256,9 @@ struct PlayerOptionsMenu: View {
                 }
             }.disabled(playback.episodeCount == 0)
             Menu("Озвучка") {
-                ForEach(playback.translations) { value in
+                ForEach(playback.rankedTranslations) { value in
                     choice(value.title, selected: value.id == playback.translation) { playback.selectTranslation(value.id) }
-                        .disabled(value.episodes > 0 && value.episodes < playback.episode)
+                        .disabled(TranslationPreference.lacks(value, episode: playback.episode))
                 }
             }.disabled(playback.translations.isEmpty)
             Menu("Качество") {

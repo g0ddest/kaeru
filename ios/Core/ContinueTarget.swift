@@ -53,10 +53,3 @@ struct ContinueTargetCache {
         return value
     }
 }
-
-extension EpisodeProgress {
-    var started: Bool { position >= 60 || (duration > 0 && position / duration >= 0.02) }
-    func isWatched(threshold: Double) -> Bool {
-        duration.isFinite && duration > 0 && position.isFinite && position >= duration * threshold
-    }
-}

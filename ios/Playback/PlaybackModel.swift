@@ -1,4 +1,5 @@
 import AVKit
+import KaeruShared
 import Observation
 
 struct PlaybackSnapshot: Equatable {
@@ -112,7 +113,9 @@ enum PlaybackLocalAction {
     var pipOnLeave: Bool { model.preferences.pipOnLeave }
     var skipSeconds: Int { model.preferences.skipSeconds }
     var castManager: CastManager { model.cast }
-    var hasNext: Bool { episode > 0 && episode < episodeCount }
+    /// The dubs in the shared ranking's order, for the menu.
+    var rankedTranslations: [Translation] { model.rankedTranslations(for: anime.id, available: translations) }
+    var hasNext: Bool { episode > 0 && EpisodeQueue.hasNext(episode: episode, available: episodeCount) }
     var episodeCount: Int {
         // A missing episode in this dub may be served by another eligible dub. The user's
         // remembered preference is retained so it can become available again next episode.
@@ -151,7 +154,7 @@ enum PlaybackLocalAction {
     private var sceneActive = true
     private var intent = PlaybackIntent()
     private var policy = PlaybackPolicy()
-    private var marks = SkipMarks()
+    private var marks = SkipMarks.empty
     private var marksAsked = false
     private var completedEpisode: Int?
     private var interruptionPaused = false
@@ -237,7 +240,7 @@ enum PlaybackLocalAction {
     }
     private func resumePosition(for episode: Int) -> Double {
         guard let progress = model.progressFor(animeID: anime.id, episode: episode) else { return 0 }
-        return PlaybackPolicy.resume(position: progress.position, duration: progress.duration, threshold: model.preferences.watchedThreshold)
+        return EpisodeRules.resumePosition(position: progress.position, duration: progress.duration, threshold: model.preferences.watchedThreshold)
     }
     /// Another title, opened in this player — what a friend in a shared viewing did when they
     /// picked a different show from their home screen. The room says «episode 7 of 62391», and a
@@ -261,7 +264,7 @@ enum PlaybackLocalAction {
         beginResolve(position: position ?? resumePosition(for: value), play: play)
     }
     func selectTranslation(_ value: Int) {
-        guard !loading, let choice = translations.first(where: { $0.id == value }), choice.episodes == 0 || choice.episodes >= episode else { return }
+        guard !loading, let choice = translations.first(where: { $0.id == value }), !TranslationPreference.lacks(choice, episode: episode) else { return }
         save(); retried = false
         beginResolve(position: safePosition, play: intent.wantsPlayback, explicitTranslation: value)
     }
@@ -329,14 +332,12 @@ enum PlaybackLocalAction {
     }
     func skipCurrent() {
         guard let offer = marks.offer(position: safePosition, duration: duration) else { return }
-        switch offer.kind {
-        case .opening: seek(to: offer.interval.end)
-        case .ending: if hasNext { finishEnding() }
-        }
+        if offer.kind == .opening { seek(to: offer.interval.end) }
+        else if hasNext { finishEnding() }
     }
     func nextNow() {
         guard hasNext else { return }
-        if let ending = marks.accepted(duration: duration).ending, ending.contains(safePosition) { completeCurrentEpisode() }
+        if marks.insideEnding(position: safePosition, duration: duration) { completeCurrentEpisode() }
         selectEpisode(episode + 1, position: 0)
     }
     func cancelAutoplay() { policy.cancelAutoplay(); tick() }
@@ -480,7 +481,7 @@ enum PlaybackLocalAction {
         if abs(position - lastSavedPosition) >= 5 || ended { save() }
         updateMediaControls()
         if !synchronizationControlled,
-           policy.automaticSkip(marks: marks, position: position, duration: duration, playing: isPlaying,
+           policy.automaticSkip(marks: marks, position: position, duration: duration,
                                 ending: autoSkipEnding && episodeCount > 0) == .finishEnding {
             finishEnding(); return
         }
@@ -512,7 +513,7 @@ enum PlaybackLocalAction {
         intent.userSetPlaying(play); player.pause()
         timeoutTask?.cancel(); marksTask?.cancel(); itemObservation = nil; readyItem = nil
         player.replaceCurrentItem(with: nil)
-        marksAsked = false; marks = SkipMarks(); skipOffer = nil; nextEpisode = NextEpisodeState()
+        marksAsked = false; marks = .empty; skipOffer = nil; nextEpisode = NextEpisodeState()
         policy.didSeek(to: requestedPosition); lastSavedPosition = -1
         // Behind every other deadline: whatever goes wrong — a request cancelled and never
         // replaced, a model closed under the screen's feet — «Открываем серию…» has to become

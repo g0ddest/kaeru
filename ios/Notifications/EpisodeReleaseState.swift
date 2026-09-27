@@ -27,7 +27,7 @@ struct EpisodeReleaseState: Codable {
             let next = item.episodes + 1
             guard !pairs.contains(next) else { continue }
             known[id, default: []].insert(next)
-            guard !progress.contains(where: { $0.animeID == id && $0.episode == next && $0.position.isFinite && ($0.position >= 60 || ($0.duration.isFinite && $0.duration > 0 && $0.position / $0.duration >= 0.02)) }) else { continue }
+            guard !progress.contains(where: { $0.animeID == id && $0.episode == next && $0.started }) else { continue }
             releases.append(EpisodeRelease(animeID: id, title: item.anime.title, episode: next, aired: available))
         }
         return releases

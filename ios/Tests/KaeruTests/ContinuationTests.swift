@@ -34,6 +34,37 @@ final class ContinuationTests: XCTestCase {
         XCTAssertEqual(TranslationPreference.pick(tracks, episode: 3, remembered: 1, studios: [], usage: [:]), 2)
         XCTAssertEqual(TranslationPreference.pick(tracks, episode: 2, remembered: 1, studios: [], usage: [:]), 1)
     }
+    /// The shared ranking through the Swift face: the viewer's studios, then habit, then the
+    /// shipped studios, a dub before subtitles. Ids and counts come back as plain Ints.
+    func testRankingThroughTheSharedRules() {
+        let tracks = [Translation(id: 1, title: "Субтитры AniLibria", episodes: 12, kind: "subtitles"),
+                      Translation(id: 2, title: "Studio Band", episodes: 12, kind: "voice"),
+                      Translation(id: 3, title: "AniLibria", episodes: 12, kind: "voice")]
+        XCTAssertEqual(TranslationPreference.ranked(tracks, remembered: nil, studios: [], usage: [:]).map(\.id), [3, 1, 2])
+        XCTAssertEqual(TranslationPreference.ranked(tracks, remembered: nil, studios: ["band"], usage: [:]).map(\.id), [2, 3, 1])
+        let usage = TranslationPreference.usage([10: 2, 11: 2, 12: 3])
+        XCTAssertEqual(usage, [2: 2, 3: 1])
+        XCTAssertEqual(TranslationPreference.pick(tracks, episode: 1, remembered: nil, studios: [], usage: usage), 2)
+        XCTAssertEqual(TranslationPreference.pick([], episode: 1, remembered: nil, studios: [], usage: [:]), 0)
+    }
+    /// As on Android: a finished show has its announced total, an announcement nothing, and a
+    /// status nobody recognises counts as finished.
+    func testAvailableEpisodesFollowTheSharedRule() {
+        XCTAssertEqual(Anime(id: 1, title: "", episodes: 12, episodesAired: 13, status: "released").availableEpisodes, 12)
+        XCTAssertEqual(Anime(id: 1, title: "", episodes: 0, episodesAired: 5, status: "released").availableEpisodes, 5)
+        XCTAssertEqual(Anime(id: 1, title: "", episodes: 12, episodesAired: 3, status: "ongoing").availableEpisodes, 3)
+        XCTAssertEqual(Anime(id: 1, title: "", episodes: 12, episodesAired: 2, status: "anons").availableEpisodes, 0)
+        XCTAssertEqual(Anime(id: 1, title: "", episodes: 12, episodesAired: 0, status: "").availableEpisodes, 12)
+    }
+    func testFinaleOffersCompletionOnlyWithNothingScheduled() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let finale = Anime(id: 1, title: "", episodes: 12, episodesAired: 12, status: "ongoing")
+        XCTAssertTrue(finale.endsWith(12, now: now))
+        XCTAssertFalse(finale.endsWith(11, now: now))
+        var longer = finale; longer.nextEpisodeAt = "2027-01-20T10:00:00Z"
+        XCTAssertFalse(longer.endsWith(12, now: now))
+        XCTAssertFalse(Anime(id: 1, title: "", episodes: 0, episodesAired: 5, status: "ongoing").endsWith(5, now: now))
+    }
 }
 
 /// The memo in front of the continuation rule. Everything here is about how often the answer is

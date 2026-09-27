@@ -22,9 +22,6 @@ enum CatalogPresentation {
         guard value.count >= 2 else { return queries }
         return Array(([value] + queries.filter { $0.caseInsensitiveCompare(value) != .orderedSame }).prefix(5))
     }
-    static func titlePrecedes(_ lhs: String, _ rhs: String) -> Bool {
-        lhs.compare(rhs, options: [.caseInsensitive, .numeric], locale: Locale(identifier: "ru")) == .orderedAscending
-    }
     static func date(_ value: String?) -> Date {
         guard let value else { return .distantPast }
         return ISODate.parse(value) ?? .distantPast

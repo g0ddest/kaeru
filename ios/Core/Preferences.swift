@@ -33,7 +33,8 @@ struct PlaybackPreferences: Codable, Equatable {
         set { spatialAudio = newValue }
     }
 
-    static let defaultStudios = ["AniLibria", "AniDUB", "Crunchyroll", "Amazing Dubbing", "AniBaza", "AniMaunt", "JAM", "Dream Cast", "SHIZA Project"]
+    /// The studios the app ships with (the shared ranker's list), shown until the viewer edits their own.
+    static var defaultStudios: [String] { TranslationPreference.defaultStudios }
 
     mutating func normalize() {
         playbackSpeed = playbackSpeed.isFinite ? min(2, max(0.5, playbackSpeed)) : 1
@@ -65,20 +66,5 @@ enum AppAppearance: String, CaseIterable, Identifiable, Sendable {
         case .light: "Светлая"
         case .dark: "Тёмная"
         }
-    }
-}
-
-enum TranslationPreference {
-    static func pick(_ available: [Translation], episode: Int, remembered: Int?, studios: [String], usage: [Int: Int]) -> Int {
-        let eligible = available.enumerated().filter { $0.element.episodes == 0 || $0.element.episodes >= episode }
-        func rank(_ title: String, _ values: [String]) -> Int {
-            values.firstIndex { !$0.isEmpty && title.localizedCaseInsensitiveContains($0) } ?? values.count
-        }
-        return eligible.min { left, right in
-            let a = left.element, b = right.element
-            let ar = [a.id == remembered ? 0 : 1, rank(a.title, studios), -(usage[a.id] ?? 0), rank(a.title, PlaybackPreferences.defaultStudios), a.kind == "subtitles" ? 1 : 0, -a.episodes, left.offset]
-            let br = [b.id == remembered ? 0 : 1, rank(b.title, studios), -(usage[b.id] ?? 0), rank(b.title, PlaybackPreferences.defaultStudios), b.kind == "subtitles" ? 1 : 0, -b.episodes, right.offset]
-            return ar.lexicographicallyPrecedes(br)
-        }?.element.id ?? 0
     }
 }

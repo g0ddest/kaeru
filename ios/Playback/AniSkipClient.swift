@@ -1,4 +1,5 @@
 import Foundation
+import KaeruShared
 
 /// Best-effort community metadata. A failure never prevents video playback.
 actor AniSkipClient {
@@ -8,7 +9,22 @@ actor AniSkipClient {
         var episode: Int
         var length: Int
         var fetchedAt: Date
-        var marks: SkipMarks
+        var marks: StoredMarks
+    }
+    /// The marks as the cache file has always spelled them — seconds, `{"start":…,"end":…}` — so a
+    /// cache written before the rules moved to shared/ still reads.
+    private struct StoredMarks: Codable {
+        struct Interval: Codable { var start: Double; var end: Double }
+        var opening: Interval?
+        var ending: Interval?
+        init(_ marks: SkipMarks) {
+            opening = marks.opening.map { Interval(start: $0.start, end: $0.end) }
+            ending = marks.ending.map { Interval(start: $0.start, end: $0.end) }
+        }
+        var marks: SkipMarks {
+            SkipMarks(opening: opening.map { SkipInterval(start: $0.start, end: $0.end) },
+                      ending: ending.map { SkipInterval(start: $0.start, end: $0.end) })
+        }
     }
     private var rows: [Row] = []
     private let session: URLSession
@@ -29,40 +45,42 @@ actor AniSkipClient {
         struct Result: Decodable { var skipType: String?; var interval: Interval }
         struct Response: Decodable { var found: Bool?; var results: [Result]? }
         let response = try JSONDecoder().decode(Response.self, from: data)
-        guard response.found == true else { return SkipMarks() }
-        var marks = SkipMarks()
+        guard response.found == true else { return .empty }
+        // The first plausible one of each kind wins, through the shared sieve, as on Android.
+        let length = duration.mediaMilliseconds
+        var opening: SkipInterval?, ending: SkipInterval?
         for result in response.results ?? [] {
             let interval = SkipInterval(start: result.interval.startTime ?? 0, end: result.interval.endTime ?? 0)
             switch result.skipType {
             case "op", "mixed-op":
-                if marks.opening == nil { marks.opening = SkipMarks(opening: interval).accepted(duration: duration).opening }
+                if opening == nil { opening = SkipRules.shared.opening(interval: interval, durationMs: length) }
             case "ed", "mixed-ed":
-                if marks.ending == nil { marks.ending = SkipMarks(ending: interval).accepted(duration: duration).ending }
+                if ending == nil { ending = SkipRules.shared.ending(interval: interval, durationMs: length) }
             default: break
             }
         }
-        return marks
+        return SkipMarks(opening: opening, ending: ending)
     }
     func marks(animeID: Int, episode: Int, duration: Double) async throws -> SkipMarks {
-        guard let request = Self.request(animeID: animeID, episode: episode, duration: duration) else { return SkipMarks() }
+        guard let request = Self.request(animeID: animeID, episode: episode, duration: duration) else { return .empty }
         let length = Int(duration.rounded()), now = Date()
         let cached = rows.filter { $0.animeID == animeID && $0.episode == episode && abs($0.length - length) <= 2 }
             .min { abs($0.length - length) < abs($1.length - length) }
-        if let cached, now.timeIntervalSince(cached.fetchedAt) < 7 * 86400 { return cached.marks.accepted(duration: duration) }
+        if let cached, now.timeIntervalSince(cached.fetchedAt) < 7 * 86400 { return cached.marks.marks.accepted(duration: duration) }
         let marks: SkipMarks
         do {
             let (data, response) = try await session.data(for: request)
             try Task.checkCancellation()
-            guard let response = response as? HTTPURLResponse else { return cached?.marks.accepted(duration: duration) ?? SkipMarks() }
-            if response.statusCode == 404 { marks = SkipMarks() }
+            guard let response = response as? HTTPURLResponse else { return cached?.marks.marks.accepted(duration: duration) ?? .empty }
+            if response.statusCode == 404 { marks = .empty }
             else if (200..<300).contains(response.statusCode) { marks = try Self.decode(data, duration: duration) }
-            else { return cached?.marks.accepted(duration: duration) ?? SkipMarks() }
+            else { return cached?.marks.marks.accepted(duration: duration) ?? .empty }
         } catch {
             if Task.isCancelled { throw CancellationError() }
-            return cached?.marks.accepted(duration: duration) ?? SkipMarks()
+            return cached?.marks.marks.accepted(duration: duration) ?? .empty
         }
         rows.removeAll { $0.animeID == animeID && $0.episode == episode && abs($0.length - length) <= 2 }
-        rows.append(Row(animeID: animeID, episode: episode, length: cached?.length ?? length, fetchedAt: now, marks: marks))
+        rows.append(Row(animeID: animeID, episode: episode, length: cached?.length ?? length, fetchedAt: now, marks: StoredMarks(marks)))
         if let cacheURL, let data = try? JSONEncoder().encode(rows) { try? data.write(to: cacheURL, options: .atomic) }
         return marks
     }

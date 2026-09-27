@@ -373,8 +373,13 @@ import AuthenticationServices
         return status
     }
     func preferredTranslation(for animeID: Int, available: [Translation], episode: Int) -> Int {
-        let usage = titleTranslations.values.reduce(into: [Int: Int]()) { $0[$1, default: 0] += 1 }
-        return TranslationPreference.pick(available, episode: episode, remembered: titleTranslations[animeID], studios: preferences.studios, usage: usage)
+        TranslationPreference.pick(available, episode: episode, remembered: titleTranslations[animeID], studios: preferences.studios,
+                                   usage: TranslationPreference.usage(titleTranslations))
+    }
+    /// The dubs in the order a chooser shows them: the shared ranking, as Android's sheet has it.
+    func rankedTranslations(for animeID: Int, available: [Translation]) -> [Translation] {
+        TranslationPreference.ranked(available, remembered: titleTranslations[animeID], studios: preferences.studios,
+                                     usage: TranslationPreference.usage(titleTranslations))
     }
     func rememberTranslation(_ id: Int, title: String = "", for animeID: Int) {
         guard id > 0 else { return }
@@ -428,7 +433,7 @@ import AuthenticationServices
         targets.invalidate()
         progress[anime.id] = value; recentAnime[anime.id] = anime
         episodeHistory["\(anime.id):\(value.episode)"] = value
-        let watched = value.duration > 0 && value.position >= value.duration * preferences.watchedThreshold
+        let watched = value.isWatched(threshold: preferences.watchedThreshold)
         let suppressed = suppressedMarks[anime.id].map { value.episode >= $0 } ?? false
         let shouldQueue = watched && !suppressed && session != nil && value.episode > (rate(for: anime.id)?.episodes ?? 0)
         let secret = isSecret(anime.id)

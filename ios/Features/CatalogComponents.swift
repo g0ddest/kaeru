@@ -424,14 +424,8 @@ struct TranslationChooser: View {
     @State private var loading = true
     @State private var failure: String?
     @State private var revision = 0
-    private var ordered: [Translation] {
-        let preferred = model.preferredTranslation(for: anime.id, available: translations, episode: max(1, model.continueTarget(for: anime).episode))
-        return translations.sorted { lhs, rhs in
-            if lhs.id == preferred { return rhs.id != preferred }
-            if rhs.id == preferred { return false }
-            return CatalogPresentation.titlePrecedes(lhs.title, rhs.title)
-        }
-    }
+    /// The shared ranking, best first — the order the player picks from, as on Android.
+    private var ordered: [Translation] { model.rankedTranslations(for: anime.id, available: translations) }
     var body: some View {
         NavigationStack {
             List {
