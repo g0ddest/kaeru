@@ -9,11 +9,6 @@
   Списки и прогресс — на Shikimori, видео — Kodik.
 </p>
 
-<p align="center">
-  <a href="https://github.com/g0ddest/kaeru/releases">Скачать для Android и Android TV</a> ·
-  <a href="https://kaeru.vitaliy.velikodniy.name/">Открыть в браузере</a>
-</p>
-
 ## Что умеет
 
 - **Следующая серия одним нажатием.** «Продолжить 7 серию» на главной и в карточке тайтла сразу включает
@@ -37,7 +32,7 @@
 | Android и Android TV | `android/` (Kotlin, Compose, Media3) | APK из [Releases](https://github.com/g0ddest/kaeru/releases) — один на телефон и ТВ |
 | iPhone и iPad | `ios/` (SwiftUI, AVKit) | сборка из Xcode, см. `ios/README.md` |
 | macOS | `ios/` — цель `KaeruMac` из того же кода | сборка из Xcode; `.dmg` с Developer ID — `ios/Scripts/release-mac.sh` |
-| Браузер | `web/` (React, Vite, hls.js) | [kaeru.vitaliy.velikodniy.name](https://kaeru.vitaliy.velikodniy.name/) — вход по белому списку Shikimori id |
+| Браузер | `web/` (React, Vite, hls.js) | личный, вход по белому списку Shikimori id |
 
 ## Структура
 

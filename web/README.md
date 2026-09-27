@@ -1,8 +1,7 @@
 # Kaeru для браузера
 
 Веб-клиент Kaeru: главная, поиск, карточка тайтла, «Мой список», свой плеер (hls.js, в Safari — встроенный
-HLS), синхронизация между устройствами и «Смотреть украдкой». Живёт на
-[kaeru.vitaliy.velikodniy.name](https://kaeru.vitaliy.velikodniy.name/). Войти может только аккаунт
+HLS), синхронизация между устройствами и «Смотреть украдкой». Личный: войти может только аккаунт
 Shikimori из белого списка воркера (`WEB_ALLOWED_SHIKIMORI_IDS`, см. `infra/relay/README.md`).
 
 Спецификация: `docs/superpowers/specs/2026-09-24-kaeru-web-design.md`; планы —
