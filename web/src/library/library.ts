@@ -5,7 +5,14 @@ import type { authorized } from "../auth/session";
 import type { Anime, EpisodeProgress, LibraryEntry, ListStatus, UserRate } from "../domain/models";
 import { offerCompletion } from "../domain/progress";
 import type { ProgressStore } from "./progress";
-import { SecretStore, type SecretTitle } from "./secret";
+import {
+  episodesToSendWhenTurnedOff,
+  secretFinished,
+  SecretStore,
+  watchedAfterMark,
+  watchedWhenTurnedOn,
+  type SecretTitle,
+} from "./secret";
 
 export type LibraryState =
   | { kind: "idle" }
@@ -87,7 +94,7 @@ function completes(anime: Anime, counted: number): boolean {
 
 // A secret title has no «Перевести в завершённые?»: it is done once a finished show is all watched.
 function secretDone(anime: Anime, watched: number): boolean {
-  return anime.status === "released" && completes(anime, watched);
+  return secretFinished(anime.status === "released", anime.episodes, watched, anime.nextEpisodeAt, Date.now());
 }
 
 // What «Мой список» and the rest see of a secret title: its own count, never Shikimori's.
@@ -171,7 +178,7 @@ export class Library {
    */
   setSecret(anime: Anime): Promise<void> {
     if (this.secrets.get(anime.id)?.on === true) return Promise.resolve();
-    const watched = this.view.get(anime.id)?.rate.episodes ?? 0;
+    const watched = watchedWhenTurnedOn(this.view.get(anime.id)?.rate.episodes ?? null);
     this.secrets.set(anime.id, { on: true, watched, at: this.now() }, anime);
     return Promise.resolve();
   }
@@ -210,7 +217,9 @@ export class Library {
     const at = this.now();
     const secret = this.secrets.get(anime.id);
     if (secret?.on === true) {
-      if (target > secret.watched) this.secrets.set(anime.id, { on: true, watched: target, at });
+      // Like a rate's count, marking never takes it back.
+      const watched = watchedAfterMark(secret.watched, Math.max(secret.watched, target));
+      if (watched !== null) this.secrets.set(anime.id, { on: true, watched, at });
       return Promise.resolve({ suggestCompleted: false });
     }
     return this.write<{ suggestCompleted: boolean }>(
@@ -277,8 +286,10 @@ export class Library {
   }
 
   private unmarkSecret(animeId: number, episode: number, previous: number): () => Promise<void> {
-    if (episode < 1 || previous < episode) return NOTHING_TO_UNDO;
-    this.secrets.set(animeId, { on: true, watched: episode - 1, at: this.now() });
+    // Only a counted episode comes off, and the count goes back to the one before it.
+    const watched = episode >= 1 && previous >= episode ? watchedAfterMark(previous, episode - 1) : null;
+    if (watched === null) return NOTHING_TO_UNDO;
+    this.secrets.set(animeId, { on: true, watched, at: this.now() });
     const forgotten = this.deps.progress.removeFrom(animeId, episode);
     return async () => {
       const held = this.secrets.get(animeId);
@@ -305,9 +316,10 @@ export class Library {
         return { anime: entry.anime, rate: { ...entry.rate, status, episodes, updatedAt: at } };
       },
       async (confirmed) => {
+        const episodes = episodesToSendWhenTurnedOff(count, confirmed?.rate.episodes ?? null);
         if (!confirmed) {
           const userId = this.account();
-          const fields = count > 0 ? { status, episodes: count } : { status };
+          const fields = episodes !== null ? { status, episodes } : { status };
           const created = await this.deps.authorized((token) =>
             this.deps.shikimori.createRate(token, userId, anime.id, fields),
           );
@@ -315,7 +327,7 @@ export class Library {
         }
         const fields: { status?: ListStatus; episodes?: number } = {};
         if (confirmed.rate.status !== status) fields.status = status;
-        if (count > confirmed.rate.episodes) fields.episodes = count;
+        if (episodes !== null) fields.episodes = episodes;
         if (fields.status === undefined && fields.episodes === undefined) return { entry: undefined, result: undefined };
         const patched = await this.patch(confirmed.rate.id, fields);
         const rate: UserRate = { ...confirmed.rate, id: patched.id, status, episodes: patched.episodes, updatedAt: this.now() };

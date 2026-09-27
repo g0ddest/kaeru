@@ -1,4 +1,45 @@
 import type { Anime } from "../domain/models";
+import { offerCompletion } from "../domain/progress";
+
+// «Смотреть украдкой» decisions (spec 2026-09-26-kaeru-sync-design.md §4), as the shared module's
+// SecretRules has them and src/sync/vectors.test.ts checks them. «Counted» is the episode count
+// Shikimori's rate holds for the title; null when there is no rate.
+
+/**
+ * Every episode of a released show is behind the viewer, and no next one is scheduled after `nowMs`:
+ * the title is done, as a title turned «Завершено» is, and sync leaves a tombstone for it. Zero
+ * `announcedEpisodes` is a length not known, which never finishes.
+ */
+export function secretFinished(
+  released: boolean,
+  announcedEpisodes: number,
+  watched: number,
+  nextEpisodeAtMs: number | null,
+  nowMs: number,
+): boolean {
+  return released && offerCompletion(watched, announcedEpisodes, nextEpisodeAtMs, nowMs);
+}
+
+/** Turned on: the count starts from Shikimori's, and the rate there is left exactly as it is. */
+export function watchedWhenTurnedOn(counted: number | null): number {
+  return counted ?? 0;
+}
+
+/**
+ * Turned off for another status: what was watched meanwhile goes to Shikimori once, and only when it
+ * is more than the rate already says. Null sends nothing.
+ */
+export function episodesToSendWhenTurnedOff(watched: number, counted: number | null): number | null {
+  return watched > (counted ?? 0) ? watched : null;
+}
+
+/**
+ * An episode marked or unmarked leaves the count at `episodes`, as it would a rate's — never below
+ * zero. Null when the count is already that, and nothing is written.
+ */
+export function watchedAfterMark(watched: number, episodes: number): number | null {
+  return watched !== episodes ? Math.max(0, episodes) : null;
+}
 
 /** «Смотреть украдкой» for one title, as the sync document carries it (spec 2026-09-26 §2). */
 export interface SecretState {

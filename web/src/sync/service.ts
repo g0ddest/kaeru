@@ -3,8 +3,26 @@ import type { EpisodeProgress, LibraryEntry, ListStatus } from "../domain/models
 import type { Library } from "../library/library";
 import type { ProgressStore } from "../library/progress";
 import type { SecretState, SecretStore } from "../library/secret";
-import { forgetDubs, mergeDub, onDubRemembered, rememberedDubs, type StampedDub } from "../player/memory";
-import type { SyncClient, SyncPosition, SyncTitle, SyncTitles } from "./client";
+import {
+  forgetDubs,
+  mergeDub,
+  onDubRemembered,
+  rememberedDubs,
+  type RememberedDub,
+  type StampedDub,
+} from "../player/memory";
+import type { SyncClient, SyncTitle, SyncTitles } from "./client";
+import {
+  isEmpty,
+  MAX_DUB_TITLE,
+  merge,
+  newer,
+  seed as seedTitles,
+  wire,
+  without,
+  type LocalSyncState,
+  type SyncNewer,
+} from "./rules";
 
 /** What the player tells sync: it just paused, left, or moved on, so the batch goes now. */
 export interface SyncPort {
@@ -41,8 +59,6 @@ const OUTBOX_KEY = "kaeru.sync.outbox";
 const SEEDED_KEY = "kaeru.sync.seeded";
 /** The account that last used this browser; sign-out keeps it, so the next account can be told apart. */
 export const LAST_ACCOUNT_KEY = "kaeru.account.last";
-/** The worker keeps the 30 latest episodes of a title; older ones would only be trimmed again. */
-const EPISODES_PER_TITLE = 30;
 /** Titles per POST, well under the worker's 256 KB body with 30 episodes each. */
 const TITLES_PER_POST = 100;
 
@@ -56,61 +72,6 @@ function browserStorage(): Storage | null {
 
 function record(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
-}
-
-function isEmpty(title: SyncTitle): boolean {
-  return (
-    title.dub === undefined &&
-    title.secret === undefined &&
-    title.gone === undefined &&
-    (title.eps === undefined || Object.keys(title.eps).length === 0)
-  );
-}
-
-/** `patch` over `base`, the newer `at` winning per field and per episode. */
-function merge(base: SyncTitle | undefined, patch: SyncTitle): SyncTitle {
-  const out: SyncTitle = { ...base };
-  if (patch.dub !== undefined && (out.dub === undefined || out.dub.at <= patch.dub.at)) out.dub = patch.dub;
-  if (patch.secret !== undefined && (out.secret === undefined || out.secret.at <= patch.secret.at)) out.secret = patch.secret;
-  if (patch.gone !== undefined && (out.gone === undefined || out.gone <= patch.gone)) out.gone = patch.gone;
-  if (patch.eps !== undefined) {
-    const eps = { ...out.eps };
-    for (const [episode, position] of Object.entries(patch.eps)) {
-      const known = eps[episode];
-      if (known === undefined || known.at <= position.at) eps[episode] = position;
-    }
-    out.eps = eps;
-  }
-  return out;
-}
-
-/** `title` without what `sent` (or the server) already covers: anything no newer than it. */
-function without(title: SyncTitle, covered: SyncTitle): SyncTitle {
-  const out: SyncTitle = { ...title };
-  const floor = covered.gone ?? Number.NEGATIVE_INFINITY;
-  if (out.dub !== undefined && (out.dub.at <= floor || (covered.dub !== undefined && out.dub.at <= covered.dub.at))) delete out.dub;
-  if (
-    out.secret !== undefined &&
-    (out.secret.at <= floor || (covered.secret !== undefined && out.secret.at <= covered.secret.at))
-  ) {
-    delete out.secret;
-  }
-  if (out.gone !== undefined && out.gone <= floor) delete out.gone;
-  if (out.eps !== undefined) {
-    const eps: Record<string, SyncPosition> = {};
-    for (const [episode, position] of Object.entries(out.eps)) {
-      const known = covered.eps?.[episode];
-      if (position.at <= floor || (known !== undefined && position.at <= known.at)) continue;
-      eps[episode] = position;
-    }
-    if (Object.keys(eps).length > 0) out.eps = eps;
-    else delete out.eps;
-  }
-  return out;
-}
-
-function toPosition(row: EpisodeProgress): SyncPosition {
-  return { p: row.positionMs, d: row.durationMs, at: row.updatedAt };
 }
 
 /**
@@ -269,13 +230,14 @@ export class SyncService implements Sync {
 
   private readonly onPosition = (row: EpisodeProgress): void => {
     if (this.finished(row.animeId)) return;
-    if (this.enqueue(row.animeId, { eps: { [String(row.episode)]: toPosition(row) } })) this.schedule();
+    if (this.enqueue(row.animeId, { eps: { [String(row.episode)]: wire(row) } })) this.schedule();
   };
 
   private readonly onDub = (animeId: number, dub: StampedDub, storage: Storage | null): void => {
     // Another storage is a test's or another store's, not this browser's memory.
     if (storage !== this.storage || this.finished(animeId)) return;
-    if (this.enqueue(animeId, { dub: { id: dub.id, title: dub.title, at: dub.at } })) this.schedule();
+    const title = dub.title.slice(0, MAX_DUB_TITLE);
+    if (this.enqueue(animeId, { dub: { id: dub.id, title, at: dub.at } })) this.schedule();
   };
 
   private readonly onSecret = (animeId: number, state: SecretState): void => {
@@ -354,81 +316,77 @@ export class SyncService implements Sync {
     this.writeOutbox(outbox);
   }
 
-  /** What the server holds, taken where it is newer than this browser's. */
+  /** What the server holds, taken where it is newer than this browser's (rules.ts `newer`). */
   private apply(titles: SyncTitles): void {
+    if (Object.keys(titles).length === 0) return;
+    const local = this.localState();
+    const change = newer(titles, local);
     const { progress } = this.deps;
+    for (const [animeId, gone] of change.tombstones) progress.forget(animeId, gone);
+    progress.restore(change.positions);
+    for (const [animeId, at] of change.dubStamps) {
+      // Kept with its stamp in one entry here: an unchanged dub is written back with the new one.
+      const dub = change.dubs.get(animeId) ?? local.dubs.get(animeId);
+      if (dub !== undefined) mergeDub(animeId, { id: dub.id, title: dub.title, at }, this.storage ?? undefined);
+    }
+    this.applySecrets(change);
     const outbox = this.readOutbox();
     let outboxChanged = false;
     for (const [id, title] of Object.entries(titles)) {
-      const animeId = Number(id);
-      if (title.gone !== undefined) progress.forget(animeId, title.gone);
-      if (title.eps !== undefined) {
-        const local = new Map(progress.of(animeId).map((row) => [row.episode, row]));
-        const newer: EpisodeProgress[] = [];
-        for (const [episode, position] of Object.entries(title.eps)) {
-          const known = local.get(Number(episode));
-          // A position with no length cannot be resumed from; the players never write one.
-          if (position.d <= 0 || (known !== undefined && known.updatedAt >= position.at)) continue;
-          newer.push({ animeId, episode: Number(episode), positionMs: position.p, durationMs: position.d, updatedAt: position.at });
-        }
-        progress.restore(newer);
-      }
-      if (title.dub !== undefined) mergeDub(animeId, title.dub, this.storage ?? undefined);
-      this.applySecret(animeId, title);
       const waiting = outbox[id];
-      if (waiting !== undefined) {
-        const left = without(waiting, title);
-        if (isEmpty(left)) delete outbox[id];
-        else outbox[id] = left;
-        outboxChanged = true;
-      }
+      if (waiting === undefined) continue;
+      const left = without(waiting, title);
+      if (isEmpty(left)) delete outbox[id];
+      else outbox[id] = left;
+      outboxChanged = true;
     }
     if (outboxChanged) this.writeOutbox(outbox);
   }
 
-  private applySecret(animeId: number, title: SyncTitle): void {
+  private applySecrets(change: SyncNewer): void {
     const secrets = this.deps.secrets;
     if (secrets === undefined) return;
-    const local = secrets.get(animeId);
-    const remote = title.secret;
-    if (remote !== undefined && (local === undefined || local.at < remote.at)) {
-      secrets.set(animeId, remote, null, { quiet: true });
-      return;
+    const taken = new Set<number>();
+    for (const { animeId, on, watched, at } of change.secrets) {
+      secrets.set(animeId, { on, watched, at }, null, { quiet: true });
+      taken.add(animeId);
     }
-    // The worker keeps nothing but the tombstone of a finished title, secret state included: a
-    // secret title another device closed was watched through. The owner can move it on from there.
-    const gone = title.gone;
-    const episodes = local?.anime?.episodes ?? 0;
-    if (gone !== undefined && local?.on === true && local.at <= gone && episodes > local.watched) {
-      secrets.set(animeId, { on: true, watched: episodes, at: local.at }, null, { quiet: true });
+    for (const [animeId, gone] of change.tombstones) {
+      if (taken.has(animeId)) continue;
+      // The web's own rule, kept out of `newer` on purpose: Android and iOS do not have it, and
+      // whether it joins the shared rules is still to be decided. The worker keeps nothing but the
+      // tombstone of a finished title, secret state included, so a secret title another device
+      // closed was watched through. The owner can move it on from there.
+      const local = secrets.get(animeId);
+      const episodes = local?.anime?.episodes ?? 0;
+      if (local?.on === true && local.at <= gone && episodes > local.watched) {
+        secrets.set(animeId, { on: true, watched: episodes, at: local.at }, null, { quiet: true });
+      }
     }
   }
 
-  /** Once per account: what this browser kept before sync, where it is newer than the server's. */
+  /** Once per account: what this browser kept before sync, where it is newer than the server's (rules.ts `seed`). */
   private seed(account: number, remote: SyncTitles): void {
     const seeded = this.readSeeded();
     if (seeded.includes(account)) return;
-    const byTitle = new Map<number, EpisodeProgress[]>();
-    for (const row of this.deps.progress.list()) byTitle.set(row.animeId, [...(byTitle.get(row.animeId) ?? []), row]);
-    const batch: SyncTitles = {};
-    for (const [animeId, rows] of byTitle) {
-      if (this.finished(animeId)) continue;
-      const latest = [...rows].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, EPISODES_PER_TITLE);
-      const eps: Record<string, SyncPosition> = {};
-      for (const row of latest) eps[String(row.episode)] = toPosition(row);
-      batch[String(animeId)] = { eps };
-    }
-    for (const [animeId, dub] of rememberedDubs(this.storage ?? undefined)) {
-      if (this.finished(animeId)) continue;
-      batch[String(animeId)] = { ...batch[String(animeId)], dub };
-    }
-    let outbox = this.readOutbox();
-    for (const [id, title] of Object.entries(batch)) {
-      const left = without(title, remote[id] ?? {});
-      if (!isEmpty(left)) outbox = { ...outbox, [id]: merge(outbox[id], left) };
-    }
+    const batch = seedTitles(this.localState(), (animeId) => this.finished(animeId), remote);
+    const outbox = this.readOutbox();
+    for (const [id, left] of Object.entries(batch)) outbox[id] = merge(outbox[id], left);
     this.writeOutbox(outbox);
     this.writeSeeded([...seeded, account]);
+  }
+
+  /** This browser's positions, dubs and secrets, as the rules read them. */
+  private localState(): LocalSyncState {
+    const dubs = new Map<number, RememberedDub>();
+    const dubStamps = new Map<number, number>();
+    // A dub remembered before stamps existed reads as stamped at zero.
+    for (const [animeId, dub] of rememberedDubs(this.storage ?? undefined)) {
+      dubs.set(animeId, { id: dub.id, title: dub.title });
+      dubStamps.set(animeId, dub.at);
+    }
+    const secrets = new Map<number, SecretState>(this.deps.secrets?.all() ?? []);
+    return { positions: this.deps.progress.list(), dubs, dubStamps, secrets };
   }
 
   /** The next batch, no sooner than a minute after the last one. */

@@ -19,12 +19,8 @@ const MAX_EPISODES = 30;
 const MAX_TITLES = 1000;
 const MAX_BODY = 256 * 1024;
 const SAVE_ATTEMPTS = 3;
-
-function newest<T extends { at: number }>(a: T | undefined, b: T | undefined): T | undefined {
-  if (a === undefined) return b;
-  if (b === undefined) return a;
-  return b.at > a.at ? b : a;
-}
+/** The apps count episodes in a 32-bit Int; a larger `watched` is kept as the largest one. */
+const MAX_WATCHED = 2_147_483_647;
 
 function latestAt(title: Title): number {
   let at = Math.max(title.dub?.at ?? 0, title.secret?.at ?? 0);
@@ -32,23 +28,42 @@ function latestAt(title: Title): number {
   return at;
 }
 
+/**
+ * `incoming` over `stored`, the newer `at` winning per field and per episode, a tie going to
+ * `incoming`; a tombstone is one more field. The merge every client runs too (SyncMerge in shared/,
+ * checked against its vectors in test/sync-vectors.test.ts); what the tombstone then takes away,
+ * and the trimming, are this worker's own (`mergeTitle`, `merge`).
+ */
+export function mergeFields(stored: Title | undefined, incoming: Title): Title {
+  const out: Title = { ...stored };
+  if (incoming.dub !== undefined && (out.dub === undefined || out.dub.at <= incoming.dub.at)) out.dub = incoming.dub;
+  if (incoming.secret !== undefined && (out.secret === undefined || out.secret.at <= incoming.secret.at)) out.secret = incoming.secret;
+  if (incoming.gone !== undefined && (out.gone === undefined || out.gone <= incoming.gone)) out.gone = incoming.gone;
+  if (incoming.eps !== undefined) {
+    const eps = { ...out.eps };
+    for (const [episode, position] of Object.entries(incoming.eps)) {
+      const known = eps[episode];
+      if (known === undefined || known.at <= position.at) eps[episode] = position;
+    }
+    out.eps = eps;
+  }
+  return out;
+}
+
 function mergeTitle(stored: Title | undefined, incoming: Title): Title {
+  const merged = mergeFields(stored, incoming);
   // A tombstone stands against anything written before it, and gives way to anything after.
   const gone = Math.max(stored?.gone ?? 0, incoming.gone ?? 0);
   const keep = <T extends { at: number }>(value: T | undefined) => (value !== undefined && value.at > gone ? value : undefined);
-  const eps: Record<string, Position> = {};
-  for (const source of [stored?.eps ?? {}, incoming.eps ?? {}]) {
-    for (const [episode, position] of Object.entries(source)) {
-      const chosen = keep(newest(eps[episode], position));
-      if (chosen !== undefined) eps[episode] = chosen;
-    }
-  }
-  const newestEps = Object.entries(eps).sort((a, b) => b[1].at - a[1].at).slice(0, MAX_EPISODES);
+  const newestEps = Object.entries(merged.eps ?? {})
+    .filter(([, position]) => position.at > gone)
+    .sort((a, b) => b[1].at - a[1].at)
+    .slice(0, MAX_EPISODES);
   const title: Title = {};
-  const dub = keep(newest(stored?.dub, incoming.dub));
+  const dub = keep(merged.dub);
   if (dub !== undefined) title.dub = dub;
   if (newestEps.length > 0) title.eps = Object.fromEntries(newestEps);
-  const secret = keep(newest(stored?.secret, incoming.secret));
+  const secret = keep(merged.secret);
   if (secret !== undefined) title.secret = secret;
   if (Object.keys(title).length === 0 && gone > 0) return { gone };
   return title;
@@ -96,7 +111,7 @@ export function parseTitles(raw: unknown): Record<string, Title> | null {
     if (source.secret !== undefined) {
       const secret = source.secret as Record<string, unknown>;
       if (typeof secret?.on !== "boolean" || !finite(secret.watched) || !finite(secret.at)) return null;
-      title.secret = { on: secret.on, watched: Math.max(0, Math.floor(secret.watched)), at: secret.at };
+      title.secret = { on: secret.on, watched: Math.min(MAX_WATCHED, Math.max(0, Math.floor(secret.watched))), at: secret.at };
     }
     if (source.gone !== undefined) {
       if (!finite(source.gone)) return null;

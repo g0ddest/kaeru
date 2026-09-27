@@ -56,12 +56,22 @@ export interface SyncClient {
 const TIMEOUT_MS = 20_000;
 /** Browsers refuse a keepalive request whose body, with the others in flight, is over 64 KB. */
 const KEEPALIVE_LIMIT = 60_000;
+/** The apps count episodes in a 32-bit Int; a larger `watched` reads as the largest one. */
+const MAX_WATCHED = 2_147_483_647;
 
 function record(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
-const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
+/**
+ * A JSON number, whole or not, rounded half up as Java's `Math.round`; a string or a boolean is not
+ * one, and neither is anything as large as 9e15 (past what a JavaScript number holds exactly).
+ */
+function integer(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || Math.abs(value) >= 9e15) return null;
+  const whole = Math.floor(value);
+  return value - whole >= 0.5 ? whole + 1 : whole;
+}
 
 function parseJson(text: string): unknown {
   try {
@@ -87,8 +97,11 @@ function readTitle(value: unknown): SyncTitle | null {
   if (source === null) return null;
   const title: SyncTitle = {};
   const dub = record(source["dub"]);
-  if (dub !== null && finite(dub["id"]) && typeof dub["title"] === "string" && finite(dub["at"])) {
-    title.dub = { id: dub["id"], title: dub["title"], at: dub["at"] };
+  if (dub !== null) {
+    const id = integer(dub["id"]);
+    const name = dub["title"];
+    const at = integer(dub["at"]);
+    if (id !== null && typeof name === "string" && at !== null) title.dub = { id, title: name, at };
   }
   const eps = record(source["eps"]);
   if (eps !== null) {
@@ -96,24 +109,31 @@ function readTitle(value: unknown): SyncTitle | null {
     for (const [episode, raw] of Object.entries(eps)) {
       const position = record(raw);
       if (!/^\d{1,5}$/.test(episode) || position === null) continue;
-      const { p, d, at } = position;
-      if (finite(p) && finite(d) && finite(at)) read[episode] = { p, d, at };
+      const p = integer(position["p"]);
+      const d = integer(position["d"]);
+      const at = integer(position["at"]);
+      if (p !== null && d !== null && at !== null) read[episode] = { p, d, at };
     }
     if (Object.keys(read).length > 0) title.eps = read;
   }
   const secret = record(source["secret"]);
-  if (secret !== null && typeof secret["on"] === "boolean" && finite(secret["watched"]) && finite(secret["at"])) {
-    title.secret = { on: secret["on"], watched: Math.max(0, Math.floor(secret["watched"])), at: secret["at"] };
+  if (secret !== null) {
+    const on = secret["on"];
+    const watched = integer(secret["watched"]);
+    const at = integer(secret["at"]);
+    if (typeof on === "boolean" && watched !== null && at !== null) {
+      title.secret = { on, watched: Math.min(MAX_WATCHED, Math.max(0, watched)), at };
+    }
   }
-  if (finite(source["gone"])) title.gone = source["gone"];
+  const gone = integer(source["gone"]);
+  if (gone !== null) title.gone = gone;
   return title;
 }
 
-/** Whatever of the document this build can read; a title or field it cannot is skipped. */
-function readTitles(body: unknown): SyncTitles {
+/** Whatever of the document this build can read; null when there is no `titles` object at all. */
+function readTitles(body: unknown): SyncTitles | null {
   const titles = record(record(body)?.["titles"]);
-  // A 200 nobody can read means the worker and this page no longer agree on the shape.
-  if (titles === null) throw new SyncError("parser");
+  if (titles === null) return null;
   const read: SyncTitles = {};
   for (const [id, value] of Object.entries(titles)) {
     if (!/^\d{1,9}$/.test(id)) continue;
@@ -121,6 +141,20 @@ function readTitles(body: unknown): SyncTitles {
     if (title !== null) read[id] = title;
   }
   return read;
+}
+
+/**
+ * An answer's text as the document (the shared SyncWire.titles): whatever of it this build can read,
+ * a title or field it cannot skipped, and whole numbers only. Null when there is no `titles` object
+ * at all — an answer that is not JSON, or a shape the two sides no longer agree on.
+ */
+export function parseTitles(text: string): SyncTitles | null {
+  return readTitles(parseJson(text));
+}
+
+/** What a POST carries: `{ "titles": { … } }`, an absent field left out (SyncWire.body, key order aside). */
+export function syncBody(titles: SyncTitles): string {
+  return JSON.stringify({ titles });
 }
 
 /** `GET /sync` and `POST /sync` with the Shikimori bearer; failures are SyncErrors except the 401. */
@@ -151,13 +185,16 @@ export function createSyncClient(deps: { authorized: typeof authorized; fetch?: 
     }
     const parsed = parseJson(text);
     if (status < 200 || status > 299) throw refusal(status, parsed);
-    return readTitles(parsed);
+    const titles = readTitles(parsed);
+    // A 200 nobody can read means the worker and this page no longer agree on the shape.
+    if (titles === null) throw new SyncError("parser");
+    return titles;
   }
 
   return {
     get: () => deps.authorized((token) => call(token, null, false)),
     post: (titles, options) => {
-      const body = JSON.stringify({ titles });
+      const body = syncBody(titles);
       return deps.authorized((token) => call(token, body, options?.keepalive === true));
     },
   };
