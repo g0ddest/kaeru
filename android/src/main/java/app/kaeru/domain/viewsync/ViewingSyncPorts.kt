@@ -3,6 +3,8 @@ package app.kaeru.domain.viewsync
 import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.SecretTitle
+import app.kaeru.shared.domain.sync.RememberedDub
+import app.kaeru.shared.domain.sync.SyncTitles
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -24,9 +26,6 @@ interface ViewingSyncApi {
     /** Sends a batch; the answer is the whole merged document. */
     suspend fun post(titles: SyncTitles): SyncTitles
 }
-
-/** The dub a title remembers here: the track id, and its name once something has named it. */
-data class RememberedDub(val id: Int, val title: String?)
 
 /** What another device did, already found to be newer than this one's. */
 data class SyncedViewing(

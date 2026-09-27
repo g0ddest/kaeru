@@ -2,6 +2,8 @@ package app.kaeru.domain.viewsync
 
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.SecretTitle
+import app.kaeru.shared.domain.sync.SyncSecret
+import app.kaeru.shared.domain.sync.SyncTitle
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.TestScope
@@ -9,7 +11,6 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
@@ -123,17 +124,6 @@ class ViewingSyncSecretTest {
 
         val stored = api.document(ACCOUNT).getValue("7")
         assertEquals(BASE + ViewingSync.PUSH_EVERY_MS, stored.gone)
-    }
-
-    @Test
-    fun `merge and without treat secret like any other field`() {
-        val older = SyncTitle(secret = SyncSecret(true, 2, 10))
-        val newer = SyncTitle(secret = SyncSecret(false, 5, 20))
-        assertEquals(newer.secret, SyncMerge.merge(older, newer).secret)
-        assertEquals(newer.secret, SyncMerge.merge(newer, older).secret)
-        assertNull(SyncMerge.without(older, newer).secret)
-        assertEquals(newer.secret, SyncMerge.without(newer, older).secret)
-        assertNull(SyncMerge.without(newer, SyncTitle(gone = 20)).secret)
     }
 
     private companion object {

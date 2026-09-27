@@ -3,6 +3,16 @@ package app.kaeru.domain.viewsync
 import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.SecretTitle
+import app.kaeru.shared.domain.sync.EpisodePosition
+import app.kaeru.shared.domain.sync.LocalSyncState
+import app.kaeru.shared.domain.sync.RememberedDub
+import app.kaeru.shared.domain.sync.SyncDub
+import app.kaeru.shared.domain.sync.SyncMerge
+import app.kaeru.shared.domain.sync.SyncPosition
+import app.kaeru.shared.domain.sync.SyncRules
+import app.kaeru.shared.domain.sync.SyncSecret
+import app.kaeru.shared.domain.sync.SyncTitle
+import app.kaeru.shared.domain.sync.SyncTitles
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -159,7 +169,7 @@ class ViewingSync(
         if (finished(animeId)) return
         val at = now()
         store.setDubStamps(acc, store.dubStamps(acc) + (animeId to at))
-        enqueue(acc, animeId, SyncTitle(dub = SyncDub(dub.id, title.take(MAX_DUB_TITLE), at)))
+        enqueue(acc, animeId, SyncTitle(dub = SyncDub(dub.id, title.take(SyncRules.MAX_DUB_TITLE), at)))
     }
 
     /**
@@ -222,58 +232,29 @@ class ViewingSync(
         schedule()
     }
 
-    /** What the server holds, taken where it is newer than this device's. */
+    /** What the server holds, taken where it is newer than this device's ([SyncRules.newer]). */
     private suspend fun apply(acc: Long, titles: SyncTitles) {
         if (titles.isEmpty()) return
-        val known = local.positions().associate { (it.animeId to it.episode) to it.updatedAt.toEpochMilli() }
-        val dubsHere = local.dubs()
-        val secretsHere = local.secrets()
-        val secrets = mutableListOf<SecretTitle>()
-        val stamps = store.dubStamps(acc)
-        val positions = mutableListOf<EpisodeProgress>()
-        val tombstones = mutableMapOf<Int, Instant>()
-        val dubs = mutableMapOf<Int, RememberedDub>()
-        val stamped = mutableMapOf<Int, Long>()
-        for ((id, title) in titles) {
-            val animeId = id.toIntOrNull() ?: continue
-            title.gone?.let { tombstones[animeId] = Instant.ofEpochMilli(it) }
-            for ((key, remote) in title.eps.orEmpty()) {
-                val episode = key.toIntOrNull() ?: continue
-                // A position with no length cannot be resumed from; the players never write one.
-                if (episode <= 0 || remote.d <= 0) continue
-                val here = known[animeId to episode]
-                if (here != null && here >= remote.at) continue
-                positions += EpisodeProgress(
-                    animeId = animeId,
-                    episode = episode,
-                    positionMs = remote.p.coerceIn(0, remote.d),
-                    durationMs = remote.d,
-                    updatedAt = Instant.ofEpochMilli(remote.at),
+        val newer = SyncRules.newer(titles, localState(acc))
+        val change = SyncedViewing(
+            positions = newer.positions.map { position ->
+                EpisodeProgress(
+                    animeId = position.animeId,
+                    episode = position.episode,
+                    positionMs = position.positionMs,
+                    durationMs = position.durationMs,
+                    updatedAt = Instant.ofEpochMilli(position.at),
                 )
-            }
-            val secret = title.secret
-            if (secret != null) {
-                val here = secretsHere[animeId]
-                if (here == null || here.at.toEpochMilli() < secret.at) {
-                    secrets += SecretTitle(animeId, secret.on, secret.watched.coerceAtLeast(0), Instant.ofEpochMilli(secret.at))
-                }
-            }
-            val dub = title.dub
-            if (dub != null && dub.id != 0) {
-                // A dub remembered before stamps existed counts as the oldest there is.
-                val mine = stamps[animeId] ?: dubsHere[animeId]?.let { 0L }
-                if (mine == null || mine < dub.at) {
-                    if (dubsHere[animeId]?.let { it.id == dub.id && it.title == dub.title } != true) {
-                        dubs[animeId] = RememberedDub(dub.id, dub.title)
-                    }
-                    stamped[animeId] = dub.at
-                }
-            }
-        }
-        val change = SyncedViewing(positions, tombstones, dubs, secrets)
+            },
+            tombstones = newer.tombstones.mapValues { (_, at) -> Instant.ofEpochMilli(at) },
+            dubs = newer.dubs,
+            secrets = newer.secrets.map { secret ->
+                SecretTitle(secret.animeId, secret.on, secret.watched, Instant.ofEpochMilli(secret.at))
+            },
+        )
         val written = change.isEmpty || local.apply(acc, change)
         if (account != acc || !written) return
-        if (stamped.isNotEmpty()) store.setDubStamps(acc, store.dubStamps(acc) + stamped)
+        if (newer.dubStamps.isNotEmpty()) store.setDubStamps(acc, store.dubStamps(acc) + newer.dubStamps)
         editOutbox(acc) { outbox ->
             for ((id, title) in titles) {
                 val waiting = outbox[id] ?: continue
@@ -283,41 +264,25 @@ class ViewingSync(
         }
     }
 
-    /** Once per account: what this device kept before sync, where it is newer than the server's. */
+    /** Once per account: what this device kept before sync, where it is newer than the server's ([SyncRules.seed]). */
     private suspend fun seed(acc: Long, remote: SyncTitles) {
         if (acc in store.seeded()) return
-        val batch = mutableMapOf<String, SyncTitle>()
-        for ((animeId, rows) in local.positions().groupBy { it.animeId }) {
-            if (finished(animeId)) continue
-            val eps = rows.filter { it.durationMs > 0 }
-                .sortedByDescending { it.updatedAt }
-                .take(EPISODES_PER_TITLE)
-                .associate { it.episode.toString() to position(it) }
-            if (eps.isNotEmpty()) batch[animeId.toString()] = SyncTitle(eps = eps)
-        }
-        val stamps = store.dubStamps(acc)
-        for ((animeId, dub) in local.dubs()) {
-            val title = dub.title ?: continue
-            if (finished(animeId)) continue
-            val id = animeId.toString()
-            batch[id] = (batch[id] ?: SyncTitle()).copy(
-                dub = SyncDub(dub.id, title.take(MAX_DUB_TITLE), stamps[animeId] ?: 0L),
-            )
-        }
-        for ((animeId, secret) in local.secrets()) {
-            if (finished(animeId)) continue
-            val id = animeId.toString()
-            batch[id] = (batch[id] ?: SyncTitle()).copy(secret = wire(secret))
-        }
+        val finished = latest.filterValues { it == ListStatus.COMPLETED }.keys
+        val batch = SyncRules.seed(localState(acc), finished, remote)
         if (account != acc) return
         editOutbox(acc) { outbox ->
-            for ((id, title) in batch) {
-                val left = SyncMerge.without(title, remote[id] ?: SyncTitle())
-                if (!left.isEmpty) outbox[id] = SyncMerge.merge(outbox[id], left)
-            }
+            for ((id, left) in batch) outbox[id] = SyncMerge.merge(outbox[id], left)
         }
         store.markSeeded(acc)
     }
+
+    /** This device's positions, dubs, dub stamps and secrets, as the shared rules read them. */
+    private suspend fun localState(acc: Long) = LocalSyncState(
+        positions = local.positions().map(::episodePosition),
+        dubs = local.dubs(),
+        dubStamps = store.dubStamps(acc),
+        secrets = local.secrets().mapValues { (_, secret) -> wire(secret) },
+    )
 
     // --- writing ------------------------------------------------------------------------------
 
@@ -448,14 +413,8 @@ class ViewingSync(
         /** Back from the background after this long: another device may have played meanwhile. */
         const val PULL_AFTER_BACKGROUND_MS = 5 * 60_000L
 
-        /** The worker keeps the 30 latest episodes of a title; older ones would only be trimmed again. */
-        const val EPISODES_PER_TITLE = 30
-
         /** Titles per POST, well under the worker's 256 KB body with 30 episodes each. */
         const val TITLES_PER_POST = 100
-
-        /** The worker refuses a longer dub name, and with it the whole batch. */
-        const val MAX_DUB_TITLE = 200
 
         fun wire(secret: SecretTitle) = SyncSecret(
             on = secret.on,
@@ -463,9 +422,13 @@ class ViewingSync(
             at = secret.at.toEpochMilli(),
         )
 
-        fun position(progress: EpisodeProgress) = SyncPosition(
-            p = progress.positionMs.coerceAtLeast(0),
-            d = progress.durationMs.coerceAtLeast(0),
+        fun position(progress: EpisodeProgress): SyncPosition = SyncRules.wire(episodePosition(progress))
+
+        private fun episodePosition(progress: EpisodeProgress) = EpisodePosition(
+            animeId = progress.animeId,
+            episode = progress.episode,
+            positionMs = progress.positionMs,
+            durationMs = progress.durationMs,
             at = progress.updatedAt.toEpochMilli(),
         )
     }

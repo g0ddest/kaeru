@@ -6,9 +6,9 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
-import app.kaeru.domain.viewsync.SyncFailure
 import app.kaeru.domain.viewsync.SyncStateStore
-import app.kaeru.domain.viewsync.SyncTitles
+import app.kaeru.shared.domain.sync.SyncTitles
+import app.kaeru.shared.domain.sync.SyncWire
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Named
@@ -36,12 +36,8 @@ class DataStoreSyncState @Inject constructor(
         val prefs = dataStore.data.first()
         if (prefs[outboxAccountKey] != account) return emptyMap()
         val raw = prefs[outboxKey] ?: return emptyMap()
-        return try {
-            SyncWire.titles(raw)
-        } catch (_: SyncFailure) {
-            // Written by a build that no longer agrees on the shape: nothing of it can be sent.
-            emptyMap()
-        }
+        // Written by a build that no longer agrees on the shape: nothing of it can be sent.
+        return SyncWire.titles(raw) ?: emptyMap()
     }
 
     override suspend fun setOutbox(account: Long, titles: SyncTitles) {

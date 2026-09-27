@@ -20,9 +20,9 @@ import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.SecretTitle
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.model.WatchState
-import app.kaeru.domain.viewsync.RememberedDub
 import app.kaeru.domain.viewsync.SyncedViewing
 import app.kaeru.domain.viewsync.ViewingSyncEvents
+import app.kaeru.shared.domain.sync.RememberedDub
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
@@ -208,12 +208,11 @@ class RoomLocalViewingTest {
     }
 
     @Test
-    fun `an ongoing show is never finished by its secret count`() {
-        val ongoing = anime(ANIME, status = AnimeStatus.ONGOING)
-        assertFalse(SecretTitle.finished(ongoing, 12, Instant.EPOCH))
+    fun `finished reads the card and the clock as the shared rule wants them`() {
+        // The rule itself is SecretRules.finished in shared; this is only the adapter.
+        assertFalse(SecretTitle.finished(anime(ANIME, status = AnimeStatus.ONGOING), 12, Instant.EPOCH))
         assertTrue(SecretTitle.finished(anime(ANIME), 12, Instant.EPOCH))
-        assertFalse(SecretTitle.finished(anime(ANIME), 11, Instant.EPOCH))
-        assertFalse(SecretTitle.finished(anime(ANIME, episodes = 0), 3, Instant.EPOCH))
+        assertFalse(SecretTitle.finished(anime(ANIME).copy(nextEpisodeAt = Instant.ofEpochMilli(1)), 12, Instant.EPOCH))
     }
 
     // --- what the repositories tell sync --------------------------------------------------------

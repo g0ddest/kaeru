@@ -20,13 +20,14 @@ import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.SecretTitle
 import app.kaeru.domain.model.UserRate
-import app.kaeru.domain.viewsync.ViewingSyncEvents
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.sync.OutboxSyncer
 import app.kaeru.domain.sync.RateOpKind
 import app.kaeru.domain.sync.RateOutboxRepository
 import app.kaeru.domain.sync.ReplayRequest
+import app.kaeru.domain.viewsync.ViewingSyncEvents
 import app.kaeru.shared.data.network.NetworkException
+import app.kaeru.shared.domain.sync.SecretRules
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -220,8 +221,8 @@ class ShikimoriLibraryRepository @Inject constructor(
         if (secret != null) {
             // Back from «украдкой»: what was watched meanwhile goes to Shikimori once, and only
             // when it is more than the rate already says.
-            val counted = userRateDao.getByAnimeId(animeId)?.episodes ?: 0
-            if (secret.watched > counted) writeEpisodes(animeId, secret.watched)
+            val counted = userRateDao.getByAnimeId(animeId)?.episodes
+            SecretRules.episodesToSendWhenTurnedOff(secret.watched, counted)?.let { writeEpisodes(animeId, it) }
             saveSecret(secret.toDomain().copy(on = false, at = clock.instant()))
         }
     }
@@ -241,8 +242,8 @@ class ShikimoriLibraryRepository @Inject constructor(
             val enriched = listOf(card).withRealPosters().single()
             animeDao.upsertAll(listOf(enriched.toEntity(detailsFetchedAt = null)))
         }
-        val counted = userRateDao.getByAnimeId(animeId)?.episodes ?: 0
-        saveSecret(SecretTitle(animeId, on = true, watched = counted, at = clock.instant()))
+        val watched = SecretRules.watchedWhenTurnedOn(userRateDao.getByAnimeId(animeId)?.episodes)
+        saveSecret(SecretTitle(animeId, on = true, watched = watched, at = clock.instant()))
     }
 
     private suspend fun saveSecret(secret: SecretTitle) {
@@ -285,8 +286,8 @@ class ShikimoriLibraryRepository @Inject constructor(
         val secret = secretDao.get(animeId)?.takeIf { it.isOn }
         if (secret != null) {
             // «Украдкой»: counted here, and nowhere near Shikimori.
-            if (secret.watched != episodes) {
-                saveSecret(secret.toDomain().copy(watched = episodes.coerceAtLeast(0), at = clock.instant()))
+            SecretRules.watchedAfterMark(secret.watched, episodes)?.let { watched ->
+                saveSecret(secret.toDomain().copy(watched = watched, at = clock.instant()))
             }
             return@accountWrite
         }

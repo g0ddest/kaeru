@@ -1,11 +1,5 @@
-package app.kaeru.data.viewsync
+package app.kaeru.shared.domain.sync
 
-import app.kaeru.domain.viewsync.SyncDub
-import app.kaeru.domain.viewsync.SyncFailure
-import app.kaeru.domain.viewsync.SyncPosition
-import app.kaeru.domain.viewsync.SyncSecret
-import app.kaeru.domain.viewsync.SyncTitle
-import app.kaeru.domain.viewsync.SyncTitles
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -15,22 +9,23 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import kotlin.math.abs
+import kotlin.math.floor
 
 /**
  * The `/sync` document on the wire. Written by hand rather than by a serializer, for the two things
  * a generated one would get wrong: an absent field is left out rather than sent as null — the
  * worker takes a null `dub` for a malformed one and refuses the whole batch — and an answer is read
- * as far as it can be, a title or field this build does not understand skipped, as the web and iOS
- * clients do.
+ * as far as it can be, a title or field this build does not understand skipped.
  */
 object SyncWire {
     private val TITLE_ID = Regex("^\\d{1,9}$")
     private val EPISODE = Regex("^\\d{1,5}$")
 
-    /** What a POST carries: `{ "titles": { … } }`. */
+    /** What a POST carries: `{ "titles": { … } }`, titles and episodes in key order. */
     fun body(titles: SyncTitles): String = buildJsonObject {
         putJsonObject("titles") {
-            for ((id, title) in titles.toSortedMap()) {
+            for ((id, title) in titles.entries.sortedBy { it.key }) {
                 putJsonObject(id) {
                     title.dub?.let { dub ->
                         putJsonObject("dub") {
@@ -41,7 +36,7 @@ object SyncWire {
                     }
                     title.eps?.let { eps ->
                         putJsonObject("eps") {
-                            for ((episode, position) in eps.toSortedMap()) {
+                            for ((episode, position) in eps.entries.sortedBy { it.key }) {
                                 putJsonObject(episode) {
                                     put("p", position.p)
                                     put("d", position.d)
@@ -63,11 +58,18 @@ object SyncWire {
         }
     }.toString()
 
-    /** Whatever of the document this build can read. A 200 without `titles` means the two disagree on the shape. */
-    fun titles(text: String): SyncTitles {
+    /**
+     * Whatever of the document this build can read; null when there is no `titles` object at all —
+     * an answer that is not JSON, or a 200 whose shape the two sides disagree on.
+     *
+     * A title id is 1–9 digits and an episode 1–5; anything else is skipped, as is a title that is
+     * not an object. A field missing a part, or with a part of the wrong type, is skipped on its own;
+     * an episode map left empty reads as none.
+     */
+    fun titles(text: String): SyncTitles? {
         val root = runCatching { Json.parseToJsonElement(text) }.getOrNull() as? JsonObject
-        val titles = root?.get("titles") as? JsonObject ?: throw SyncFailure(SyncFailure.Kind.PARSER)
-        val read = mutableMapOf<String, SyncTitle>()
+        val titles = root?.get("titles") as? JsonObject ?: return null
+        val read = LinkedHashMap<String, SyncTitle>()
         for ((id, value) in titles) {
             if (!TITLE_ID.matches(id)) continue
             val source = value as? JsonObject ?: continue
@@ -104,12 +106,16 @@ object SyncWire {
         return SyncTitle(dub = dub, eps = eps, gone = integer(source["gone"]), secret = secret)
     }
 
-    /** A JSON number, whole or not; a string or a boolean is not one. */
+    /**
+     * A JSON number, whole or not, rounded half up as Java's `Math.round`; a string or a boolean is
+     * not one, and neither is anything as large as 9e15 (past what a JavaScript number holds exactly).
+     */
     private fun integer(value: JsonElement?): Long? {
         val primitive = value as? JsonPrimitive ?: return null
         if (primitive.isString || primitive.booleanOrNull != null) return null
         val number = primitive.doubleOrNull ?: return null
-        if (!number.isFinite() || kotlin.math.abs(number) >= 9e15) return null
-        return Math.round(number)
+        if (!number.isFinite() || abs(number) >= 9e15) return null
+        val whole = floor(number)
+        return (if (number - whole >= 0.5) whole + 1 else whole).toLong()
     }
 }

@@ -3,6 +3,10 @@ package app.kaeru.domain.viewsync
 import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.SecretTitle
+import app.kaeru.shared.domain.sync.RememberedDub
+import app.kaeru.shared.domain.sync.SyncMerge
+import app.kaeru.shared.domain.sync.SyncTitle
+import app.kaeru.shared.domain.sync.SyncTitles
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 

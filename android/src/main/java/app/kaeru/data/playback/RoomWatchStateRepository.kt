@@ -6,8 +6,8 @@ import app.kaeru.data.local.toEntity
 import app.kaeru.di.IoDispatcher
 import app.kaeru.domain.model.WatchState
 import app.kaeru.domain.repository.WatchStateRepository
-import app.kaeru.domain.viewsync.RememberedDub
 import app.kaeru.domain.viewsync.ViewingSyncEvents
+import app.kaeru.shared.domain.sync.RememberedDub
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged

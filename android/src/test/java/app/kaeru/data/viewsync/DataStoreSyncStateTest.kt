@@ -1,9 +1,9 @@
 package app.kaeru.data.viewsync
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
-import app.kaeru.domain.viewsync.SyncDub
-import app.kaeru.domain.viewsync.SyncPosition
-import app.kaeru.domain.viewsync.SyncTitle
+import app.kaeru.shared.domain.sync.SyncDub
+import app.kaeru.shared.domain.sync.SyncPosition
+import app.kaeru.shared.domain.sync.SyncTitle
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.StandardTestDispatcher

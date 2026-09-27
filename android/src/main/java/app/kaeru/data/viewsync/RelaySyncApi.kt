@@ -1,9 +1,10 @@
 package app.kaeru.data.viewsync
 
 import app.kaeru.domain.viewsync.SyncFailure
-import app.kaeru.domain.viewsync.SyncTitles
 import app.kaeru.domain.viewsync.ViewingSyncApi
 import app.kaeru.shared.ApiException
+import app.kaeru.shared.domain.sync.SyncTitles
+import app.kaeru.shared.domain.sync.SyncWire
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
@@ -70,7 +71,7 @@ class RelaySyncApi(
             throw SyncFailure(SyncFailure.Kind.OFFLINE)
         }
         if (status !in 200..299) throw refusal(status, text)
-        SyncWire.titles(text)
+        SyncWire.titles(text) ?: throw SyncFailure(SyncFailure.Kind.PARSER)
     }
 
     companion object {

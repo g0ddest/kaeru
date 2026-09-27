@@ -1,5 +1,6 @@
 package app.kaeru.domain.model
 
+import app.kaeru.shared.domain.sync.SecretRules
 import java.time.Instant
 
 /**
@@ -16,14 +17,13 @@ data class SecretTitle(
     val at: Instant,
 ) {
     companion object {
-        /**
-         * Every episode of a finished show is behind the viewer: the title is done, as a title
-         * turned «Завершено» is, and sync leaves a tombstone for it.
-         */
-        fun finished(anime: Anime, watched: Int, now: Instant): Boolean =
-            anime.status == AnimeStatus.RELEASED &&
-                anime.episodes > 0 &&
-                watched >= anime.episodes &&
-                anime.nextEpisodeAt?.isAfter(now) != true
+        /** [SecretRules.finished] for this app's card and clock. */
+        fun finished(anime: Anime, watched: Int, now: Instant): Boolean = SecretRules.finished(
+            released = anime.status == AnimeStatus.RELEASED,
+            announcedEpisodes = anime.episodes,
+            watched = watched,
+            nextEpisodeAtMs = anime.nextEpisodeAt?.toEpochMilli(),
+            nowMs = now.toEpochMilli(),
+        )
     }
 }

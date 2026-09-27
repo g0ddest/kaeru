@@ -8,8 +8,8 @@ import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.model.SecretTitle
 import app.kaeru.domain.viewsync.LocalViewing
-import app.kaeru.domain.viewsync.RememberedDub
 import app.kaeru.domain.viewsync.SyncedViewing
+import app.kaeru.shared.domain.sync.RememberedDub
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow

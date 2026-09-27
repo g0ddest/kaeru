@@ -1,12 +1,12 @@
-package app.kaeru.domain.viewsync
+package app.kaeru.shared.domain.sync
 
 /**
  * The worker's `/sync` document (infra/relay/src/sync.ts; spec 2026-09-26-kaeru-sync-design.md §2):
  * per anime id, where each episode stopped, the chosen dub and a tombstone for a finished title.
  *
- * Every `at` is the device's own clock in milliseconds, and the newer one wins, field by field and
- * episode by episode — on the worker and, with the same rules, here ([merge], [without]). `secret`
- * is «Смотреть украдкой»: whether the title is watched without Shikimori, and how far.
+ * Every `at` is the device's own clock in epoch milliseconds, and the newer one wins, field by field
+ * and episode by episode — on the worker and, with the same rules, on every client ([SyncMerge]).
+ * `secret` is «Смотреть украдкой»: whether the title is watched without Shikimori, and how far.
  */
 data class SyncPosition(
     /** Where the episode stopped, in milliseconds. */
@@ -34,10 +34,10 @@ data class SyncTitle(
 /** By anime id, as a string: the key the worker uses. */
 typealias SyncTitles = Map<String, SyncTitle>
 
-/** The merge rules the worker applies, so the client can tell what it still owes and what is spent. */
+/** The merge rules the worker applies, so a client can tell what it still owes and what is spent. */
 object SyncMerge {
 
-    /** [patch] over [base], the newer `at` winning per field and per episode. */
+    /** [patch] over [base], the newer `at` winning per field and per episode; a tie goes to [patch]. */
     fun merge(base: SyncTitle?, patch: SyncTitle): SyncTitle {
         var out = base ?: SyncTitle()
         val dub = patch.dub
@@ -57,7 +57,10 @@ object SyncMerge {
         return out
     }
 
-    /** [title] without what [covered] (a sent batch, or the server) already holds: anything no newer. */
+    /**
+     * [title] without what [covered] (a sent batch, or the server) already holds: anything no newer,
+     * and anything stamped at or before [covered]'s tombstone. An episode map left empty is dropped.
+     */
     fun without(title: SyncTitle, covered: SyncTitle): SyncTitle {
         val floor = covered.gone ?: Long.MIN_VALUE
         val dub = title.dub?.takeUnless { dub ->
