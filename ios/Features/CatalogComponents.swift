@@ -383,13 +383,20 @@ struct LibraryStatusMenu: View {
     var body: some View {
         Menu {
             ForEach(WatchStatus.allCases) { status in
+                if status == .secret { Divider() }
                 // A toggle ticks the current status on the Mac too, whose menus show no images.
-                Toggle(status.title, isOn: Binding(get: { rate?.status == status.rawValue }, set: { on in
+                Toggle(isOn: Binding(get: { rate?.status == status.rawValue }, set: { on in
                     if on { model.queueRate(anime: anime, status: status.rawValue, episodes: rate?.episodes ?? 0) }
-                }))
+                })) {
+                    // A second line is shown under the item where the menu has room for it (iOS);
+                    // the Mac shows the first alone.
+                    Text(status.title)
+                    if let hint = status.hint { Text(hint) }
+                }
             }
         } label: {
-            Label(WatchStatus(rawValue: rate?.status ?? "")?.title ?? "В мой список", systemImage: rate == nil ? "plus" : "checkmark")
+            Label(WatchStatus(rawValue: rate?.status ?? "")?.title ?? "В мой список",
+                  systemImage: rate == nil ? "plus" : rate?.status == WatchStatus.secret.rawValue ? "eye.slash" : "checkmark")
         }
         .accessibilityIdentifier("library-status")
     }

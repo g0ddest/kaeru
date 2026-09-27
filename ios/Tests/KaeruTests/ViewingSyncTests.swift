@@ -151,6 +151,7 @@ private typealias Stream = Kaeru.Stream
         let titles = try SyncWire.titles(Data(json.utf8))
         XCTAssertEqual(titles["7"]?.dub, SyncDub(id: 610, title: "A", at: 5))
         XCTAssertEqual(titles["7"]?.eps, ["3": SyncPosition(p: 1000, d: 2000, at: 6)])
+        XCTAssertEqual(titles["7"]?.secret, SyncSecret(on: true, watched: 2, at: 1))
         XCTAssertEqual(titles["8"]?.gone, 9)
         XCTAssertNil(titles["bad"])
         XCTAssertThrowsError(try SyncWire.titles(Data("{\"nope\":1}".utf8)))

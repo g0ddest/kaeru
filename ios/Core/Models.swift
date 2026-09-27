@@ -42,6 +42,9 @@ struct LibraryItem: Codable, Identifiable, Hashable {
 
 enum WatchStatus: String, CaseIterable, Identifiable {
     case watching, planned, completed, onHold = "on_hold", dropped, rewatching
+    /// «Смотреть украдкой»: not a Shikimori status. The title is watched on this device (and, with
+    /// sync, the viewer's others) and nothing about it is written to Shikimori. Last on purpose.
+    case secret
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -51,7 +54,26 @@ enum WatchStatus: String, CaseIterable, Identifiable {
         case .onHold: "Отложено"
         case .dropped: "Брошено"
         case .rewatching: "Пересматриваю"
+        case .secret: "Украдкой"
         }
+    }
+    /// The line under the title where a menu has room for one.
+    var hint: String? { self == .secret ? "Не отмечать на Shikimori" : nil }
+}
+
+/// A title watched «украдкой» (spec 2026-09-26-kaeru-sync-design.md §4): whether it is, how many
+/// episodes were watched meanwhile, when that last changed (ms, for sync), and the title's card, so
+/// «Мой список» can show it without Shikimori and without the network. Kept when switched off, so
+/// the time of the switch can win over an older state from another device.
+struct SecretTitle: Codable, Equatable {
+    var on: Bool
+    var watched: Int
+    var at: Int64
+    var anime: Anime?
+    /// All the episodes of a released title watched, with nothing more on the schedule.
+    func finished(now: Date = Date()) -> Bool {
+        guard on, let anime, anime.status == "released" else { return false }
+        return anime.endsWith(watched, now: now)
     }
 }
 
@@ -94,7 +116,7 @@ struct PendingRate: Codable, Identifiable, Equatable {
 
 /// What one account's list looks like, as one record.
 ///
-/// Three of its six fields are read but never written any more: positions, the episodes they belong
+/// Three of its eight fields are read but never written any more: positions, the episodes they belong
 /// to and the titles behind them each live in a record of their own, so five seconds of playback
 /// costs one small write instead of re-encoding the whole library. They are still decoded, because
 /// a phone that was upgraded rather than installed has all of it in here — see
@@ -107,12 +129,13 @@ struct AccountSnapshot: Codable {
     var episodeHistory: [String: EpisodeProgress] = [:]
     var translations: [Int: Int] = [:]
     var dubs: [Int: DubStamp] = [:]
+    var secrets: [Int: SecretTitle] = [:]
 
-    init(library: [LibraryItem] = [], pending: [PendingRate] = [], progress: [Int: EpisodeProgress] = [:], recent: [Int: Anime] = [:], episodeHistory: [String: EpisodeProgress] = [:], translations: [Int: Int] = [:], dubs: [Int: DubStamp] = [:]) {
+    init(library: [LibraryItem] = [], pending: [PendingRate] = [], progress: [Int: EpisodeProgress] = [:], recent: [Int: Anime] = [:], episodeHistory: [String: EpisodeProgress] = [:], translations: [Int: Int] = [:], dubs: [Int: DubStamp] = [:], secrets: [Int: SecretTitle] = [:]) {
         self.library = library; self.pending = pending; self.progress = progress; self.recent = recent
-        self.episodeHistory = episodeHistory; self.translations = translations; self.dubs = dubs
+        self.episodeHistory = episodeHistory; self.translations = translations; self.dubs = dubs; self.secrets = secrets
     }
-    private enum CodingKeys: String, CodingKey { case library, pending, progress, recent, episodeHistory, translations, dubs }
+    private enum CodingKeys: String, CodingKey { case library, pending, progress, recent, episodeHistory, translations, dubs, secrets }
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         library = try values.decodeIfPresent([LibraryItem].self, forKey: .library) ?? []
@@ -122,11 +145,12 @@ struct AccountSnapshot: Codable {
         episodeHistory = try values.decodeIfPresent([String: EpisodeProgress].self, forKey: .episodeHistory) ?? [:]
         translations = try values.decodeIfPresent([Int: Int].self, forKey: .translations) ?? [:]
         dubs = try values.decodeIfPresent([Int: DubStamp].self, forKey: .dubs) ?? [:]
+        secrets = try values.decodeIfPresent([Int: SecretTitle].self, forKey: .secrets) ?? [:]
         for value in progress.values where episodeHistory["\(value.animeID):\(value.episode)"] == nil {
             episodeHistory["\(value.animeID):\(value.episode)"] = value
         }
     }
-    /// Only the four fields that are still this record's own. What playback writes every few
+    /// Only the five fields that are still this record's own. What playback writes every few
     /// seconds is not among them, which is the whole reason this method is written out by hand.
     func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
@@ -134,6 +158,7 @@ struct AccountSnapshot: Codable {
         try values.encode(pending, forKey: .pending)
         try values.encode(translations, forKey: .translations)
         try values.encode(dubs, forKey: .dubs)
+        try values.encode(secrets, forKey: .secrets)
     }
 }
 

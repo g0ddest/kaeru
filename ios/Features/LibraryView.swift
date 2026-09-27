@@ -31,7 +31,7 @@ struct LibraryView: View {
                         .buttonStyle(.borderedProminent).tint(Palette.accent).disabled(model.signingIn)
                 }
             } else {
-                let key = LibraryListingCache.key(model.library, request)
+                let key = LibraryListingCache.key(model.myList, request)
                 // The list built for exactly this, or the last one while the new one is built.
                 let current = LibraryListingCache[key] ?? listing
                 ScrollView {
@@ -72,7 +72,7 @@ struct LibraryView: View {
                 .background(Palette.canvas)
                 .task(id: key) {
                     if let cached = LibraryListingCache[key] { listing = cached; listingKey = key; return }
-                    let library = model.library, request = request
+                    let library = model.myList, request = request
                     let built = await Task.detached(priority: .userInitiated) { LibraryListing.build(library, request) }.value
                     guard !Task.isCancelled else { return }
                     LibraryListingCache[key] = built
@@ -98,7 +98,10 @@ struct LibraryView: View {
         ContentUnavailableView {
             Label(query.isEmpty ? emptyTitle : "Ничего не найдено", systemImage: "rectangle.stack")
         } description: {
-            Text(query.isEmpty ? "Меняйте статус на странице аниме — оно появится в нужном разделе." : "Попробуйте другое название или выберите другой статус.")
+            Text(query.isEmpty ? (mode == .list && status == .secret
+                                  ? "Выберите «Украдкой» в статусе аниме — оно будет здесь, а на Shikimori ничего не отметится."
+                                  : "Меняйте статус на странице аниме — оно появится в нужном разделе.")
+                               : "Попробуйте другое название или выберите другой статус.")
         } actions: {
             if query.isEmpty && (mode == .recent || status == .watching || status == .planned) {
                 Button("Найти аниме", action: onSearch).buttonStyle(.bordered).tint(Palette.accent)
@@ -114,6 +117,7 @@ struct LibraryView: View {
         case .rewatching: return "Вы ничего не пересматриваете"
         case .onHold: return "Ничего не отложено"
         case .dropped: return "Ничего не брошено"
+        case .secret: return "Украдкой вы ничего не смотрите"
         }
     }
 }

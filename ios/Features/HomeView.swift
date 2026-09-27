@@ -12,12 +12,15 @@ struct HomeView: View {
     @State private var revision = 0
     private var continuing: [Anime] {
         var seen = Set<Int>()
-        return (model.progress.values.sorted { $0.updatedAt > $1.updatedAt }.compactMap { model.recentAnime[$0.animeID] } + model.library.map(\.anime)).filter {
-            seen.insert($0.id).inserted && model.rate(for: $0.id)?.status != "completed" && model.continueTarget(for: $0).position > 0
+        return (model.progress.values.sorted { $0.updatedAt > $1.updatedAt }.compactMap { model.recentAnime[$0.animeID] } + model.myList.map(\.anime)).filter {
+            seen.insert($0.id).inserted && !model.isFinished($0.id) && model.continueTarget(for: $0).position > 0
         }
     }
     private var active: [LibraryItem] {
-        Self.newestFirst(model.library.filter { ["watching", "rewatching"].contains($0.status) })
+        // A title watched «украдкой» is on these shelves as one being watched, until all of it is.
+        Self.newestFirst(model.myList.filter {
+            ["watching", "rewatching"].contains($0.status) || ($0.status == WatchStatus.secret.rawValue && !model.isFinished($0.anime.id))
+        })
     }
     private func waitingTitles(ongoing: Bool) -> [Anime] {
         let inProgress = Set(continuing.map(\.id))
@@ -49,7 +52,7 @@ struct HomeView: View {
     private var notices: Bool { offline || model.availableUpdate != nil }
     private var planned: [Anime] {
         let inProgress = Set(continuing.map(\.id))
-        return Self.newestFirst(model.library.filter { $0.status == "planned" && !inProgress.contains($0.anime.id) }).map(\.anime)
+        return Self.newestFirst(model.myList.filter { $0.status == "planned" && !inProgress.contains($0.anime.id) }).map(\.anime)
     }
     /// Each date parsed once rather than twice per comparison: the shelves are rebuilt on every
     /// redraw, and during playback that is every tick of the position.

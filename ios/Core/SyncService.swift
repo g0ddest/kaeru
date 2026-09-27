@@ -64,7 +64,7 @@ struct SyncEnvironment {
 /// Viewing sync through the worker (spec 2026-09-26-kaeru-sync-design.md §4), after the web
 /// client (web/src/sync/service.ts): reads the document on start and after five minutes in the
 /// background and takes whatever is newer than this device's; sends this device's positions and
-/// dubs in batches — at most one a minute, at once on pause, on another episode, on leaving the
+/// dubs — and titles watched «украдкой» — in batches — at most one a minute, at once on pause, on another episode, on leaving the
 /// player and on going to the background — and a tombstone for a title the list marks «completed».
 /// A batch that fails stays in the outbox for the next try, across launches.
 ///
@@ -136,6 +136,20 @@ struct SyncEnvironment {
     func dubChosen(_ animeID: Int, _ dub: SyncDub) {
         guard enabled, let model, model.accountID != nil, !model.isFinished(animeID) else { return }
         enqueue(animeID, SyncTitle(dub: dub))
+    }
+
+    /// A title switched to or from «украдкой», or its count of watched episodes moved. Sent even for
+    /// a finished title: that is how the other devices learn it was finished «украдкой».
+    func secretChanged(_ animeID: Int, _ secret: SyncSecret) {
+        guard enabled, let account = model?.accountID else { return }
+        var outbox = readOutbox(account)
+        var secret = secret
+        // The worker keeps only what is newer than a tombstone; a count that finished the title is
+        // written in the same moment as the tombstone it leaves, and must outlive it.
+        if let gone = outbox[String(animeID)]?.gone, secret.at <= gone { secret.at = gone + 1 }
+        outbox[String(animeID)] = Self.merge(outbox[String(animeID)], SyncTitle(secret: secret))
+        writeOutbox(outbox, account: account)
+        schedule()
     }
 
     /// The list as it now stands. A title turning «completed» leaves a tombstone; turning back
@@ -212,6 +226,7 @@ struct SyncEnvironment {
         var positions: [EpisodeProgress] = []
         var tombstones: [Int: Date] = [:]
         var dubs: [Int: SyncDub] = [:]
+        var secrets: [Int: SyncSecret] = [:]
         for (id, title) in titles {
             guard let animeID = Int(id) else { continue }
             if let gone = title.gone { tombstones[animeID] = Date(syncMilliseconds: gone) }
@@ -224,13 +239,14 @@ struct SyncEnvironment {
                                                  duration: Double(position.d) / 1000, updatedAt: Date(syncMilliseconds: position.at)))
             }
             if let dub = title.dub { dubs[animeID] = dub }
+            if let secret = title.secret { secrets[animeID] = secret }
             if let waiting = outbox[id] {
                 let left = Self.without(waiting, covered: title)
                 outbox[id] = left.isEmpty ? nil : left
                 outboxChanged = true
             }
         }
-        model.applySynced(positions: positions, tombstones: tombstones, dubs: dubs)
+        model.applySynced(positions: positions, tombstones: tombstones, dubs: dubs, secrets: secrets)
         if outboxChanged { writeOutbox(outbox, account: account) }
     }
 
@@ -248,6 +264,9 @@ struct SyncEnvironment {
         }
         for (animeID, dub) in model.stampedDubs() where !model.isFinished(animeID) {
             batch[String(animeID), default: SyncTitle()].dub = dub
+        }
+        for (animeID, secret) in model.secrets where secret.at > 0 {
+            batch[String(animeID), default: SyncTitle()].secret = SyncSecret(on: secret.on, watched: secret.watched, at: secret.at)
         }
         var outbox = readOutbox(account)
         for (id, title) in batch {
@@ -269,6 +288,10 @@ struct SyncEnvironment {
         // Whatever was waiting for this title is older than the tombstone and would be refused anyway.
         var kept = Self.without(outbox[id] ?? SyncTitle(), covered: SyncTitle(gone: at))
         kept.gone = at
+        // A title finished «украдкой» keeps its secret past the tombstone: see `secretChanged`.
+        if let secret = model?.secrets[animeID], secret.on {
+            kept.secret = SyncSecret(on: true, watched: secret.watched, at: max(secret.at, at + 1))
+        }
         outbox[id] = kept
         writeOutbox(outbox, account: account)
         schedule()
@@ -390,6 +413,7 @@ struct SyncEnvironment {
     static func merge(_ base: SyncTitle?, _ patch: SyncTitle) -> SyncTitle {
         var out = base ?? SyncTitle()
         if let dub = patch.dub, (out.dub?.at ?? .min) <= dub.at { out.dub = dub }
+        if let secret = patch.secret, (out.secret?.at ?? .min) <= secret.at { out.secret = secret }
         if let gone = patch.gone, (out.gone ?? .min) <= gone { out.gone = gone }
         if let eps = patch.eps {
             var merged = out.eps ?? [:]
@@ -404,6 +428,7 @@ struct SyncEnvironment {
         var out = title
         let floor = covered.gone ?? .min
         if let dub = out.dub, dub.at <= floor || (covered.dub.map { dub.at <= $0.at } ?? false) { out.dub = nil }
+        if let secret = out.secret, secret.at <= floor || (covered.secret.map { secret.at <= $0.at } ?? false) { out.secret = nil }
         if let gone = out.gone, gone <= floor { out.gone = nil }
         if let eps = out.eps {
             let left = eps.filter { episode, position in

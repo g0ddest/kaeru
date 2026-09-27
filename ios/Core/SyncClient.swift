@@ -3,7 +3,7 @@ import Foundation
 /// The worker's `/sync` document (infra/relay/src/sync.ts; spec 2026-09-26-kaeru-sync-design.md §2):
 /// per anime id, where each episode stopped, the chosen dub and a tombstone for a finished title.
 /// Every `at` is the device's own clock in milliseconds, and the newer one wins, field by field and
-/// episode by episode. `secret` («Смотреть украдкой») is not read here yet.
+/// episode by episode. `secret` is a title watched «украдкой».
 struct SyncPosition: Codable, Equatable {
     /// Where the episode stopped and how long it is, in milliseconds.
     var p: Int64
@@ -17,14 +17,22 @@ struct SyncDub: Codable, Equatable {
     var at: Int64
 }
 
+/// «Смотреть украдкой» for one title: whether it is, and how many episodes were watched so.
+struct SyncSecret: Codable, Equatable {
+    var on: Bool
+    var watched: Int
+    var at: Int64
+}
+
 struct SyncTitle: Codable, Equatable {
     var dub: SyncDub?
     var eps: [String: SyncPosition]?
+    var secret: SyncSecret?
     var gone: Int64?
-    init(dub: SyncDub? = nil, eps: [String: SyncPosition]? = nil, gone: Int64? = nil) {
-        self.dub = dub; self.eps = eps; self.gone = gone
+    init(dub: SyncDub? = nil, eps: [String: SyncPosition]? = nil, secret: SyncSecret? = nil, gone: Int64? = nil) {
+        self.dub = dub; self.eps = eps; self.secret = secret; self.gone = gone
     }
-    var isEmpty: Bool { dub == nil && gone == nil && (eps?.isEmpty ?? true) }
+    var isEmpty: Bool { dub == nil && gone == nil && secret == nil && (eps?.isEmpty ?? true) }
 }
 
 typealias SyncTitles = [String: SyncTitle]
@@ -71,6 +79,11 @@ enum SyncWire {
                     positions[episode] = SyncPosition(p: p, d: d, at: at)
                 }
                 if !positions.isEmpty { title.eps = positions }
+            }
+            if let secret = source["secret"] as? [String: Any], let flag = secret["on"] as? NSNumber,
+               CFGetTypeID(flag) == CFBooleanGetTypeID(),
+               let watched = integer(secret["watched"]), let at = integer(secret["at"]) {
+                title.secret = SyncSecret(on: flag.boolValue, watched: Int(min(max(0, watched), 100_000)), at: at)
             }
             if let gone = integer(source["gone"]) { title.gone = gone }
             read[id] = title
