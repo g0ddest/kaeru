@@ -13,7 +13,12 @@ import app.kaeru.data.local.KaeruDatabase
 import app.kaeru.data.local.toEntity
 import app.kaeru.data.playback.RoomPlaybackSampleRepository
 import app.kaeru.data.playback.RoomWatchStateRepository
+import app.kaeru.domain.model.Anime
+import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.EpisodeProgress
+import app.kaeru.domain.model.ListStatus
+import app.kaeru.domain.model.SecretTitle
+import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.model.WatchState
 import app.kaeru.domain.viewsync.RememberedDub
 import app.kaeru.domain.viewsync.SyncedViewing
@@ -153,6 +158,62 @@ class RoomLocalViewingTest {
     @Test
     fun `the list's statuses are read by title`() = scope.runTest {
         assertEquals(emptyMap<Int, Any>(), local.statuses().first())
+    }
+
+    // --- «украдкой» -----------------------------------------------------------------------------
+
+    private fun anime(id: Int, episodes: Int = 12, status: AnimeStatus = AnimeStatus.RELEASED) = Anime(
+        id, "Имя $id", "Name $id", null, emptyList(), status, episodes, episodes, null, null, 2026, null, null,
+    )
+
+    @Test
+    fun `a secret from another device goes in only over an older one, and its card is fetched`() = scope.runTest {
+        val fetched = mutableListOf<Int>()
+        val viewing = RoomLocalViewing(db, session, dispatcher, SecretCards { fetched += it })
+        db.animeDao().upsertAll(listOf(anime(ANIME).toEntity(detailsFetchedAt = null)))
+        db.secretTitleDao().upsert(SecretTitle(ANIME, true, 4, Instant.ofEpochMilli(300)).toEntity())
+
+        viewing.apply(
+            ACCOUNT,
+            SyncedViewing(
+                secrets = listOf(
+                    SecretTitle(ANIME, false, 9, Instant.ofEpochMilli(200)),
+                    SecretTitle(OTHER_ANIME, true, 2, Instant.ofEpochMilli(100)),
+                ),
+            ),
+        )
+
+        val secrets = viewing.secrets()
+        assertEquals(SecretTitle(ANIME, true, 4, Instant.ofEpochMilli(300)), secrets[ANIME])
+        assertEquals(SecretTitle(OTHER_ANIME, true, 2, Instant.ofEpochMilli(100)), secrets[OTHER_ANIME])
+        // Only the title this device has no card for.
+        assertEquals(listOf(OTHER_ANIME), fetched)
+    }
+
+    @Test
+    fun `a secret title reads as secret, and as completed once a finished show is all watched`() = scope.runTest {
+        db.animeDao().upsertAll(
+            listOf(anime(ANIME).toEntity(detailsFetchedAt = null), anime(OTHER_ANIME).toEntity(detailsFetchedAt = null)),
+        )
+        db.userRateDao().upsertAll(
+            listOf(UserRate(1, ANIME, ListStatus.WATCHING, 3, Instant.EPOCH).toEntity()),
+        )
+        db.secretTitleDao().upsert(SecretTitle(ANIME, true, 5, Instant.ofEpochMilli(1)).toEntity())
+        db.secretTitleDao().upsert(SecretTitle(OTHER_ANIME, true, 12, Instant.ofEpochMilli(1)).toEntity())
+
+        assertEquals(
+            mapOf(ANIME to ListStatus.SECRET, OTHER_ANIME to ListStatus.COMPLETED),
+            local.statuses().first(),
+        )
+    }
+
+    @Test
+    fun `an ongoing show is never finished by its secret count`() {
+        val ongoing = anime(ANIME, status = AnimeStatus.ONGOING)
+        assertFalse(SecretTitle.finished(ongoing, 12, Instant.EPOCH))
+        assertTrue(SecretTitle.finished(anime(ANIME), 12, Instant.EPOCH))
+        assertFalse(SecretTitle.finished(anime(ANIME), 11, Instant.EPOCH))
+        assertFalse(SecretTitle.finished(anime(ANIME, episodes = 0), 3, Instant.EPOCH))
     }
 
     // --- what the repositories tell sync --------------------------------------------------------

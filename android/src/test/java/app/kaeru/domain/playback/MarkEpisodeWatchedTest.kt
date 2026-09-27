@@ -120,6 +120,28 @@ class MarkEpisodeWatchedTest {
     }
 
     @Test
+    fun `a secret title is counted without a status write and never offered as finished`() = runTest {
+        seed(status = ListStatus.SECRET, episodes = 11)
+
+        val outcome = mark(animeId = 100, episode = 12).getOrThrow()
+
+        // The repository keeps a secret title's count to itself; the mark only ever asks it to.
+        assertEquals(listOf("episodes:100:12"), library.calls)
+        assertEquals(WatchedOutcome(12, movedToWatching = false, suggestCompleted = false), outcome)
+    }
+
+    @Test
+    fun `a secret title's count only goes up at the threshold of a later episode`() = runTest {
+        seed(status = ListStatus.SECRET, episodes = 5)
+
+        mark(animeId = 100, episode = 4).getOrThrow()
+        mark(animeId = 100, episode = 7).getOrThrow()
+
+        assertEquals(listOf("episodes:100:7"), library.calls)
+        assertEquals(7, library.entry(100)!!.rate.episodes)
+    }
+
+    @Test
     fun `an episode shikimori already counted is not sent again`() = runTest {
         seed(episodes = 5)
 

@@ -48,6 +48,20 @@ class LibraryTabsTest {
     }
 
     @Test
+    fun `secret titles have their own tab, last, and only there`() {
+        val items = sortKeys(
+            listOf(entry(1, ListStatus.WATCHING), entry(2, ListStatus.SECRET), entry(3, ListStatus.SECRET)),
+        )
+        val tabs = libraryTabs(libraryCounts(items))
+
+        assertEquals(ListStatus.SECRET, tabs.last().status)
+        assertEquals("Украдкой 2", tabs.last().text)
+        assertEquals(listOf(2, 3), selectLibrary(items, ListStatus.SECRET, LibrarySort.TITLE).map { it.anime.id })
+        assertEquals(listOf(1), selectLibrary(items, ListStatus.WATCHING, LibrarySort.TITLE).map { it.anime.id })
+        assertTrue(emptyTabCopy(ListStatus.SECRET).text.contains("Shikimori"))
+    }
+
+    @Test
     fun `the three the viewer opens most come first`() {
         val tabs = libraryTabs(emptyMap())
         assertEquals(

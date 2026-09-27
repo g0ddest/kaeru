@@ -73,6 +73,7 @@ import app.kaeru.ui.common.design.SkeletonHero
 import app.kaeru.ui.common.design.StatusPill
 import app.kaeru.ui.common.design.TranslationPickerSheet
 import app.kaeru.ui.common.design.TextAction
+import app.kaeru.ui.common.design.SECRET_HINT
 import app.kaeru.ui.common.design.statusLabel
 import app.kaeru.ui.common.details.COLLAPSE
 import app.kaeru.ui.common.details.DetailsContent
@@ -432,7 +433,7 @@ private fun Actions(
     }
 }
 
-/** Where this title sits in the list, and the six places it could sit instead. */
+/** Where this title sits in the list, and the places it could sit instead — «Украдкой» last. */
 @Composable
 private fun StatusMenu(current: ListStatus, busy: Boolean, onStatus: (ListStatus) -> Unit) {
     var open by remember { mutableStateOf(false) }
@@ -461,11 +462,20 @@ private fun StatusMenu(current: ListStatus, busy: Boolean, onStatus: (ListStatus
             ListStatus.entries.forEach { status ->
                 DropdownMenuItem(
                     text = {
-                        Text(
-                            statusLabel(status),
-                            style = MaterialTheme.typography.titleSmall,
-                            color = KaeruText,
-                        )
+                        Column {
+                            Text(
+                                statusLabel(status),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = KaeruText,
+                            )
+                            if (status == ListStatus.SECRET) {
+                                Text(
+                                    SECRET_HINT,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = KaeruSecondary,
+                                )
+                            }
+                        }
                     },
                     onClick = {
                         open = false

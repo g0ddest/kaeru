@@ -73,6 +73,7 @@ import app.kaeru.ui.common.design.StatusPill
 import app.kaeru.ui.common.design.TextAction
 import app.kaeru.ui.common.design.kaeruFocus
 import app.kaeru.ui.common.design.pluralEpisodes
+import app.kaeru.ui.common.design.SECRET_HINT
 import app.kaeru.ui.common.design.statusLabel
 import app.kaeru.ui.common.details.DetailsContent
 import app.kaeru.ui.common.details.DetailsUiState
@@ -584,6 +585,7 @@ private fun TvStatusDialog(current: ListStatus?, onPick: (ListStatus) -> Unit, o
             items(ListStatus.entries, key = { it.name }) { status ->
                 TvDialogRow(
                     title = statusLabel(status),
+                    caption = SECRET_HINT.takeIf { status == ListStatus.SECRET },
                     selected = status == current,
                     enabled = true,
                     onClick = { onPick(status) },

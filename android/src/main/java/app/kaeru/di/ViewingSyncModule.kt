@@ -6,6 +6,8 @@ import app.kaeru.data.shikimori.SessionShikimoriApi
 import app.kaeru.data.viewsync.DataStoreSyncState
 import app.kaeru.data.viewsync.RelaySyncApi
 import app.kaeru.data.viewsync.RoomLocalViewing
+import app.kaeru.data.viewsync.SecretCards
+import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.connectivity.Connectivity
 import app.kaeru.domain.settings.SettingsStore
 import app.kaeru.domain.viewsync.ViewingSync
@@ -38,6 +40,10 @@ object ViewingSyncModule {
     @Provides
     @Singleton
     fun viewingSyncEvents(): ViewingSyncEvents = ViewingSyncEvents()
+
+    /** A title another device made «украдкой» is drawn from its card, fetched once it arrives. */
+    @Provides
+    fun secretCards(library: LibraryRepository): SecretCards = SecretCards { animeId -> library.refreshAnime(animeId) }
 
     @Provides
     @Singleton

@@ -12,9 +12,9 @@ import java.time.Instant
 @Database(
     entities = [
         AnimeEntity::class, UserRateEntity::class, WatchStateEntity::class, EpisodeProgressEntity::class,
-        RateOutboxEntity::class, NotifiedEpisodeEntity::class, SkipMarksEntity::class,
+        RateOutboxEntity::class, NotifiedEpisodeEntity::class, SkipMarksEntity::class, SecretTitleEntity::class,
     ],
-    version = 6,
+    version = 7,
     // Written to `app/schemas` from version 2 on, so the next migration can be checked against
     // the schema it produces rather than only against the rows it preserves.
     exportSchema = true,
@@ -28,6 +28,7 @@ abstract class KaeruDatabase : RoomDatabase() {
     abstract fun rateOutboxDao(): RateOutboxDao
     abstract fun notifiedEpisodeDao(): NotifiedEpisodeDao
     abstract fun skipMarksDao(): SkipMarksDao
+    abstract fun secretTitleDao(): SecretTitleDao
 
     /**
      * The two rows one progress sample leaves behind, committed together.
@@ -67,7 +68,7 @@ abstract class KaeruDatabase : RoomDatabase() {
     /**
      * What viewing sync brought from another device, in one transaction: tombstones first, then
      * positions — each only over an older one, checked here rather than trusted from a read made
-     * before a sample could land — then dubs. A dub for a title with no row yet starts one at the
+     * before a sample could land — then dubs. «Украдкой» goes first, each only over an older one. A dub for a title with no row yet starts one at the
      * beginning of [dubEpisodes]' episode, which is where a press of the watch button would start.
      */
     suspend fun applySynced(
@@ -75,8 +76,15 @@ abstract class KaeruDatabase : RoomDatabase() {
         positions: List<EpisodeProgressEntity>,
         dubs: Map<Int, Pair<Int, String?>>,
         dubEpisodes: Map<Int, Int>,
+        secrets: List<SecretTitleEntity> = emptyList(),
     ): Boolean = withTransaction {
         var written = false
+        for (secret in secrets) {
+            val here = secretTitleDao().get(secret.animeId)
+            if (here != null && !here.at.isBefore(secret.at)) continue
+            secretTitleDao().upsert(secret)
+            written = true
+        }
         for ((animeId, at) in tombstones) {
             episodeProgressDao().deleteUpTo(animeId, at)
             watchStateDao().rewindUpTo(animeId, at)
@@ -123,6 +131,8 @@ abstract class KaeruDatabase : RoomDatabase() {
         // behind, it would keep the next viewer from ever hearing about the episodes it names —
         // and clearing it is also what makes the first check after a sign-in a silent one.
         notifiedEpisodeDao().deleteAll()
+        // «Украдкой» is one account's list, kept here instead of on Shikimori.
+        secretTitleDao().deleteAll()
     }
 }
 
@@ -219,6 +229,20 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
                 "`animeId` INTEGER NOT NULL, `episode` INTEGER NOT NULL, `lengthSec` INTEGER NOT NULL, " +
                 "`opStart` INTEGER, `opEnd` INTEGER, `edStart` INTEGER, `edEnd` INTEGER, " +
                 "`fetchedAt` INTEGER NOT NULL, PRIMARY KEY(`animeId`, `episode`, `lengthSec`))",
+        )
+    }
+}
+
+/**
+ * Version 7 gives «Смотреть украдкой» somewhere to live: titles watched without a word to
+ * Shikimori. Nothing existing changes — the table starts empty, which is «nothing is secret».
+ */
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL(
+            "CREATE TABLE IF NOT EXISTS `secret_title` (" +
+                "`animeId` INTEGER NOT NULL, `isOn` INTEGER NOT NULL, `watched` INTEGER NOT NULL, " +
+                "`at` INTEGER NOT NULL, PRIMARY KEY(`animeId`))",
         )
     }
 }

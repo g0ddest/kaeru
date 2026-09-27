@@ -60,7 +60,7 @@ class AddStartedTitleToListTest {
     /** «Пересматриваю», «Отложено», «Брошено» — a status the viewer chose is never overwritten. */
     @Test
     fun `no status the viewer chose is overwritten by starting an episode`() = runTest {
-        listOf(ListStatus.REWATCHING, ListStatus.ON_HOLD, ListStatus.DROPPED, ListStatus.COMPLETED)
+        listOf(ListStatus.REWATCHING, ListStatus.ON_HOLD, ListStatus.DROPPED, ListStatus.COMPLETED, ListStatus.SECRET)
             .forEachIndexed { index, status ->
                 val id = 10 + index
                 seed(id, status)

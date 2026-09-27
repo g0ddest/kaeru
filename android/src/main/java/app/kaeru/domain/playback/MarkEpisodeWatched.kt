@@ -60,8 +60,10 @@ class MarkEpisodeWatched(
             WatchedOutcome(
                 markedEpisode = episode,
                 movedToWatching = pickUp,
-                // Nothing new was counted, so the dialog was already offered when it was.
-                suggestCompleted = !alreadyCounted && !moreScheduled && announced > 0 && episode >= announced,
+                // Nothing new was counted, so the dialog was already offered when it was. A title
+                // watched «украдкой» is never offered: «Завершено» would be a write to Shikimori.
+                suggestCompleted = status != ListStatus.SECRET &&
+                    !alreadyCounted && !moreScheduled && announced > 0 && episode >= announced,
             ),
         )
     }

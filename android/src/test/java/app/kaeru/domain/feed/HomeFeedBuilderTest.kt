@@ -39,6 +39,26 @@ class HomeFeedBuilderTest {
     private fun stopped(animeId: Int, episode: Int, fraction: Float, at: Instant = now) =
         EpisodeProgress(animeId, episode, (fraction * 1_000_000).toLong(), 1_000_000, at)
 
+    // --- «украдкой» ---------------------------------------------------------------------------
+
+    @Test
+    fun `a secret title is continued and offered next like a listed one`() {
+        val stoppedIn = anime(1, episodes = 12)
+        val nextOne = anime(2, episodes = 12)
+        val feed = builder.build(
+            listOf(
+                entry(stoppedIn, ListStatus.SECRET, watched = 3, progress = listOf(stopped(1, 4, 0.4f))),
+                entry(nextOne, ListStatus.SECRET, watched = 5),
+            ),
+            now, DEFAULT,
+        )
+
+        assertEquals(FeedKind.CONTINUE, feed.top?.kind)
+        assertEquals(1, feed.top?.entry?.anime?.id)
+        assertEquals(listOf(2), feed.nextUp.map { it.entry.anime.id })
+        assertEquals(6, feed.nextUp.single().episode)
+    }
+
     // --- positions kept per episode ---------------------------------------------------------
 
     @Test

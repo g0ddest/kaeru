@@ -2,6 +2,7 @@ package app.kaeru.domain.viewsync
 
 import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.ListStatus
+import app.kaeru.domain.model.SecretTitle
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 
@@ -44,6 +45,7 @@ class FakeLocalViewing : LocalViewing {
     val rows = mutableMapOf<Pair<Int, Int>, EpisodeProgress>()
     val remembered = mutableMapOf<Int, RememberedDub>()
     val listed = MutableStateFlow<Map<Int, ListStatus>>(emptyMap())
+    val secretRows = mutableMapOf<Int, SecretTitle>()
     val applied = mutableListOf<SyncedViewing>()
 
     /** The account the tables belong to; a write for another is turned down, as the account lock does. */
@@ -56,6 +58,8 @@ class FakeLocalViewing : LocalViewing {
     override suspend fun positions(): List<EpisodeProgress> = rows.values.toList()
 
     override suspend fun dubs(): Map<Int, RememberedDub> = remembered.toMap()
+
+    override suspend fun secrets(): Map<Int, SecretTitle> = secretRows.toMap()
 
     override fun statuses(): Flow<Map<Int, ListStatus>> = listed
 
@@ -70,6 +74,10 @@ class FakeLocalViewing : LocalViewing {
             if (here == null || here.updatedAt.isBefore(row.updatedAt)) rows[row.animeId to row.episode] = row
         }
         remembered.putAll(change.dubs)
+        for (secret in change.secrets) {
+            val here = secretRows[secret.animeId]
+            if (here == null || here.at.isBefore(secret.at)) secretRows[secret.animeId] = secret
+        }
         return true
     }
 }

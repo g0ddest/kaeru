@@ -18,6 +18,7 @@ private val TabOrder = listOf(
     ListStatus.REWATCHING,
     ListStatus.ON_HOLD,
     ListStatus.DROPPED,
+    ListStatus.SECRET,
 )
 
 /**
@@ -96,5 +97,9 @@ fun emptyTabCopy(status: ListStatus): EmptyTabCopy = when (status) {
     ListStatus.DROPPED -> EmptyTabCopy(
         title = "Ничего не брошено",
         text = "Тайтлы, которые не пошли, собираются здесь, чтобы не мешать остальным.",
+    )
+    ListStatus.SECRET -> EmptyTabCopy(
+        title = "Украдкой — ничего",
+        text = "Выберите для тайтла статус «Украдкой»: серии будут отмечаться только в Kaeru, не на Shikimori.",
     )
 }

@@ -376,4 +376,11 @@ fun statusLabel(status: ListStatus): String = when (status) {
     ListStatus.ON_HOLD -> "Отложено"
     ListStatus.DROPPED -> "Брошено"
     ListStatus.REWATCHING -> "Пересматриваю"
+    ListStatus.SECRET -> SECRET_LABEL
 }
+
+/** «Смотреть украдкой», as the status selector and the list's tab name it. */
+const val SECRET_LABEL = "Украдкой"
+
+/** What «Украдкой» means, under it wherever the platform leaves room for a line. */
+const val SECRET_HINT = "Не отмечать на Shikimori"

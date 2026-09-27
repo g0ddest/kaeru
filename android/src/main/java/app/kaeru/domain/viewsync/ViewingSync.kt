@@ -2,6 +2,7 @@ package app.kaeru.domain.viewsync
 
 import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.ListStatus
+import app.kaeru.domain.model.SecretTitle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -23,7 +24,7 @@ import java.time.Instant
  *
  * Reads the document when an account is signed in — at launch or just now — and when the app comes
  * back after five minutes in the background, and takes whatever is newer than this device's. Sends
- * this device's positions and dubs in batches: at most one a minute, at once on a pause, on another
+ * this device's positions, dubs and «украдкой» states in batches: at most one a minute, at once on a pause, on another
  * episode, on leaving the player, on going to the background and on the network coming back; and a
  * tombstone for a title the list turns «completed». A batch that fails stays in the outbox, which
  * outlives the process, for the next try.
@@ -141,6 +142,7 @@ class ViewingSync(
         when (event) {
             is ViewingSyncEvents.Event.Position -> positionSaved(event.progress)
             is ViewingSyncEvents.Event.Dub -> dubChosen(event.animeId, event.dub)
+            is ViewingSyncEvents.Event.Secret -> secretChanged(event.secret)
             is ViewingSyncEvents.Event.Push -> sendSoon()
         }
     }
@@ -158,6 +160,15 @@ class ViewingSync(
         val at = now()
         store.setDubStamps(acc, store.dubStamps(acc) + (animeId to at))
         enqueue(acc, animeId, SyncTitle(dub = SyncDub(dub.id, title.take(MAX_DUB_TITLE), at)))
+    }
+
+    /**
+     * «Украдкой» turned on or off, or another episode counted under it. A finished one still goes:
+     * the tombstone the list's turn to «completed» leaves is newer, and the worker drops it then.
+     */
+    private suspend fun secretChanged(secret: SecretTitle) {
+        val acc = account ?: return
+        enqueue(acc, secret.animeId, SyncTitle(secret = wire(secret)))
     }
 
     /** A title turning «completed» leaves a tombstone; turning back before it went out takes it back. */
@@ -216,6 +227,8 @@ class ViewingSync(
         if (titles.isEmpty()) return
         val known = local.positions().associate { (it.animeId to it.episode) to it.updatedAt.toEpochMilli() }
         val dubsHere = local.dubs()
+        val secretsHere = local.secrets()
+        val secrets = mutableListOf<SecretTitle>()
         val stamps = store.dubStamps(acc)
         val positions = mutableListOf<EpisodeProgress>()
         val tombstones = mutableMapOf<Int, Instant>()
@@ -238,6 +251,13 @@ class ViewingSync(
                     updatedAt = Instant.ofEpochMilli(remote.at),
                 )
             }
+            val secret = title.secret
+            if (secret != null) {
+                val here = secretsHere[animeId]
+                if (here == null || here.at.toEpochMilli() < secret.at) {
+                    secrets += SecretTitle(animeId, secret.on, secret.watched.coerceAtLeast(0), Instant.ofEpochMilli(secret.at))
+                }
+            }
             val dub = title.dub
             if (dub != null && dub.id != 0) {
                 // A dub remembered before stamps existed counts as the oldest there is.
@@ -250,7 +270,7 @@ class ViewingSync(
                 }
             }
         }
-        val change = SyncedViewing(positions, tombstones, dubs)
+        val change = SyncedViewing(positions, tombstones, dubs, secrets)
         val written = change.isEmpty || local.apply(acc, change)
         if (account != acc || !written) return
         if (stamped.isNotEmpty()) store.setDubStamps(acc, store.dubStamps(acc) + stamped)
@@ -283,6 +303,11 @@ class ViewingSync(
             batch[id] = (batch[id] ?: SyncTitle()).copy(
                 dub = SyncDub(dub.id, title.take(MAX_DUB_TITLE), stamps[animeId] ?: 0L),
             )
+        }
+        for ((animeId, secret) in local.secrets()) {
+            if (finished(animeId)) continue
+            val id = animeId.toString()
+            batch[id] = (batch[id] ?: SyncTitle()).copy(secret = wire(secret))
         }
         if (account != acc) return
         editOutbox(acc) { outbox ->
@@ -431,6 +456,12 @@ class ViewingSync(
 
         /** The worker refuses a longer dub name, and with it the whole batch. */
         const val MAX_DUB_TITLE = 200
+
+        fun wire(secret: SecretTitle) = SyncSecret(
+            on = secret.on,
+            watched = secret.watched.coerceAtLeast(0),
+            at = secret.at.toEpochMilli(),
+        )
 
         fun position(progress: EpisodeProgress) = SyncPosition(
             p = progress.positionMs.coerceAtLeast(0),

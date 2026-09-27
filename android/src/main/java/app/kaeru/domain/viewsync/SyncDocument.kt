@@ -6,7 +6,7 @@ package app.kaeru.domain.viewsync
  *
  * Every `at` is the device's own clock in milliseconds, and the newer one wins, field by field and
  * episode by episode — on the worker and, with the same rules, here ([merge], [without]). `secret`
- * («Смотреть украдкой») is not read here yet: an answer carrying one is read without it.
+ * is «Смотреть украдкой»: whether the title is watched without Shikimori, and how far.
  */
 data class SyncPosition(
     /** Where the episode stopped, in milliseconds. */
@@ -18,14 +18,17 @@ data class SyncPosition(
 
 data class SyncDub(val id: Int, val title: String, val at: Long)
 
+data class SyncSecret(val on: Boolean, val watched: Int, val at: Long)
+
 data class SyncTitle(
     val dub: SyncDub? = null,
     /** By episode number, as a string: the key the worker uses. */
     val eps: Map<String, SyncPosition>? = null,
     /** The moment the title was finished; anything stamped at or before it is dead. */
     val gone: Long? = null,
+    val secret: SyncSecret? = null,
 ) {
-    val isEmpty: Boolean get() = dub == null && gone == null && eps.isNullOrEmpty()
+    val isEmpty: Boolean get() = dub == null && gone == null && secret == null && eps.isNullOrEmpty()
 }
 
 /** By anime id, as a string: the key the worker uses. */
@@ -41,6 +44,8 @@ object SyncMerge {
         if (dub != null && (out.dub?.at ?: Long.MIN_VALUE) <= dub.at) out = out.copy(dub = dub)
         val gone = patch.gone
         if (gone != null && (out.gone ?: Long.MIN_VALUE) <= gone) out = out.copy(gone = gone)
+        val secret = patch.secret
+        if (secret != null && (out.secret?.at ?: Long.MIN_VALUE) <= secret.at) out = out.copy(secret = secret)
         val eps = patch.eps
         if (eps != null) {
             val merged = out.eps.orEmpty().toMutableMap()
@@ -59,9 +64,12 @@ object SyncMerge {
             dub.at <= floor || covered.dub?.let { dub.at <= it.at } == true
         }
         val gone = title.gone?.takeUnless { it <= floor }
+        val secret = title.secret?.takeUnless { secret ->
+            secret.at <= floor || covered.secret?.let { secret.at <= it.at } == true
+        }
         val eps = title.eps?.filter { (episode, position) ->
             position.at > floor && covered.eps?.get(episode)?.let { position.at <= it.at } != true
         }?.takeIf { it.isNotEmpty() }
-        return SyncTitle(dub = dub, eps = eps, gone = gone)
+        return SyncTitle(dub = dub, eps = eps, gone = gone, secret = secret)
     }
 }

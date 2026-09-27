@@ -18,6 +18,9 @@ import app.kaeru.domain.model.Anime
 import app.kaeru.domain.model.AnimeStatus
 import app.kaeru.domain.model.LibraryEntry
 import app.kaeru.domain.model.ListStatus
+import app.kaeru.domain.model.SecretTitle
+import app.kaeru.domain.model.UserRate
+import app.kaeru.domain.viewsync.ViewingSyncEvents
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.sync.OutboxSyncer
 import app.kaeru.domain.sync.RateOpKind
@@ -68,7 +71,11 @@ class ShikimoriLibraryRepository @Inject constructor(
     private val replays: ReplayRequest,
     @param:IoDispatcher private val io: CoroutineDispatcher,
     private val clock: Clock,
+    /** Where a change to «украдкой» is told to viewing sync, which sends it only while it is on. */
+    private val sync: ViewingSyncEvents = ViewingSyncEvents(),
 ) : LibraryRepository {
+    private val secretDao get() = db.secretTitleDao()
+
     private val detailsTtl = Duration.ofHours(6)
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -84,19 +91,34 @@ class ShikimoriLibraryRepository @Inject constructor(
 
     private fun observeAccountLibrary(): Flow<List<LibraryEntry>> = combine(
         animeDao.observeAll(), userRateDao.observeAll(), watchStateDao.observeAll(), episodeProgressDao.observeAll(),
-    ) { animes, rates, watches, progress ->
+        secretDao.observeAll(),
+    ) { animes, rates, watches, progress, secrets ->
         val animeById = animes.associateBy { it.id }
         val watchById = watches.associateBy { it.animeId }
         // Grouped once for the whole library rather than filtered per entry: the table holds a row
         // per episode ever started, so a scan per anime would be the library squared.
         val progressByAnime = progress.groupBy { it.animeId }
-        rates.mapNotNull { rate ->
-            val anime = animeById[rate.animeId] ?: return@mapNotNull null
+        val rateByAnime = rates.associateBy { it.animeId }
+        // A title watched «украдкой» is under «Украдкой» only, whatever Shikimori holds for it, and
+        // counts the episodes watched while it was — not the rate's.
+        val secretRates = secrets.filter { it.isOn }.associate { secret ->
+            secret.animeId to UserRate(
+                id = rateByAnime[secret.animeId]?.id ?: 0,
+                animeId = secret.animeId,
+                status = ListStatus.SECRET,
+                episodes = secret.watched,
+                updatedAt = secret.at,
+            )
+        }
+        val ids = (rates.map { it.animeId } + secretRates.keys).distinct()
+        ids.mapNotNull { animeId ->
+            val anime = animeById[animeId] ?: return@mapNotNull null
+            val rate = secretRates[animeId] ?: rateByAnime.getValue(animeId).toDomain()
             LibraryEntry(
                 anime.toDomain(),
-                rate.toDomain(),
-                watchById[rate.animeId]?.toDomain(),
-                progressByAnime[rate.animeId].orEmpty().map { it.toDomain() },
+                rate,
+                watchById[animeId]?.toDomain(),
+                progressByAnime[animeId].orEmpty().map { it.toDomain() },
             )
         }
     }
@@ -130,7 +152,9 @@ class ShikimoriLibraryRepository @Inject constructor(
         // written before the value that drain produced.
         val pendingBefore = outbox.pendingAnimeIds()
         val rates = api.libraryRates(userId).map { it.toDomain() }
-        val ids = rates.map { it.animeId }.distinct()
+        // «Украдкой» titles are no rate of Shikimori's, but their cards are kept as fresh as any.
+        val secretIds = secretDao.all().filter { it.isOn }.map { it.animeId }
+        val ids = (rates.map { it.animeId } + secretIds).distinct()
         // Fifty at a time for SQLite's sake; the network side batches itself the same way.
         val cached = ids.chunked(50).flatMap { animeDao.getByIds(it) }.associateBy { it.id }
         val fresh = api.animesByIds(ids).map { it.toDomain() }.withRealPosters()
@@ -187,10 +211,50 @@ class ShikimoriLibraryRepository @Inject constructor(
     private suspend fun List<Anime>.withRealPosters(): List<Anime> = posters.enrich(this)
 
     override suspend fun setStatus(animeId: Int, status: ListStatus): Result<Unit> = accountWrite { userId ->
+        if (status == ListStatus.SECRET) {
+            becomeSecret(animeId)
+            return@accountWrite
+        }
+        val secret = secretDao.get(animeId)?.takeIf { it.isOn }
+        writeStatus(userId, animeId, status)
+        if (secret != null) {
+            // Back from «украдкой»: what was watched meanwhile goes to Shikimori once, and only
+            // when it is more than the rate already says.
+            val counted = userRateDao.getByAnimeId(animeId)?.episodes ?: 0
+            if (secret.watched > counted) writeEpisodes(animeId, secret.watched)
+            saveSecret(secret.toDomain().copy(on = false, at = clock.instant()))
+        }
+    }
+
+    /**
+     * «Смотреть украдкой»: from now on nothing about this title goes to Shikimori. Its record there,
+     * if it has one, is left exactly as it is; the count starts from it.
+     *
+     * The card has to be here for the title to be drawn at all, offline included, so a title
+     * never cached is fetched first — and without one nothing changes.
+     */
+    private suspend fun becomeSecret(animeId: Int) {
+        if (secretDao.get(animeId)?.isOn == true) return
+        if (animeDao.getById(animeId) == null) {
+            val card = api.animesByIds(listOf(animeId)).firstOrNull { it.id == animeId }
+                ?.toDomain() ?: error("No anime $animeId returned by Shikimori")
+            val enriched = listOf(card).withRealPosters().single()
+            animeDao.upsertAll(listOf(enriched.toEntity(detailsFetchedAt = null)))
+        }
+        val counted = userRateDao.getByAnimeId(animeId)?.episodes ?: 0
+        saveSecret(SecretTitle(animeId, on = true, watched = counted, at = clock.instant()))
+    }
+
+    private suspend fun saveSecret(secret: SecretTitle) {
+        secretDao.upsert(secret.toEntity())
+        sync.secretChanged(secret)
+    }
+
+    private suspend fun writeStatus(userId: Long, animeId: Int, status: ListStatus) {
         val existing = userRateDao.getByAnimeId(animeId)
         if (existing != null && existing.mustQueue()) {
             queue(existing.copy(status = status), RateOpKind.STATUS, status.apiValue)
-            return@accountWrite
+            return
         }
         // Resolve the card first: a remote create must not succeed with no displayable anime.
         val missingAnime = if (animeDao.getById(animeId) == null) {
@@ -209,7 +273,7 @@ class ShikimoriLibraryRepository @Inject constructor(
             // title the library cannot draw, and the change would be invisible until a refresh.
             if (missingAnime != null) animeDao.upsertAll(listOf(missingAnime))
             queue(existing.orNewRate(animeId).copy(status = status), RateOpKind.STATUS, status.apiValue)
-            return@accountWrite
+            return
         }
         if (missingAnime != null) animeDao.upsertAll(listOf(missingAnime))
         userRateDao.upsertAll(listOf(dto.toDomain().copy(
@@ -218,16 +282,28 @@ class ShikimoriLibraryRepository @Inject constructor(
     }
 
     override suspend fun setEpisodes(animeId: Int, episodes: Int): Result<Unit> = accountWrite {
+        val secret = secretDao.get(animeId)?.takeIf { it.isOn }
+        if (secret != null) {
+            // «Украдкой»: counted here, and nowhere near Shikimori.
+            if (secret.watched != episodes) {
+                saveSecret(secret.toDomain().copy(watched = episodes.coerceAtLeast(0), at = clock.instant()))
+            }
+            return@accountWrite
+        }
+        writeEpisodes(animeId, episodes)
+    }
+
+    private suspend fun writeEpisodes(animeId: Int, episodes: Int) {
         val existing = userRateDao.getByAnimeId(animeId) ?: error("No user_rate for anime $animeId")
         if (existing.mustQueue()) {
             queue(existing.copy(episodes = episodes), RateOpKind.EPISODES, episodes.toString())
-            return@accountWrite
+            return
         }
         val dto = try {
             api.updateUserRate(existing.id, episodes = episodes)
         } catch (offline: NetworkException) {
             queue(existing.copy(episodes = episodes), RateOpKind.EPISODES, episodes.toString())
-            return@accountWrite
+            return
         }
         userRateDao.upsertAll(listOf(existing.copy(episodes = dto.episodes, updatedAt = clock.instant())))
     }

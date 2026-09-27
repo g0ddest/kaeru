@@ -3,6 +3,7 @@ package app.kaeru.data.viewsync
 import app.kaeru.domain.viewsync.SyncDub
 import app.kaeru.domain.viewsync.SyncFailure
 import app.kaeru.domain.viewsync.SyncPosition
+import app.kaeru.domain.viewsync.SyncSecret
 import app.kaeru.domain.viewsync.SyncTitle
 import app.kaeru.shared.ApiException
 import kotlinx.coroutines.Dispatchers
@@ -86,6 +87,16 @@ class RelaySyncApiTest {
         assertEquals(mapOf("1" to SyncPosition(5, 9, 11)), titles.getValue("5").eps)
         assertEquals(12L, titles.getValue("6").gone)
         assertNull(titles.getValue("6").dub)
+        assertEquals(SyncSecret(true, 3, 4), titles.getValue("5").secret)
+    }
+
+    @Test
+    fun `secret goes out and comes back as the worker writes it`() {
+        val body = SyncWire.body(mapOf("5" to SyncTitle(secret = SyncSecret(on = true, watched = 3, at = 4))))
+        assertEquals("""{"titles":{"5":{"secret":{"on":true,"watched":3,"at":4}}}}""", body)
+        assertEquals(SyncSecret(true, 3, 4), SyncWire.titles(body).getValue("5").secret)
+        val broken = SyncWire.titles("""{"titles":{"5":{"secret":{"on":"yes","watched":3,"at":4}}}}""")
+        assertNull(broken.getValue("5").secret)
     }
 
     @Test

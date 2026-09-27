@@ -10,6 +10,7 @@ import app.kaeru.data.local.MIGRATION_2_3
 import app.kaeru.data.local.MIGRATION_3_4
 import app.kaeru.data.local.MIGRATION_4_5
 import app.kaeru.data.local.MIGRATION_5_6
+import app.kaeru.data.local.MIGRATION_6_7
 import app.kaeru.data.local.NotifiedEpisodeDao
 import app.kaeru.data.local.RateOutboxDao
 import app.kaeru.data.local.SkipMarksDao
@@ -29,7 +30,7 @@ object DatabaseModule {
     @Singleton
     fun database(@ApplicationContext context: Context): KaeruDatabase =
         Room.databaseBuilder(context, KaeruDatabase::class.java, "kaeru.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
             // Still the backstop for a version this build has no path from — a downgrade, or a
             // database left by a branch that never shipped. Everything the app can produce has a
             // migration, so nothing a viewer owns is dropped.

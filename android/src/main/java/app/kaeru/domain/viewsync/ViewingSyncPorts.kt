@@ -2,6 +2,7 @@ package app.kaeru.domain.viewsync
 
 import app.kaeru.domain.model.EpisodeProgress
 import app.kaeru.domain.model.ListStatus
+import app.kaeru.domain.model.SecretTitle
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -33,8 +34,10 @@ data class SyncedViewing(
     /** Positions saved at or before these moments are dropped. */
     val tombstones: Map<Int, Instant> = emptyMap(),
     val dubs: Map<Int, RememberedDub> = emptyMap(),
+    /** «Украдкой» as another device left it; each written only over an older one. */
+    val secrets: List<SecretTitle> = emptyList(),
 ) {
-    val isEmpty: Boolean get() = positions.isEmpty() && tombstones.isEmpty() && dubs.isEmpty()
+    val isEmpty: Boolean get() = positions.isEmpty() && tombstones.isEmpty() && dubs.isEmpty() && secrets.isEmpty()
 }
 
 /**
@@ -48,7 +51,14 @@ interface LocalViewing {
 
     suspend fun dubs(): Map<Int, RememberedDub>
 
-    /** Every listed title's status, as the local copy of the list has it. */
+    /** «Украдкой» as this device has it, on or off, by anime id. */
+    suspend fun secrets(): Map<Int, SecretTitle>
+
+    /**
+     * Every listed title's status, as the local copy of the list has it. A title watched
+     * «украдкой» is [ListStatus.SECRET] — or [ListStatus.COMPLETED] once every episode of a
+     * finished show is behind the viewer, which is when it leaves a tombstone.
+     */
     fun statuses(): Flow<Map<Int, ListStatus>>
 
     /**
@@ -92,6 +102,7 @@ class ViewingSyncEvents {
     sealed interface Event {
         data class Position(val progress: EpisodeProgress) : Event
         data class Dub(val animeId: Int, val dub: RememberedDub) : Event
+        data class Secret(val secret: SecretTitle) : Event
         data class Push(val reason: SyncReason) : Event
     }
 
@@ -105,6 +116,10 @@ class ViewingSyncEvents {
 
     fun dubChosen(animeId: Int, dub: RememberedDub) {
         channel.trySend(Event.Dub(animeId, dub))
+    }
+
+    fun secretChanged(secret: SecretTitle) {
+        channel.trySend(Event.Secret(secret))
     }
 
     fun push(reason: SyncReason) {

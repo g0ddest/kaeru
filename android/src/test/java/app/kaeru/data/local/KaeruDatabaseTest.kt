@@ -361,7 +361,8 @@ class KaeruDatabaseTest {
     @Test
     fun `user rate persists every ListStatus through SQL`() = runTest {
         val dao = db.userRateDao()
-        val rates = ListStatus.entries.mapIndexed { index, status ->
+        // «Украдкой» is no Shikimori status and never a rate row: it lives in `secret_title`.
+        val rates = ListStatus.entries.filter { it.onShikimori }.mapIndexed { index, status ->
             UserRateEntity(
                 id = index.toLong() + 1,
                 animeId = index + 100,

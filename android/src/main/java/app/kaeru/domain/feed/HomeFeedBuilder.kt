@@ -33,7 +33,9 @@ class HomeFeedBuilder(private val upcomingWindow: Duration = Duration.ofDays(7))
         val targeted = entries.map { it to it.continueTarget(watchedThreshold) }
         val active = targeted
             .filter { (entry, _) ->
-                entry.rate.status == ListStatus.WATCHING || entry.rate.status == ListStatus.REWATCHING
+                entry.rate.status == ListStatus.WATCHING || entry.rate.status == ListStatus.REWATCHING ||
+                    // «Украдкой» is being watched, only without a word to Shikimori.
+                    entry.rate.status == ListStatus.SECRET
             }
 
         // An entry is being continued exactly when its target carries a position: the rule for

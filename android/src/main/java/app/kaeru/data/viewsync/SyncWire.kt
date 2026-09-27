@@ -3,6 +3,7 @@ package app.kaeru.data.viewsync
 import app.kaeru.domain.viewsync.SyncDub
 import app.kaeru.domain.viewsync.SyncFailure
 import app.kaeru.domain.viewsync.SyncPosition
+import app.kaeru.domain.viewsync.SyncSecret
 import app.kaeru.domain.viewsync.SyncTitle
 import app.kaeru.domain.viewsync.SyncTitles
 import kotlinx.serialization.json.Json
@@ -49,6 +50,13 @@ object SyncWire {
                             }
                         }
                     }
+                    title.secret?.let { secret ->
+                        putJsonObject("secret") {
+                            put("on", secret.on)
+                            put("watched", secret.watched)
+                            put("at", secret.at)
+                        }
+                    }
                     title.gone?.let { put("gone", it) }
                 }
             }
@@ -83,7 +91,17 @@ object SyncWire {
             val at = integer(position["at"])
             if (p != null && d != null && at != null) episode to SyncPosition(p, d, at) else null
         }?.toMap()?.takeIf { it.isNotEmpty() }
-        return SyncTitle(dub = dub, eps = eps, gone = integer(source["gone"]))
+        val secret = (source["secret"] as? JsonObject)?.let { raw ->
+            val on = (raw["on"] as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull
+            val watched = integer(raw["watched"])
+            val at = integer(raw["at"])
+            if (on != null && watched != null && at != null) {
+                SyncSecret(on, watched.coerceIn(0, Int.MAX_VALUE.toLong()).toInt(), at)
+            } else {
+                null
+            }
+        }
+        return SyncTitle(dub = dub, eps = eps, gone = integer(source["gone"]), secret = secret)
     }
 
     /** A JSON number, whole or not; a string or a boolean is not one. */
