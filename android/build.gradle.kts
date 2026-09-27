@@ -41,8 +41,8 @@ android {
         applicationId = "app.kaeru"
         minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "0.6.4"
+        versionCode = 14
+        versionName = "0.6.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SHIKIMORI_CLIENT_ID", secret("SHIKIMORI_CLIENT_ID"))
         buildConfigField("String", "KODIK_TOKEN", secret("KODIK_TOKEN"))
