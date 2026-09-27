@@ -38,10 +38,12 @@ import XCTest
         var value = GitHubAsset(); value.name = name; value.size = size; value.browserDownloadURL = url
         return value
     }
-    private func repository(_ store: MemoryStore, installed: String = "0.5.1",
+    private func repository(_ store: MemoryStore, installed: String = "0.5.1", platform: ReleasePlatform = .iOS,
                             answering: @escaping () async throws -> [GitHubRelease]) -> GitHubUpdateRepository {
         source.answer = answering
-        return GitHubUpdateRepository(source: source, store: store, installedVersion: installed, now: { self.moment })
+        // The iPhone's rules unless a test says otherwise: these run on the Mac too, which offers
+        // only releases with a disk image (testTheMacIsNotOfferedAReleaseWithoutADiskImage).
+        return GitHubUpdateRepository(source: source, store: store, installedVersion: installed, now: { self.moment }, platform: platform)
     }
 
     // MARK: - what is offered
@@ -52,6 +54,18 @@ import XCTest
         XCTAssertEqual(result.release?.version, "0.6.0")
         XCTAssertEqual(result.checkedAt, epoch)
         XCTAssertEqual(result.installedVersion, "0.5.1")
+    }
+
+    /// An Android-only release (an APK and nothing else) is not an update for the Mac: it used to be
+    /// offered as «Доступна версия 0.6.6» with nothing to install. The Mac waits for a disk image.
+    func testTheMacIsNotOfferedAReleaseWithoutADiskImage() async throws {
+        source.answer = { [self] in [release("v0.6.6", assets: [asset("Kaeru-0.6.6.apk")]), release("v0.6.5", assets: [asset("Kaeru-0.6.5-mac.dmg")])] }
+        let mac = GitHubUpdateRepository(source: source, store: MemoryStore(), installedVersion: "0.6.5", now: { self.moment }, platform: .macOS)
+        let first = try await mac.check(force: true).get()
+        XCTAssertNil(first.release)
+        source.answer = { [self] in [release("v0.6.7", assets: [asset("Kaeru-0.6.7-mac.dmg")]), release("v0.6.6", assets: [asset("Kaeru-0.6.6.apk")])] }
+        let second = try await mac.check(force: true).get()
+        XCTAssertEqual(second.release?.version, "0.6.7")
     }
 
     func testTheInstalledVersionIsNotOffered() async throws {
@@ -141,7 +155,7 @@ import XCTest
 
     /// Which system's file is offered is the build's to say, not the release's.
     func testTheCheckOffersTheFileOfTheSystemItRunsOn() async throws {
-        let repo = repository(MemoryStore()) { [self] in
+        let repo = repository(MemoryStore(), platform: .current) { [self] in
             [release("0.7.0", assets: [asset("manifest.plist", url: "https://example.test/m.plist"),
                                        asset("Kaeru-0.7.0-mac.dmg", url: "https://example.test/Kaeru-0.7.0-mac.dmg")])]
         }

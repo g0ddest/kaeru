@@ -36,10 +36,12 @@ import Foundation
     let installedVersion: String
 
     init(source: any UpdateSource, store: any LocalStorage, installedVersion: String,
-         policy: UpdatePolicy = UpdatePolicy(), now: @escaping @MainActor () -> Date = { Date() }) {
+         policy: UpdatePolicy = UpdatePolicy(), now: @escaping @MainActor () -> Date = { Date() },
+         platform: ReleasePlatform = .current) {
         self.source = source; self.store = store; self.installedVersion = installedVersion
-        self.policy = policy; self.now = now
+        self.policy = policy; self.now = now; self.platform = platform
     }
+    private let platform: ReleasePlatform
 
     /// The stored answer, re-read against the build that is actually running.
     ///
@@ -90,10 +92,16 @@ import Foundation
     /// so the offer is always worth making.
     private func resultOf(_ releases: [GitHubRelease], now: Date) -> UpdateResult {
         let upToDate = UpdateResult(checkedAt: now, installedVersion: installedVersion, release: nil)
-        guard let newest = ReleaseSelection.newest(releases),
+        // The Mac installs only from a disk image. A release without one — an Android-only
+        // release, an APK and nothing else — is not an update for it, and offering it said
+        // «Доступна версия» with nothing to install.
+        let candidates = platform == .macOS
+            ? releases.filter { $0.assets.contains { $0.name.lowercased().hasSuffix(ReleasePlatform.macOS.installerSuffix) } }
+            : releases
+        guard let newest = ReleaseSelection.newest(candidates),
               isNewerVersion(newest.tagName, than: installedVersion) else { return upToDate }
         return UpdateResult(checkedAt: now, installedVersion: installedVersion,
-                            release: ReleaseSelection.release(from: newest))
+                            release: ReleaseSelection.release(from: newest, for: platform))
     }
 }
 
