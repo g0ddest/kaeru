@@ -21,9 +21,9 @@ import app.kaeru.domain.playback.FakeEpisodeProgressRepository
 import app.kaeru.domain.playback.FakePlaybackPreferences
 import app.kaeru.domain.playback.FakeWatchStateRepository
 import app.kaeru.domain.playback.ResolveEpisodeStream
-import app.kaeru.domain.playback.SkipInterval
-import app.kaeru.domain.playback.SkipKind
-import app.kaeru.domain.playback.SkipOffer
+import app.kaeru.shared.domain.playback.SkipInterval
+import app.kaeru.shared.domain.playback.SkipKind
+import app.kaeru.shared.domain.playback.SkipOffer
 import app.kaeru.domain.playback.StreamPrefetchCache
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.source.EpisodeSourceProvider

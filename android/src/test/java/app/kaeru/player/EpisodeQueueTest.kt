@@ -5,50 +5,12 @@ import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/** Seeks, rungs and the next target. The end-of-episode rules are tested in `shared`. */
 class EpisodeQueueTest {
     private val track = Translation(11, "AniLibria.TV", TranslationKind.VOICE, episodesCount = 12, season = 2)
-
-    @Test
-    fun `the next episode card appears half a minute before the end`() {
-        val duration = 1_440_000L
-        assertFalse(EpisodeQueue.nextEpisodeDue(duration - 30_001, duration, ended = false))
-        assertTrue(EpisodeQueue.nextEpisodeDue(duration - 30_000, duration, ended = false))
-    }
-
-    @Test
-    fun `an episode whose duration is not known yet never looks nearly over`() {
-        assertFalse(EpisodeQueue.nextEpisodeDue(positionMs = 0, durationMs = 0, ended = false))
-        assertFalse(EpisodeQueue.countdownDue(positionMs = 0, durationMs = 0, ended = false))
-    }
-
-    @Test
-    fun `an episode that ended is over regardless of what the clock says`() {
-        assertTrue(EpisodeQueue.nextEpisodeDue(positionMs = 0, durationMs = 0, ended = true))
-        assertTrue(EpisodeQueue.countdownDue(positionMs = 0, durationMs = 0, ended = true))
-    }
-
-    @Test
-    fun `the countdown starts only in the last ten seconds`() {
-        val duration = 1_440_000L
-        assertFalse(EpisodeQueue.countdownDue(duration - 10_001, duration, ended = false))
-        assertTrue(EpisodeQueue.countdownDue(duration - 10_000, duration, ended = false))
-    }
-
-    @Test
-    fun `the watched threshold is a fraction of the whole episode`() {
-        assertFalse(EpisodeQueue.watched(positionMs = 899_999, durationMs = 1_000_000, threshold = 0.9f))
-        assertTrue(EpisodeQueue.watched(positionMs = 900_000, durationMs = 1_000_000, threshold = 0.9f))
-    }
-
-    @Test
-    fun `nothing counts as watched while the duration is unknown`() {
-        assertFalse(EpisodeQueue.watched(positionMs = 5_000, durationMs = 0, threshold = 0.9f))
-    }
 
     @Test
     fun `the next episode keeps the anime and the track and starts from the beginning`() {

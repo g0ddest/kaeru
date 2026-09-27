@@ -1,0 +1,230 @@
+{
+  "about": "Player rules as input -> expected output. Source of truth: shared/src/commonMain/kotlin/app/kaeru/shared/domain/playback. Run by the shared module (PlaybackVectorsTest), and meant to be run by the web client and Swift as well. Times are milliseconds; nextEpisodeAtMs/nowMs are epoch milliseconds. A track is {id, title, kind: voice|subtitles, episodes: number|null}. Orders are positions (0-based) in the given tracks list. Thresholds are fractions compared as 32-bit floats in Kotlin; the cases stay clear of rounding edges.",
+  "constants": {
+    "defaultStudios": ["AniLibria", "AniDUB", "Crunchyroll", "Amazing Dubbing", "AniBaza", "AniMaunt", "JAM", "Dream Cast", "SHIZA Project"],
+    "oftenChosenFrom": 2,
+    "startedMs": 60000,
+    "startedFraction": 0.02,
+    "defaultWatchedThreshold": 0.9,
+    "nextEpisodeLeadMs": 30000,
+    "autoplayCountdownSec": 10,
+    "skipButtonWindowMs": 10000,
+    "openingStartsWithinMs": 300000,
+    "endingEndsWithinMs": 180000,
+    "skipMinLengthMs": 60000,
+    "skipMaxLengthMs": 150000,
+    "seekSettleMs": 1000
+  },
+  "translationOrder": [
+    {
+      "name": "remembered track wins over a preferred studio and episode counts",
+      "tracks": [
+        {"id": 1, "title": "AniLibria.TV", "kind": "voice", "episodes": 12},
+        {"id": 2, "title": "Студийная банда", "kind": "voice", "episodes": 24},
+        {"id": 3, "title": "Crunchyroll", "kind": "subtitles", "episodes": 24}
+      ],
+      "preferred": ["AniLibria", "AniDUB", "Crunchyroll"], "rememberedId": 2, "usage": {},
+      "expected": [1, 0, 2]
+    },
+    {
+      "name": "preferred studios in list order, matched anywhere in the title regardless of case",
+      "tracks": [
+        {"id": 1, "title": "Crunchyroll", "kind": "voice", "episodes": 24},
+        {"id": 2, "title": "Дубляж [anidub]", "kind": "voice", "episodes": 12},
+        {"id": 3, "title": "ANILIBRIA", "kind": "voice", "episodes": 3}
+      ],
+      "preferred": ["AniLibria", "AniDUB", "Crunchyroll"], "rememberedId": null, "usage": {},
+      "expected": [2, 1, 0]
+    },
+    {
+      "name": "a hand-set list beats usage, usage beats the built-in studios",
+      "tracks": [
+        {"id": 1, "title": "Dream Cast", "kind": "voice", "episodes": 3},
+        {"id": 2, "title": "Студийная банда", "kind": "voice", "episodes": 3},
+        {"id": 3, "title": "Дубляж", "kind": "voice", "episodes": 3},
+        {"id": 4, "title": "AniDUB", "kind": "voice", "episodes": 3}
+      ],
+      "preferred": ["AniLibria", "AniDUB", "Crunchyroll"], "rememberedId": null, "usage": {"2": 5, "3": 2},
+      "expected": [3, 1, 2, 0]
+    },
+    {
+      "name": "built-in studios decide with no list and no history, even over a dub",
+      "tracks": [
+        {"id": 1, "title": "Дубляж", "kind": "voice", "episodes": 24},
+        {"id": 2, "title": "AniLibria субтитры", "kind": "subtitles", "episodes": 12},
+        {"id": 3, "title": "SHIZA Project", "kind": "voice", "episodes": 1}
+      ],
+      "preferred": [], "rememberedId": null, "usage": {},
+      "expected": [1, 2, 0]
+    },
+    {
+      "name": "voice over subtitles, then most episodes, unknown counts as zero, ties keep source order",
+      "tracks": [
+        {"id": 1, "title": "Субтитры", "kind": "subtitles", "episodes": 24},
+        {"id": 2, "title": "Неизвестно", "kind": "voice", "episodes": null},
+        {"id": 3, "title": "Первая", "kind": "voice", "episodes": 12},
+        {"id": 4, "title": "Вторая", "kind": "voice", "episodes": 12},
+        {"id": 5, "title": "Озвучка", "kind": "voice", "episodes": 3}
+      ],
+      "preferred": ["AniLibria"], "rememberedId": 99, "usage": {},
+      "expected": [2, 3, 4, 1, 0]
+    },
+    {
+      "name": "blank studios in the list match nothing",
+      "tracks": [
+        {"id": 1, "title": "Первая", "kind": "voice", "episodes": 1},
+        {"id": 2, "title": "Вторая", "kind": "voice", "episodes": 2}
+      ],
+      "preferred": ["", "  "], "rememberedId": null, "usage": {},
+      "expected": [1, 0]
+    },
+    {
+      "name": "nothing on offer",
+      "tracks": [], "preferred": ["AniLibria"], "rememberedId": 1, "usage": {},
+      "expected": []
+    }
+  ],
+  "substitutionOrder": [
+    {
+      "name": "the ranking with the chosen track taken out",
+      "tracks": [
+        {"id": 15, "title": "Субтитры", "kind": "subtitles", "episodes": 24},
+        {"id": 12, "title": "AniDUB", "kind": "voice", "episodes": 6},
+        {"id": 10, "title": "Студийная банда", "kind": "voice", "episodes": 2},
+        {"id": 11, "title": "AniLibria.TV", "kind": "voice", "episodes": 12}
+      ],
+      "chosenId": 10, "preferred": ["AniLibria", "AniDUB"], "rememberedId": 10, "usage": {},
+      "expected": [3, 1, 0]
+    },
+    {
+      "name": "a chosen track that is not the remembered one leaves the remembered one first",
+      "tracks": [
+        {"id": 15, "title": "Субтитры", "kind": "subtitles", "episodes": 24},
+        {"id": 12, "title": "AniDUB", "kind": "voice", "episodes": 6},
+        {"id": 10, "title": "Студийная банда", "kind": "voice", "episodes": 2},
+        {"id": 11, "title": "AniLibria.TV", "kind": "voice", "episodes": 12}
+      ],
+      "chosenId": 12, "preferred": ["AniLibria", "AniDUB"], "rememberedId": 10, "usage": {},
+      "expected": [2, 3, 0]
+    }
+  ],
+  "carriesEpisode": [
+    {"name": "own list says yes, any season", "episode": 3, "listedEpisodes": [1, 2, 3], "season": 2, "episodesCount": null, "expected": true},
+    {"name": "own list says no, whatever the count", "episode": 4, "listedEpisodes": [1, 2, 3], "season": 1, "episodesCount": 24, "expected": false},
+    {"name": "first season count covers it", "episode": 12, "listedEpisodes": null, "season": 1, "episodesCount": 12, "expected": true},
+    {"name": "first season count rules it out", "episode": 13, "listedEpisodes": null, "season": 1, "episodesCount": 12, "expected": false},
+    {"name": "a later season's count says nothing", "episode": 13, "listedEpisodes": null, "season": 2, "episodesCount": 12, "expected": null},
+    {"name": "no count, no list: unknown", "episode": 1, "listedEpisodes": null, "season": 1, "episodesCount": null, "expected": null}
+  ],
+  "translationUsage": [
+    {"name": "each anime counts once", "remembered": [{"animeId": 1, "translationId": 11}, {"animeId": 2, "translationId": 11}, {"animeId": 3, "translationId": 22}], "expected": {"11": 2, "22": 1}},
+    {"name": "nothing remembered counts for nothing", "remembered": [{"animeId": 1, "translationId": null}, {"animeId": 2, "translationId": 11}], "expected": {"11": 1}},
+    {"name": "a repeated anime counts once, by its first row", "remembered": [{"animeId": 1, "translationId": 11}, {"animeId": 1, "translationId": 22}], "expected": {"11": 1}},
+    {"name": "empty", "remembered": [], "expected": {}}
+  ],
+  "oftenChosen": [
+    {"name": "two anime make a habit", "usage": {"11": 2, "22": 1}, "id": 11, "expected": true},
+    {"name": "one anime does not", "usage": {"11": 2, "22": 1}, "id": 22, "expected": false},
+    {"name": "never chosen", "usage": {"11": 2}, "id": 33, "expected": false}
+  ],
+  "substitutionNotice": [
+    {"name": "one sentence", "askedFor": "AniDUB", "episode": 7, "playing": "AniLibria.TV", "expected": "В озвучке AniDUB серии 7 нет — включена AniLibria.TV"}
+  ],
+  "started": [
+    {"name": "a minute in", "positionMs": 60000, "durationMs": 14400000, "expected": true},
+    {"name": "just under a minute of a four-hour film", "positionMs": 59999, "durationMs": 14400000, "expected": false},
+    {"name": "a minute with no length", "positionMs": 60000, "durationMs": 0, "expected": true},
+    {"name": "half a minute with no length", "positionMs": 30000, "durationMs": 0, "expected": false},
+    {"name": "2% of a three-minute short", "positionMs": 3600, "durationMs": 180000, "expected": true},
+    {"name": "under 2% of a short", "positionMs": 3599, "durationMs": 180000, "expected": false},
+    {"name": "ten seconds of a normal episode is a mis-tap", "positionMs": 10000, "durationMs": 1440000, "expected": false}
+  ],
+  "watched": [
+    {"name": "just short of 90%", "positionMs": 899999, "durationMs": 1000000, "threshold": 0.9, "expected": false},
+    {"name": "90%", "positionMs": 900000, "durationMs": 1000000, "threshold": 0.9, "expected": true},
+    {"name": "past the end", "positionMs": 1100000, "durationMs": 1000000, "threshold": 0.9, "expected": true},
+    {"name": "unknown length is never watched", "positionMs": 5000, "durationMs": 0, "threshold": 0.9, "expected": false},
+    {"name": "another threshold", "positionMs": 800000, "durationMs": 1000000, "threshold": 0.8, "expected": true}
+  ],
+  "unfinished": [
+    {"name": "short of the threshold", "positionMs": 899999, "durationMs": 1000000, "threshold": 0.9, "expected": true},
+    {"name": "at the threshold", "positionMs": 900000, "durationMs": 1000000, "threshold": 0.9, "expected": false},
+    {"name": "unknown length is unfinished", "positionMs": 5000, "durationMs": 0, "threshold": 0.9, "expected": true}
+  ],
+  "resumePosition": [
+    {"name": "not started: from the top", "positionMs": 10000, "durationMs": 1440000, "threshold": 0.9, "expected": 0},
+    {"name": "mid-episode: where it stopped", "positionMs": 640000, "durationMs": 1440000, "threshold": 0.9, "expected": 640000},
+    {"name": "watched: from the top", "positionMs": 1300000, "durationMs": 1440000, "threshold": 0.9, "expected": 0},
+    {"name": "started with no length: where it stopped", "positionMs": 90000, "durationMs": 0, "threshold": 0.9, "expected": 90000}
+  ],
+  "availableEpisodes": [
+    {"name": "ongoing: what aired", "status": "ongoing", "episodes": 24, "episodesAired": 7, "expected": 7},
+    {"name": "announcement: nothing", "status": "anons", "episodes": 12, "episodesAired": 5, "expected": 0},
+    {"name": "released: the announced run", "status": "released", "episodes": 12, "episodesAired": 0, "expected": 12},
+    {"name": "released, unknown total: what aired", "status": "released", "episodes": 0, "episodesAired": 24, "expected": 24}
+  ],
+  "hasNextEpisode": [
+    {"name": "below the count", "episode": 6, "availableEpisodes": 7, "expected": true},
+    {"name": "the last one", "episode": 7, "availableEpisodes": 7, "expected": false},
+    {"name": "past the count", "episode": 9, "availableEpisodes": 7, "expected": false},
+    {"name": "unknown count", "episode": 1, "availableEpisodes": 0, "expected": false}
+  ],
+  "nextEpisodeDue": [
+    {"name": "31 s left", "positionMs": 1409999, "durationMs": 1440000, "ended": false, "expected": false},
+    {"name": "30 s left", "positionMs": 1410000, "durationMs": 1440000, "ended": false, "expected": true},
+    {"name": "unknown length", "positionMs": 0, "durationMs": 0, "ended": false, "expected": false},
+    {"name": "ended", "positionMs": 0, "durationMs": 0, "ended": true, "expected": true}
+  ],
+  "countdownSeconds": [
+    {"name": "not yet", "positionMs": 1429999, "durationMs": 1440000, "ended": false, "expected": null},
+    {"name": "10 s left", "positionMs": 1430000, "durationMs": 1440000, "ended": false, "expected": 10},
+    {"name": "9.001 s left rounds up", "positionMs": 1430999, "durationMs": 1440000, "ended": false, "expected": 10},
+    {"name": "9 s left", "positionMs": 1431000, "durationMs": 1440000, "ended": false, "expected": 9},
+    {"name": "1 ms left", "positionMs": 1439999, "durationMs": 1440000, "ended": false, "expected": 1},
+    {"name": "at the end", "positionMs": 1440000, "durationMs": 1440000, "ended": false, "expected": 0},
+    {"name": "ended", "positionMs": 5000, "durationMs": 1440000, "ended": true, "expected": 0},
+    {"name": "unknown length", "positionMs": 0, "durationMs": 0, "ended": false, "expected": null}
+  ],
+  "skipAccept": [
+    {"name": "plausible pair kept", "durationMs": 1560000, "opening": {"startMs": 3000, "endMs": 93000}, "ending": {"startMs": 1460000, "endMs": 1560000}, "expected": {"opening": {"startMs": 3000, "endMs": 93000}, "ending": {"startMs": 1460000, "endMs": 1560000}}},
+    {"name": "opening starting at 5 minutes is kept", "durationMs": 1560000, "opening": {"startMs": 300000, "endMs": 390000}, "ending": null, "expected": {"opening": {"startMs": 300000, "endMs": 390000}, "ending": null}},
+    {"name": "opening starting past 5 minutes is dropped", "durationMs": 1560000, "opening": {"startMs": 310000, "endMs": 400000}, "ending": null, "expected": {"opening": null, "ending": null}},
+    {"name": "too short and too long are dropped", "durationMs": 1560000, "opening": {"startMs": 10000, "endMs": 50000}, "ending": {"startMs": 1400000, "endMs": 1551000}, "expected": {"opening": null, "ending": null}},
+    {"name": "exactly 60 s and 150 s are kept", "durationMs": 1560000, "opening": {"startMs": 0, "endMs": 60000}, "ending": {"startMs": 1410000, "endMs": 1560000}, "expected": {"opening": {"startMs": 0, "endMs": 60000}, "ending": {"startMs": 1410000, "endMs": 1560000}}},
+    {"name": "an ending at the start of the episode is thrown away", "durationMs": 1560000, "opening": {"startMs": 3000, "endMs": 93000}, "ending": {"startMs": 5000, "endMs": 95000}, "expected": {"opening": {"startMs": 3000, "endMs": 93000}, "ending": null}},
+    {"name": "an ending ending exactly 3 minutes before the end is kept", "durationMs": 1560000, "opening": null, "ending": {"startMs": 1290000, "endMs": 1380000}, "expected": {"opening": null, "ending": {"startMs": 1290000, "endMs": 1380000}}},
+    {"name": "an ending ending earlier is dropped", "durationMs": 1560000, "opening": null, "ending": {"startMs": 1289999, "endMs": 1379999}, "expected": {"opening": null, "ending": null}},
+    {"name": "an interval past the end belongs to another file", "durationMs": 1400000, "opening": null, "ending": {"startMs": 1460000, "endMs": 1560000}, "expected": {"opening": null, "ending": null}},
+    {"name": "unknown length accepts nothing", "durationMs": 0, "opening": {"startMs": 3000, "endMs": 93000}, "ending": {"startMs": 1460000, "endMs": 1560000}, "expected": {"opening": null, "ending": null}}
+  ],
+  "skipOffer": [
+    {"name": "just before the opening", "durationMs": 1560000, "opening": {"startMs": 3000, "endMs": 93000}, "ending": {"startMs": 1460000, "endMs": 1560000}, "positionMs": 2999, "expected": null},
+    {"name": "opening start", "durationMs": 1560000, "opening": {"startMs": 3000, "endMs": 93000}, "ending": {"startMs": 1460000, "endMs": 1560000}, "positionMs": 3000, "expected": {"kind": "opening", "startMs": 3000, "endMs": 93000}},
+    {"name": "last millisecond of the ten", "durationMs": 1560000, "opening": {"startMs": 3000, "endMs": 93000}, "ending": {"startMs": 1460000, "endMs": 1560000}, "positionMs": 12999, "expected": {"kind": "opening", "startMs": 3000, "endMs": 93000}},
+    {"name": "ten seconds gone", "durationMs": 1560000, "opening": {"startMs": 3000, "endMs": 93000}, "ending": {"startMs": 1460000, "endMs": 1560000}, "positionMs": 13000, "expected": null},
+    {"name": "ending start", "durationMs": 1560000, "opening": {"startMs": 3000, "endMs": 93000}, "ending": {"startMs": 1460000, "endMs": 1560000}, "positionMs": 1460000, "expected": {"kind": "ending", "startMs": 1460000, "endMs": 1560000}},
+    {"name": "ending ten seconds gone", "durationMs": 1560000, "opening": {"startMs": 3000, "endMs": 93000}, "ending": {"startMs": 1460000, "endMs": 1560000}, "positionMs": 1470000, "expected": null},
+    {"name": "a broken ending offers nothing", "durationMs": 1560000, "opening": null, "ending": {"startMs": 5000, "endMs": 95000}, "positionMs": 5000, "expected": null}
+  ],
+  "endingSkipDue": [
+    {"name": "within the ten seconds", "durationMs": 1560000, "opening": null, "ending": {"startMs": 1460000, "endMs": 1560000}, "positionMs": 1469999, "expected": false},
+    {"name": "ten seconds in", "durationMs": 1560000, "opening": null, "ending": {"startMs": 1460000, "endMs": 1560000}, "positionMs": 1470000, "expected": true},
+    {"name": "played out", "durationMs": 1560000, "opening": null, "ending": {"startMs": 1460000, "endMs": 1560000}, "positionMs": 1560000, "expected": false},
+    {"name": "broken ending", "durationMs": 1560000, "opening": null, "ending": {"startMs": 5000, "endMs": 95000}, "positionMs": 20000, "expected": false}
+  ],
+  "insideEnding": [
+    {"name": "just before", "durationMs": 1560000, "opening": null, "ending": {"startMs": 1460000, "endMs": 1560000}, "positionMs": 1459999, "expected": false},
+    {"name": "first millisecond", "durationMs": 1560000, "opening": null, "ending": {"startMs": 1460000, "endMs": 1560000}, "positionMs": 1460000, "expected": true},
+    {"name": "last millisecond", "durationMs": 1560000, "opening": null, "ending": {"startMs": 1460000, "endMs": 1560000}, "positionMs": 1559999, "expected": true},
+    {"name": "at the end", "durationMs": 1560000, "opening": null, "ending": {"startMs": 1460000, "endMs": 1560000}, "positionMs": 1560000, "expected": false}
+  ],
+  "offerCompletion": [
+    {"name": "last announced episode", "episode": 12, "announcedEpisodes": 12, "nextEpisodeAtMs": null, "nowMs": 1790000000000, "expected": true},
+    {"name": "past the announced count", "episode": 13, "announcedEpisodes": 12, "nextEpisodeAtMs": null, "nowMs": 1790000000000, "expected": true},
+    {"name": "an episode before the last", "episode": 11, "announcedEpisodes": 12, "nextEpisodeAtMs": null, "nowMs": 1790000000000, "expected": false},
+    {"name": "unknown length", "episode": 5, "announcedEpisodes": 0, "nextEpisodeAtMs": null, "nowMs": 1790000000000, "expected": false},
+    {"name": "next episode scheduled", "episode": 12, "announcedEpisodes": 12, "nextEpisodeAtMs": 1790000000001, "nowMs": 1790000000000, "expected": false},
+    {"name": "the scheduled date is now", "episode": 12, "announcedEpisodes": 12, "nextEpisodeAtMs": 1790000000000, "nowMs": 1790000000000, "expected": true},
+    {"name": "the scheduled date has passed", "episode": 12, "announcedEpisodes": 12, "nextEpisodeAtMs": 1789913600000, "nowMs": 1790000000000, "expected": true}
+  ]
+}

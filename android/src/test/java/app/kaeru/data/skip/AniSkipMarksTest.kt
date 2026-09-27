@@ -2,8 +2,8 @@ package app.kaeru.data.skip
 
 import app.kaeru.data.local.SkipMarksDao
 import app.kaeru.data.local.SkipMarksEntity
-import app.kaeru.domain.playback.SkipInterval
-import app.kaeru.domain.playback.SkipMarks
+import app.kaeru.shared.domain.playback.SkipInterval
+import app.kaeru.shared.domain.playback.SkipMarks
 import app.kaeru.test.MutableClock
 import java.io.IOException
 import java.time.Duration

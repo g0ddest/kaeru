@@ -4,226 +4,55 @@ import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Test
 
+/**
+ * The app's tracks through the shared ranking. The ranking itself is tested in `shared`
+ * (`app.kaeru.shared.domain.playback.TranslationRankerTest` and the playback vectors); this is
+ * only about the tracks coming back as they went in.
+ */
 class TranslationRankerTest {
-    private val preferred = listOf("AniLibria", "AniDUB", "Crunchyroll")
+    private val preferred = listOf("AniLibria", "AniDUB")
 
-    private fun voice(id: Int, title: String, episodes: Int? = null) =
-        Translation(id, title, TranslationKind.VOICE, episodes)
-
-    private fun subs(id: Int, title: String, episodes: Int? = null) =
-        Translation(id, title, TranslationKind.SUBTITLES, episodes)
-
-    @Test
-    fun `the remembered translation wins over a preferred studio and over episode counts`() {
-        val available = listOf(
-            voice(1, "AniLibria.TV", episodes = 12),
-            voice(2, "Студийная банда", episodes = 24),
-            subs(3, "Crunchyroll", episodes = 24),
-        )
-
-        assertEquals(available[1], TranslationRanker.pick(available, preferred, rememberedId = 2, usage = emptyMap()))
-    }
+    private val remembered = Translation(10, "Студийная банда", TranslationKind.VOICE, episodesCount = 2, season = 3)
+    private val anilibria = Translation(11, "AniLibria.TV", TranslationKind.VOICE, episodesCount = 12, season = 3)
+    private val subtitles = Translation(15, "AniDUB субтитры", TranslationKind.SUBTITLES, episodesCount = 24, season = 3)
+    private val longVoice = Translation(13, "Дубляж", TranslationKind.VOICE, episodesCount = 24, season = 3)
+    private val available = listOf(subtitles, longVoice, remembered, anilibria)
 
     @Test
-    fun `a remembered id the source no longer offers falls through to the normal rules`() {
-        val available = listOf(voice(1, "Студийная банда", episodes = 24), voice(2, "AniDUB", episodes = 6))
-
-        assertEquals(available[1], TranslationRanker.pick(available, preferred, rememberedId = 99, usage = emptyMap()))
-    }
-
-    @Test
-    fun `preferred studios are tried in order, not by how many episodes they carry`() {
-        val available = listOf(
-            voice(1, "Crunchyroll", episodes = 24),
-            voice(2, "AniDUB", episodes = 12),
-            voice(3, "AniLibria", episodes = 3),
-        )
-
-        assertEquals(available[2], TranslationRanker.pick(available, preferred, rememberedId = null, usage = emptyMap()))
-    }
-
-    @Test
-    fun `a preferred studio matches anywhere in the title regardless of case`() {
-        val available = listOf(
-            voice(1, "Студийная банда", episodes = 24),
-            voice(2, "Дубляж [anilibria.tv]", episodes = 12),
-        )
-
-        assertEquals(available[1], TranslationRanker.pick(available, preferred, rememberedId = null, usage = emptyMap()))
-    }
-
-    @Test
-    fun `without a preferred match the voice with the most episodes wins over longer subtitles`() {
-        val available = listOf(
-            voice(1, "Студийная банда", episodes = 6),
-            subs(2, "Субтитры", episodes = 24),
-            voice(3, "Дубляж", episodes = 12),
-        )
-
-        assertEquals(available[2], TranslationRanker.pick(available, preferred, rememberedId = null, usage = emptyMap()))
-    }
-
-    @Test
-    fun `an unknown episode count never outranks a known one and ties keep source order`() {
-        val available = listOf(
-            voice(1, "Неизвестно", episodes = null),
-            voice(2, "Первая", episodes = 12),
-            voice(3, "Вторая", episodes = 12),
-        )
-
-        assertEquals(available[1], TranslationRanker.pick(available, preferred, rememberedId = null, usage = emptyMap()))
-    }
-
-    @Test
-    fun `subtitles only sources still yield their first track`() {
-        val available = listOf(subs(1, "Субтитры A"), subs(2, "Субтитры B", episodes = 24))
-
-        assertEquals(available[0], TranslationRanker.pick(available, preferred, rememberedId = null, usage = emptyMap()))
-    }
-
-    @Test
-    fun `nothing on offer means nothing to pick`() {
-        assertNull(TranslationRanker.pick(emptyList(), preferred, rememberedId = 1, usage = emptyMap()))
-        assertEquals(emptyList<Translation>(), TranslationRanker.sort(emptyList(), preferred, rememberedId = 1, usage = emptyMap()))
-    }
-
-    @Test
-    fun `with no studio matching anywhere the voice and episode rules are in charge`() {
-        val available = listOf(subs(1, "Неизвестные субтитры", episodes = 24), voice(2, "Дубляж", episodes = 12))
-
-        assertEquals(available[1], TranslationRanker.pick(available, emptyList(), rememberedId = null, usage = emptyMap()))
-    }
-
-    // --- the viewer's own history --------------------------------------------------------------
-
-    @Test
-    fun `the studio list the viewer set by hand beats the one they use most`() {
-        val available = listOf(voice(1, "Студийная банда", episodes = 24), voice(2, "AniDUB", episodes = 6))
-        val usage = mapOf(1 to 9)
-
-        assertEquals(available[1], TranslationRanker.pick(available, preferred, rememberedId = null, usage = usage))
-    }
-
-    @Test
-    fun `between studios nobody listed, the one chosen for more anime wins`() {
-        val available = listOf(
-            voice(1, "Студийная банда", episodes = 24),
-            voice(2, "Дубляж", episodes = 6),
-            voice(3, "Озвучка", episodes = 12),
-        )
-        val usage = mapOf(2 to 3, 3 to 1)
-
-        assertEquals(available[1], TranslationRanker.pick(available, preferred, rememberedId = null, usage = usage))
-    }
-
-    @Test
-    fun `a track chosen often beats a studio only the built-in list knows`() {
-        val available = listOf(voice(1, "AniLibria.TV", episodes = 12), voice(2, "Студийная банда", episodes = 12))
-        val usage = mapOf(2 to 4)
-
-        assertEquals(available[1], TranslationRanker.pick(available, emptyList(), rememberedId = null, usage = usage))
-    }
-
-    @Test
-    fun `with nothing chosen yet the built-in studios decide`() {
-        val available = listOf(voice(1, "Студийная банда", episodes = 24), voice(2, "AniLibria.TV", episodes = 6))
-
-        assertEquals(available[1], TranslationRanker.pick(available, emptyList(), rememberedId = null, usage = emptyMap()))
-    }
-
-    @Test
-    fun `the built-in studios outrank a dub over subtitles, the way a listed studio does`() {
-        val available = listOf(voice(1, "Дубляж", episodes = 24), subs(2, "AniLibria субтитры", episodes = 12))
-
-        assertEquals(available[1], TranslationRanker.pick(available, emptyList(), rememberedId = null, usage = emptyMap()))
-    }
-
-    @Test
-    fun `the remembered track still wins over everything the history says`() {
-        val available = listOf(voice(1, "AniLibria.TV", episodes = 12), voice(2, "Студийная банда", episodes = 24))
-
-        assertEquals(
-            available[1],
-            TranslationRanker.pick(available, preferred, rememberedId = 2, usage = mapOf(1 to 7)),
-        )
-    }
-
-    @Test
-    fun `the built-in studios are the nine the app shipped with, in order`() {
-        assertEquals(
-            listOf(
-                "AniLibria", "AniDUB", "Crunchyroll", "Amazing Dubbing", "AniBaza",
-                "AniMaunt", "JAM", "Dream Cast", "SHIZA Project",
-            ),
-            TranslationRanker.DEFAULT_STUDIOS,
-        )
-    }
-
-    @Test
-    fun `sort orders by how often tracks are chosen once the listed studios run out`() {
-        val listed = voice(1, "AniDUB", episodes = 3)
-        val used = voice(2, "Студийная банда", episodes = 3)
-        val usedLess = voice(3, "Дубляж", episodes = 3)
-        val builtIn = voice(4, "Dream Cast", episodes = 3)
-        val available = listOf(usedLess, builtIn, used, listed)
-
-        val sorted = TranslationRanker.sort(
-            available,
-            preferred,
-            rememberedId = null,
-            usage = mapOf(2 to 5, 3 to 2),
-        )
-
-        assertEquals(listOf(listed, used, usedLess, builtIn), sorted)
-    }
-
-    @Test
-    fun `sort puts the remembered track first, then preferred in order, then voices by episodes, then subtitles`() {
-        val remembered = voice(10, "Студийная банда", episodes = 2)
-        val anilibria = voice(11, "AniLibria.TV", episodes = 12)
-        val anidub = voice(12, "AniDUB", episodes = 6)
-        val longVoice = voice(13, "Дубляж", episodes = 24)
-        val shortVoice = voice(14, "Озвучка", episodes = 3)
-        val subtitles = subs(15, "Субтитры", episodes = 24)
-        val available = listOf(subtitles, shortVoice, anidub, longVoice, remembered, anilibria)
-
+    fun `sort hands back the app's own tracks, seasons and all, in the shared order`() {
         val sorted = TranslationRanker.sort(available, preferred, rememberedId = 10, usage = emptyMap())
 
-        assertEquals(listOf(remembered, anilibria, anidub, longVoice, shortVoice, subtitles), sorted)
+        assertEquals(listOf(remembered, anilibria, subtitles, longVoice), sorted)
+        sorted.zip(listOf(remembered, anilibria, subtitles, longVoice)).forEach { (a, b) -> assertSame(b, a) }
     }
 
     @Test
-    fun `sort is stable for tracks the rules cannot tell apart`() {
-        val available = listOf(
-            voice(1, "Первая", episodes = 12),
-            voice(2, "Вторая", episodes = 12),
-            voice(3, "Третья", episodes = 12),
-        )
+    fun `subtitles and voices reach the ranking as what they are`() {
+        val pair = listOf(Translation(1, "Субтитры", TranslationKind.SUBTITLES, 24), Translation(2, "Дубляж", TranslationKind.VOICE, 1))
 
-        assertEquals(available, TranslationRanker.sort(available, preferred, rememberedId = null, usage = emptyMap()))
+        assertSame(pair[1], TranslationRanker.pick(pair, emptyList(), rememberedId = null, usage = emptyMap()))
     }
 
     @Test
-    fun `pick always agrees with the head of sort`() {
-        val cases = listOf(
-            listOf(voice(1, "AniDUB", 12), voice(2, "AniLibria", 3), subs(3, "Crunchyroll", 24)),
-            listOf(subs(1, "Субтитры", 24), voice(2, "Дубляж", null)),
-            listOf(voice(1, "Одна", null), voice(2, "Другая", null)),
-            emptyList(),
-        )
-        val histories = listOf(emptyMap(), mapOf(1 to 4), mapOf(2 to 1, 3 to 6))
+    fun `pick is the head of sort and nothing for nothing`() {
+        assertSame(remembered, TranslationRanker.pick(available, preferred, rememberedId = 10, usage = emptyMap()))
+        assertSame(anilibria, TranslationRanker.pick(available, preferred, rememberedId = null, usage = mapOf(13 to 5)))
+        assertNull(TranslationRanker.pick(emptyList(), preferred, rememberedId = 10, usage = emptyMap()))
+    }
 
-        for (available in cases) {
-            for (remembered in listOf(null, 1, 3, 99)) {
-                for (usage in histories) {
-                    assertEquals(
-                        TranslationRanker.sort(available, preferred, remembered, usage).firstOrNull(),
-                        TranslationRanker.pick(available, preferred, remembered, usage),
-                    )
-                }
-            }
-        }
+    @Test
+    fun `the stand-in walk is the same order without the chosen track`() {
+        assertEquals(
+            listOf(anilibria, subtitles, longVoice),
+            TranslationRanker.substitutes(available, remembered, preferred, rememberedId = 10, usage = emptyMap()),
+        )
+    }
+
+    @Test
+    fun `the built-in studios are the shared ones`() {
+        assertEquals(app.kaeru.shared.domain.playback.TranslationRanker.DEFAULT_STUDIOS, TranslationRanker.DEFAULT_STUDIOS)
     }
 }

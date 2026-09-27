@@ -1,4 +1,4 @@
-package app.kaeru.domain.playback
+package app.kaeru.shared.domain.playback
 
 /**
  * One stretch of an episode worth stepping over, in milliseconds from its start.

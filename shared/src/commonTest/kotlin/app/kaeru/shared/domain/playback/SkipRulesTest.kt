@@ -1,10 +1,10 @@
-package app.kaeru.domain.playback
+package app.kaeru.shared.domain.playback
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * Common sense over community data, and the ten seconds a button is worth.
@@ -22,48 +22,48 @@ class SkipRulesTest {
     private fun seconds(from: Long, to: Long) = SkipInterval(from * 1000, to * 1000)
 
     @Test
-    fun `an opening in the first minutes of a normal length is kept`() {
+    fun anOpeningInTheFirstMinutesOfANormalLengthIsKept() {
         assertEquals(seconds(3, 93), SkipRules.opening(seconds(3, 93), episode))
         assertEquals(seconds(224, 314), SkipRules.opening(seconds(224, 314), episode))
     }
 
     @Test
-    fun `an opening that starts past the first five minutes is not an opening`() {
+    fun anOpeningThatStartsPastTheFirstFiveMinutesIsNotAnOpening() {
         assertNull(SkipRules.opening(seconds(310, 400), episode))
     }
 
     @Test
-    fun `an interval too short or too long to be an opening is dropped`() {
+    fun anIntervalTooShortOrTooLongToBeAnOpeningIsDropped() {
         assertNull(SkipRules.opening(seconds(10, 50), episode))
         assertNull(SkipRules.opening(seconds(10, 200), episode))
     }
 
     @Test
-    fun `an ending in the last minutes of the episode is kept`() {
+    fun anEndingInTheLastMinutesOfTheEpisodeIsKept() {
         assertEquals(seconds(1460, 1560), SkipRules.ending(seconds(1460, 1560), episode))
     }
 
     @Test
-    fun `an ending marked at the start of the episode is thrown away`() {
+    fun anEndingMarkedAtTheStartOfTheEpisodeIsThrownAway() {
         // What AniSkip answered for Dandadan, and for «История о перекуре за супермаркетом».
         assertNull(SkipRules.ending(seconds(5, 95), episode))
         assertNull(SkipRules.ending(seconds(117, 207), episode))
     }
 
     @Test
-    fun `an interval that runs past the end of this file belongs to another length`() {
+    fun anIntervalThatRunsPastTheEndOfThisFileBelongsToAnotherLength() {
         assertNull(SkipRules.opening(seconds(3, 93), 60_000))
         assertNull(SkipRules.ending(seconds(1460, 1560), 1_400_000))
     }
 
     @Test
-    fun `nothing is accepted for an episode of no known length`() {
+    fun nothingIsAcceptedForAnEpisodeOfNoKnownLength() {
         assertNull(SkipRules.opening(seconds(3, 93), 0))
         assertEquals(SkipMarks.NONE, SkipRules.accept(SkipMarks(seconds(3, 93), seconds(1460, 1560)), 0))
     }
 
     @Test
-    fun `accepting keeps the good half of a pair and drops the other`() {
+    fun acceptingKeepsTheGoodHalfOfAPairAndDropsTheOther() {
         val marks = SkipMarks(opening = seconds(3, 93), ending = seconds(5, 95))
 
         assertEquals(SkipMarks(opening = seconds(3, 93)), SkipRules.accept(marks, episode))
@@ -74,7 +74,7 @@ class SkipRulesTest {
     private val marks = SkipMarks(opening = seconds(3, 93), ending = seconds(1460, 1560))
 
     @Test
-    fun `the opening button is offered for ten seconds from the moment the opening starts`() {
+    fun theOpeningButtonIsOfferedForTenSecondsFromTheMomentTheOpeningStarts() {
         assertNull(SkipRules.offer(marks, 2_999, episode))
         assertEquals(SkipOffer(SkipKind.OPENING, seconds(3, 93)), SkipRules.offer(marks, 3_000, episode))
         assertEquals(SkipOffer(SkipKind.OPENING, seconds(3, 93)), SkipRules.offer(marks, 12_999, episode))
@@ -82,14 +82,14 @@ class SkipRulesTest {
     }
 
     @Test
-    fun `the ending button is offered on the same ten seconds`() {
+    fun theEndingButtonIsOfferedOnTheSameTenSeconds() {
         assertNull(SkipRules.offer(marks, 1_459_000, episode))
         assertEquals(SkipOffer(SkipKind.ENDING, seconds(1460, 1560)), SkipRules.offer(marks, 1_460_000, episode))
         assertNull(SkipRules.offer(marks, 1_470_000, episode))
     }
 
     @Test
-    fun `a broken ending offers nothing however long it is played`() {
+    fun aBrokenEndingOffersNothingHoweverLongItIsPlayed() {
         val broken = SkipMarks(ending = seconds(5, 95))
 
         assertNull(SkipRules.offer(broken, 5_000, episode))
@@ -98,13 +98,33 @@ class SkipRulesTest {
     }
 
     @Test
-    fun `the ending skips itself once its ten seconds are behind the viewer`() {
+    fun theEndingSkipsItselfOnceItsTenSecondsAreBehindTheViewer() {
         assertFalse(SkipRules.endingSkipDue(marks, 1_469_999, episode))
         assertTrue(SkipRules.endingSkipDue(marks, 1_470_000, episode))
     }
 
     @Test
-    fun `an ending already played out is not skipped again`() {
+    fun anEndingAlreadyPlayedOutIsNotSkippedAgain() {
         assertFalse(SkipRules.endingSkipDue(marks, 1_560_000, episode))
+    }
+
+    @Test
+    fun insideTheEndingIsFromItsFirstMillisecondToJustBeforeItsLast() {
+        assertFalse(SkipRules.insideEnding(marks, 1_459_999, episode))
+        assertTrue(SkipRules.insideEnding(marks, 1_460_000, episode))
+        assertTrue(SkipRules.insideEnding(marks, 1_559_999, episode))
+        assertFalse(SkipRules.insideEnding(marks, 1_560_000, episode))
+        assertFalse(SkipRules.insideEnding(SkipMarks(ending = seconds(5, 95)), 50_000, episode))
+    }
+
+    @Test
+    fun theWindowsAreTheOnesAndroidShipped() {
+        assertEquals(10_000L, SkipRules.BUTTON_WINDOW_MS)
+        assertEquals(300_000L, SkipRules.OPENING_STARTS_WITHIN_MS)
+        assertEquals(180_000L, SkipRules.ENDING_ENDS_WITHIN_MS)
+        assertEquals(60_000L, SkipRules.MIN_LENGTH_MS)
+        assertEquals(150_000L, SkipRules.MAX_LENGTH_MS)
+        assertEquals(1_000L, SkipRules.SEEK_SETTLE_MS)
+        assertTrue(SkipMarks.NONE.isEmpty)
     }
 }

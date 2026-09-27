@@ -20,7 +20,8 @@ import app.kaeru.domain.model.WatchState
 import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.playback.RankedTranslation
 import app.kaeru.domain.playback.ResolveEpisodeStream
-import app.kaeru.domain.playback.SkipKind
+import app.kaeru.shared.domain.playback.EpisodeProgressRules
+import app.kaeru.shared.domain.playback.SkipKind
 import app.kaeru.domain.repository.EpisodeProgressRepository
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.repository.WatchStateRepository
@@ -28,6 +29,7 @@ import app.kaeru.player.CastSessionBridge
 import app.kaeru.player.EpisodeQueue
 import app.kaeru.player.PlaybackController
 import app.kaeru.player.PlaybackEvent
+import app.kaeru.shared.domain.playback.TranslationRanker
 import app.kaeru.ui.common.details.EpisodeCell
 import app.kaeru.ui.common.details.episodeCells
 import app.kaeru.ui.common.toUserMessage
@@ -58,7 +60,7 @@ private const val REMOVAL_TIMEOUT_MS = 5_000L
 
 /** One line naming both voices: the one that did not have the episode, and the one that does. */
 private fun substitutedCopy(event: PlaybackEvent.TranslationSubstituted): String =
-    "В озвучке ${event.askedFor.title} серии ${event.episode} нет — включена ${event.playing.title}"
+    TranslationRanker.substitutionNotice(event.askedFor.title, event.episode, event.playing.title)
 
 /**
  * The player screen's brain, shared by the phone and the TV: the screens differ in how they
@@ -386,9 +388,7 @@ class PlayerViewModel @Inject constructor(
             ?: saved?.takeIf { it.episode == episode }
                 ?.let { EpisodeProgress(animeId, episode, it.positionMs, it.durationMs, it.updatedAt) }
             ?: return 0
-        if (!row.started) return 0
-        val threshold = prefs.watchedThreshold.first()
-        return if (EpisodeQueue.watched(row.positionMs, row.durationMs, threshold)) 0 else row.positionMs
+        return EpisodeProgressRules.resumePosition(row.positionMs, row.durationMs, prefs.watchedThreshold.first())
     }
 
     fun togglePlayPause() = controller.togglePlayPause()

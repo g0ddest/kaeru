@@ -1,5 +1,7 @@
 package app.kaeru.domain.playback
 
+import app.kaeru.shared.domain.playback.SkipMarks
+
 /**
  * Where an episode's opening and ending marks come from, as playback sees it: one question and
  * nothing about caches, networks or who marked them.

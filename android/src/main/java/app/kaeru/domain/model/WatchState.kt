@@ -1,5 +1,6 @@
 package app.kaeru.domain.model
 
+import app.kaeru.shared.domain.playback.EpisodeProgressRules
 import java.time.Instant
 
 data class WatchState(
@@ -24,5 +25,5 @@ data class WatchState(
      */
     val translationTitle: String? = null,
 ) {
-    val fraction: Float get() = if (durationMs <= 0) 0f else (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
+    val fraction: Float get() = EpisodeProgressRules.fraction(positionMs, durationMs)
 }

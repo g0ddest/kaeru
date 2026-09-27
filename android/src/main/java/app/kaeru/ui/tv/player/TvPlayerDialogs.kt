@@ -30,6 +30,7 @@ import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import app.kaeru.player.EpisodeQueue
+import app.kaeru.shared.domain.playback.NextEpisodeRules
 import app.kaeru.ui.common.design.ErrorState
 import app.kaeru.ui.common.design.KaeruTokens
 import app.kaeru.ui.common.design.PrimaryButton
@@ -83,7 +84,7 @@ fun TvAutoplayCard(
     val nowButton = remember { FocusRequester() }
     LaunchedEffect(Unit) { nowButton.requestFocusOrLog("кнопку «$WATCH_NOW»") }
     val drain by animateFloatAsState(
-        targetValue = countdownSec.toFloat() / EpisodeQueue.AUTOPLAY_COUNTDOWN_SEC,
+        targetValue = countdownSec.toFloat() / NextEpisodeRules.AUTOPLAY_COUNTDOWN_SEC,
         label = "tvAutoplay",
     )
     TvPlayerCard(modifier) {

@@ -4,6 +4,13 @@ Kotlin Multiplatform online-core для Android, iOS и macOS: Shikimori, OAuth 
 Kodik resolver и правила прогресса. Существующее Android-приложение пока
 использует свои репозитории; его UI и сетевой стек не изменены.
 
+Правила плеера (выбор озвучки, продолжение с места, следующая серия, метки
+AniSkip, предложение «завершить») лежат в `commonMain/.../domain/playback/`;
+Android вызывает их напрямую, Swift — через `KaeruShared`
+(`TranslationRanker.shared.order(...)` и т. п.). Их тест-векторы —
+`src/commonTest/resources/playback-vectors.json` (вход → ожидаемый ответ);
+их прогоняет `PlaybackVectorsTest`, а позже веб и Swift.
+
 `src/commonMain` содержит переносимую логику, `androidMain` — Ktor OkHttp,
 `appleMain` — Ktor Darwin для iOS и macOS (`iosMain` и `macosMain` дают только
 `Platform`). `NativeApi` экспортируется в статический

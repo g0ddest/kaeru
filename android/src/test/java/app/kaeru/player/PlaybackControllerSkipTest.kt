@@ -18,9 +18,9 @@ import app.kaeru.domain.playback.FakeSkipMarks
 import app.kaeru.domain.playback.FakeWatchStateRepository
 import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.ResolveEpisodeStream
-import app.kaeru.domain.playback.SkipInterval
-import app.kaeru.domain.playback.SkipKind
-import app.kaeru.domain.playback.SkipMarks
+import app.kaeru.shared.domain.playback.SkipInterval
+import app.kaeru.shared.domain.playback.SkipKind
+import app.kaeru.shared.domain.playback.SkipMarks
 import app.kaeru.domain.playback.StreamPrefetchCache
 import app.kaeru.domain.playback.SuppressedMarks
 import app.kaeru.domain.playback.WatchProgress

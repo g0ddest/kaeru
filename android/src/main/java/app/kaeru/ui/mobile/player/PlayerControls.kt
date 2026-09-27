@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.kaeru.domain.download.EpisodeDownload
+import app.kaeru.shared.domain.playback.NextEpisodeRules
 import app.kaeru.ui.common.downloads.DownloadMark
 import app.kaeru.ui.common.downloads.downloadMark
 import app.kaeru.ui.common.player.CastButton
@@ -247,7 +248,7 @@ fun PlayerBottomBar(
 @Composable
 fun NextEpisodeCard(episode: Int, countdownSec: Int, onNow: () -> Unit, onCancel: () -> Unit, modifier: Modifier = Modifier) {
     val drain by animateFloatAsState(
-        targetValue = countdownSec.toFloat() / EpisodeQueue.AUTOPLAY_COUNTDOWN_SEC,
+        targetValue = countdownSec.toFloat() / NextEpisodeRules.AUTOPLAY_COUNTDOWN_SEC,
         label = "autoplay",
     )
     Column(

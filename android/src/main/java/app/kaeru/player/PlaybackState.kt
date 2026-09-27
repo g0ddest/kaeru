@@ -4,7 +4,8 @@ import app.kaeru.domain.model.EpisodeStream
 import app.kaeru.domain.model.PlaybackTarget
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.model.Translation
-import app.kaeru.domain.playback.SkipOffer
+import app.kaeru.shared.domain.playback.NextEpisodeRules
+import app.kaeru.shared.domain.playback.SkipOffer
 
 /**
  * Everything a player screen needs to draw itself, and nothing about how it is drawn.
@@ -82,7 +83,7 @@ data class PlaybackState(
      * Aired episodes, not announced ones: a season of twenty-four with seven broadcast has
      * nothing after the seventh, and offering it ends at «Серия ещё не появилась в Kodik».
      */
-    val hasNextEpisode: Boolean get() = airedEpisodes > 0 && (target?.episode ?: 0) < airedEpisodes
+    val hasNextEpisode: Boolean get() = NextEpisodeRules.hasNextEpisode(target?.episode ?: 0, airedEpisodes)
 }
 
 /** Things that happen once and are answered once, so they cannot live in [PlaybackState]. */

@@ -16,9 +16,9 @@ import KaeruShared
             precondition(!description.contains("private-response-body"), description)
             print("HTTP 401 NSError bridge PASS: \(description)")
         }
-        precondition(PlaybackRules.shared.nextEpisode(watched: 3, aired: 5) == 4)
-        precondition(PlaybackRules.shared.shouldMarkWatched(positionMs: 900, durationMs: 1000))
-        precondition(PlaybackRules.shared.preferredTranslation(ids: [KotlinInt(int: 4)], remembered: 4) == 4)
+        precondition(NextEpisodeRules.shared.hasNextEpisode(episode: 3, availableEpisodes: 5))
+        precondition(EpisodeProgressRules.shared.watched(positionMs: 900, durationMs: 1000, threshold: 0.9))
+        precondition(TranslationRanker.shared.pick(tracks: [TranslationCandidate(id: 4, title: "AniLibria", kind: .voice, episodesCount: nil)], preferred: [], rememberedId: KotlinInt(int: 4), usage: [:])?.id == 4)
         print("Swift playback bridge PASS")
     }
 }

@@ -4,7 +4,7 @@ import app.kaeru.domain.download.EpisodeDownload
 import app.kaeru.domain.error.EpisodeUnavailableReason
 import app.kaeru.domain.model.Quality
 import app.kaeru.domain.playback.RankedTranslation
-import app.kaeru.domain.playback.SkipKind
+import app.kaeru.shared.domain.playback.SkipKind
 import app.kaeru.ui.common.details.EpisodeCell
 import java.time.Instant
 

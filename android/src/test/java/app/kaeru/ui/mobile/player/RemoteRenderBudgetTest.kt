@@ -5,7 +5,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import app.kaeru.domain.model.Quality
-import app.kaeru.domain.playback.SkipKind
+import app.kaeru.shared.domain.playback.SkipKind
 import app.kaeru.ui.common.details.EpisodeCell
 import app.kaeru.ui.common.player.LocalCastAvailable
 import app.kaeru.ui.common.player.PlayerUiState

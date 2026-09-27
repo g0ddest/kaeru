@@ -1,8 +1,8 @@
 package app.kaeru.data.local
 
 import androidx.room.Entity
-import app.kaeru.domain.playback.SkipInterval
-import app.kaeru.domain.playback.SkipMarks
+import app.kaeru.shared.domain.playback.SkipInterval
+import app.kaeru.shared.domain.playback.SkipMarks
 import java.time.Instant
 
 /**

@@ -1,5 +1,7 @@
 package app.kaeru.domain.model
 
+import app.kaeru.shared.domain.playback.AiringStatus
+import app.kaeru.shared.domain.playback.NextEpisodeRules
 import java.time.Instant
 
 enum class AnimeStatus { ONGOING, RELEASED, ANONS }
@@ -26,9 +28,13 @@ data class Anime(
      * at all for an announcement that has not started, and the announced total for a finished
      * show — falling back to what aired if the total itself is unknown.
      */
-    val availableEpisodes: Int get() = when (status) {
-        AnimeStatus.ONGOING -> episodesAired
-        AnimeStatus.ANONS -> 0
-        AnimeStatus.RELEASED -> if (episodes > 0) episodes else episodesAired
-    }
+    val availableEpisodes: Int get() = NextEpisodeRules.availableEpisodes(
+        status = when (status) {
+            AnimeStatus.ONGOING -> AiringStatus.ONGOING
+            AnimeStatus.ANONS -> AiringStatus.ANONS
+            AnimeStatus.RELEASED -> AiringStatus.RELEASED
+        },
+        episodes = episodes,
+        episodesAired = episodesAired,
+    )
 }

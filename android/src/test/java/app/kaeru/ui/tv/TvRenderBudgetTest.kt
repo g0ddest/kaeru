@@ -38,7 +38,7 @@ import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.TranslationKind
 import app.kaeru.domain.model.UserRate
 import app.kaeru.domain.playback.RankedTranslation
-import app.kaeru.domain.playback.SkipKind
+import app.kaeru.shared.domain.playback.SkipKind
 import app.kaeru.domain.update.UpdateRelease
 import app.kaeru.ui.common.auth.AuthUiState
 import app.kaeru.ui.common.design.KaeruTokens

@@ -4,6 +4,7 @@ import app.kaeru.domain.download.DeferredDownloadRemoval
 import app.kaeru.domain.model.ListStatus
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.repository.WatchStateRepository
+import app.kaeru.shared.domain.playback.CompletionRules
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import java.time.Clock
@@ -52,18 +53,22 @@ class MarkEpisodeWatched(
             deleteWatchedDownload(animeId, episode)
         }
 
-        val announced = entry?.anime?.episodes ?: 0
+        // The announced count reached and nothing more on the schedule: the shared rule, since
         // Shikimori's announced count lags behind a show that got longer — 12 announced, a 13th in
-        // four days. A next episode on the schedule means this one was not the end.
-        val moreScheduled = entry?.anime?.nextEpisodeAt?.isAfter(clock.instant()) == true
+        // four days.
+        val lastAnnounced = CompletionRules.offerCompletion(
+            episode = episode,
+            announcedEpisodes = entry?.anime?.episodes ?: 0,
+            nextEpisodeAtMs = entry?.anime?.nextEpisodeAt?.toEpochMilli(),
+            nowMs = clock.instant().toEpochMilli(),
+        )
         return Result.success(
             WatchedOutcome(
                 markedEpisode = episode,
                 movedToWatching = pickUp,
                 // Nothing new was counted, so the dialog was already offered when it was. A title
                 // watched «украдкой» is never offered: «Завершено» would be a write to Shikimori.
-                suggestCompleted = status != ListStatus.SECRET &&
-                    !alreadyCounted && !moreScheduled && announced > 0 && episode >= announced,
+                suggestCompleted = status != ListStatus.SECRET && !alreadyCounted && lastAnnounced,
             ),
         )
     }

@@ -22,10 +22,12 @@ import app.kaeru.domain.playback.MarkEpisodeWatched
 import app.kaeru.domain.playback.SuppressedMarks
 import app.kaeru.domain.playback.PlaybackPreferences
 import app.kaeru.domain.playback.ResolveEpisodeStream
-import app.kaeru.domain.playback.SkipKind
-import app.kaeru.domain.playback.SkipMarks
+import app.kaeru.shared.domain.playback.EpisodeProgressRules
+import app.kaeru.shared.domain.playback.NextEpisodeRules
+import app.kaeru.shared.domain.playback.SkipKind
+import app.kaeru.shared.domain.playback.SkipMarks
 import app.kaeru.domain.playback.SkipMarksSource
-import app.kaeru.domain.playback.SkipRules
+import app.kaeru.shared.domain.playback.SkipRules
 import app.kaeru.domain.playback.WatchProgress
 import app.kaeru.domain.repository.LibraryRepository
 import app.kaeru.domain.together.LocalAction
@@ -53,7 +55,6 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.abs
-import kotlin.math.ceil
 
 /**
  * Who asked for a playback action.
@@ -996,7 +997,7 @@ class DefaultPlaybackController @Inject constructor(
             bufferedPositionMs = buffered,
             durationMs = duration,
             nextEpisodeDue =
-                if (lengthKnown) EpisodeQueue.nextEpisodeDue(position, duration, ended) else current.nextEpisodeDue,
+                if (lengthKnown) NextEpisodeRules.nextEpisodeDue(position, duration, ended) else current.nextEpisodeDue,
             autoplayCountdownSec = countdown,
             skip = if (lengthKnown) SkipRules.offer(marks, position, duration) else current.skip,
         )
@@ -1058,10 +1059,7 @@ class DefaultPlaybackController @Inject constructor(
         // would run down to «Серия ещё не появилась в Kodik», which is the app answering a
         // question nobody asked.
         if (!_state.value.hasNextEpisode) return null
-        if (!EpisodeQueue.countdownDue(positionMs, durationMs, ended)) return null
-        if (ended || durationMs <= 0) return 0
-        val remaining = (durationMs - positionMs).coerceAtLeast(0)
-        return ceil(remaining / 1000.0).toInt().coerceIn(0, EpisodeQueue.AUTOPLAY_COUNTDOWN_SEC)
+        return NextEpisodeRules.countdownSeconds(positionMs, durationMs, ended)
     }
 
     private fun advanceToNext() {
@@ -1161,7 +1159,7 @@ class DefaultPlaybackController @Inject constructor(
     }
 
     private fun markIfWatched(positionMs: Long, durationMs: Long) {
-        if (markedEpisode || !EpisodeQueue.watched(positionMs, durationMs, settings.threshold)) return
+        if (markedEpisode || !EpisodeProgressRules.watched(positionMs, durationMs, settings.threshold)) return
         val target = _state.value.target ?: return
         // The viewer said this episode is not watched while it was playing — from a title screen in
         // front of a cast session, or behind picture-in-picture. Counting it now would put the mark

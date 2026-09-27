@@ -6,6 +6,7 @@ import app.kaeru.domain.model.Translation
 import app.kaeru.domain.model.WatchState
 import app.kaeru.domain.repository.WatchStateRepository
 import app.kaeru.domain.source.EpisodeSourceProvider
+import app.kaeru.shared.domain.playback.TranslationRanker as SharedRanker
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import java.time.Clock
@@ -188,8 +189,7 @@ class ResolveEpisodeStream(
         remembered: WatchState?,
         usage: Map<Int, Int>,
     ): Result<Resolution> {
-        val candidates = TranslationRanker.sort(available, preferred, remembered?.translationId, usage)
-            .filter { it.id != chosen.id }
+        val candidates = TranslationRanker.substitutes(available, chosen, preferred, remembered?.translationId, usage)
             .map { it.withSeasonOf(remembered) }
         for (candidate in candidates) {
             if (candidate.knownToHave(animeId, episode) == false) continue
@@ -209,11 +209,8 @@ class ResolveEpisodeStream(
      * gives — but only against the first season's numbering: the page never says which season it
      * counted, and a title mapped to a later season numbers its episodes past that count.
      */
-    private suspend fun Translation.knownToHave(animeId: Int, episode: Int): Boolean? {
-        source.listedEpisodes(animeId, id)?.let { return episode in it }
-        if (season != 1) return null
-        return episodesCount?.let { episode <= it }
-    }
+    private suspend fun Translation.knownToHave(animeId: Int, episode: Int): Boolean? =
+        SharedRanker.carriesEpisode(episode, source.listedEpisodes(animeId, id), season, episodesCount)
 
     /** The track asked for is there; only the episode is not. The one failure another track can answer. */
     private fun Throwable.lacksEpisodeInTrack(): Boolean =

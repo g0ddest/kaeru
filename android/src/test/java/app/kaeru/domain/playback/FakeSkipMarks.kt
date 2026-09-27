@@ -1,5 +1,7 @@
 package app.kaeru.domain.playback
 
+import app.kaeru.shared.domain.playback.SkipMarks
+
 /** The marks a test decides on, and a record of every episode they were asked about. */
 class FakeSkipMarks(var answer: SkipMarks = SkipMarks.NONE) : SkipMarksSource {
     val asked = mutableListOf<String>()

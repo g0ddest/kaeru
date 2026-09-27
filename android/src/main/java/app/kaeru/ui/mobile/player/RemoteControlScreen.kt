@@ -58,7 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isFinite
 import app.kaeru.player.EpisodeQueue
 import app.kaeru.ui.common.Poster
-import app.kaeru.domain.playback.SkipKind
+import app.kaeru.shared.domain.playback.SkipKind
 import app.kaeru.ui.common.player.PlayerUiState
 import app.kaeru.ui.common.player.skipLabel
 import app.kaeru.ui.common.player.CastButton

@@ -1,6 +1,6 @@
 package app.kaeru.ui.common.player
 
-import app.kaeru.domain.playback.SkipKind
+import app.kaeru.shared.domain.playback.SkipKind
 
 /**
  * What the one skip button says, in one place, because three screens draw it.

@@ -6,7 +6,7 @@ import KaeruShared
 @MainActor final class LiveServiceTests: XCTestCase {
     func testSharedFrameworkIsLinked() {
         XCTAssertFalse(Platform.shared.name().isEmpty)
-        XCTAssertTrue(PlaybackRules.shared.shouldMarkWatched(positionMs: 900, durationMs: 1000))
+        XCTAssertTrue(EpisodeProgressRules.shared.watched(positionMs: 900, durationMs: 1000, threshold: 0.9))
     }
     func testPublicCatalogAndKodikPlayback() async throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["KAERU_LIVE_TESTS"] == "1", "Use Kaeru-Live scheme for live network smoke checks")

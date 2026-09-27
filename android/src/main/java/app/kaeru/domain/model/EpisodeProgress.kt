@@ -1,5 +1,6 @@
 package app.kaeru.domain.model
 
+import app.kaeru.shared.domain.playback.EpisodeProgressRules
 import java.time.Instant
 
 /**
@@ -17,7 +18,7 @@ data class EpisodeProgress(
     val durationMs: Long,
     val updatedAt: Instant,
 ) {
-    val fraction: Float get() = if (durationMs <= 0) 0f else (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
+    val fraction: Float get() = EpisodeProgressRules.fraction(positionMs, durationMs)
 
     /**
      * Far enough in that the viewer was watching, rather than opening the episode and leaving.
@@ -26,18 +27,11 @@ data class EpisodeProgress(
      * plain answer for a normal twenty-four minute one; the share is what makes it work for a
      * three-minute short, where a minute would be most of the run. Anything under both is a
      * mis-tap, and a mis-tap must not become the episode the app offers to continue.
+     * The rule itself is [EpisodeProgressRules.started], shared with the other clients.
      */
-    val started: Boolean
-        get() = positionMs >= STARTED_MS || (durationMs > 0 && positionMs.toFloat() / durationMs >= STARTED_FRACTION)
+    val started: Boolean get() = EpisodeProgressRules.started(positionMs, durationMs)
 
     /** Still short of the watched threshold, so there is something here to come back to. */
-    fun unfinished(watchedThreshold: Float): Boolean = fraction < watchedThreshold
-
-    companion object {
-        /** A minute in is watching, whatever the episode's length. */
-        const val STARTED_MS = 60_000L
-
-        /** Or a fiftieth of it, for an episode too short for a minute to mean anything. */
-        const val STARTED_FRACTION = 0.02f
-    }
+    fun unfinished(watchedThreshold: Float): Boolean =
+        EpisodeProgressRules.unfinished(positionMs, durationMs, watchedThreshold)
 }
