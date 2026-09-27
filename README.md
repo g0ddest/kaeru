@@ -20,6 +20,15 @@ Kaeru — хобби-проект, чтобы смотреть аниме вме
 ## Скриншоты
 
 <p align="center">
+  <img src="docs/screenshots/android-home.png" alt="Главная на Android" width="24%">
+  <img src="docs/screenshots/android-title.png" alt="Карточка тайтла на Android" width="24%">
+  <img src="docs/screenshots/android-status.png" alt="Статус «Украдкой» на Android" width="24%">
+  <img src="docs/screenshots/android-list.png" alt="«Мой список» на Android" width="24%">
+</p>
+<p align="center">
+  <img src="docs/screenshots/android-player.png" alt="Плеер на Android" width="80%">
+</p>
+<p align="center">
   <img src="docs/screenshots/mac-home.png" alt="Главная на Mac" width="49%">
   <img src="docs/screenshots/mac-player.png" alt="Плеер на Mac" width="49%">
 </p>
