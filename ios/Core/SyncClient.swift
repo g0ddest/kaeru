@@ -1,41 +1,5 @@
 import Foundation
-
-/// The worker's `/sync` document (infra/relay/src/sync.ts; spec 2026-09-26-kaeru-sync-design.md §2):
-/// per anime id, where each episode stopped, the chosen dub and a tombstone for a finished title.
-/// Every `at` is the device's own clock in milliseconds, and the newer one wins, field by field and
-/// episode by episode. `secret` is a title watched «украдкой».
-struct SyncPosition: Codable, Equatable {
-    /// Where the episode stopped and how long it is, in milliseconds.
-    var p: Int64
-    var d: Int64
-    var at: Int64
-}
-
-struct SyncDub: Codable, Equatable {
-    var id: Int
-    var title: String
-    var at: Int64
-}
-
-/// «Смотреть украдкой» for one title: whether it is, and how many episodes were watched so.
-struct SyncSecret: Codable, Equatable {
-    var on: Bool
-    var watched: Int
-    var at: Int64
-}
-
-struct SyncTitle: Codable, Equatable {
-    var dub: SyncDub?
-    var eps: [String: SyncPosition]?
-    var secret: SyncSecret?
-    var gone: Int64?
-    init(dub: SyncDub? = nil, eps: [String: SyncPosition]? = nil, secret: SyncSecret? = nil, gone: Int64? = nil) {
-        self.dub = dub; self.eps = eps; self.secret = secret; self.gone = gone
-    }
-    var isEmpty: Bool { dub == nil && gone == nil && secret == nil && (eps?.isEmpty ?? true) }
-}
-
-typealias SyncTitles = [String: SyncTitle]
+import KaeruShared
 
 enum SyncError: Error, Equatable {
     case offline, throttled, unavailable, parameters, parser, unknown
@@ -45,59 +9,6 @@ extension Date {
     /// This moment as the worker counts it.
     var syncMilliseconds: Int64 { Int64((timeIntervalSince1970 * 1000).rounded()) }
     init(syncMilliseconds value: Int64) { self.init(timeIntervalSince1970: Double(value) / 1000) }
-}
-
-enum SyncWire {
-    /// What a POST carries. Absent fields are left out rather than sent as null: the worker takes a
-    /// null `dub` for a malformed one and refuses the whole batch.
-    static func body(_ titles: SyncTitles) throws -> Data {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = .sortedKeys
-        return try encoder.encode(["titles": titles])
-    }
-
-    /// Whatever of the document this build can read; a title or field it cannot is skipped, as the
-    /// web client does. A 200 without `titles` means the worker and the app disagree on the shape.
-    static func titles(_ data: Data) throws -> SyncTitles {
-        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let titles = root["titles"] as? [String: Any] else { throw SyncError.parser }
-        var read: SyncTitles = [:]
-        for (id, value) in titles {
-            guard id.range(of: #"^\d{1,9}$"#, options: .regularExpression) != nil,
-                  let source = value as? [String: Any] else { continue }
-            var title = SyncTitle()
-            if let dub = source["dub"] as? [String: Any], let identifier = integer(dub["id"]),
-               let name = dub["title"] as? String, let at = integer(dub["at"]) {
-                title.dub = SyncDub(id: Int(identifier), title: name, at: at)
-            }
-            if let eps = source["eps"] as? [String: Any] {
-                var positions: [String: SyncPosition] = [:]
-                for (episode, raw) in eps {
-                    guard episode.range(of: #"^\d{1,5}$"#, options: .regularExpression) != nil,
-                          let position = raw as? [String: Any], let p = integer(position["p"]),
-                          let d = integer(position["d"]), let at = integer(position["at"]) else { continue }
-                    positions[episode] = SyncPosition(p: p, d: d, at: at)
-                }
-                if !positions.isEmpty { title.eps = positions }
-            }
-            if let secret = source["secret"] as? [String: Any], let flag = secret["on"] as? NSNumber,
-               CFGetTypeID(flag) == CFBooleanGetTypeID(),
-               let watched = integer(secret["watched"]), let at = integer(secret["at"]) {
-                title.secret = SyncSecret(on: flag.boolValue, watched: Int(min(max(0, watched), 100_000)), at: at)
-            }
-            if let gone = integer(source["gone"]) { title.gone = gone }
-            read[id] = title
-        }
-        return read
-    }
-
-    /// A JSON number, whole or not; a boolean is not one even though Foundation bridges it so.
-    private static func integer(_ value: Any?) -> Int64? {
-        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
-        let double = number.doubleValue
-        guard double.isFinite, abs(double) < 9e15 else { return nil }
-        return Int64(double.rounded())
-    }
 }
 
 /// One request out, its status and body back. URLSession in the app; a script in the tests.
@@ -134,9 +45,10 @@ enum SyncWire {
 
     func get(token: String) async throws -> SyncTitles { try await call(token: token, body: nil) }
 
-    /// Sends a batch; the answer is the whole merged document.
+    /// Sends a batch, written by the shared `SyncWire`; the answer is the document as it now
+    /// stands for those titles.
     func post(_ titles: SyncTitles, token: String) async throws -> SyncTitles {
-        try await call(token: token, body: SyncWire.body(titles))
+        try await call(token: token, body: Data(SyncWire.shared.body(titles: titles).utf8))
     }
 
     private func call(token: String, body: Data?) async throws -> SyncTitles {
@@ -153,7 +65,12 @@ enum SyncWire {
         catch is CancellationError { throw CancellationError() }
         catch { throw SyncError.offline }
         guard (200...299).contains(status) else { throw Self.refusal(status, data) }
-        return try SyncWire.titles(data)
+        // Read as far as it can be by the shared `SyncWire`. A 200 with no `titles` at all means
+        // the worker and the app disagree on the shape.
+        guard let text = String(data: data, encoding: .utf8), let titles = SyncWire.shared.titles(text: text) else {
+            throw SyncError.parser
+        }
+        return titles
     }
 
     /// A non-2xx answer. The 401 goes out as the `ServiceFailure` the app's token refresh looks for.

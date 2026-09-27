@@ -23,14 +23,16 @@ extension Int64 {
     var mediaSeconds: Double { Double(self) / 1000 }
 }
 
-private extension Int {
+extension Int {
+    /// This number boxed for Kotlin, clamped into its 32 bits.
     var kotlin: KotlinInt { KotlinInt(int: Int32(clamping: self)) }
 }
 
 /// Numbers Kotlin hands back inside a list or a map. They arrive as plain `NSNumber`s rather than
 /// the `KotlinInt` the header promises, and Swift's bridge traps on reading one as the other — so
-/// they are read through Foundation's untyped collections instead.
-private enum KotlinNumbers {
+/// they are read through Foundation's untyped collections instead. The sync faces (Core/SharedSync.swift)
+/// read theirs the same way.
+enum KotlinNumbers {
     static func ints(_ list: [KotlinInt]) -> [Int] {
         (list as NSArray).map { ($0 as! NSNumber).intValue }
     }

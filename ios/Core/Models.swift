@@ -64,17 +64,13 @@ enum WatchStatus: String, CaseIterable, Identifiable {
 /// A title watched «украдкой» (spec 2026-09-26-kaeru-sync-design.md §4): whether it is, how many
 /// episodes were watched meanwhile, when that last changed (ms, for sync), and the title's card, so
 /// «Мой список» can show it without Shikimori and without the network. Kept when switched off, so
-/// the time of the switch can win over an older state from another device.
+/// the time of the switch can win over an older state from another device. Whether it is finished
+/// is the shared rule's (Core/SharedSync.swift).
 struct SecretTitle: Codable, Equatable {
     var on: Bool
     var watched: Int
     var at: Int64
     var anime: Anime?
-    /// All the episodes of a released title watched, with nothing more on the schedule.
-    func finished(now: Date = Date()) -> Bool {
-        guard on, let anime, anime.status == "released" else { return false }
-        return anime.endsWith(watched, now: now)
-    }
 }
 
 struct Translation: Codable, Identifiable, Hashable { var id: Int; var title: String; var episodes: Int; var kind: String? = nil }

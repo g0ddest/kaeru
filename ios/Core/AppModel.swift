@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import AuthenticationServices
+import KaeruShared
 
 @MainActor @Observable final class AppModel {
     let service: any AnimeService
@@ -332,7 +333,7 @@ import AuthenticationServices
             else {
                 for number in episode...max(episode, rate?.episodes ?? episode) { downloadManager?.unmarkWatched(animeID: anime.id, episode: number) }
             }
-            if secret != nil { secretSaved(anime.id); return }
+            if secret != nil { secretSaved(anime.id, from: previous.secrets[anime.id]); return }
             if watched && anime.endsWith(episode) { completionSuggestion = anime }
             Task { await flush() }
         } catch { restore(previous); suppressedMarks = previousSuppressed; self.error = error.localizedDescription }
@@ -346,7 +347,7 @@ import AuthenticationServices
             targets.invalidate()
             countSecretly(anime, count)
             do { try persist(from: previous) } catch { restore(previous); self.error = error.localizedDescription; return }
-            secretSaved(anime.id)
+            secretSaved(anime.id, from: previous.secrets[anime.id])
         }
         else { queueRate(anime: anime, status: rate.status, episodes: count) }
     }
@@ -364,7 +365,7 @@ import AuthenticationServices
         progress[undo.anime.id] = undo.progress
         do {
             try persist(from: previous); mutationRevision += 1; undoChange = nil; suppressedMarks[undo.anime.id] = nil
-            if undo.secret != nil { secretSaved(undo.anime.id); return }
+            if undo.secret != nil { secretSaved(undo.anime.id, from: previous.secrets[undo.anime.id]); return }
             Task { await flush() }
         } catch { restore(previous); self.error = error.localizedDescription }
     }
@@ -392,28 +393,30 @@ import AuthenticationServices
             titleTranslations = previous; dubStamps = previousStamps
             self.error = error.localizedDescription; return
         }
-        viewingSync?.dubChosen(animeID, SyncDub(id: id, title: stamp.title, at: stamp.at))
+        viewingSync?.dubChosen(animeID, id: id, title: stamp.title, at: stamp.at)
     }
     /// A status chosen for the title. «Украдкой» is one of them here, though Shikimori never hears
     /// of it: switching to it leaves the Shikimori record as it is and only stops writing to it;
     /// switching from it sets the chosen status there, with the count watched meanwhile if that is
-    /// more than Shikimori's — the one write the time spent «украдкой» ever makes.
+    /// more than Shikimori's (`SecretRules.episodesToSendWhenTurnedOff`) — the one write the time
+    /// spent «украдкой» ever makes. Otherwise the record keeps the count it has.
     func queueRate(anime: Anime, status: String, episodes: Int) {
         guard session != nil else { return }
         if status == WatchStatus.secret.rawValue { watchSecretly(anime); return }
         let previous = snapshot
         if var secret = secrets[anime.id], secret.on {
             targets.invalidate()
-            let counted = max(shikimoriRate(for: anime.id)?.episodes ?? 0, secret.watched)
+            let counted = shikimoriRate(for: anime.id)?.episodes
+            let count = SecretCount.toSendWhenTurnedOff(watched: secret.watched, counted: counted) ?? counted ?? 0
             secret.on = false; secret.at = stamp(); secret.anime = anime
             secrets[anime.id] = secret
             if undoChange?.anime.id == anime.id { undoChange = nil }
-            stageRate(anime: anime, status: status, episodes: counted)
+            stageRate(anime: anime, status: status, episodes: count)
             do { try persist(from: previous); mutationRevision += 1 } catch {
                 restore(previous)
                 self.error = error.localizedDescription; return
             }
-            secretSaved(anime.id)
+            secretSaved(anime.id, from: previous.secrets[anime.id])
             Task { await flush() }
             return
         }
@@ -451,7 +454,7 @@ import AuthenticationServices
         if shouldQueue && secret {
             mutationRevision += 1
             downloadManager?.onWatched(animeID: anime.id, episode: value.episode)
-            secretSaved(anime.id)
+            secretSaved(anime.id, from: previous.secrets[anime.id])
         } else if shouldQueue {
             mutationRevision += 1
             downloadManager?.onWatched(animeID: anime.id, episode: value.episode)
@@ -500,36 +503,45 @@ import AuthenticationServices
         preferences.syncOn = on
         savePreferences()
         viewingSync?.setEnabled(on)
+        // As on Android: the list as it stands is where things stand, so a title completed from
+        // here on leaves its tombstone rather than becoming the first list sync sees.
+        if on { viewingSync?.libraryChanged(syncStatuses) }
     }
     func appWentToBackground() { viewingSync?.wentToBackground() }
     func appBecameActive() { viewingSync?.becameActive() }
     /// Done with: «Просмотрено» on Shikimori, or — for a title watched «украдкой», whatever its
-    /// Shikimori status — every episode of a released title watched.
+    /// Shikimori status — every episode of a released title watched (`SecretRules.finished`).
     func isFinished(_ animeID: Int) -> Bool {
         if let secret = secrets[animeID], secret.on { return secret.finished(now: viewingSync?.now() ?? Date()) }
         return shikimoriRate(for: animeID)?.status == "completed"
     }
-    /// Every remembered dub as sync sends it; one chosen before sync existed carries 0.
-    func stampedDubs() -> [Int: SyncDub] {
-        titleTranslations.reduce(into: [:]) { result, row in
-            let stamp = dubStamps[row.key]
-            result[row.key] = SyncDub(id: row.value, title: stamp?.title ?? "", at: stamp?.at ?? 0)
-        }
+    /// Every title `isFinished` says is done, as sync's tombstones follow them.
+    func finishedTitles() -> Set<Int> {
+        Set(syncStatuses.filter { $0.status == WatchStatus.completed.rawValue }.map(\.anime.id))
+    }
+    /// What this device holds, as the shared sync rules read it. `titles` narrows the positions —
+    /// the one part that grows — to those titles, where only they are compared.
+    func syncState(of titles: Set<Int>? = nil) -> LocalSyncState {
+        let positions = titles.map { wanted in episodeHistory.values.filter { wanted.contains($0.animeID) } } ?? Array(episodeHistory.values)
+        return .of(positions: positions, translations: titleTranslations, stamps: dubStamps, secrets: secrets)
     }
     /// A request to the worker with this account's token, refreshed once on a 401 like any other.
     func syncAuthorized(_ operation: (String) async throws -> SyncTitles) async throws -> SyncTitles {
         try await authorized(operation)
     }
-    /// What another device did, already found to be newer than this one's: tombstones first, then
-    /// positions and dubs. Written as they are, without passing through `saveProgress`, so nothing
-    /// is marked on Shikimori and nothing goes back to the worker.
-    func applySynced(positions: [EpisodeProgress], tombstones: [Int: Date], dubs: [Int: SyncDub], secrets remote: [Int: SyncSecret] = [:]) {
+    /// What another device did, already found newer than this one's by the shared rules
+    /// (`SyncRules.newer`): tombstones first, then positions, dubs and «украдкой». Written as they
+    /// are, without passing through `saveProgress`, so nothing is marked on Shikimori and nothing
+    /// goes back to the worker. False when it could not be written.
+    @discardableResult
+    func applySynced(_ newer: SyncNewer) -> Bool {
         let previous = snapshot
-        for (animeID, gone) in tombstones {
-            episodeHistory = episodeHistory.filter { $0.value.animeID != animeID || $0.value.updatedAt > gone }
+        for (animeID, gone) in newer.tombstoneMoments {
+            episodeHistory = episodeHistory.filter { $0.value.animeID != animeID || $0.value.updatedAt.syncMilliseconds > gone }
         }
         var unknown = Set<Int>()
-        for value in positions {
+        for position in newer.positions {
+            let value = EpisodeProgress(position)
             episodeHistory["\(value.animeID):\(value.episode)"] = value
             if recentAnime[value.animeID] == nil {
                 if let known = rate(for: value.animeID)?.anime ?? catalog.first(where: { $0.id == value.animeID }) {
@@ -537,28 +549,29 @@ import AuthenticationServices
                 } else { unknown.insert(value.animeID) }
             }
         }
-        for (animeID, dub) in dubs where dub.id != 0 {
-            let local = dubStamps[animeID]?.at ?? (titleTranslations[animeID] == nil ? nil : 0)
-            if let local, local >= dub.at { continue }
-            titleTranslations[animeID] = dub.id
-            dubStamps[animeID] = DubStamp(title: dub.title, at: dub.at)
+        // A dub chosen later elsewhere: its stamp is taken, and the dub itself where it differs.
+        let dubs = newer.dubChanges
+        for (animeID, at) in newer.dubMoments {
+            if let dub = dubs[animeID] { titleTranslations[animeID] = Int(dub.id) }
+            let name = dubs[animeID].map { $0.title ?? "" } ?? dubStamps[animeID]?.title ?? ""
+            dubStamps[animeID] = DubStamp(title: name, at: at)
         }
         // «Украдкой» switched or counted on another device. Nothing of it goes to Shikimori: the
         // device where it was switched back already wrote there.
         var cardless = Set<Int>()
-        for (animeID, secret) in remote {
+        for secret in newer.secrets {
+            let animeID = Int(secret.animeId)
             let local = secrets[animeID]
-            if let local, local.at >= secret.at { continue }
             let card = local?.anime ?? shikimoriRate(for: animeID)?.anime ?? recentAnime[animeID] ?? catalog.first { $0.id == animeID }
-            secrets[animeID] = SecretTitle(on: secret.on, watched: secret.watched, at: secret.at, anime: card)
+            secrets[animeID] = SecretTitle(on: secret.on, watched: Int(secret.watched), at: secret.at, anime: card)
             if card == nil && secret.on { cardless.insert(animeID) }
             if undoChange?.anime.id == animeID { undoChange = nil }
         }
         guard previous.episodeHistory != episodeHistory || previous.translations != titleTranslations
-                || previous.dubs != dubStamps || previous.recent != recentAnime || previous.secrets != secrets else { return }
+                || previous.dubs != dubStamps || previous.recent != recentAnime || previous.secrets != secrets else { return true }
         targets.invalidate()
         progress = latestPerTitle()
-        do { try persist(from: previous) } catch { restore(previous); return }
+        do { try persist(from: previous) } catch { restore(previous); return false }
         // «Продолжить» shows a title by its card; one started on another device may not be known here.
         let account = accountKey
         for animeID in unknown.union(cardless) {
@@ -570,6 +583,7 @@ import AuthenticationServices
                 do { try persist(from: before) } catch { restore(before) }
             }
         }
+        return true
     }
 
     private func authorized<T>(_ operation: (String) async throws -> T) async throws -> T {
@@ -626,33 +640,37 @@ import AuthenticationServices
     // MARK: - «смотреть украдкой»
 
     /// A normal title — or one not in the list at all — switched to «украдкой»: counted from what
-    /// Shikimori has, and the Shikimori record left exactly as it is.
+    /// Shikimori has (`SecretRules.watchedWhenTurnedOn`), and the Shikimori record left exactly as it is.
     private func watchSecretly(_ anime: Anime) {
         guard !isSecret(anime.id) else { return }
         let previous = snapshot
         targets.invalidate()
-        secrets[anime.id] = SecretTitle(on: true, watched: shikimoriRate(for: anime.id)?.episodes ?? 0, at: stamp(), anime: anime)
+        secrets[anime.id] = SecretTitle(on: true, watched: SecretCount.whenTurnedOn(counted: shikimoriRate(for: anime.id)?.episodes),
+                                        at: stamp(), anime: anime)
         if undoChange?.anime.id == anime.id { undoChange = nil }
         if completionSuggestion?.id == anime.id { completionSuggestion = nil }
         do { try persist(from: previous); mutationRevision += 1 } catch {
             restore(previous)
             self.error = error.localizedDescription; return
         }
-        secretSaved(anime.id)
+        secretSaved(anime.id, from: previous.secrets[anime.id])
     }
-    /// The secret count set, and the card refreshed from whatever screen had the title. Staged
-    /// only; the caller persists.
-    private func countSecretly(_ anime: Anime, _ watched: Int) {
-        guard var secret = secrets[anime.id], secret.on else { return }
-        secret.watched = max(0, anime.episodes > 0 ? min(watched, anime.episodes) : watched)
+    /// An episode marked or unmarked on a title watched «украдкой»: the count moves to it as a
+    /// rate's would (`SecretRules.watchedAfterMark`), and the card is refreshed from whatever screen
+    /// had the title. The same count changes nothing. Staged only; the caller persists.
+    private func countSecretly(_ anime: Anime, _ episodes: Int) {
+        guard var secret = secrets[anime.id], secret.on,
+              let watched = SecretCount.afterMark(watched: secret.watched, episodes: episodes) else { return }
+        secret.watched = watched
         secret.at = stamp()
         if !anime.title.isEmpty { secret.anime = anime }
         secrets[anime.id] = secret
     }
-    /// Told to sync once it is on the device. Off, sync drops it; there is nothing else to tell.
-    private func secretSaved(_ animeID: Int) {
-        guard let secret = secrets[animeID] else { return }
-        viewingSync?.secretChanged(animeID, SyncSecret(on: secret.on, watched: secret.watched, at: secret.at))
+    /// Told to sync once it is on the device, and only when it moved since `previous`: a count
+    /// that stayed the same is not news. Off, sync drops it; there is nothing else to tell.
+    private func secretSaved(_ animeID: Int, from previous: SecretTitle?) {
+        guard let secret = secrets[animeID]?.wire, secret != previous?.wire else { return }
+        viewingSync?.secretChanged(animeID, secret)
     }
     private func stamp() -> Int64 { (viewingSync?.now() ?? Date()).syncMilliseconds }
     /// What sync's tombstones follow: the list, with a title watched «украдкой» as «secret», or as

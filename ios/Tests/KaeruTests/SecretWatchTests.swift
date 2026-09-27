@@ -312,7 +312,10 @@ private typealias Stream = Kaeru.Stream
         XCTAssertNil(model.rate(for: 9))
     }
 
-    func testAFinishedSecretTitleLeavesATombstoneAndItsSecretOutlivesIt() async throws {
+    /// As on Android (and the spec: a finished title keeps nothing but its tombstone), a secret
+    /// title watched through leaves a tombstone its secret does not outlive: whatever goes with it
+    /// is no newer, and the worker drops it. Here it stays finished «украдкой».
+    func testAFinishedSecretTitleLeavesATombstoneItsSecretDoesNotOutlive() async throws {
         let transport = SecretTransport(), clock = SecretClock()
         let model = try synced(RecordingService(), transport: transport, clock: clock, syncOn: true)
         await model.viewingSync?.pull()
@@ -326,9 +329,27 @@ private typealias Stream = Kaeru.Stream
         await model.viewingSync?.settle()
         let seven = try XCTUnwrap(transport.posts.last?["7"] as? [String: Any])
         let gone = try XCTUnwrap(seven["gone"] as? Int64)
-        let secret = try XCTUnwrap(seven["secret"] as? [String: Any])
-        XCTAssertEqual(secret["watched"] as? Int, 12)
-        XCTAssertGreaterThan(try XCTUnwrap(secret["at"] as? Int64), gone, "The worker keeps only what is newer than the tombstone")
+        XCTAssertEqual(gone, ms(clock.now))
+        if let secret = seven["secret"] as? [String: Any] {
+            XCTAssertLessThanOrEqual(try XCTUnwrap(secret["at"] as? Int64), gone)
+        }
         XCTAssertNil(seven["eps"])
+        XCTAssertEqual(model.secrets[7]?.watched, 12)
+        XCTAssertTrue(model.isFinished(7))
+    }
+
+    /// As on Android: the count is the episode the mark leaves, as `SecretRules.watchedAfterMark`
+    /// has it — not held at the announced number. Switching back still writes Shikimori no more
+    /// than the title has.
+    func testTheCountFollowsTheMarkPastTheAnnouncedNumber() async throws {
+        let service = RecordingService()
+        let model = try model(service)
+        model.queueRate(anime: anime, status: "secret", episodes: 0)
+        watched(model, 13)
+        XCTAssertEqual(model.secrets[7]?.watched, 13)
+        XCTAssertTrue(model.isFinished(7))
+        model.queueRate(anime: anime, status: "completed", episodes: 13)
+        await model.flush()
+        XCTAssertEqual(service.writes.map(\.episodes), [12])
     }
 }

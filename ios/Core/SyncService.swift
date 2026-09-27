@@ -1,4 +1,5 @@
 import Foundation
+import KaeruShared
 #if os(iOS)
 import UIKit
 #endif
@@ -61,12 +62,15 @@ struct SyncEnvironment {
     func cancel() { task?.cancel(); task = nil }
 }
 
-/// Viewing sync through the worker (spec 2026-09-26-kaeru-sync-design.md §4), after the web
-/// client (web/src/sync/service.ts): reads the document on start and after five minutes in the
-/// background and takes whatever is newer than this device's; sends this device's positions and
-/// dubs — and titles watched «украдкой» — in batches — at most one a minute, at once on pause, on another episode, on leaving the
-/// player and on going to the background — and a tombstone for a title the list marks «completed».
-/// A batch that fails stays in the outbox for the next try, across launches.
+/// Viewing sync through the worker (spec 2026-09-26-kaeru-sync-design.md §4), as Android's
+/// `ViewingSync` does it: reads the document on start and after five minutes in the background and
+/// takes whatever is newer than this device's; sends this device's positions and dubs — and titles
+/// watched «украдкой» — in batches: at most one a minute, at once on pause, on another episode, on
+/// leaving the player and on going to the background; and a tombstone for a title the list marks
+/// «completed». A batch that fails stays in the outbox for the next try, across launches.
+///
+/// The rules are shared/'s (Core/SharedSync.swift): merging, the wire, what of the server's is
+/// newer, the first full send. What is here is when things go, the outbox and the network.
 ///
 /// Nothing here throws at a caller or makes one wait: the player only ever hands over a position.
 /// Local data is per account already (every record is keyed by `AppModel.accountKey`), and so is
@@ -76,12 +80,10 @@ struct SyncEnvironment {
     static let pushEvery: TimeInterval = 60
     /// Back from the background after this long: another device may have played meanwhile.
     static let pullAfterBackground: TimeInterval = 5 * 60
-    /// The worker keeps the 30 latest episodes of a title; older ones would only be trimmed again.
-    static let episodesPerTitle = 30
     /// Titles per POST, well under the worker's 256 KB body with 30 episodes each.
     static let titlesPerPost = 100
     /// Accounts whose positions this device already sent once in full. Not per account on purpose:
-    /// it is a list of them, and sign-out leaves it alone.
+    /// it is a list of them, and sign-out leaves it alone; turning sync off takes the account out.
     static let seededKey = "sync.seeded"
 
     private weak var model: AppModel?
@@ -108,12 +110,16 @@ struct SyncEnvironment {
     private var enabled: Bool { model?.preferences.syncOn == true }
 
     /// «Синхронизация между устройствами» switched: on reads the document (and uploads what this
-    /// device has, once); off stops everything and drops what was waiting to go.
+    /// device has, once); off stops everything, drops what was waiting to go and forgets that this
+    /// device was ever seeded — so on again sends what it holds by then, as nothing done meanwhile
+    /// was queued.
     func setEnabled(_ on: Bool) {
         if on { statuses = nil; start(); return }
         timer?.cancel(); timer = nil
         again = false
-        if let account = model?.accountID { writeOutbox([:], account: account) }
+        guard let account = model?.accountID else { return }
+        writeOutbox([:], account: account)
+        forgetSeeded(account)
     }
 
     // MARK: - what the app tells sync
@@ -130,26 +136,25 @@ struct SyncEnvironment {
 
     func positionSaved(_ value: EpisodeProgress) {
         guard enabled, let model, model.accountID != nil, !model.isFinished(value.animeID) else { return }
-        enqueue(value.animeID, SyncTitle(eps: [String(value.episode): Self.position(value)]))
+        let position = SyncRules.shared.wire(position: value.episodePosition)
+        // One with no length cannot be resumed from, here or anywhere else.
+        guard position.d > 0 else { return }
+        enqueue(value.animeID, .of(eps: [String(value.episode): position]))
     }
 
-    func dubChosen(_ animeID: Int, _ dub: SyncDub) {
-        guard enabled, let model, model.accountID != nil, !model.isFinished(animeID) else { return }
-        enqueue(animeID, SyncTitle(dub: dub))
+    /// A dub chosen here, stamped when. One nobody has named yet stays here: the other devices
+    /// could not show it.
+    func dubChosen(_ animeID: Int, id: Int, title: String, at: Int64) {
+        guard enabled, let model, model.accountID != nil, !title.isEmpty, !model.isFinished(animeID) else { return }
+        enqueue(animeID, .of(dub: .named(id: id, title: title, at: at)))
     }
 
-    /// A title switched to or from «украдкой», or its count of watched episodes moved. Sent even for
-    /// a finished title: that is how the other devices learn it was finished «украдкой».
+    /// A title switched to or from «украдкой», or its count of watched episodes moved. A finished
+    /// one still goes: the tombstone its turn to «completed» leaves is newer, and the worker drops
+    /// it then — a finished title keeps nothing but the tombstone.
     func secretChanged(_ animeID: Int, _ secret: SyncSecret) {
-        guard enabled, let account = model?.accountID else { return }
-        var outbox = readOutbox(account)
-        var secret = secret
-        // The worker keeps only what is newer than a tombstone; a count that finished the title is
-        // written in the same moment as the tombstone it leaves, and must outlive it.
-        if let gone = outbox[String(animeID)]?.gone, secret.at <= gone { secret.at = gone + 1 }
-        outbox[String(animeID)] = Self.merge(outbox[String(animeID)], SyncTitle(secret: secret))
-        writeOutbox(outbox, account: account)
-        schedule()
+        guard enabled, model?.accountID != nil else { return }
+        enqueue(animeID, .of(secret: secret))
     }
 
     /// The list as it now stands. A title turning «completed» leaves a tombstone; turning back
@@ -158,8 +163,9 @@ struct SyncEnvironment {
         guard enabled, model?.accountID != nil else { return }
         let current = Self.statuses(library)
         // The first list seen is where things stand, not a change. An empty one says nothing yet:
-        // it is what a fresh install has before Shikimori answers.
-        guard let before = statuses else {
+        // it is what a fresh install has before Shikimori answers — and after one, the next list
+        // is where things stand again rather than a title list full of changes.
+        guard let before = statuses, !before.isEmpty else {
             statuses = current.isEmpty ? nil : current
             return
         }
@@ -218,64 +224,44 @@ struct SyncEnvironment {
         schedule()
     }
 
-    /// What the server holds, taken where it is newer than this device's.
+    /// What the server holds, taken where it is newer than this device's (`SyncRules.newer`); and
+    /// out of the outbox, what the server already holds.
     private func apply(_ titles: SyncTitles, account: Int64) {
-        guard let model, model.accountID == account else { return }
+        guard let model, model.accountID == account, !titles.isEmpty else { return }
+        // Only what the answer names is compared, so only its titles' positions are handed over.
+        let named = Set(titles.keys.compactMap { Int($0) })
+        let newer = SyncRules.shared.newer(remote: titles, local: model.syncState(of: named))
+        guard model.applySynced(newer), model.accountID == account else { return }
         var outbox = readOutbox(account)
         var outboxChanged = false
-        var positions: [EpisodeProgress] = []
-        var tombstones: [Int: Date] = [:]
-        var dubs: [Int: SyncDub] = [:]
-        var secrets: [Int: SyncSecret] = [:]
         for (id, title) in titles {
-            guard let animeID = Int(id) else { continue }
-            if let gone = title.gone { tombstones[animeID] = Date(syncMilliseconds: gone) }
-            for (episode, position) in title.eps ?? [:] {
-                // A position with no length cannot be resumed from; the players never write one.
-                guard let number = Int(episode), number > 0, position.d > 0 else { continue }
-                if let known = model.progressFor(animeID: animeID, episode: number),
-                   known.updatedAt.syncMilliseconds >= position.at { continue }
-                positions.append(EpisodeProgress(animeID: animeID, episode: number, position: Double(max(0, position.p)) / 1000,
-                                                 duration: Double(position.d) / 1000, updatedAt: Date(syncMilliseconds: position.at)))
-            }
-            if let dub = title.dub { dubs[animeID] = dub }
-            if let secret = title.secret { secrets[animeID] = secret }
-            if let waiting = outbox[id] {
-                let left = Self.without(waiting, covered: title)
-                outbox[id] = left.isEmpty ? nil : left
-                outboxChanged = true
-            }
+            guard let waiting = outbox[id] else { continue }
+            let left = SyncMerge.shared.without(title: waiting, covered: title)
+            outbox[id] = left.isEmpty ? nil : left
+            outboxChanged = true
         }
-        model.applySynced(positions: positions, tombstones: tombstones, dubs: dubs, secrets: secrets)
         if outboxChanged { writeOutbox(outbox, account: account) }
     }
 
-    /// Once per account: what this device kept before sync, where it is newer than the server's.
+    /// Once per account: what this device kept before sync, less what the server already holds
+    /// (`SyncRules.seed`), finished titles left out.
     private func seed(account: Int64, remote: SyncTitles) {
         guard let model else { return }
         var seeded = (try? model.store.read([Int64].self, key: Self.seededKey)) ?? []
         guard !seeded.contains(account) else { return }
-        var batch: SyncTitles = [:]
-        let byTitle = Dictionary(grouping: model.episodeHistory.values, by: \.animeID)
-        for (animeID, rows) in byTitle where !model.isFinished(animeID) {
-            let latest = rows.sorted { $0.updatedAt > $1.updatedAt }.prefix(Self.episodesPerTitle)
-            let eps = Dictionary(latest.map { (String($0.episode), Self.position($0)) }) { first, _ in first }
-            batch[String(animeID)] = SyncTitle(eps: eps)
-        }
-        for (animeID, dub) in model.stampedDubs() where !model.isFinished(animeID) {
-            batch[String(animeID), default: SyncTitle()].dub = dub
-        }
-        for (animeID, secret) in model.secrets where secret.at > 0 {
-            batch[String(animeID), default: SyncTitle()].secret = SyncSecret(on: secret.on, watched: secret.watched, at: secret.at)
-        }
+        let batch = SyncRules.shared.seed(local: model.syncState(), finished: KotlinNumbers.set(model.finishedTitles()), remote: remote)
         var outbox = readOutbox(account)
-        for (id, title) in batch {
-            let left = Self.without(title, covered: remote[id] ?? SyncTitle())
-            if !left.isEmpty { outbox[id] = Self.merge(outbox[id], left) }
-        }
+        for (id, left) in batch { outbox[id] = SyncMerge.shared.merge(base: outbox[id], patch: left) }
         writeOutbox(outbox, account: account)
         seeded.append(account)
         try? model.store.write(seeded, key: Self.seededKey)
+    }
+
+    private func forgetSeeded(_ account: Int64) {
+        guard let store = model?.store, var seeded = try? store.read([Int64].self, key: Self.seededKey),
+              seeded.contains(account) else { return }
+        seeded.removeAll { $0 == account }
+        try? store.write(seeded, key: Self.seededKey)
     }
 
     // MARK: - writing
@@ -286,13 +272,8 @@ struct SyncEnvironment {
         var outbox = readOutbox(account)
         let id = String(animeID)
         // Whatever was waiting for this title is older than the tombstone and would be refused anyway.
-        var kept = Self.without(outbox[id] ?? SyncTitle(), covered: SyncTitle(gone: at))
-        kept.gone = at
-        // A title finished «украдкой» keeps its secret past the tombstone: see `secretChanged`.
-        if let secret = model?.secrets[animeID], secret.on {
-            kept.secret = SyncSecret(on: true, watched: secret.watched, at: max(secret.at, at + 1))
-        }
-        outbox[id] = kept
+        let kept = SyncMerge.shared.without(title: outbox[id] ?? .of(), covered: .of(gone: at))
+        outbox[id] = kept.with(gone: at)
         writeOutbox(outbox, account: account)
         schedule()
     }
@@ -301,16 +282,16 @@ struct SyncEnvironment {
         guard let account = model?.accountID else { return }
         var outbox = readOutbox(account)
         let id = String(animeID)
-        guard var title = outbox[id], title.gone != nil else { return }
-        title.gone = nil
-        outbox[id] = title.isEmpty ? nil : title
+        guard let title = outbox[id], title.gone != nil else { return }
+        let left = title.with(gone: nil)
+        outbox[id] = left.isEmpty ? nil : left
         writeOutbox(outbox, account: account)
     }
 
     private func enqueue(_ animeID: Int, _ change: SyncTitle) {
         guard let account = model?.accountID else { return }
         var outbox = readOutbox(account)
-        outbox[String(animeID)] = Self.merge(outbox[String(animeID)], change)
+        outbox[String(animeID)] = SyncMerge.shared.merge(base: outbox[String(animeID)], patch: change)
         writeOutbox(outbox, account: account)
         schedule()
     }
@@ -368,7 +349,7 @@ struct SyncEnvironment {
         var outbox = readOutbox(account)
         for (id, sent) in batch {
             guard let waiting = outbox[id] else { continue }
-            let left = Self.without(waiting, covered: sent)
+            let left = SyncMerge.shared.without(title: waiting, covered: sent)
             outbox[id] = left.isEmpty ? nil : left
         }
         writeOutbox(outbox, account: account)
@@ -387,7 +368,8 @@ struct SyncEnvironment {
     private func outboxKey(_ account: Int64) -> String { "user-\(account).sync.outbox" }
 
     private func readOutbox(_ account: Int64) -> SyncTitles {
-        (try? model?.store.read(SyncTitles.self, key: outboxKey(account))) ?? [:]
+        guard let stored = try? model?.store.read([String: StoredSyncTitle].self, key: outboxKey(account)) else { return [:] }
+        return stored.mapValues(\.title)
     }
 
     private func writeOutbox(_ titles: SyncTitles, account: Int64) {
@@ -395,47 +377,38 @@ struct SyncEnvironment {
         // A store that will not write keeps nothing past this launch; the positions themselves are
         // still on the device, and nothing here is worth an error in front of the viewer.
         if titles.isEmpty { try? store.remove([outboxKey(account)]) }
-        else { try? store.write(titles, key: outboxKey(account)) }
-    }
-
-    // MARK: - merging, as the worker does it
-
-    static func position(_ value: EpisodeProgress) -> SyncPosition {
-        SyncPosition(p: Int64((max(0, value.position) * 1000).rounded()), d: Int64((max(0, value.duration) * 1000).rounded()),
-                     at: value.updatedAt.syncMilliseconds)
+        else { try? store.write(titles.mapValues(StoredSyncTitle.init), key: outboxKey(account)) }
     }
 
     private static func statuses(_ library: [LibraryItem]) -> [Int: String] {
         library.reduce(into: [:]) { $0[$1.anime.id] = $1.status }
     }
+}
 
-    /// `patch` over `base`, the newer `at` winning per field and per episode.
-    static func merge(_ base: SyncTitle?, _ patch: SyncTitle) -> SyncTitle {
-        var out = base ?? SyncTitle()
-        if let dub = patch.dub, (out.dub?.at ?? .min) <= dub.at { out.dub = dub }
-        if let secret = patch.secret, (out.secret?.at ?? .min) <= secret.at { out.secret = secret }
-        if let gone = patch.gone, (out.gone ?? .min) <= gone { out.gone = gone }
-        if let eps = patch.eps {
-            var merged = out.eps ?? [:]
-            for (episode, position) in eps where (merged[episode]?.at ?? .min) <= position.at { merged[episode] = position }
-            out.eps = merged
-        }
-        return out
+/// One title of the outbox as it is kept on the device: the `/sync` wire shape of a title, every
+/// absent field left out — exactly what builds before the shared rules wrote with their own
+/// Codable copies of the document, so an outbox one of them left behind still goes out after an
+/// update. Only storage: nothing is decided on it, it is turned into the shared `SyncTitle` first.
+private struct StoredSyncTitle: Codable {
+    struct Position: Codable { var p: Int64; var d: Int64; var at: Int64 }
+    struct Dub: Codable { var id: Int; var title: String; var at: Int64 }
+    struct Secret: Codable { var on: Bool; var watched: Int; var at: Int64 }
+    var dub: Dub?
+    var eps: [String: Position]?
+    var secret: Secret?
+    var gone: Int64?
+
+    init(_ title: SyncTitle) {
+        dub = title.dub.map { Dub(id: Int($0.id), title: $0.title, at: $0.at) }
+        eps = title.eps?.mapValues { Position(p: $0.p, d: $0.d, at: $0.at) }
+        secret = title.secret.map { Secret(on: $0.on, watched: Int($0.watched), at: $0.at) }
+        gone = title.goneAt
     }
 
-    /// `title` without what `covered` (a sent batch or the server) already holds: anything no newer.
-    static func without(_ title: SyncTitle, covered: SyncTitle) -> SyncTitle {
-        var out = title
-        let floor = covered.gone ?? .min
-        if let dub = out.dub, dub.at <= floor || (covered.dub.map { dub.at <= $0.at } ?? false) { out.dub = nil }
-        if let secret = out.secret, secret.at <= floor || (covered.secret.map { secret.at <= $0.at } ?? false) { out.secret = nil }
-        if let gone = out.gone, gone <= floor { out.gone = nil }
-        if let eps = out.eps {
-            let left = eps.filter { episode, position in
-                position.at > floor && !(covered.eps?[episode].map { position.at <= $0.at } ?? false)
-            }
-            out.eps = left.isEmpty ? nil : left
-        }
-        return out
+    var title: SyncTitle {
+        .of(dub: dub.map { SyncDub(id: Int32(clamping: $0.id), title: $0.title, at: $0.at) },
+            eps: eps?.mapValues { SyncPosition(p: $0.p, d: $0.d, at: $0.at) },
+            secret: secret.map { SyncSecret(on: $0.on, watched: Int32(clamping: $0.watched), at: $0.at) },
+            gone: gone)
     }
 }
