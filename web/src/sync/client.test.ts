@@ -65,6 +65,7 @@ describe("sync client", () => {
       "1535": {
         dub: { id: 610, title: "AniLibria.TV", at: 1_790_000_000_000 },
         eps: { "3": { p: 861_000, d: 1_440_000, at: 1_790_000_000_001 } },
+        secret: { on: true, watched: 7, at: 1 },
       },
       "21": { gone: 1_790_000_000_002 },
     });
@@ -110,11 +111,13 @@ describe("sync client", () => {
           "1": { dub: { id: "610", title: "x", at: 1 }, eps: { "2": { p: 1, d: 2, at: 3 }, x: { p: 1, d: 2, at: 3 }, "4": { p: "1", d: 2, at: 3 } } },
           "2": "nope",
           "3": { gone: "yesterday" },
+          "4": { secret: { on: "yes", watched: 1, at: 1 } },
+          "5": { secret: { on: false, watched: "2", at: 1 } },
         },
       }),
     );
 
-    expect(await client.get()).toEqual({ "1": { eps: { "2": { p: 1, d: 2, at: 3 } } }, "3": {} });
+    expect(await client.get()).toEqual({ "1": { eps: { "2": { p: 1, d: 2, at: 3 } } }, "3": {}, "4": {}, "5": {} });
   });
 
   it("calls an answer without titles a parser failure", async () => {

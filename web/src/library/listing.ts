@@ -1,6 +1,6 @@
 import { pluralEpisodes, statusLabel } from "../domain/format";
 import type { Card } from "../domain/feed";
-import { LIST_TABS, availableEpisodes } from "../domain/models";
+import { LIST_TABS, SECRET_LABEL, availableEpisodes } from "../domain/models";
 import type { EpisodeProgress, LibraryEntry, ListStatus } from "../domain/models";
 import { continueTarget, episodeFraction } from "../domain/progress";
 
@@ -11,8 +11,11 @@ export const SORT_OPTIONS: readonly { value: LibrarySort; label: string }[] = [
   { value: "title", label: "Название" },
 ];
 
+/** A list status, or «Украдкой»: titles Shikimori is not told about. */
+export type LibraryTabKey = ListStatus | "secret";
+
 export interface LibraryTab {
-  status: ListStatus;
+  status: LibraryTabKey;
   count: number;
   text: string;
 }
@@ -26,20 +29,28 @@ export interface EmptyTabCopy {
 // Built once: constructing a collator is the expensive half of sorting by name.
 const titleOrder = new Intl.Collator("ru", { sensitivity: "accent" });
 
+function tabOf(entry: LibraryEntry): LibraryTabKey {
+  return entry.secret === true ? "secret" : entry.rate.status;
+}
+
 // Every status keeps its tab, zero included; counts cover the whole list, not the open tab.
-export function libraryTabs(entries: readonly LibraryEntry[]): LibraryTab[] {
-  const counts = new Map<ListStatus, number>();
-  for (const entry of entries) counts.set(entry.rate.status, (counts.get(entry.rate.status) ?? 0) + 1);
-  return LIST_TABS.map((status) => {
+// «Украдкой» comes last and only while something is secret or it is the tab open.
+export function libraryTabs(entries: readonly LibraryEntry[], open?: LibraryTabKey): LibraryTab[] {
+  const counts = new Map<LibraryTabKey, number>();
+  for (const entry of entries) counts.set(tabOf(entry), (counts.get(tabOf(entry)) ?? 0) + 1);
+  const tabs: LibraryTab[] = LIST_TABS.map((status) => {
     const count = counts.get(status) ?? 0;
     return { status, count, text: `${statusLabel(status)} ${count}` };
   });
+  const secret = counts.get("secret") ?? 0;
+  if (secret > 0 || open === "secret") tabs.push({ status: "secret", count: secret, text: `${SECRET_LABEL} ${secret}` });
+  return tabs;
 }
 
 // Both orders end in a name tie-break, so a list imported in one second never reshuffles.
 export function selectLibrary(
   entries: readonly LibraryEntry[],
-  status: ListStatus,
+  status: LibraryTabKey,
   sort: LibrarySort,
 ): LibraryEntry[] {
   const byName = (a: LibraryEntry, b: LibraryEntry) =>
@@ -48,7 +59,7 @@ export function selectLibrary(
     sort === "updated"
       ? (a: LibraryEntry, b: LibraryEntry) => b.rate.updatedAt - a.rate.updatedAt || byName(a, b)
       : byName;
-  return entries.filter((entry) => entry.rate.status === status).sort(order);
+  return entries.filter((entry) => tabOf(entry) === status).sort(order);
 }
 
 // Android libraryCardSubtitle: «7 из 28» once started, the season length before, nothing when unknown.
@@ -84,8 +95,14 @@ export function libraryCard(entry: LibraryEntry, progress: readonly EpisodeProgr
 }
 
 // Android LibraryTabs.emptyTabCopy; only the tabs a viewer fills on purpose offer search.
-export function emptyTabCopy(status: ListStatus): EmptyTabCopy {
+export function emptyTabCopy(status: LibraryTabKey): EmptyTabCopy {
   switch (status) {
+    case "secret":
+      return {
+        title: "Украдкой ничего не смотрите",
+        text: "Выберите «Украдкой» в статусе тайтла — серии будут отмечаться только здесь, без Shikimori.",
+        offersSearch: false,
+      };
     case "watching":
       return {
         title: "Вы ничего не смотрите",
@@ -125,7 +142,8 @@ export function emptyTabCopy(status: ListStatus): EmptyTabCopy {
   }
 }
 
-export function parseTab(raw: string | null): ListStatus {
+export function parseTab(raw: string | null): LibraryTabKey {
+  if (raw === "secret") return "secret";
   return LIST_TABS.find((status) => status === raw) ?? "watching";
 }
 

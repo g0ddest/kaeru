@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Anime, EpisodeProgress, LibraryEntry, ListStatus } from "../domain/models";
 import type { LibraryState } from "../library/library";
 import { ProgressStore } from "../library/progress";
+import { SecretStore } from "../library/secret";
 import { rememberDub, rememberedDub, rememberedDubs } from "../player/memory";
 import { memoryStorage } from "../test/fakes";
 import { SyncError, type SyncClient, type SyncTitles } from "./client";
@@ -72,8 +73,9 @@ function setup(options: { account?: number | null; storage?: Storage; enabled?: 
   const fake = fakeClient();
   const library = fakeLibrary();
   const who = { account: options.account === undefined ? 42 : options.account };
-  const service = new SyncService({ client: fake.client, progress, library, accountId: () => who.account, storage });
-  return { service, progress, library, storage, who, ...fake };
+  const secrets = new SecretStore({ storage, accountId: () => who.account });
+  const service = new SyncService({ client: fake.client, progress, library, secrets, accountId: () => who.account, storage });
+  return { service, progress, library, secrets, storage, who, ...fake };
 }
 
 /** Runs timers and every promise they settle. */
@@ -580,5 +582,90 @@ describe("SyncService switch", () => {
     expect(env.posts()).toHaveLength(sent);
     expect(env.storage.getItem("kaeru.sync.outbox")).toBeNull();
     expect(env.storage.getItem("kaeru.sync")).toBe("false");
+  });
+});
+
+describe("SyncService «Смотреть украдкой»", () => {
+  const card = { id: 5, title: "Аниме 5", episodes: 12 } as unknown as Anime;
+
+  it("sends a secret change like a position", async () => {
+    const env = started();
+    env.library.set([]);
+    env.service.start();
+    await settle();
+
+    env.secrets.set(5, { on: true, watched: 3, at: T0 }, card);
+    await settle(MINUTE);
+
+    expect(env.posts().at(-1)?.titles).toEqual({ "5": { secret: { on: true, watched: 3, at: T0 } } });
+  });
+
+  it("sends nothing about secrets while sync is off", async () => {
+    const env = started({ enabled: false });
+    env.service.start();
+    env.secrets.set(5, { on: true, watched: 3, at: T0 }, card);
+    await settle(2 * MINUTE);
+
+    expect(env.calls).toEqual([]);
+    expect(env.storage.getItem("kaeru.sync.outbox")).toBeNull();
+    expect(env.secrets.get(5)?.on).toBe(true);
+  });
+
+  it("sends, once turned on, what changed while it was off", async () => {
+    const env = started({ enabled: false });
+    env.service.start();
+    env.secrets.set(5, { on: true, watched: 3, at: T0 - 5_000 }, card);
+    env.state.remote = { "5": { secret: { on: false, watched: 1, at: T0 - 9_000 } } };
+
+    env.service.setEnabled(true);
+    await settle();
+
+    expect(env.posts().at(-1)?.titles).toEqual({ "5": { secret: { on: true, watched: 3, at: T0 - 5_000 } } });
+  });
+
+  it("takes a newer secret from the server without sending it back, and keeps a newer local one", async () => {
+    const env = started();
+    env.secrets.set(5, { on: false, watched: 0, at: T0 - 9_000 }, card);
+    env.secrets.set(6, { on: true, watched: 4, at: T0 - 1_000 });
+    env.state.remote = {
+      "5": { secret: { on: true, watched: 7, at: T0 - 5_000 } },
+      "6": { secret: { on: true, watched: 2, at: T0 - 3_000 } },
+      "7": { secret: { on: true, watched: 1, at: T0 - 3_000 } },
+    };
+    env.library.set([]);
+
+    env.service.start();
+    await settle(MINUTE);
+
+    expect(env.secrets.get(5)).toEqual({ on: true, watched: 7, at: T0 - 5_000, anime: card });
+    expect(env.secrets.get(6)).toMatchObject({ watched: 4, at: T0 - 1_000 });
+    expect(env.secrets.get(7)).toEqual({ on: true, watched: 1, at: T0 - 3_000, anime: null });
+    // Only the local state the server lacks goes out.
+    expect(env.posts().map((post) => post.titles)).toEqual([{ "6": { secret: { on: true, watched: 4, at: T0 - 1_000 } } }]);
+  });
+
+  it("reads another device's tombstone over a secret title as the show watched through", async () => {
+    const env = started();
+    env.secrets.set(5, { on: true, watched: 9, at: T0 - 9_000 }, card);
+    env.state.remote = { "5": { gone: T0 - 1_000 } };
+    env.library.set([]);
+
+    env.service.start();
+    await settle(MINUTE);
+
+    expect(env.secrets.get(5)).toMatchObject({ on: true, watched: 12 });
+    expect(env.posts()).toEqual([]);
+  });
+
+  it("sends the tombstone when a secret title is finished", async () => {
+    const env = started();
+    env.library.set([[5, "watching"]]);
+    env.service.start();
+    await settle(MINUTE);
+
+    env.library.set([[5, "completed"]]);
+    await settle(MINUTE);
+
+    expect(env.posts().at(-1)?.titles).toEqual({ "5": { gone: T0 + MINUTE } });
   });
 });

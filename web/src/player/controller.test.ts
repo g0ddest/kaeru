@@ -10,6 +10,7 @@ import type { Anime, EpisodeProgress, ListStatus, UserRate } from "../domain/mod
 import { Library } from "../library/library";
 import { setAutoplayNext, setDefaultQuality, setSkipEnding, setWatchedThreshold } from "../library/prefs";
 import { ProgressStore } from "../library/progress";
+import { SecretStore } from "../library/secret";
 import type { AniSkip } from "./aniskip";
 import { PlayerController, type MediaPort } from "./controller";
 import type { Engine } from "./engine";
@@ -217,6 +218,7 @@ let aniskip: FakeAniSkip;
 let server: FakeShikimori;
 let progress: ProgressStore;
 let library: Library;
+let secrets: SecretStore;
 let media: { play: ReturnType<typeof vi.fn<() => Promise<void>>>; pause: ReturnType<typeof vi.fn<() => void>>; seek: ReturnType<typeof vi.fn<(ms: number) => void>> };
 let toasts: string[];
 let sync: { push: ReturnType<typeof vi.fn<(options?: { keepalive?: boolean }) => void>> };
@@ -230,6 +232,7 @@ beforeEach(() => {
   // In the list, one episode behind the one the tests play.
   server.rates = [{ id: 1, animeId: ANIME, status: "watching", episodes: 6, updatedAt: 1 }];
   progress = new ProgressStore(memoryStorage());
+  secrets = new SecretStore({ storage: null, accountId: () => 42 });
   media = { play: vi.fn(() => Promise.resolve()), pause: vi.fn(), seek: vi.fn() };
   toasts = [];
   sync = { push: vi.fn() };
@@ -237,7 +240,7 @@ beforeEach(() => {
 
 function build(): PlayerController {
   const shikimori = server.api();
-  library = new Library({ shikimori, authorized: fakeAuthorized, accountId: () => 42, progress });
+  library = new Library({ shikimori, authorized: fakeAuthorized, accountId: () => 42, progress, secrets });
   const port: MediaPort = media;
   return new PlayerController({
     kodik,
@@ -888,6 +891,35 @@ describe("PlayerController: marks on Shikimori", () => {
     await playing();
     await settle();
 
+    expect(server.writes()).toEqual([]);
+  });
+});
+
+describe("PlayerController: «Смотреть украдкой»", () => {
+  it("puts nothing into the list on start and counts the mark here only", async () => {
+    server.rates = [];
+    secrets.set(ANIME, { on: true, watched: 6, at: 1 }, frieren());
+    const controller = await playing();
+    controller.onPause();
+    controller.onPlaying();
+    controller.onTime(1_300_000, DUR);
+    await settle();
+
+    expect(server.writes()).toEqual([]);
+    expect(secrets.get(ANIME)?.watched).toBe(7);
+  });
+
+  it("offers no completion after the last episode and leaves the Shikimori rate as it was", async () => {
+    server.details = frieren({ status: "released", episodes: 12, episodesAired: 12 });
+    server.rates = [{ id: 1, animeId: ANIME, status: "watching", episodes: 3, updatedAt: 1 }];
+    secrets.set(ANIME, { on: true, watched: 11, at: 1 }, frieren());
+    const controller = await playing(12);
+
+    controller.onTime(1_300_000, DUR);
+    await settle();
+
+    expect(controller.getState().completion).toBe(false);
+    expect(secrets.get(ANIME)?.watched).toBe(12);
     expect(server.writes()).toEqual([]);
   });
 });

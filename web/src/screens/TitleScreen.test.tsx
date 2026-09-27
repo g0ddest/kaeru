@@ -336,6 +336,7 @@ describe("TitleScreen", () => {
       "Отложено",
       "Брошено",
       "Пересматриваю",
+      "УкрадкойНе отмечать на Shikimori",
     ]);
     expect(within(menu).getByRole("menuitemradio", { name: "Смотрю" })).toHaveAttribute("aria-checked", "true");
     await user.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
@@ -406,6 +407,64 @@ describe("TitleScreen", () => {
 
     expect(await screen.findByRole("button", { name: "Ещё не вышло" })).toBeDisabled();
     expect(screen.queryByRole("link", { name: /Смотреть/ })).not.toBeInTheDocument();
+  });
+
+  describe("«Смотреть украдкой»", () => {
+    async function openStatus(user: User, name: string): Promise<HTMLElement> {
+      const status = await screen.findByRole("button", { name });
+      await waitFor(() => expect(status).toBeEnabled());
+      await user.click(status);
+      return screen.getByRole("menu");
+    }
+
+    it("hides a listed title from Shikimori and counts its marks here, with no completion offer", async () => {
+      const user = userEvent.setup();
+      start(deathNote({ episodes: 12 }), { status: "watching", episodes: 3 });
+      renderTitle();
+      const menu = await openStatus(user, "Смотрю");
+      const item = within(menu).getByRole("menuitemradio", { name: "Украдкой" });
+      expect(item).toHaveAccessibleDescription("Не отмечать на Shikimori");
+      await user.click(item);
+
+      expect(await screen.findByRole("button", { name: "Украдкой" })).toBeInTheDocument();
+      expect(screen.getByText("Просмотрено 3 из 12")).toBeInTheDocument();
+      await pick(user, 12, "Отметить просмотренной");
+      expect(await screen.findByText("Просмотрено 12 из 12")).toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(server.writes()).toEqual([]);
+
+      const again = await openStatus(user, "Украдкой");
+      expect(within(again).getByRole("menuitemradio", { name: "Украдкой" })).toHaveAttribute("aria-checked", "true");
+      expect(within(again).getByRole("menuitemradio", { name: "Смотрю" })).toHaveAttribute("aria-checked", "false");
+    });
+
+    it("switching back to a status sends it with the count watched meanwhile, once", async () => {
+      const user = userEvent.setup();
+      start(deathNote(), { status: "watching", episodes: 3 });
+      renderTitle();
+      await user.click(within(await openStatus(user, "Смотрю")).getByRole("menuitemradio", { name: "Украдкой" }));
+      await pick(user, 6, "Отметить просмотренной");
+      await screen.findByText("Просмотрено 6 из 37");
+
+      await user.click(within(await openStatus(user, "Украдкой")).getByRole("menuitemradio", { name: "Смотрю" }));
+
+      expect(await screen.findByRole("button", { name: "Смотрю" })).toBeInTheDocument();
+      await waitFor(() => expect(server.writes()).toEqual(["PATCH 1 episodes=6"]));
+      expect(screen.getByText("Просмотрено 6 из 37")).toBeInTheDocument();
+    });
+
+    it("hides a title that is in no list without adding it anywhere", async () => {
+      const user = userEvent.setup();
+      start(deathNote());
+      renderTitle();
+      const more = await screen.findByRole("button", { name: "Другие варианты" });
+      await waitFor(() => expect(more).toBeEnabled());
+      await user.click(more);
+      await user.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Смотреть украдкой" }));
+
+      expect(await screen.findByRole("button", { name: "Украдкой" })).toBeInTheDocument();
+      expect(server.writes()).toEqual([]);
+    });
   });
 
   it("marks an episode watched from its row menu", async () => {

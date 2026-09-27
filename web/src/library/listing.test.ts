@@ -220,3 +220,49 @@ describe("address values", () => {
     expect(parseSort(null)).toBe("updated");
   });
 });
+
+describe("«Украдкой» in «Мой список»", () => {
+  const secret = (base: LibraryEntry): LibraryEntry => ({ ...base, secret: true });
+  const list = [
+    entry(1, "А", "watching", 2),
+    secret(entry(2, "Б", "watching", 5)),
+    secret(entry(3, "В", "completed", 12, "2026-09-02T00:00:00Z")),
+    entry(4, "Г", "completed", 12),
+  ];
+
+  it("adds the tab last, counting secret titles only there", () => {
+    const tabs = libraryTabs(list);
+    expect(tabs.map((tab) => tab.status)).toEqual([
+      "watching",
+      "planned",
+      "completed",
+      "rewatching",
+      "on_hold",
+      "dropped",
+      "secret",
+    ]);
+    expect(tabs.map((tab) => tab.count)).toEqual([1, 0, 1, 0, 0, 0, 2]);
+    expect(tabs.at(-1)?.text).toBe("Украдкой 2");
+  });
+
+  it("leaves the tab out while nothing is secret, unless it is the open one", () => {
+    const plain = [entry(1, "А", "watching", 2)];
+    expect(libraryTabs(plain).map((tab) => tab.status)).not.toContain("secret");
+    expect(libraryTabs(plain, "secret").at(-1)).toEqual({ status: "secret", count: 0, text: "Украдкой 0" });
+  });
+
+  it("lists secret titles only under «Украдкой», finished ones included", () => {
+    expect(ids(selectLibrary(list, "secret", "updated"))).toEqual([3, 2]);
+    expect(ids(selectLibrary(list, "watching", "updated"))).toEqual([1]);
+    expect(ids(selectLibrary(list, "completed", "updated"))).toEqual([4]);
+  });
+
+  it("reads the tab from the address and has its own empty copy", () => {
+    expect(parseTab("secret")).toBe("secret");
+    expect(emptyTabCopy("secret")).toEqual({
+      title: "Украдкой ничего не смотрите",
+      text: "Выберите «Украдкой» в статусе тайтла — серии будут отмечаться только здесь, без Shikimori.",
+      offersSearch: false,
+    });
+  });
+});

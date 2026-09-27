@@ -529,3 +529,22 @@ describe("isFeedEmpty", () => {
     expect(isFeedEmpty(feedOf({ planned: [item(e, 1, "planned")] }))).toBe(false);
   });
 });
+
+describe("buildFeed with «Украдкой»", () => {
+  it("continues a secret title from its own count like a listed one", () => {
+    const hidden: LibraryEntry = { ...entry(anime(1), { watched: 4 }), secret: true };
+    const feed = build([[hidden, [stopped(1, 5, 0.4)]]]);
+    expect(ids(feed.continueWatching)).toEqual([1]);
+    expect(feed.top?.episode).toBe(5);
+
+    const next = build([[hidden]]);
+    expect(ids(next.nextUp)).toEqual([1]);
+    expect(next.top?.episode).toBe(5);
+  });
+
+  it("offers nothing for a finished secret title", () => {
+    const done: LibraryEntry = { ...entry(anime(1), { status: "completed", watched: 12 }), secret: true };
+    const feed = build([[done, [stopped(1, 12, 0.95)]]]);
+    expect(feed.top).toBeNull();
+  });
+});

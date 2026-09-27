@@ -68,7 +68,7 @@ export function LibraryScreen() {
         <PillGroup
           kind="tab"
           label="Мой список"
-          options={libraryTabs(entries).map((tab) => ({ value: tab.status, label: tab.text }))}
+          options={libraryTabs(entries, status).map((tab) => ({ value: tab.status, label: tab.text }))}
           value={status}
           onChange={(next) => setView("tab", next)}
           panelId={PANEL_ID}

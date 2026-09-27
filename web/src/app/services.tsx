@@ -4,6 +4,7 @@ import { createShikimori, type Shikimori } from "../api/shikimori";
 import { authorized, sessionStore, type SessionStore } from "../auth/session";
 import { Library } from "../library/library";
 import { progressStore, type ProgressStore } from "../library/progress";
+import { SecretStore } from "../library/secret";
 import { createAniSkip, type AniSkip } from "../player/aniskip";
 import { createEngine, type EngineFactory } from "../player/engine";
 import { createKodik, type Kodik } from "../player/kodik";
@@ -37,7 +38,9 @@ export function createServices(
     const access = store.get();
     return access.kind === "signed_in" ? access.session.account.id : null;
   };
-  const library = new Library({ shikimori, authorized: auth, accountId, progress });
+  // «Смотреть украдкой», per account in this browser's storage.
+  const secrets = new SecretStore({ accountId });
+  const library = new Library({ shikimori, authorized: auth, accountId, progress, secrets });
   // An account the worker takes off its allow-list closes this store's session, as a refresh would.
   const kodik = createKodik({
     authorized: auth,
@@ -49,6 +52,7 @@ export function createServices(
     client: createSyncClient({ authorized: auth, ...(deps.fetch ? { fetch: deps.fetch } : {}) }),
     progress,
     library,
+    secrets,
     accountId,
   });
   return { shikimori, library, progress, kodik, aniskip, engine: createEngine, sync };

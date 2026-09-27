@@ -6,6 +6,8 @@ import { useServices } from "../app/services";
 import { primaryAction, watchPath } from "../domain/actions";
 import { factsLine, formatTime, pluralEpisodesAccusative, statusLabel } from "../domain/format";
 import {
+  SECRET_LABEL,
+  SECRET_NOTE,
   STATUS_MENU,
   availableEpisodes,
   type Anime,
@@ -132,7 +134,9 @@ function TitleContent({ anime, entry, rows, threshold, known, listFailed, failed
   // Task 5 already cleaned the text; a second pass would decode entities twice.
   const description = anime.description;
   const artwork = anime.backdropUrl ?? anime.posterUrl;
-  const current = entry?.rate.status;
+  const secret = entry?.secret === true;
+  // A secret title's status is «Украдкой»; the rate under it is the local count, not a choice.
+  const current = secret ? undefined : entry?.rate.status;
 
   const fail = (error: unknown): void => {
     toast.show(errorMessage(error));
@@ -147,6 +151,10 @@ function TitleContent({ anime, entry, rows, threshold, known, listFailed, failed
   };
   const changeStatus = (status: ListStatus) => {
     library.setStatus(anime, status).catch(fail);
+  };
+  const hide = () => {
+    setFocusStatus(true);
+    library.setSecret(anime).catch(fail);
   };
   const addToPlans = () => {
     setFocusStatus(true);
@@ -180,6 +188,7 @@ function TitleContent({ anime, entry, rows, threshold, known, listFailed, failed
     checked: status === current,
     onSelect: () => changeStatus(status),
   }));
+  statusItems.push({ key: "secret", label: SECRET_LABEL, note: SECRET_NOTE, checked: secret, onSelect: hide });
 
   return (
     <div className="title">
@@ -228,11 +237,24 @@ function TitleContent({ anime, entry, rows, threshold, known, listFailed, failed
         )}
         <div className="title-controls" ref={controls}>
           {entry ? (
-            <MenuButton label={statusLabel(entry.rate.status)} items={statusItems} disabled={!known} />
+            <MenuButton
+              label={secret ? SECRET_LABEL : statusLabel(entry.rate.status)}
+              items={statusItems}
+              disabled={!known}
+            />
           ) : (
-            <SecondaryButton disabled={!known} onClick={addToPlans}>
-              Добавить в планы
-            </SecondaryButton>
+            <>
+              <SecondaryButton disabled={!known} onClick={addToPlans}>
+                Добавить в планы
+              </SecondaryButton>
+              <MenuButton
+                variant="icon"
+                label={<IconMore />}
+                ariaLabel="Другие варианты"
+                items={[{ key: "secret", label: "Смотреть украдкой", note: SECRET_NOTE, onSelect: hide }]}
+                disabled={!known}
+              />
+            </>
           )}
           {availableEpisodes(anime) > 0 && <DubControl animeId={anime.id} />}
         </div>

@@ -8,6 +8,7 @@ import type { authorized } from "../auth/session";
 import type { Anime, EpisodeProgress, ListStatus, UserRate } from "../domain/models";
 import { DETAILS_PER_LOAD, DETAILS_TTL_MS, Library, useLibrary } from "./library";
 import { ProgressStore } from "./progress";
+import { SecretStore } from "./secret";
 
 const NOW = Date.parse("2026-09-24T12:00:00Z");
 const HOUR = 3_600_000;
@@ -182,16 +183,20 @@ function setup(options: { account?: () => number | null } = {}) {
   const server = new FakeShikimori();
   const progress = new ProgressStore(memoryStorage());
   let clock = NOW;
+  const accountId = options.account ?? (() => 42);
+  const secrets = new SecretStore({ storage: null, accountId });
   const library = new Library({
     shikimori: server.api(),
     authorized: signedIn,
-    accountId: options.account ?? (() => 42),
+    accountId,
     progress,
+    secrets,
     now: () => clock,
   });
   return {
     server,
     progress,
+    secrets,
     library,
     later(ms: number) {
       clock += ms;
@@ -771,5 +776,151 @@ describe("useLibrary", () => {
       await library.markWatched(anime(1), 4);
     });
     expect(result.current.kind === "ready" && result.current.entries[0]?.rate.episodes).toBe(4);
+  });
+});
+
+describe("«Смотреть украдкой»", () => {
+  it("turns a listed title secret without touching its Shikimori rate", async () => {
+    const s = await holding(anime(1), "watching", 3);
+    await s.library.setSecret(anime(1));
+
+    expect(s.server.writes()).toEqual([]);
+    expect(s.secrets.get(1)).toMatchObject({ on: true, watched: 3, at: NOW });
+    const entry = s.library.entry(1);
+    expect(entry?.secret).toBe(true);
+    expect(entry?.rate.episodes).toBe(3);
+    // Shown once: under «Украдкой», not under «Смотрю» as well.
+    const state = s.library.state();
+    expect(state.kind === "ready" && state.entries.filter((e) => e.anime.id === 1)).toHaveLength(1);
+  });
+
+  it("turns a title outside the list secret from zero and keeps its card", async () => {
+    const s = await holding(anime(1), "watching", 3);
+    await s.library.setSecret(anime(2));
+
+    expect(s.server.writes()).toEqual([]);
+    expect(s.secrets.get(2)).toEqual({ on: true, watched: 0, at: NOW, anime: anime(2) });
+    expect(s.library.entry(2)).toMatchObject({ anime: anime(2), secret: true, rate: { status: "watching", episodes: 0 } });
+  });
+
+  it("counts marks locally and never writes them to Shikimori", async () => {
+    const s = await holding(anime(1), "watching", 3);
+    await s.library.setSecret(anime(1));
+    s.later(1000);
+
+    expect(await s.library.markWatched(anime(1), 5)).toEqual({ suggestCompleted: false });
+    expect(await s.library.markWatched(anime(1), 4)).toEqual({ suggestCompleted: false });
+    expect(s.secrets.get(1)).toMatchObject({ on: true, watched: 5, at: NOW + 1000 });
+    expect(s.library.entry(1)?.rate.episodes).toBe(5);
+    expect(s.server.writes()).toEqual([]);
+  });
+
+  it("never offers completion for a secret title, and finishes it locally", async () => {
+    const s = setup();
+    await s.library.load();
+    await s.library.setSecret(anime(1));
+    expect(await s.library.markWatched(anime(1), 12)).toEqual({ suggestCompleted: false });
+    expect(s.server.writes()).toEqual([]);
+    // Fully watched: kept under «Украдкой», out of anything to continue.
+    expect(s.library.entry(1)).toMatchObject({ secret: true, rate: { status: "completed", episodes: 12 } });
+  });
+
+  it("is not finished while the next episode is scheduled or the show is airing", async () => {
+    const s = setup();
+    await s.library.load();
+    const airing = ongoing(3, { episodes: 12, episodesAired: 12 });
+    await s.library.setSecret(airing);
+    await s.library.markWatched(airing, 12);
+    expect(s.library.entry(3)?.rate.status).toBe("watching");
+  });
+
+  it("lowers the count on unmark, forgets the positions, and undoes both", async () => {
+    const s = await holding(anime(1), "watching", 3);
+    await s.library.setSecret(anime(1));
+    await s.library.markWatched(anime(1), 7);
+    s.progress.restore([stopped(1, 6), stopped(1, 8)]);
+
+    const undo = await s.library.markUnwatched(anime(1), 6);
+    expect(s.secrets.get(1)?.watched).toBe(5);
+    expect(s.progress.of(1).map((row) => row.episode)).toEqual([]);
+
+    await undo();
+    expect(s.secrets.get(1)?.watched).toBe(7);
+    expect(s.progress.of(1).map((row) => row.episode)).toEqual([6, 8]);
+    expect(s.server.writes()).toEqual([]);
+  });
+
+  it("ignores an unmark above the secret count", async () => {
+    const s = await holding(anime(1), "watching", 3);
+    await s.library.setSecret(anime(1));
+    const undo = await s.library.markUnwatched(anime(1), 9);
+    await undo();
+    expect(s.secrets.get(1)?.watched).toBe(3);
+  });
+
+  it("switching back sets the status and sends the count once", async () => {
+    const s = await holding(anime(1), "watching", 3);
+    await s.library.setSecret(anime(1));
+    await s.library.markWatched(anime(1), 6);
+    s.later(1000);
+
+    await s.library.setStatus(anime(1), "on_hold");
+    expect(s.server.writes()).toEqual(["PATCH 101 status=on_hold episodes=6 tok"]);
+    expect(s.secrets.get(1)).toMatchObject({ on: false, watched: 6, at: NOW + 1000 });
+    expect(s.library.entry(1)?.secret).toBeUndefined();
+    expect(s.library.entry(1)?.rate).toMatchObject({ status: "on_hold", episodes: 6 });
+  });
+
+  it("switching back sends no count Shikimori already has, even to the same status", async () => {
+    const s = await holding(anime(1), "watching", 5);
+    await s.library.setSecret(anime(1));
+    await s.library.markUnwatched(anime(1), 4);
+
+    await s.library.setStatus(anime(1), "watching");
+    // Shikimori already holds both: nothing to send.
+    expect(s.server.writes()).toEqual([]);
+    expect(s.secrets.get(1)?.on).toBe(false);
+    expect(s.library.entry(1)?.rate).toMatchObject({ status: "watching", episodes: 5 });
+  });
+
+  it("switching back a title with no rate creates one carrying the count", async () => {
+    const s = setup();
+    await s.library.load();
+    await s.library.setSecret(anime(2));
+    await s.library.markWatched(anime(2), 4);
+
+    await s.library.setStatus(anime(2), "watching");
+    expect(s.server.writes()).toEqual(["POST 42/2 status=watching episodes=4 tok"]);
+    expect(s.library.entry(2)?.rate).toMatchObject({ status: "watching", episodes: 4 });
+  });
+
+  it("stays secret when switching back fails", async () => {
+    const s = await holding(anime(1), "watching", 3);
+    await s.library.setSecret(anime(1));
+    s.server.failures = [new ApiError(503)];
+
+    await expect(s.library.setStatus(anime(1), "completed")).rejects.toBeInstanceOf(ApiError);
+    expect(s.secrets.get(1)?.on).toBe(true);
+    expect(s.library.entry(1)?.secret).toBe(true);
+  });
+
+  it("fetches the card of a secret title another device made and keeps it", async () => {
+    const s = setup();
+    s.server.fullCards.set(8, anime(8));
+    s.secrets.set(8, { on: true, watched: 2, at: 1 }, null, { quiet: true });
+    await s.library.load();
+    await settle();
+
+    expect(s.server.detailsCalls()).toEqual([8]);
+    expect(s.secrets.get(8)?.anime).toEqual(anime(8));
+    expect(s.library.entry(8)).toMatchObject({ secret: true, rate: { episodes: 2 } });
+  });
+
+  it("draws secret titles from the kept card with no Shikimori at hand", async () => {
+    const s = setup();
+    s.secrets.set(8, { on: true, watched: 2, at: 1 }, anime(8));
+    s.server.ratesFailure = new NetworkError("offline");
+    await s.library.load();
+    expect(s.library.entry(8)).toMatchObject({ anime: anime(8), secret: true });
   });
 });

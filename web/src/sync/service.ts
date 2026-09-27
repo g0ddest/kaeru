@@ -2,6 +2,7 @@ import { setSyncEnabled, syncEnabled } from "../library/prefs";
 import type { EpisodeProgress, LibraryEntry, ListStatus } from "../domain/models";
 import type { Library } from "../library/library";
 import type { ProgressStore } from "../library/progress";
+import type { SecretState, SecretStore } from "../library/secret";
 import { forgetDubs, mergeDub, onDubRemembered, rememberedDubs, type StampedDub } from "../player/memory";
 import type { SyncClient, SyncPosition, SyncTitle, SyncTitles } from "./client";
 
@@ -22,6 +23,8 @@ export interface SyncDeps {
   client: SyncClient;
   progress: ProgressStore;
   library: Pick<Library, "state" | "subscribe" | "entry">;
+  /** «Смотреть украдкой»: sent as the document's `secret` while sync is on. */
+  secrets?: SecretStore;
   /** The signed-in account, or null: nothing is sent or read without one. */
   accountId: () => number | null;
   /** For the dub memory and the outbox; the browser's own by default. */
@@ -56,13 +59,19 @@ function record(value: unknown): Record<string, unknown> | null {
 }
 
 function isEmpty(title: SyncTitle): boolean {
-  return title.dub === undefined && title.gone === undefined && (title.eps === undefined || Object.keys(title.eps).length === 0);
+  return (
+    title.dub === undefined &&
+    title.secret === undefined &&
+    title.gone === undefined &&
+    (title.eps === undefined || Object.keys(title.eps).length === 0)
+  );
 }
 
 /** `patch` over `base`, the newer `at` winning per field and per episode. */
 function merge(base: SyncTitle | undefined, patch: SyncTitle): SyncTitle {
   const out: SyncTitle = { ...base };
   if (patch.dub !== undefined && (out.dub === undefined || out.dub.at <= patch.dub.at)) out.dub = patch.dub;
+  if (patch.secret !== undefined && (out.secret === undefined || out.secret.at <= patch.secret.at)) out.secret = patch.secret;
   if (patch.gone !== undefined && (out.gone === undefined || out.gone <= patch.gone)) out.gone = patch.gone;
   if (patch.eps !== undefined) {
     const eps = { ...out.eps };
@@ -80,6 +89,12 @@ function without(title: SyncTitle, covered: SyncTitle): SyncTitle {
   const out: SyncTitle = { ...title };
   const floor = covered.gone ?? Number.NEGATIVE_INFINITY;
   if (out.dub !== undefined && (out.dub.at <= floor || (covered.dub !== undefined && out.dub.at <= covered.dub.at))) delete out.dub;
+  if (
+    out.secret !== undefined &&
+    (out.secret.at <= floor || (covered.secret !== undefined && out.secret.at <= covered.secret.at))
+  ) {
+    delete out.secret;
+  }
   if (out.gone !== undefined && out.gone <= floor) delete out.gone;
   if (out.eps !== undefined) {
     const eps: Record<string, SyncPosition> = {};
@@ -101,7 +116,7 @@ function toPosition(row: EpisodeProgress): SyncPosition {
 /**
  * Viewing sync through the worker (spec 2026-09-26-kaeru-sync-design.md §4): reads the document on
  * start and after five minutes in the background and takes whatever is newer than this browser's;
- * sends this browser's positions and dubs in batches — at most one a minute, at once on pause, on
+ * sends this browser's positions, dubs and «украдкой» states in batches — at most one a minute, at once on pause, on
  * leaving the player, on a new episode and when the page goes away — and a tombstone for a title
  * the list marks «completed». A batch that fails stays in the outbox for the next try. Nothing here
  * ever throws at a caller or blocks the player.
@@ -163,6 +178,7 @@ export class SyncService implements Sync {
       onDubRemembered(this.onDub),
       this.deps.library.subscribe(this.onLibrary),
     ];
+    if (this.deps.secrets !== undefined) this.cleanups.push(this.deps.secrets.watch(this.onSecret));
     if (typeof window !== "undefined") {
       window.addEventListener("pagehide", this.onPageHide);
       document.addEventListener("visibilitychange", this.onVisibility);
@@ -244,6 +260,7 @@ export class SyncService implements Sync {
       if (!this.running || this.deps.accountId() !== account) return;
       this.apply(titles);
       this.seed(account, titles);
+      this.offerSecrets(titles);
     } catch {
       // Offline or refused: the next start or return from the background reads again.
     }
@@ -260,6 +277,27 @@ export class SyncService implements Sync {
     if (storage !== this.storage || this.finished(animeId)) return;
     if (this.enqueue(animeId, { dub: { id: dub.id, title: dub.title, at: dub.at } })) this.schedule();
   };
+
+  private readonly onSecret = (animeId: number, state: SecretState): void => {
+    if (this.enqueue(animeId, { secret: { on: state.on, watched: state.watched, at: state.at } })) this.schedule();
+  };
+
+  /** Secret states the server lacks or holds older: changed while sync was off, or never sent. */
+  private offerSecrets(remote: SyncTitles): void {
+    const secrets = this.deps.secrets;
+    if (secrets === undefined) return;
+    let outbox = this.readOutbox();
+    let changed = false;
+    for (const [animeId, local] of secrets.all()) {
+      const id = String(animeId);
+      const state: SyncTitle = { secret: { on: local.on, watched: local.watched, at: local.at } };
+      const left = without(state, remote[id] ?? {});
+      if (isEmpty(left)) continue;
+      outbox = { ...outbox, [id]: merge(outbox[id], left) };
+      changed = true;
+    }
+    if (changed) this.writeOutbox(outbox);
+  }
 
   /** A title turning «completed» leaves a tombstone; turning back before it went out takes it back. */
   private readonly onLibrary = (): void => {
@@ -336,6 +374,7 @@ export class SyncService implements Sync {
         progress.restore(newer);
       }
       if (title.dub !== undefined) mergeDub(animeId, title.dub, this.storage ?? undefined);
+      this.applySecret(animeId, title);
       const waiting = outbox[id];
       if (waiting !== undefined) {
         const left = without(waiting, title);
@@ -345,6 +384,24 @@ export class SyncService implements Sync {
       }
     }
     if (outboxChanged) this.writeOutbox(outbox);
+  }
+
+  private applySecret(animeId: number, title: SyncTitle): void {
+    const secrets = this.deps.secrets;
+    if (secrets === undefined) return;
+    const local = secrets.get(animeId);
+    const remote = title.secret;
+    if (remote !== undefined && (local === undefined || local.at < remote.at)) {
+      secrets.set(animeId, remote, null, { quiet: true });
+      return;
+    }
+    // The worker keeps nothing but the tombstone of a finished title, secret state included: a
+    // secret title another device closed was watched through. The owner can move it on from there.
+    const gone = title.gone;
+    const episodes = local?.anime?.episodes ?? 0;
+    if (gone !== undefined && local?.on === true && local.at <= gone && episodes > local.watched) {
+      secrets.set(animeId, { on: true, watched: episodes, at: local.at }, null, { quiet: true });
+    }
   }
 
   /** Once per account: what this browser kept before sync, where it is newer than the server's. */

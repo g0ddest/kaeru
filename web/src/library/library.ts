@@ -4,6 +4,7 @@ import type { Shikimori } from "../api/shikimori";
 import type { authorized } from "../auth/session";
 import type { Anime, EpisodeProgress, LibraryEntry, ListStatus, UserRate } from "../domain/models";
 import type { ProgressStore } from "./progress";
+import { SecretStore, type SecretTitle } from "./secret";
 
 export type LibraryState =
   | { kind: "idle" }
@@ -16,6 +17,8 @@ export interface LibraryDeps {
   authorized: typeof authorized;
   accountId: () => number | null;
   progress: ProgressStore;
+  /** Titles watched «украдкой»; kept in memory only when not given. */
+  secrets?: SecretStore;
   /** Clock for a rate's updatedAt and for the details TTL; tests pin it. */
   now?: () => number;
 }
@@ -82,6 +85,23 @@ function completes(anime: Anime, counted: number): boolean {
   return anime.episodes > 0 && counted >= anime.episodes;
 }
 
+// A secret title has no «Перевести в завершённые?»: it is done once a finished show is all watched.
+function secretDone(anime: Anime, watched: number): boolean {
+  return anime.status === "released" && completes(anime, watched);
+}
+
+// What «Мой список» and the rest see of a secret title: its own count, never Shikimori's.
+function secretEntry(animeId: number, listed: LibraryEntry | undefined, secret: SecretTitle): LibraryEntry | undefined {
+  const anime = listed?.anime ?? secret.anime;
+  if (!anime) return undefined;
+  const status: ListStatus = secretDone(anime, secret.watched) ? "completed" : "watching";
+  return {
+    anime,
+    rate: { id: listed?.rate.id ?? -animeId, animeId, status, episodes: secret.watched, updatedAt: secret.at },
+    secret: true,
+  };
+}
+
 // Only titles still airing that the viewer follows need the next air date (ShikimoriLibraryRepository.kt).
 function wantsDetails(entry: LibraryEntry): boolean {
   const following = entry.rate.status === "watching" || entry.rate.status === "rewatching";
@@ -104,10 +124,19 @@ export class Library {
   private current: LibraryState = { kind: "idle" };
   private loadedFor: number | null = null;
   private inflight: Promise<void> | null = null;
+  private readonly secrets: SecretStore;
+  /** Secret titles whose card is being fetched. */
+  private readonly carding = new Set<number>();
 
   constructor(deps: LibraryDeps) {
     this.deps = deps;
     this.now = deps.now ?? Date.now;
+    this.secrets = deps.secrets ?? new SecretStore({ storage: null, accountId: deps.accountId });
+    this.secrets.subscribe(() => {
+      this.publish();
+      this.fillCards();
+    });
+    this.publish();
   }
 
   readonly state = (): LibraryState => this.current;
@@ -136,7 +165,20 @@ export class Library {
     return run;
   }
 
+  /**
+   * «Смотреть украдкой»: from now on nothing about the title reaches Shikimori. Its rate, if any, is
+   * left as it is; the local count starts from it.
+   */
+  setSecret(anime: Anime): Promise<void> {
+    if (this.secrets.get(anime.id)?.on === true) return Promise.resolve();
+    const watched = this.view.get(anime.id)?.rate.episodes ?? 0;
+    this.secrets.set(anime.id, { on: true, watched, at: this.now() }, anime);
+    return Promise.resolve();
+  }
+
   setStatus(anime: Anime, status: ListStatus): Promise<void> {
+    const secret = this.secrets.get(anime.id);
+    if (secret?.on === true) return this.unhide(anime, status, secret);
     const shown = this.view.get(anime.id);
     if (shown && shown.rate.status === status && !this.pending.has(anime.id)) return Promise.resolve();
     const at = this.now();
@@ -166,6 +208,11 @@ export class Library {
     const target = countFor(anime, episode);
     if (target < 1) return Promise.resolve({ suggestCompleted: false });
     const at = this.now();
+    const secret = this.secrets.get(anime.id);
+    if (secret?.on === true) {
+      if (target > secret.watched) this.secrets.set(anime.id, { on: true, watched: target, at });
+      return Promise.resolve({ suggestCompleted: false });
+    }
     return this.write<{ suggestCompleted: boolean }>(
       anime.id,
       (entry) => {
@@ -207,6 +254,8 @@ export class Library {
   }
 
   markUnwatched(anime: Anime, episode: number): Promise<() => Promise<void>> {
+    const secret = this.secrets.get(anime.id);
+    if (secret?.on === true) return Promise.resolve(this.unmarkSecret(anime.id, episode, secret.watched));
     return this.write<() => Promise<void>>(
       anime.id,
       (entry) =>
@@ -225,6 +274,76 @@ export class Library {
         return { entry, result: () => this.restoreCount(anime, previousCount, forgotten) };
       },
     );
+  }
+
+  private unmarkSecret(animeId: number, episode: number, previous: number): () => Promise<void> {
+    if (episode < 1 || previous < episode) return NOTHING_TO_UNDO;
+    this.secrets.set(animeId, { on: true, watched: episode - 1, at: this.now() });
+    const forgotten = this.deps.progress.removeFrom(animeId, episode);
+    return async () => {
+      const held = this.secrets.get(animeId);
+      if (held?.on === true && held.watched < previous) {
+        this.secrets.set(animeId, { on: true, watched: previous, at: this.now() });
+      }
+      this.deps.progress.restore(forgotten);
+    };
+  }
+
+  /**
+   * «Украдкой» back to a list status: the status goes to Shikimori, and with it, once, the count
+   * watched on the quiet where it is ahead of Shikimori's. A refused write leaves the title secret.
+   */
+  private unhide(anime: Anime, status: ListStatus, secret: SecretTitle): Promise<void> {
+    const at = this.now();
+    const count = countFor(anime, secret.watched);
+    this.secrets.set(anime.id, { on: false, watched: secret.watched, at });
+    const sent = this.write<undefined>(
+      anime.id,
+      (entry) => {
+        if (!entry) return { anime, rate: { id: -anime.id, animeId: anime.id, status, episodes: count, updatedAt: at } };
+        const episodes = Math.max(entry.rate.episodes, count);
+        return { anime: entry.anime, rate: { ...entry.rate, status, episodes, updatedAt: at } };
+      },
+      async (confirmed) => {
+        if (!confirmed) {
+          const userId = this.account();
+          const fields = count > 0 ? { status, episodes: count } : { status };
+          const created = await this.deps.authorized((token) =>
+            this.deps.shikimori.createRate(token, userId, anime.id, fields),
+          );
+          return { entry: { anime, rate: this.statusFrom(created, anime.id, status) }, result: undefined };
+        }
+        const fields: { status?: ListStatus; episodes?: number } = {};
+        if (confirmed.rate.status !== status) fields.status = status;
+        if (count > confirmed.rate.episodes) fields.episodes = count;
+        if (fields.status === undefined && fields.episodes === undefined) return { entry: undefined, result: undefined };
+        const patched = await this.patch(confirmed.rate.id, fields);
+        const rate: UserRate = { ...confirmed.rate, id: patched.id, status, episodes: patched.episodes, updatedAt: this.now() };
+        return { entry: { anime: confirmed.anime, rate }, result: undefined };
+      },
+    );
+    return sent.catch((error: unknown) => {
+      const held = this.secrets.get(anime.id);
+      if (held !== undefined && !held.on && held.at === at) {
+        this.secrets.set(anime.id, { on: true, watched: held.watched, at: this.now() });
+      }
+      throw error;
+    });
+  }
+
+  // A secret state from another device comes without a card; «Украдкой» needs one even offline.
+  private fillCards(): void {
+    for (const [animeId, secret] of this.secrets.all()) {
+      if (!secret.on || secret.anime !== null || this.carding.has(animeId)) continue;
+      this.carding.add(animeId);
+      this.deps.shikimori
+        .details(animeId)
+        .then(
+          (anime) => this.secrets.card(animeId, anime),
+          () => undefined,
+        )
+        .finally(() => this.carding.delete(animeId));
+    }
   }
 
   // Undo gives back the count that stood before, not the tapped episode: 6 and 7 went too.
@@ -299,6 +418,7 @@ export class Library {
       return;
     }
     this.publish();
+    this.fillCards();
     await this.refreshDetails(userId);
   }
 
@@ -388,9 +508,14 @@ export class Library {
 
   private publish(): void {
     const view = new Map<number, LibraryEntry>();
-    for (const id of new Set([...this.confirmed.keys(), ...this.pending.keys()])) {
+    const secrets = this.secrets.all();
+    const hidden = [...secrets].filter(([, secret]) => secret.on).map(([id]) => id);
+    for (const id of new Set([...this.confirmed.keys(), ...this.pending.keys(), ...hidden])) {
       let entry = this.confirmed.get(id);
       for (const apply of this.pending.get(id) ?? []) entry = apply(entry);
+      const secret = secrets.get(id);
+      // A secret title shows only as secret, whatever Shikimori holds for it.
+      if (secret?.on === true) entry = secretEntry(id, entry, secret);
       if (entry) view.set(id, entry);
     }
     this.view = view;

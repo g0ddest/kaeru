@@ -12,6 +12,7 @@ import type { authorized } from "../auth/session";
 import type { Anime, ListStatus, UserRate } from "../domain/models";
 import { Library } from "../library/library";
 import { ProgressStore } from "../library/progress";
+import { SecretStore } from "../library/secret";
 import { noPlayback, noSync } from "../test/fakes";
 import { LibraryScreen } from "./LibraryScreen";
 
@@ -84,9 +85,9 @@ const RATES = [
 ];
 const byIds: Shikimori["byIds"] = async (ids) => TITLES.filter((title) => ids.includes(title.id));
 
-function renderAt(path: string, shikimori: Shikimori) {
+function renderAt(path: string, shikimori: Shikimori, secrets?: SecretStore) {
   const progress = new ProgressStore(memoryStorage());
-  const library = new Library({ shikimori, authorized: signedIn, accountId: () => 1, progress });
+  const library = new Library({ shikimori, authorized: signedIn, accountId: () => 1, progress, ...(secrets ? { secrets } : {}) });
   render(
     <ServicesContext.Provider value={{ shikimori, library, progress, ...noPlayback(), sync: noSync() }}>
       <MemoryRouter initialEntries={[path]}>
@@ -198,5 +199,20 @@ describe("LibraryScreen", () => {
     expect(await screen.findByText("Нет соединения. Проверьте интернет")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Повторить" }));
     expect(await screen.findByRole("tab", { name: "Смотрю 3" })).toBeInTheDocument();
+  });
+});
+
+describe("LibraryScreen «Украдкой»", () => {
+  it("lists secret titles under their own tab only, from the kept card", async () => {
+    const secrets = new SecretStore({ storage: null, accountId: () => 1 });
+    secrets.set(2, { on: true, watched: 5, at: 1 }, anime(2, "Ели"));
+    secrets.set(9, { on: true, watched: 1, at: 2 }, anime(9, "Тайный"));
+    renderAt("/list?tab=secret", fakeShikimori({ userRates: async () => RATES, byIds }), secrets);
+
+    const tab = await screen.findByRole("tab", { name: "Украдкой 2" });
+    expect(tab).toHaveAttribute("aria-selected", "true");
+    expect(screen.getAllByRole("tab").at(-1)).toBe(tab);
+    expect(screen.getByRole("tab", { name: "Смотрю 2" })).toBeInTheDocument();
+    expect(panelTitles()).toEqual(["Тайный", "Ели"]);
   });
 });

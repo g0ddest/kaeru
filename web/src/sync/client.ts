@@ -6,7 +6,7 @@ import { RELAY_URL } from "../config";
  * The worker's `/sync` document (infra/relay/src/sync.ts; spec 2026-09-26-kaeru-sync-design.md §2):
  * per anime id, where each episode stopped, the chosen dub and a tombstone for a finished title.
  * Every `at` is the device's own clock in ms, and the newer one wins, field by field and episode by
- * episode. `secret` («Смотреть украдкой») is not read here yet.
+ * episode. `secret` is «Смотреть украдкой»: the title's state and the count Shikimori is not told.
  */
 export interface SyncPosition {
   p: number;
@@ -20,8 +20,15 @@ export interface SyncDub {
   at: number;
 }
 
+export interface SyncSecret {
+  on: boolean;
+  watched: number;
+  at: number;
+}
+
 export interface SyncTitle {
   dub?: SyncDub;
+  secret?: SyncSecret;
   eps?: Record<string, SyncPosition>;
   gone?: number;
 }
@@ -93,6 +100,10 @@ function readTitle(value: unknown): SyncTitle | null {
       if (finite(p) && finite(d) && finite(at)) read[episode] = { p, d, at };
     }
     if (Object.keys(read).length > 0) title.eps = read;
+  }
+  const secret = record(source["secret"]);
+  if (secret !== null && typeof secret["on"] === "boolean" && finite(secret["watched"]) && finite(secret["at"])) {
+    title.secret = { on: secret["on"], watched: Math.max(0, Math.floor(secret["watched"])), at: secret["at"] };
   }
   if (finite(source["gone"])) title.gone = source["gone"];
   return title;
