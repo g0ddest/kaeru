@@ -5,8 +5,8 @@ import type { EpisodeProgress, LibraryEntry } from "./models";
 export const DEFAULT_THRESHOLD = 0.9;
 
 // A minute in is watching whatever the length; a fiftieth covers three-minute shorts.
-const STARTED_MS = 60_000;
-const STARTED_FRACTION = 0.02;
+export const STARTED_MS = 60_000;
+export const STARTED_FRACTION = 0.02;
 // A strip under 1 % says nothing a viewer can read.
 const MIN_STRIP = 0.01;
 
@@ -22,6 +22,17 @@ export function isStarted(p: EpisodeProgress): boolean {
 
 export function isFinished(p: EpisodeProgress, threshold: number): boolean {
   return progressFraction(p) >= threshold;
+}
+
+/**
+ * «Перевести в завершённые?» after an episode counted as watched (CompletionRules.offerCompletion): the
+ * announced count is reached and no next episode is on the schedule. The count lags behind a show
+ * that got longer (12 announced, a 13th in four days); a date at or before `now` schedules nothing,
+ * and an unknown length (0) never offers.
+ */
+export function offerCompletion(episode: number, announcedEpisodes: number, nextEpisodeAt: number | null, now: number): boolean {
+  const moreScheduled = nextEpisodeAt !== null && nextEpisodeAt > now;
+  return !moreScheduled && announcedEpisodes > 0 && episode >= announcedEpisodes;
 }
 
 export interface ContinueTarget {

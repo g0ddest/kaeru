@@ -117,14 +117,29 @@ export function onDubRemembered(listener: DubListener): () => void {
 }
 
 /**
+ * Track id → how many anime remember it (TranslationUsage.of): which studio this viewer keeps coming
+ * back to. Counted per anime by its first row, and anime remembering nothing are left out.
+ */
+export function usageOf(remembered: readonly { animeId: number; translationId: number | null }[]): Map<number, number> {
+  const usage = new Map<number, number>();
+  const seen = new Set<number>();
+  for (const { animeId, translationId } of remembered) {
+    if (seen.has(animeId)) continue;
+    seen.add(animeId);
+    if (translationId !== null) usage.set(translationId, (usage.get(translationId) ?? 0) + 1);
+  }
+  return usage;
+}
+
+/**
  * Track id → how many titles remember it (TranslationUsage.of): which studio this viewer keeps
  * coming back to, the best guess for a title never played here.
  */
 export function dubUsage(storage?: Storage): Map<number, number> {
-  const usage = new Map<number, number>();
-  for (const value of Object.values(readAll(storage ?? browserStorage()))) {
-    const dub = readDub(value);
-    if (dub !== null) usage.set(dub.id, (usage.get(dub.id) ?? 0) + 1);
-  }
-  return usage;
+  return usageOf(
+    Object.entries(readAll(storage ?? browserStorage())).map(([animeId, value]) => ({
+      animeId: Number(animeId),
+      translationId: readDub(value)?.id ?? null,
+    })),
+  );
 }

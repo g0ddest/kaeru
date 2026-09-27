@@ -3,6 +3,7 @@ import { ApiError, errorMessage } from "../api/http";
 import type { Shikimori } from "../api/shikimori";
 import type { authorized } from "../auth/session";
 import type { Anime, EpisodeProgress, LibraryEntry, ListStatus, UserRate } from "../domain/models";
+import { offerCompletion } from "../domain/progress";
 import type { ProgressStore } from "./progress";
 import { SecretStore, type SecretTitle } from "./secret";
 
@@ -81,8 +82,7 @@ function picksUp(rate: UserRate): boolean {
 // The announced count lags behind a show that got longer (12 announced, a 13th in four days), so a
 // scheduled next episode means this one was not the end.
 function completes(anime: Anime, counted: number): boolean {
-  if (anime.nextEpisodeAt !== null && anime.nextEpisodeAt > Date.now()) return false;
-  return anime.episodes > 0 && counted >= anime.episodes;
+  return offerCompletion(counted, anime.episodes, anime.nextEpisodeAt, Date.now());
 }
 
 // A secret title has no «Перевести в завершённые?»: it is done once a finished show is all watched.

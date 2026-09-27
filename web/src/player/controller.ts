@@ -17,12 +17,15 @@ import {
   countdown,
   endingDue,
   hasNextEpisode,
+  insideEnding,
   lacksEpisode,
   rankTranslations,
   resumeFrom,
   shouldAutoSkip,
   skipOffer,
   startQuality,
+  substitutionNotice,
+  substitutionOrder,
   type SkipMarks,
 } from "./rules";
 
@@ -589,7 +592,8 @@ export class PlayerController {
     const due = shouldAutoSkip({
       enabled: this.skipEnding,
       done: this.autoSkipped,
-      ending: this.marks.ending,
+      marks: this.marks,
+      durationMs: duration,
       positionMs: position,
       previousMs: this.previousMs,
       playedSinceSeekMs: position - this.seekedAtMs,
@@ -610,7 +614,7 @@ export class PlayerController {
       cancelled: this.cancelled,
       hasNext,
     });
-    const offer = skipOffer(this.marks, position);
+    const offer = skipOffer(this.marks, position, duration);
     // «Следующая серия» over the ending only where the countdown card is not already saying it.
     const skip = offer === "ending" && !(hasNext && left === null) ? null : offer;
     return { countdown: left, skip, endingDue: endingDue(position, duration, this.ended) };
@@ -646,8 +650,7 @@ export class PlayerController {
    */
   private leaveEpisode(): void {
     const { positionMs, durationMs } = this.state;
-    const ending = this.marks.ending;
-    const inEnding = ending !== null && positionMs >= ending.startMs && positionMs < ending.endMs;
+    const inEnding = insideEnding(this.marks, positionMs, durationMs);
     if (durationMs > 0 && (endingDue(positionMs, durationMs, this.ended) || inEnding)) {
       this.finishedHere = true;
       this.markWatched();
@@ -758,8 +761,9 @@ export class PlayerController {
    * episode.
    */
   private async resolveWalking(episode: number, tracks: readonly Translation[]): Promise<Resolved> {
-    const [chosen, ...others] = tracks;
+    const chosen = tracks[0];
     if (chosen === undefined) throw new KodikError("nowhere");
+    const others = substitutionOrder(tracks, chosen.id);
     // A count that already says no is not worth a request.
     if (!lacksEpisode(chosen, episode)) {
       try {
@@ -797,7 +801,7 @@ export class PlayerController {
       this.standingInFor = resolved.chosen;
       // Once per stand-in: a retry arriving at the same one again is no news.
       if (!wasStandingIn) {
-        this.deps.toast(`В озвучке ${resolved.chosen.title} серии ${episode} нет — включена ${resolved.track.title}`);
+        this.deps.toast(substitutionNotice(resolved.chosen.title, episode, resolved.track.title));
       }
       return;
     }

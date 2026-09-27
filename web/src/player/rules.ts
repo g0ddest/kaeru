@@ -38,27 +38,31 @@ export const DEFAULT_STUDIOS: readonly string[] = [
   "AniLibria", "AniDUB", "Crunchyroll", "Amazing Dubbing", "AniBaza", "AniMaunt", "JAM", "Dream Cast", "SHIZA Project",
 ];
 
-// A title no studio matches sits behind every one that does.
-function studioRank(track: Translation): number {
-  const title = track.title.toLowerCase();
-  const index = DEFAULT_STUDIOS.findIndex((studio) => title.includes(studio.toLowerCase()));
-  return index >= 0 ? index : DEFAULT_STUDIOS.length;
+// A title no studio matches sits behind every one that does; a blank studio matches nothing.
+function studioRank(title: string, studios: readonly string[]): number {
+  const lower = title.toLowerCase();
+  const index = studios.findIndex((studio) => studio.trim() !== "" && lower.includes(studio.toLowerCase()));
+  return index >= 0 ? index : studios.length;
 }
 
 /**
  * Which dub a viewer most likely wants, best first: the head is what plays, the whole list is the
- * dub menu (TranslationRanker.kt, without Android's hand-typed studio list, which the web lacks).
- * Stable, so tracks the rules cannot separate keep Kodik's own order.
+ * dub menu (TranslationRanker.kt). The web has no hand-typed studio list of its own, so `preferred`
+ * is empty in the app; the shared vectors fill it. Stable, so tracks the rules cannot separate keep
+ * Kodik's own order.
  */
 export function rankTranslations(
   tracks: readonly Translation[],
-  ctx: { remembered: number | null; usage: ReadonlyMap<number, number> },
+  ctx: { remembered: number | null; usage: ReadonlyMap<number, number>; preferred?: readonly string[] },
 ): Translation[] {
+  const preferred = ctx.preferred ?? [];
   const key = (track: Translation): number[] => [
     track.id === ctx.remembered ? 0 : 1,
+    // A list somebody typed by hand beats every guess below it.
+    studioRank(track.title, preferred),
     // A track nobody has watched counts as zero, behind every track that has been watched at all.
     -(ctx.usage.get(track.id) ?? 0),
-    studioRank(track),
+    studioRank(track.title, DEFAULT_STUDIOS),
     track.type === "voice" ? 0 : 1,
     // A half-finished dub strands the viewer mid-season; subtitles are not told apart this way.
     track.type === "voice" ? -(track.episodesCount ?? 0) : 0,
@@ -75,9 +79,44 @@ export function rankTranslations(
     .map(({ track }) => track);
 }
 
-/** Kodik's count says the track stops before this episode. No count, or 0, says nothing. */
+/**
+ * Where to look for a stand-in when `chosenId` lacks an episode (TranslationRanker.substitutionOrder):
+ * the ranking with the chosen track taken out. The caller still skips any that lacks the episode.
+ */
+export function substitutionOrder(ranked: readonly Translation[], chosenId: number): Translation[] {
+  return ranked.filter((track) => track.id !== chosenId);
+}
+
+/**
+ * Whether a track carries `episode`, as far as anything already read can say; null when nothing can
+ * (TranslationRanker.carriesEpisode). Its own list of episodes answers; failing that, the count, but
+ * only against the first season's numbering.
+ */
+export function carriesEpisode(
+  episode: number,
+  listedEpisodes: ReadonlySet<number> | null,
+  season: number,
+  episodesCount: number | null,
+): boolean | null {
+  if (listedEpisodes !== null) return listedEpisodes.has(episode);
+  if (season !== 1) return null;
+  return episodesCount === null ? null : episode <= episodesCount;
+}
+
+/**
+ * Known not to carry the episode. The web never reads a track's own episode list and always plays
+ * the first season's numbering, so only Kodik's count can say so; an unknown is not a lack. A count
+ * of 0 is taken as unknown: the worker turns an empty `data-episode-count` into 0 where Android's
+ * parser reads null.
+ */
 export function lacksEpisode(track: Translation, episode: number): boolean {
-  return track.episodesCount !== null && track.episodesCount > 0 && track.episodesCount < episode;
+  const count = track.episodesCount !== null && track.episodesCount > 0 ? track.episodesCount : null;
+  return carriesEpisode(episode, null, 1, count) === false;
+}
+
+/** What the player says when another track stood in for the one asked for. */
+export function substitutionNotice(askedFor: string, episode: number, playing: string): string {
+  return `В озвучке ${askedFor} серии ${episode} нет — включена ${playing}`;
 }
 
 /**
@@ -121,8 +160,9 @@ export function countdown(s: {
   cancelled: boolean;
   hasNext: boolean;
 }): number | null {
-  if (!s.autoplay || s.cancelled || !s.hasNext || s.durationMs <= 0) return null;
+  if (!s.autoplay || s.cancelled || !s.hasNext) return null;
   if (s.ended) return 0;
+  if (s.durationMs <= 0) return null;
   const remaining = Math.max(0, s.durationMs - s.positionMs);
   if (remaining > COUNTDOWN_S * 1_000) return null;
   return Math.min(COUNTDOWN_S, Math.max(0, Math.ceil(remaining / 1_000)));
@@ -146,7 +186,28 @@ export const NO_MARKS: SkipMarks = Object.freeze({ opening: null, ending: null }
 // An interval that runs past the end of this file was marked for a file of another length.
 function plausible(interval: Interval, durationMs: number): boolean {
   const length = interval.endMs - interval.startMs;
-  return interval.startMs >= 0 && interval.endMs <= durationMs && length >= INTERVAL_MIN_MS && length <= INTERVAL_MAX_MS;
+  return (
+    durationMs > 0 &&
+    interval.startMs >= 0 &&
+    interval.endMs <= durationMs &&
+    length >= INTERVAL_MIN_MS &&
+    length <= INTERVAL_MAX_MS
+  );
+}
+
+function acceptedOpening(interval: Interval | null, durationMs: number): Interval | null {
+  return interval !== null && plausible(interval, durationMs) && interval.startMs <= OPENING_WITHIN_MS ? interval : null;
+}
+
+function acceptedEnding(interval: Interval | null, durationMs: number): Interval | null {
+  return interval !== null && plausible(interval, durationMs) && interval.endMs >= durationMs - ENDING_WITHIN_MS
+    ? interval
+    : null;
+}
+
+/** Both halves through the same sieve (SkipRules.accept): what does not survive it is simply not there. */
+export function acceptMarks(marks: SkipMarks, durationMs: number): SkipMarks {
+  return { opening: acceptedOpening(marks.opening, durationMs), ending: acceptedEnding(marks.ending, durationMs) };
 }
 
 /**
@@ -161,9 +222,8 @@ export function plausibleMarks(
   let ending: Interval | null = null;
   for (const { kind, startMs, endMs } of raw) {
     const interval = { startMs, endMs };
-    if (!plausible(interval, durationMs)) continue;
-    if (kind === "op" && opening === null && startMs <= OPENING_WITHIN_MS) opening = interval;
-    if (kind === "ed" && ending === null && endMs >= durationMs - ENDING_WITHIN_MS) ending = interval;
+    if (kind === "op" && opening === null) opening = acceptedOpening(interval, durationMs);
+    if (kind === "ed" && ending === null) ending = acceptedEnding(interval, durationMs);
   }
   return { opening, ending };
 }
@@ -172,11 +232,27 @@ function offered(interval: Interval | null, positionMs: number): boolean {
   return interval !== null && positionMs >= interval.startMs && positionMs < interval.startMs + SKIP_OFFER_MS;
 }
 
-/** The skip button for this position: ten seconds of played video from the start of what it skips. */
-export function skipOffer(marks: SkipMarks, positionMs: number): "opening" | "ending" | null {
-  if (offered(marks.opening, positionMs)) return "opening";
-  if (offered(marks.ending, positionMs)) return "ending";
+/**
+ * The skip button for this position: ten seconds of played video from the start of what it skips
+ * (SkipRules.offer). The marks are sieved here too, so a remembered answer is held to this length.
+ */
+export function skipOffer(marks: SkipMarks, positionMs: number, durationMs: number): "opening" | "ending" | null {
+  const accepted = acceptMarks(marks, durationMs);
+  if (offered(accepted.opening, positionMs)) return "opening";
+  if (offered(accepted.ending, positionMs)) return "ending";
   return null;
+}
+
+/** Ten seconds into the ending and still inside it (SkipRules.endingSkipDue). */
+export function endingSkipDue(marks: SkipMarks, positionMs: number, durationMs: number): boolean {
+  const ending = acceptedEnding(marks.ending, durationMs);
+  return ending !== null && positionMs >= ending.startMs + SKIP_OFFER_MS && positionMs < ending.endMs;
+}
+
+/** Anywhere inside the ending (SkipRules.insideEnding). */
+export function insideEnding(marks: SkipMarks, positionMs: number, durationMs: number): boolean {
+  const ending = acceptedEnding(marks.ending, durationMs);
+  return ending !== null && positionMs >= ending.startMs && positionMs < ending.endMs;
 }
 
 /**
@@ -187,14 +263,16 @@ export function skipOffer(marks: SkipMarks, positionMs: number): "opening" | "en
 export function shouldAutoSkip(s: {
   enabled: boolean;
   done: boolean;
-  ending: Interval | null;
+  marks: SkipMarks;
+  durationMs: number;
   positionMs: number;
   previousMs: number;
   playedSinceSeekMs: number;
 }): boolean {
-  const { ending } = s;
-  if (!s.enabled || s.done || ending === null) return false;
-  const due = s.positionMs >= ending.startMs + SKIP_OFFER_MS && s.positionMs < ending.endMs;
-  const walkedIn = s.previousMs >= ending.startMs && s.previousMs < ending.endMs;
-  return due && walkedIn && s.playedSinceSeekMs >= SEEK_SETTLE_MS;
+  if (!s.enabled || s.done) return false;
+  return (
+    endingSkipDue(s.marks, s.positionMs, s.durationMs) &&
+    insideEnding(s.marks, s.previousMs, s.durationMs) &&
+    s.playedSinceSeekMs >= SEEK_SETTLE_MS
+  );
 }

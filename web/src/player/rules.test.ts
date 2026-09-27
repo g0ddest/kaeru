@@ -321,30 +321,30 @@ describe("skipOffer", () => {
   const marks: SkipMarks = { opening: seconds(3, 93), ending: seconds(1460, 1560) };
 
   it("offers the opening for ten seconds from its start", () => {
-    expect(skipOffer(marks, 2_999)).toBeNull();
-    expect(skipOffer(marks, 3_000)).toBe("opening");
-    expect(skipOffer(marks, 12_999)).toBe("opening");
-    expect(skipOffer(marks, 13_000)).toBeNull();
+    expect(skipOffer(marks, 2_999, FILE_MS)).toBeNull();
+    expect(skipOffer(marks, 3_000, FILE_MS)).toBe("opening");
+    expect(skipOffer(marks, 12_999, FILE_MS)).toBe("opening");
+    expect(skipOffer(marks, 13_000, FILE_MS)).toBeNull();
   });
 
   it("offers the ending for ten seconds from its start", () => {
-    expect(skipOffer(marks, 1_459_999)).toBeNull();
-    expect(skipOffer(marks, 1_460_000)).toBe("ending");
-    expect(skipOffer(marks, 1_470_000)).toBeNull();
+    expect(skipOffer(marks, 1_459_999, FILE_MS)).toBeNull();
+    expect(skipOffer(marks, 1_460_000, FILE_MS)).toBe("ending");
+    expect(skipOffer(marks, 1_470_000, FILE_MS)).toBeNull();
   });
 
   it("asks about the opening first", () => {
-    expect(skipOffer({ opening: seconds(0, 60), ending: seconds(0, 60) }, 5_000)).toBe("opening");
+    expect(skipOffer({ opening: seconds(0, 60), ending: seconds(0, 60) }, 5_000, FILE_MS)).toBe("opening");
   });
 
   it("offers nothing without marks", () => {
-    expect(skipOffer(NO_MARKS, 3_000)).toBeNull();
+    expect(skipOffer(NO_MARKS, 3_000, FILE_MS)).toBeNull();
   });
 });
 
 describe("shouldAutoSkip", () => {
   const ending = seconds(1460, 1560);
-  const playing = { enabled: true, done: false, ending, positionMs: 1_470_000, previousMs: 1_469_750, playedSinceSeekMs: 30_000 };
+  const playing = { enabled: true, done: false, marks: { opening: null, ending }, durationMs: FILE_MS, positionMs: 1_470_000, previousMs: 1_469_750, playedSinceSeekMs: 30_000 };
 
   it("steps over the ending ten seconds into it, while it still plays", () => {
     expect(shouldAutoSkip(playing)).toBe(true);
@@ -366,6 +366,6 @@ describe("shouldAutoSkip", () => {
   it("does nothing with the setting off, once it fired, or without an ending", () => {
     expect(shouldAutoSkip({ ...playing, enabled: false })).toBe(false);
     expect(shouldAutoSkip({ ...playing, done: true })).toBe(false);
-    expect(shouldAutoSkip({ ...playing, ending: null })).toBe(false);
+    expect(shouldAutoSkip({ ...playing, marks: NO_MARKS })).toBe(false);
   });
 });
