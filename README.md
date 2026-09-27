@@ -9,6 +9,33 @@
   Списки и прогресс — на Shikimori, видео — Kodik.
 </p>
 
+## Зачем
+
+Kaeru — хобби-проект, чтобы смотреть аниме вместе с друзьями. Кто-то открывает серию и отправляет
+ссылку, остальные попадают в ту же комнату — с телефона, телевизора, iPad, Mac или браузера — и
+смотрят синхронно: пауза, перемотка и следующая серия у всех одновременно, рядом чат, реакции и
+голосовые. Всё остальное — список с Shikimori, продолжение с места, выбор озвучки — нужно, чтобы до
+этой кнопки было одно нажатие.
+
+## Скриншоты
+
+<p align="center">
+  <img src="docs/screenshots/mac-home.png" alt="Главная на Mac" width="49%">
+  <img src="docs/screenshots/mac-player.png" alt="Плеер на Mac" width="49%">
+</p>
+<p align="center">
+  <img src="docs/screenshots/mac-title.png" alt="Карточка тайтла на Mac" width="49%">
+  <img src="docs/screenshots/mac-list.png" alt="«Мой список» на Mac" width="49%">
+</p>
+<p align="center">
+  <img src="docs/screenshots/web-home.png" alt="Главная в браузере" width="49%">
+  <img src="docs/screenshots/web-list-secret.png" alt="Вкладка «Украдкой»" width="49%">
+</p>
+<p align="center">
+  <img src="docs/screenshots/web-player.png" alt="Плеер в браузере" width="49%">
+  <img src="docs/screenshots/web-settings.png" alt="Настройки: синхронизация между устройствами" width="49%">
+</p>
+
 ## Что умеет
 
 - **Следующая серия одним нажатием.** «Продолжить 7 серию» на главной и в карточке тайтла сразу включает
