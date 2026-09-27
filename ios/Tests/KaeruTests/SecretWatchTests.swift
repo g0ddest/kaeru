@@ -1,4 +1,5 @@
 import XCTest
+import KaeruShared
 @testable import Kaeru
 private typealias LibraryItem = Kaeru.LibraryItem
 private typealias Stream = Kaeru.Stream
@@ -336,6 +337,65 @@ private typealias Stream = Kaeru.Stream
         XCTAssertNil(seven["eps"])
         XCTAssertEqual(model.secrets[7]?.watched, 12)
         XCTAssertTrue(model.isFinished(7))
+    }
+
+    /// The announced length the shared rules get is the secret's own card's: none without a card,
+    /// or with a length not known.
+    func testSyncReadsTheAnnouncedLengthFromTheSecretsCard() {
+        let state = LocalSyncState.of(positions: [], translations: [:], stamps: [:], secrets: [
+            7: SecretTitle(on: true, watched: 3, at: 1, anime: anime),
+            8: SecretTitle(on: true, watched: 3, at: 1, anime: nil),
+            9: SecretTitle(on: true, watched: 3, at: 1, anime: Anime(id: 9, title: "Announced", episodes: 0, status: "anons")),
+        ])
+        XCTAssertEqual(KotlinNumbers.ints(state.announcedEpisodes), [7: 12])
+        XCTAssertEqual(KotlinNumbers.keyed(state.secrets).count, 3)
+    }
+
+    /// A title another device finished keeps nothing on the server but its tombstone. Watched
+    /// «украдкой» here and stamped before it, it reads as watched through (`SyncRules.newer`, for
+    /// every platform): the count goes up to the announced episodes, stamped as it was here, and
+    /// nothing of it goes out. Finished here too, it leaves one tombstone of this device's own —
+    /// and no more: by the next read the count is at the announced one already.
+    func testAnotherDevicesTombstoneOverASecretTitleReadsAsWatchedThroughAndThenSettles() async throws {
+        let transport = SecretTransport(), clock = SecretClock()
+        let model = try synced(RecordingService(), transport: transport, clock: clock, syncOn: true)
+        await model.viewingSync?.pull()
+        model.queueRate(anime: anime, status: "secret", episodes: 0)
+        model.setEpisodes(anime: anime, count: 9)
+        let stamped = try XCTUnwrap(model.secrets[7]?.at)
+        model.pushSync(.leaving)
+        await model.viewingSync?.settle()
+        let sent = transport.posts.count
+        // Finished on another device half a minute later, and read here half a minute after that.
+        clock.advance(30)
+        let gone = ms(clock.now)
+        transport.remote = ["7": ["gone": gone]]
+        clock.advance(30)
+
+        await model.viewingSync?.pull()
+
+        XCTAssertEqual(model.secrets[7]?.on, true)
+        XCTAssertEqual(model.secrets[7]?.watched, 12)
+        XCTAssertEqual(model.secrets[7]?.at, stamped, "Stamped as it was here: nothing new to send")
+        XCTAssertEqual(model.secrets[7]?.anime?.title, "Test", "The card stays")
+        XCTAssertTrue(model.isFinished(7))
+
+        clock.advance(1)
+        await model.viewingSync?.settle()
+        XCTAssertEqual(transport.posts.count, sent + 1)
+        let seven = try XCTUnwrap(transport.posts.last?["7"] as? [String: Any])
+        XCTAssertEqual(seven.keys.sorted(), ["gone"], "Only this device's own tombstone goes")
+        XCTAssertGreaterThan(try XCTUnwrap(seven["gone"] as? Int64), gone)
+
+        // The server holds that tombstone now: read again later, nothing changes and nothing goes.
+        transport.remote = ["7": ["gone": try XCTUnwrap(seven["gone"] as? Int64)]]
+        clock.advance(600)
+        await model.viewingSync?.pull()
+        clock.advance(120)
+        await model.viewingSync?.settle()
+        XCTAssertEqual(transport.posts.count, sent + 1)
+        XCTAssertEqual(model.secrets[7]?.watched, 12)
+        XCTAssertEqual(model.secrets[7]?.at, stamped)
     }
 
     /// As on Android: the count is the episode the mark leaves, as `SecretRules.watchedAfterMark`

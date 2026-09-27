@@ -50,6 +50,8 @@ class FakeLocalViewing : LocalViewing {
     val remembered = mutableMapOf<Int, RememberedDub>()
     val listed = MutableStateFlow<Map<Int, ListStatus>>(emptyMap())
     val secretRows = mutableMapOf<Int, SecretTitle>()
+    /** The announced length of titles whose card is here, by anime id. */
+    val announced = mutableMapOf<Int, Int>()
     val applied = mutableListOf<SyncedViewing>()
 
     /** The account the tables belong to; a write for another is turned down, as the account lock does. */
@@ -64,6 +66,9 @@ class FakeLocalViewing : LocalViewing {
     override suspend fun dubs(): Map<Int, RememberedDub> = remembered.toMap()
 
     override suspend fun secrets(): Map<Int, SecretTitle> = secretRows.toMap()
+
+    override suspend fun announcedEpisodes(): Map<Int, Int> =
+        announced.filter { (animeId, episodes) -> secretRows[animeId]?.on == true && episodes > 0 }
 
     override fun statuses(): Flow<Map<Int, ListStatus>> = listed
 
@@ -80,7 +85,9 @@ class FakeLocalViewing : LocalViewing {
         remembered.putAll(change.dubs)
         for (secret in change.secrets) {
             val here = secretRows[secret.animeId]
-            if (here == null || here.at.isBefore(secret.at)) secretRows[secret.animeId] = secret
+            // As the database has it: over an older one, or watched through at the same moment.
+            val through = here != null && here.at == secret.at && here.on && secret.on && here.watched < secret.watched
+            if (here == null || here.at.isBefore(secret.at) || through) secretRows[secret.animeId] = secret
         }
         return true
     }

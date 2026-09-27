@@ -33,7 +33,11 @@ data class SyncedViewing(
     /** Positions saved at or before these moments are dropped. */
     val tombstones: Map<Int, Instant> = emptyMap(),
     val dubs: Map<Int, RememberedDub> = emptyMap(),
-    /** «Украдкой» as another device left it; each written only over an older one. */
+    /**
+     * «Украдкой» as another device left it, each written only over an older one — or a title
+     * another device finished, watched through, stamped as it is here: written over the same
+     * moment's with fewer episodes.
+     */
     val secrets: List<SecretTitle> = emptyList(),
 ) {
     val isEmpty: Boolean get() = positions.isEmpty() && tombstones.isEmpty() && dubs.isEmpty() && secrets.isEmpty()
@@ -52,6 +56,13 @@ interface LocalViewing {
 
     /** «Украдкой» as this device has it, on or off, by anime id. */
     suspend fun secrets(): Map<Int, SecretTitle>
+
+    /**
+     * How many episodes each title watched «украдкой» has announced, as its cached card says: what
+     * a tombstone from another device needs to read the title as watched through. A title with no
+     * card here, or a length not known, is left out.
+     */
+    suspend fun announcedEpisodes(): Map<Int, Int>
 
     /**
      * Every listed title's status, as the local copy of the list has it. A title watched

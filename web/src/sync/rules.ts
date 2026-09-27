@@ -27,6 +27,11 @@ export interface LocalSyncState {
   dubStamps: ReadonlyMap<number, number>;
   /** «Украдкой» as this browser has it, on or off. */
   secrets: ReadonlyMap<number, SecretState>;
+  /**
+   * How many episodes each title has announced, as far as this browser knows: what a tombstone over
+   * a title watched «украдкой» here needs. A title left out, or at zero, is a length not known.
+   */
+  announcedEpisodes: ReadonlyMap<number, number>;
 }
 
 /** «Украдкой» for one title as another device left it. */
@@ -44,7 +49,10 @@ export interface SyncNewer {
   dubs: Map<number, RememberedDub>;
   /** The stamps to take — also where the dub itself is already the same. */
   dubStamps: Map<number, number>;
-  /** In the document's order. */
+  /**
+   * In the document's order: as another device left it, or — for a title watched so here that
+   * another device finished — watched through, stamped as it was here.
+   */
   secrets: TitleSecret[];
 }
 
@@ -116,6 +124,10 @@ export function wire(row: EpisodeProgress): SyncPosition {
  *   clamped into `0..d`.
  * - Every tombstone is passed on as it is; the write drops what it covers.
  * - A secret goes in over none, or over an older one; `watched` is at least zero.
+ * - Otherwise a tombstone over a title watched «украдкой» here, stamped at or before it, is that
+ *   title watched through on another device: the server keeps nothing else of a finished one. Its
+ *   count goes up to the announced episodes — where known, and above it — and its stamp stays this
+ *   browser's, so the state is nothing new to send: the tombstone covers it.
  * - A dub with id zero is no dub. Otherwise it wins over none, or over an older stamp — a dub
  *   remembered without a stamp counts as stamped at zero. The stamp is taken either way; the dub
  *   itself only where it differs from the remembered one.
@@ -140,11 +152,12 @@ export function newer(remote: SyncTitles, local: LocalSyncState): SyncNewer {
       out.positions.push({ animeId, episode, positionMs, durationMs: position.d, updatedAt: position.at });
     }
     const secret = title.secret;
-    if (secret !== undefined) {
-      const here = local.secrets.get(animeId);
-      if (here === undefined || here.at < secret.at) {
-        out.secrets.push({ animeId, on: secret.on, watched: Math.max(0, secret.watched), at: secret.at });
-      }
+    const here = local.secrets.get(animeId);
+    if (secret !== undefined && (here === undefined || here.at < secret.at)) {
+      out.secrets.push({ animeId, on: secret.on, watched: Math.max(0, secret.watched), at: secret.at });
+    } else {
+      const through = watchedThrough(animeId, here, title.gone, local.announcedEpisodes.get(animeId));
+      if (through !== null) out.secrets.push(through);
     }
     const dub = title.dub;
     if (dub !== undefined && dub.id !== 0) {
@@ -159,6 +172,22 @@ export function newer(remote: SyncTitles, local: LocalSyncState): SyncNewer {
     }
   }
   return out;
+}
+
+/**
+ * `here`, on, and stamped at or before the tombstone `gone`: every one of the `announced` episodes
+ * watched, stamped as it was. Null when any of that is not so, when the length is not known, or when
+ * the count is that far already.
+ */
+function watchedThrough(
+  animeId: number,
+  here: SecretState | undefined,
+  gone: number | undefined,
+  announced: number | undefined,
+): TitleSecret | null {
+  if (here === undefined || gone === undefined || !here.on || here.at > gone) return null;
+  if (announced === undefined || announced <= 0 || announced <= here.watched) return null;
+  return { animeId, on: true, watched: announced, at: here.at };
 }
 
 /**

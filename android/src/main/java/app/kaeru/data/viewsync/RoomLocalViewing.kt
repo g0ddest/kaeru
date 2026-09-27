@@ -56,6 +56,13 @@ class RoomLocalViewing @Inject constructor(
         database.secretTitleDao().all().associate { it.animeId to it.toDomain() }
     }
 
+    override suspend fun announcedEpisodes(): Map<Int, Int> = withContext(io) {
+        val ids = database.secretTitleDao().all().filter { it.isOn }.map { it.animeId }
+        ids.chunked(CARDS_PER_QUERY).flatMap { database.animeDao().getByIds(it) }
+            .filter { it.episodes > 0 }
+            .associate { it.id to it.episodes }
+    }
+
     override fun statuses(): Flow<Map<Int, ListStatus>> = combine(
         database.userRateDao().observeAll(),
         database.secretTitleDao().observeAll(),
@@ -111,6 +118,11 @@ class RoomLocalViewing @Inject constructor(
     } catch (_: Exception) {
         // A sign-out mid-write, or a disk that refused: nothing written, and the next read tries again.
         false
+    }
+
+    private companion object {
+        /** Well under SQLite's limit on the ids one `IN (…)` may bind. */
+        const val CARDS_PER_QUERY = 500
     }
 }
 

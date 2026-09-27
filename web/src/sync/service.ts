@@ -229,7 +229,8 @@ export class SyncService implements Sync {
   }
 
   private readonly onPosition = (row: EpisodeProgress): void => {
-    if (this.finished(row.animeId)) return;
+    // One with no length cannot be resumed from, here or anywhere else.
+    if (this.finished(row.animeId) || row.durationMs <= 0) return;
     if (this.enqueue(row.animeId, { eps: { [String(row.episode)]: wire(row) } })) this.schedule();
   };
 
@@ -343,25 +344,17 @@ export class SyncService implements Sync {
     if (outboxChanged) this.writeOutbox(outbox);
   }
 
+  /**
+   * «Украдкой» as another device left it, or a title watched so here that another device finished,
+   * watched through (rules.ts `newer`) — quietly: nothing of it goes back. A released one then
+   * reads as «completed», and `onLibrary` leaves one tombstone of this browser's own for it; only
+   * the one, as from then on its count is at the announced one and a tombstone changes nothing.
+   */
   private applySecrets(change: SyncNewer): void {
     const secrets = this.deps.secrets;
     if (secrets === undefined) return;
-    const taken = new Set<number>();
     for (const { animeId, on, watched, at } of change.secrets) {
       secrets.set(animeId, { on, watched, at }, null, { quiet: true });
-      taken.add(animeId);
-    }
-    for (const [animeId, gone] of change.tombstones) {
-      if (taken.has(animeId)) continue;
-      // The web's own rule, kept out of `newer` on purpose: Android and iOS do not have it, and
-      // whether it joins the shared rules is still to be decided. The worker keeps nothing but the
-      // tombstone of a finished title, secret state included, so a secret title another device
-      // closed was watched through. The owner can move it on from there.
-      const local = secrets.get(animeId);
-      const episodes = local?.anime?.episodes ?? 0;
-      if (local?.on === true && local.at <= gone && episodes > local.watched) {
-        secrets.set(animeId, { on: true, watched: episodes, at: local.at }, null, { quiet: true });
-      }
     }
   }
 
@@ -376,7 +369,10 @@ export class SyncService implements Sync {
     this.writeSeeded([...seeded, account]);
   }
 
-  /** This browser's positions, dubs and secrets, as the rules read them. */
+  /**
+   * This browser's positions, dubs and secrets, as the rules read them — and the announced length of
+   * each title watched «украдкой», as its card says, which another device's tombstone needs.
+   */
   private localState(): LocalSyncState {
     const dubs = new Map<number, RememberedDub>();
     const dubStamps = new Map<number, number>();
@@ -385,8 +381,14 @@ export class SyncService implements Sync {
       dubs.set(animeId, { id: dub.id, title: dub.title });
       dubStamps.set(animeId, dub.at);
     }
-    const secrets = new Map<number, SecretState>(this.deps.secrets?.all() ?? []);
-    return { positions: this.deps.progress.list(), dubs, dubStamps, secrets };
+    const secrets = new Map<number, SecretState>();
+    const announcedEpisodes = new Map<number, number>();
+    for (const [animeId, title] of this.deps.secrets?.all() ?? []) {
+      secrets.set(animeId, title);
+      const episodes = title.anime?.episodes ?? 0;
+      if (episodes > 0) announcedEpisodes.set(animeId, episodes);
+    }
+    return { positions: this.deps.progress.list(), dubs, dubStamps, secrets, announcedEpisodes };
   }
 
   /** The next batch, no sooner than a minute after the last one. */

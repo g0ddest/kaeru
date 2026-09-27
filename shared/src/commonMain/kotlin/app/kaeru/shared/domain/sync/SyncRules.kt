@@ -25,6 +25,11 @@ data class LocalSyncState(
     val dubStamps: Map<Int, Long>,
     /** «Украдкой» as this device has it, on or off, by anime id. */
     val secrets: Map<Int, SyncSecret>,
+    /**
+     * How many episodes each title has announced, as far as this device knows: what a tombstone
+     * over a title watched «украдкой» here needs. A title left out, or at zero, is a length not known.
+     */
+    val announcedEpisodes: Map<Int, Int>,
 )
 
 /** What the server holds that is newer than this device's, ready to be written here. */
@@ -36,7 +41,10 @@ data class SyncNewer(
     val dubs: Map<Int, RememberedDub>,
     /** New dub stamps, once the write went in — also where the dub itself is already the same. */
     val dubStamps: Map<Int, Long>,
-    /** «Украдкой» as another device left it, in the document's order. */
+    /**
+     * «Украдкой» as another device left it, in the document's order — or a title watched so here
+     * that another device finished, watched through, stamped as it was here.
+     */
     val secrets: List<TitleSecret>,
 ) {
     /** Nothing to write; [dubStamps] alone does not count, as it is kept apart from the viewing data. */
@@ -64,6 +72,10 @@ object SyncRules {
      *   `p` is clamped into `0..d`.
      * - Every tombstone is passed on as it is; the write drops what it covers.
      * - A secret goes in over none, or over an older one; `watched` is at least zero.
+     * - Otherwise a tombstone over a title watched «украдкой» here, stamped at or before it, is that
+     *   title watched through on another device: the server keeps nothing else of a finished one.
+     *   Its count goes up to the announced episodes — where known, and above it — and its stamp
+     *   stays this device's, so the state is nothing new to send: the tombstone covers it.
      * - A dub with id zero is no dub. Otherwise it wins over none, or over an older stamp — a dub
      *   remembered here without a stamp counts as stamped at zero. The stamp is taken either way;
      *   the dub itself only where it differs from the remembered one.
@@ -88,11 +100,11 @@ object SyncRules {
                 positions += EpisodePosition(animeId, episode, position.p.coerceIn(0, position.d), position.d, position.at)
             }
             val secret = title.secret
-            if (secret != null) {
-                val here = local.secrets[animeId]
-                if (here == null || here.at < secret.at) {
-                    secrets += TitleSecret(animeId, secret.on, secret.watched.coerceAtLeast(0), secret.at)
-                }
+            val here = local.secrets[animeId]
+            if (secret != null && (here == null || here.at < secret.at)) {
+                secrets += TitleSecret(animeId, secret.on, secret.watched.coerceAtLeast(0), secret.at)
+            } else {
+                watchedThrough(animeId, here, title.gone, local.announcedEpisodes[animeId])?.let { secrets += it }
             }
             val dub = title.dub
             if (dub != null && dub.id != 0) {
@@ -146,6 +158,17 @@ object SyncRules {
             if (!rest.isEmpty) left[id] = rest
         }
         return left
+    }
+
+    /**
+     * [here], on, and stamped at or before the tombstone [gone]: every one of the [announced]
+     * episodes watched, stamped as it was. Null when any of that is not so, when the length is not
+     * known, or when the count is that far already.
+     */
+    private fun watchedThrough(animeId: Int, here: SyncSecret?, gone: Long?, announced: Int?): TitleSecret? {
+        if (here == null || gone == null || !here.on || here.at > gone) return null
+        if (announced == null || announced <= 0 || announced <= here.watched) return null
+        return TitleSecret(animeId, on = true, watched = announced, at = here.at)
     }
 
     /** A position as it goes out: never below zero. */

@@ -68,8 +68,11 @@ abstract class KaeruDatabase : RoomDatabase() {
     /**
      * What viewing sync brought from another device, in one transaction: tombstones first, then
      * positions — each only over an older one, checked here rather than trusted from a read made
-     * before a sample could land — then dubs. «Украдкой» goes first, each only over an older one. A dub for a title with no row yet starts one at the
-     * beginning of [dubEpisodes]' episode, which is where a press of the watch button would start.
+     * before a sample could land — then dubs. «Украдкой» goes first, each only over an older one —
+     * or, for a title another device finished and this one watched through, over the same moment's
+     * with fewer episodes, which is how that one comes stamped. A dub for a title with no row yet
+     * starts one at the beginning of [dubEpisodes]' episode, which is where a press of the watch
+     * button would start.
      */
     suspend fun applySynced(
         tombstones: Map<Int, Instant>,
@@ -81,7 +84,9 @@ abstract class KaeruDatabase : RoomDatabase() {
         var written = false
         for (secret in secrets) {
             val here = secretTitleDao().get(secret.animeId)
-            if (here != null && !here.at.isBefore(secret.at)) continue
+            val watchedThrough = here != null && here.at == secret.at && here.isOn && secret.isOn &&
+                here.watched < secret.watched
+            if (here != null && !here.at.isBefore(secret.at) && !watchedThrough) continue
             secretTitleDao().upsert(secret)
             written = true
         }

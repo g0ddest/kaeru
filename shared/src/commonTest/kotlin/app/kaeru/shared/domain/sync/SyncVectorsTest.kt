@@ -69,6 +69,8 @@ class SyncVectorsTest {
             dubs = dubs(o.getValue("dubs")),
             dubStamps = stamps(o.getValue("dubStamps")),
             secrets = intKeys(o.getValue("secrets")).mapValues { (_, s) -> secret(s.jsonObject) },
+            // Optional in the file: a case that does not name it knows no title's length.
+            announcedEpisodes = o["announcedEpisodes"]?.let { intKeys(it).mapValues { (_, n) -> n.jsonPrimitive.int } }.orEmpty(),
         )
     }
 

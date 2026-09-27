@@ -208,6 +208,62 @@ class RoomLocalViewingTest {
     }
 
     @Test
+    fun `a title another device finished goes in watched through over the same moment's count, and reads as completed`() =
+        scope.runTest {
+            db.animeDao().upsertAll(listOf(anime(ANIME).toEntity(detailsFetchedAt = null)))
+            db.secretTitleDao().upsert(SecretTitle(ANIME, true, 9, Instant.ofEpochMilli(300)).toEntity())
+            assertEquals(mapOf(ANIME to ListStatus.SECRET), local.statuses().first())
+
+            val written = local.apply(
+                ACCOUNT,
+                SyncedViewing(
+                    tombstones = mapOf(ANIME to Instant.ofEpochMilli(400)),
+                    secrets = listOf(SecretTitle(ANIME, true, 12, Instant.ofEpochMilli(300))),
+                ),
+            )
+
+            assertTrue(written)
+            assertEquals(SecretTitle(ANIME, true, 12, Instant.ofEpochMilli(300)), local.secrets()[ANIME])
+            // Which is what leaves this device's own tombstone (ViewingSync.onStatuses).
+            assertEquals(mapOf(ANIME to ListStatus.COMPLETED), local.statuses().first())
+        }
+
+    @Test
+    fun `the same moment's secret goes in only with more episodes, and only while on`() = scope.runTest {
+        db.secretTitleDao().upsert(SecretTitle(ANIME, true, 12, Instant.ofEpochMilli(300)).toEntity())
+        db.secretTitleDao().upsert(SecretTitle(OTHER_ANIME, false, 3, Instant.ofEpochMilli(300)).toEntity())
+
+        local.apply(
+            ACCOUNT,
+            SyncedViewing(
+                secrets = listOf(
+                    SecretTitle(ANIME, true, 11, Instant.ofEpochMilli(300)),
+                    SecretTitle(OTHER_ANIME, true, 12, Instant.ofEpochMilli(300)),
+                ),
+            ),
+        )
+
+        val secrets = local.secrets()
+        assertEquals(SecretTitle(ANIME, true, 12, Instant.ofEpochMilli(300)), secrets[ANIME])
+        assertEquals(SecretTitle(OTHER_ANIME, false, 3, Instant.ofEpochMilli(300)), secrets[OTHER_ANIME])
+    }
+
+    @Test
+    fun `the announced length is read from the cards of titles watched «украдкой»`() = scope.runTest {
+        db.animeDao().upsertAll(
+            listOf(anime(ANIME), anime(OTHER_ANIME, episodes = 0), anime(THIRD_ANIME, episodes = 24))
+                .map { it.toEntity(detailsFetchedAt = null) },
+        )
+        db.secretTitleDao().upsert(SecretTitle(ANIME, true, 1, Instant.EPOCH).toEntity())
+        // A length not known, a title switched back and one with no card here are left out.
+        db.secretTitleDao().upsert(SecretTitle(OTHER_ANIME, true, 1, Instant.EPOCH).toEntity())
+        db.secretTitleDao().upsert(SecretTitle(THIRD_ANIME, false, 1, Instant.EPOCH).toEntity())
+        db.secretTitleDao().upsert(SecretTitle(CARDLESS_ANIME, true, 1, Instant.EPOCH).toEntity())
+
+        assertEquals(mapOf(ANIME to 12), local.announcedEpisodes())
+    }
+
+    @Test
     fun `finished reads the card and the clock as the shared rule wants them`() {
         // The rule itself is SecretRules.finished in shared; this is only the adapter.
         assertFalse(SecretTitle.finished(anime(ANIME, status = AnimeStatus.ONGOING), 12, Instant.EPOCH))
@@ -250,5 +306,7 @@ class RoomLocalViewingTest {
         const val OTHER_ACCOUNT = 77L
         const val ANIME = 100
         const val OTHER_ANIME = 200
+        const val THIRD_ANIME = 300
+        const val CARDLESS_ANIME = 400
     }
 }

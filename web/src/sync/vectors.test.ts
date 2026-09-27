@@ -42,6 +42,8 @@ interface VectorLocal {
   dubs: Record<string, { id: number; title: string | null }>;
   dubStamps: Record<string, number>;
   secrets: Record<string, SecretState>;
+  /** Optional: a case that does not name it knows no title's length. */
+  announcedEpisodes?: Record<string, number>;
 }
 
 interface SyncVectors {
@@ -107,6 +109,7 @@ function local(state: VectorLocal): LocalSyncState {
     dubs,
     dubStamps: byId(state.dubStamps),
     secrets: byId(state.secrets),
+    announcedEpisodes: byId(state.announcedEpisodes ?? {}),
   };
 }
 

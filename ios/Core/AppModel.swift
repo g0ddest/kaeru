@@ -557,7 +557,10 @@ import KaeruShared
             dubStamps[animeID] = DubStamp(title: name, at: at)
         }
         // «Украдкой» switched or counted on another device. Nothing of it goes to Shikimori: the
-        // device where it was switched back already wrote there.
+        // device where it was switched back already wrote there. A title watched so here that another
+        // device finished comes watched through, stamped as it was here; a released one then reads as
+        // finished, and `syncStatuses` leaves one tombstone of this device's own for it — only the one:
+        // from then on its count is at the announced one, and a tombstone changes nothing.
         var cardless = Set<Int>()
         for secret in newer.secrets {
             let animeID = Int(secret.animeId)

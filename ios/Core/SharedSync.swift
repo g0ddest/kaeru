@@ -86,7 +86,9 @@ enum SecretCount {
 
 extension LocalSyncState {
     /// What this device holds, as the shared rules read it: its positions, the dub each title
-    /// remembers — named only once something named it — and when it was chosen, and «украдкой» on or off.
+    /// remembers — named only once something named it — and when it was chosen, «украдкой» on or off,
+    /// and how many episodes each such title has announced, as its card says: a tombstone from
+    /// another device reads it as watched through. A title with no card, or a length not known, has none.
     static func of(positions: [EpisodeProgress], translations: [Int: Int], stamps: [Int: DubStamp],
                    secrets: [Int: SecretTitle]) -> LocalSyncState {
         var dubs: [KotlinInt: RememberedDub] = [:]
@@ -97,8 +99,13 @@ extension LocalSyncState {
         var chosen: [KotlinInt: KotlinLong] = [:]
         for (animeID, stamp) in stamps { chosen[animeID.kotlin] = KotlinLong(value: stamp.at) }
         var states: [KotlinInt: SyncSecret] = [:]
-        for (animeID, secret) in secrets { states[animeID.kotlin] = secret.wire }
-        return LocalSyncState(positions: positions.map(\.episodePosition), dubs: dubs, dubStamps: chosen, secrets: states)
+        var announced: [KotlinInt: KotlinInt] = [:]
+        for (animeID, secret) in secrets {
+            states[animeID.kotlin] = secret.wire
+            if let episodes = secret.anime?.episodes, episodes > 0 { announced[animeID.kotlin] = episodes.kotlin }
+        }
+        return LocalSyncState(positions: positions.map(\.episodePosition), dubs: dubs, dubStamps: chosen, secrets: states,
+                              announcedEpisodes: announced)
     }
 }
 

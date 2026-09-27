@@ -228,6 +228,19 @@ describe("SyncService push", () => {
     expect(env.posts()).toHaveLength(2);
   });
 
+  it("sends no position without a length: it cannot be resumed from anywhere", async () => {
+    const env = started();
+    env.service.start();
+    await settle();
+
+    env.progress.put({ animeId: 1535, episode: 1, positionMs: 10_000, durationMs: 0, updatedAt: T0 });
+    env.service.push();
+    await settle(2 * MINUTE);
+
+    expect(env.posts()).toEqual([]);
+    expect(env.storage.getItem("kaeru.sync.outbox")).toBeNull();
+  });
+
   it("sends a dub the viewer settled on", async () => {
     const env = started();
     env.service.start();
@@ -644,17 +657,22 @@ describe("SyncService «Смотреть украдкой»", () => {
     expect(env.posts().map((post) => post.titles)).toEqual([{ "6": { secret: { on: true, watched: 4, at: T0 - 1_000 } } }]);
   });
 
-  it("reads another device's tombstone over a secret title as the show watched through", async () => {
+  it("reads another device's tombstone over a secret title as the show watched through, and sends nothing of it", async () => {
     const env = started();
     env.secrets.set(5, { on: true, watched: 9, at: T0 - 9_000 }, card);
-    env.state.remote = { "5": { gone: T0 - 1_000 } };
+    // Stamped after the tombstone: counted here since, so left as it is.
+    env.secrets.set(6, { on: true, watched: 2, at: T0 - 500 }, { ...card, id: 6 });
+    env.state.remote = { "5": { gone: T0 - 1_000 }, "6": { gone: T0 - 1_000 } };
     env.library.set([]);
 
     env.service.start();
     await settle(MINUTE);
 
-    expect(env.secrets.get(5)).toMatchObject({ on: true, watched: 12 });
-    expect(env.posts()).toEqual([]);
+    // The stamp stays this browser's: the tombstone covers it, so it is no news to the server —
+    // unlike the later count of the other title, which the server lacks.
+    expect(env.secrets.get(5)).toEqual({ on: true, watched: 12, at: T0 - 9_000, anime: card });
+    expect(env.secrets.get(6)).toMatchObject({ on: true, watched: 2, at: T0 - 500 });
+    expect(env.posts().map((post) => post.titles)).toEqual([{ "6": { secret: { on: true, watched: 2, at: T0 - 500 } } }]);
   });
 
   it("sends the tombstone when a secret title is finished", async () => {

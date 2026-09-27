@@ -252,6 +252,10 @@ class ViewingSync(
                 SecretTitle(secret.animeId, secret.on, secret.watched, Instant.ofEpochMilli(secret.at))
             },
         )
+        // Written around the event channel, so none of it comes back here to be sent. A title watched
+        // «украдкой» here that another device finished comes back watched through; a released show
+        // then reads as completed, and [onStatuses] leaves one tombstone of this device's own for it.
+        // Only the one: from then on its count is at the announced one, and a tombstone changes nothing.
         val written = change.isEmpty || local.apply(acc, change)
         if (account != acc || !written) return
         if (newer.dubStamps.isNotEmpty()) store.setDubStamps(acc, store.dubStamps(acc) + newer.dubStamps)
@@ -276,12 +280,16 @@ class ViewingSync(
         store.markSeeded(acc)
     }
 
-    /** This device's positions, dubs, dub stamps and secrets, as the shared rules read them. */
+    /**
+     * This device's positions, dubs, dub stamps and secrets, as the shared rules read them — and the
+     * announced length of each title watched «украдкой», which another device's tombstone needs.
+     */
     private suspend fun localState(acc: Long) = LocalSyncState(
         positions = local.positions().map(::episodePosition),
         dubs = local.dubs(),
         dubStamps = store.dubStamps(acc),
         secrets = local.secrets().mapValues { (_, secret) -> wire(secret) },
+        announcedEpisodes = local.announcedEpisodes(),
     )
 
     // --- writing ------------------------------------------------------------------------------

@@ -126,6 +126,59 @@ class ViewingSyncSecretTest {
         assertEquals(BASE + ViewingSync.PUSH_EVERY_MS, stored.gone)
     }
 
+    @Test
+    fun `a tombstone from another device over a secret title reads as watched through, and goes nowhere`() = runTest {
+        local.secretRows[7] = SecretTitle(7, true, 9, Instant.ofEpochMilli(BASE - 10_000))
+        local.announced[7] = 12
+        // Stamped after the tombstone: switched or counted here since, so left as it is.
+        local.secretRows[8] = SecretTitle(8, true, 3, Instant.ofEpochMilli(BASE - 500))
+        local.announced[8] = 12
+        // No card here, so no length known: left as it is.
+        local.secretRows[9] = SecretTitle(9, true, 4, Instant.ofEpochMilli(BASE - 10_000))
+        for (id in listOf("7", "8", "9")) api.document(ACCOUNT)[id] = SyncTitle(gone = BASE - 1_000)
+        state.markSeeded(ACCOUNT)
+
+        started()
+        advanceTimeBy(10 * 60_000L)
+        runCurrent()
+
+        // Every announced episode watched, stamped as it was here: nothing new for the server.
+        assertEquals(SecretTitle(7, true, 12, Instant.ofEpochMilli(BASE - 10_000)), local.secretRows[7])
+        assertEquals(SecretTitle(8, true, 3, Instant.ofEpochMilli(BASE - 500)), local.secretRows[8])
+        assertEquals(SecretTitle(9, true, 4, Instant.ofEpochMilli(BASE - 10_000)), local.secretRows[9])
+        assertTrue(api.posts.isEmpty())
+        assertTrue(state.outbox(ACCOUNT).isEmpty())
+    }
+
+    @Test
+    fun `a title watched through that way leaves one tombstone of this device's own, and then nothing more`() = runTest {
+        local.secretRows[7] = SecretTitle(7, true, 9, Instant.ofEpochMilli(BASE - 10_000))
+        local.announced[7] = 12
+        local.listed.value = mapOf(7 to ListStatus.SECRET, 1 to ListStatus.WATCHING)
+        api.document(ACCOUNT)["7"] = SyncTitle(gone = BASE - 1_000)
+        state.markSeeded(ACCOUNT)
+        val sync = started()
+        assertEquals(12, local.secretRows[7]?.watched)
+
+        // The list reads a finished show watched through as completed (RoomLocalViewing.statuses).
+        local.listed.value = mapOf(7 to ListStatus.COMPLETED, 1 to ListStatus.WATCHING)
+        runCurrent()
+
+        assertEquals(listOf(ACCOUNT to mapOf("7" to SyncTitle(gone = BASE))), api.posts)
+        // Read again later, the server's tombstone is this device's own: nothing changes, nothing goes.
+        sync.wentToBackground()
+        advanceTimeBy(ViewingSync.PULL_AFTER_BACKGROUND_MS)
+        sync.becameActive()
+        runCurrent()
+        advanceTimeBy(10 * 60_000L)
+        runCurrent()
+
+        assertEquals(2, api.gets)
+        assertEquals(1, api.posts.size)
+        assertEquals(SecretTitle(7, true, 12, Instant.ofEpochMilli(BASE - 10_000)), local.secretRows[7])
+        assertEquals(SyncTitle(gone = BASE), api.document(ACCOUNT)["7"])
+    }
+
     private companion object {
         const val ACCOUNT = 42L
         const val BASE = 1_790_000_000_000L
