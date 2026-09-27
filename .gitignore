@@ -41,3 +41,6 @@ ios/App/Mac/GoogleService-Info.plist
 # Web client: dependencies and build output
 web/node_modules/
 web/dist/
+
+# Kotlin compiler daemon state
+.kotlin/

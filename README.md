@@ -1,21 +1,57 @@
-# Kaeru
+<p align="center">
+  <img src="tools/branding/kaeru-icon-512.png" alt="Kaeru" width="128" height="128">
+</p>
 
-Android- и Android TV-клиент для запуска следующей серии аниме одним
-нажатием. Списки и прогресс синхронизируются с Shikimori; источник видео —
-Kodik, воспроизведение — Media3 с поддержкой Chromecast на телефоне.
+<h1 align="center">Kaeru</h1>
 
+<p align="center">
+  Аниме с Shikimori одним нажатием — на телефоне, телевизоре, iPad, Mac и в браузере.<br>
+  Списки и прогресс — на Shikimori, видео — Kodik.
+</p>
+
+<p align="center">
+  <a href="https://github.com/g0ddest/kaeru/releases">Скачать для Android и Android TV</a> ·
+  <a href="https://kaeru.vitaliy.velikodniy.name/">Открыть в браузере</a>
+</p>
+
+## Что умеет
+
+- **Следующая серия одним нажатием.** «Продолжить 7 серию» на главной и в карточке тайтла сразу включает
+  нужный эпизод с того места, где вы остановились; после порога просмотра (по умолчанию 90 %) серия
+  отмечается на Shikimori.
+- **Озвучка и качество.** Озвучка выбирается сама и запоминается на тайтл; качество меняется без потери
+  позиции. Пропуск опенинга и эндинга по меткам AniSkip, автопереход к следующей серии.
+- **Смотреть вместе.** Комната по ссылке: синхронное воспроизведение, чат, реакции и голосовые между
+  Android, iPhone, iPad, Mac и браузером (`docs/dev/together-protocol.md`).
+- **Синхронизация между устройствами.** Позиция в серии и выбранная озвучка — общие для всех ваших
+  устройств через сервер Kaeru. Отдельная настройка, по умолчанию выключена.
+- **Смотреть украдкой.** Статус «Украдкой»: серии считаются, но в Shikimori ничего не уходит — ни статус,
+  ни отметки. Запись, которая уже была на Shikimori, остаётся как есть.
+- **Офлайн** (телефон, iPhone, iPad, Mac): скачанные серии, очередь отметок до появления сети.
+- **Chromecast** с телефона, вход на телевизоре по QR с телефона, обновления из GitHub Releases.
+
+## Платформы
+
+| Платформа | Где | Как поставить |
+|---|---|---|
+| Android и Android TV | `android/` (Kotlin, Compose, Media3) | APK из [Releases](https://github.com/g0ddest/kaeru/releases) — один на телефон и ТВ |
+| iPhone и iPad | `ios/` (SwiftUI, AVKit) | сборка из Xcode, см. `ios/README.md` |
+| macOS | `ios/` — цель `KaeruMac` из того же кода | сборка из Xcode; `.dmg` с Developer ID — `ios/Scripts/release-mac.sh` |
+| Браузер | `web/` (React, Vite, hls.js) | [kaeru.vitaliy.velikodniy.name](https://kaeru.vitaliy.velikodniy.name/) — вход по белому списку Shikimori id |
 
 ## Структура
 
 | Папка | Что там |
 |---|---|
-| `android/` | Приложение для телефона и Android TV (Kotlin, Compose, media3) |
-| `ios/` | Приложение для iPhone и iPad (SwiftUI, AVKit) — собирается `ruby ios/App/generate_project.rb`, см. `ios/README.md` |
-| `shared/` | Общий модуль Kotlin Multiplatform (Ktor): клиент Shikimori и цепочка Kodik для обеих платформ — Android ходит в него напрямую, iOS через `NativeApi`; см. `docs/dev/android-shared-plan.md` |
-| `docs/dev/together-protocol.md` | Протокол совместного просмотра: ссылка, кадр, сообщения, рукопожатие, синхронизация, ожидание, обрывы, голос, тайминги обеих платформ |
-| `infra/relay/` | Воркер Cloudflare: комнаты совместного просмотра и обмен токенов Shikimori |
-| `docs/` | Спецификации, планы и скин приёмника Chromecast (`docs/cast/` раздаётся с GitHub Pages) |
-| `tools/` | Фикстуры и вспомогательные скрипты |
+| `android/` | Приложение для телефона и Android TV (Kotlin, Compose, Media3) |
+| `ios/` | Приложение для iPhone, iPad и Mac (SwiftUI) — проект генерируется `ruby ios/App/generate_project.rb`, см. `ios/README.md` |
+| `web/` | Веб-клиент (React, Vite, hls.js), публикуется на GitHub Pages скриптом `web/scripts/publish-site.sh` |
+| `shared/` | Общий модуль Kotlin Multiplatform (Ktor): клиент Shikimori и цепочка Kodik — Android ходит в него напрямую, iOS и macOS через `NativeApi` |
+| `infra/relay/` | Воркер Cloudflare: комнаты совместного просмотра, обмен токенов Shikimori, Kodik для веба, синхронизация `/sync` (D1) |
+| `docs/dev/` | Протокол совместного просмотра и заметки по архитектуре |
+| `docs/superpowers/` | Спецификации и планы |
+| `docs/cast/` | Скин приёмника Chromecast и страница-приглашение, раздаются с GitHub Pages вместе с веб-клиентом |
+| `tools/` | Фикстуры, пробники и брендинг |
 
 ## Требования
 
