@@ -1017,6 +1017,26 @@ describe("PlayerScreen", () => {
     }
   });
 
+  it("hides the controls in fullscreen though the mouse that pressed the button never moved off the bar", async () => {
+    vi.useFakeTimers();
+    stubFullscreen();
+    await playing();
+    const player = screen.getByRole("main");
+    const bottom = document.querySelector(".player-bottom") as HTMLElement;
+    fireEvent.pointerMove(player);
+    fireEvent.pointerEnter(bottom, { pointerType: "mouse" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Во весь экран" }));
+    expect(document.fullscreenElement).not.toBeNull();
+    act(() => vi.advanceTimersByTime(CONTROLS_HIDE_MS));
+    expect(player).toHaveAttribute("data-idle", "true");
+
+    // Moved on the bar again, it is there to use it.
+    fireEvent.pointerMove(bottom, { pointerType: "mouse" });
+    act(() => vi.advanceTimersByTime(CONTROLS_HIDE_MS * 3));
+    expect(player).toHaveAttribute("data-idle", "false");
+  });
+
   it("keeps the controls up while the keyboard is on one of them, but not over one a click left focused", async () => {
     vi.useFakeTimers();
     chromeFocusRing();

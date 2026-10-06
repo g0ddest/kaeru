@@ -374,7 +374,12 @@ function Player({ animeId, episode }: { animeId: number; episode: number }) {
     if (video === null) return;
     setCanFullscreen(elementFullscreen() || typeof video.webkitEnterFullscreen === "function");
     setCanPip(document.pictureInPictureEnabled === true && video.disablePictureInPicture !== true);
-    const syncFullscreen = () => setFullscreen(fullscreenElement() !== null);
+    const syncFullscreen = () => {
+      setFullscreen(fullscreenElement() !== null);
+      // The bars moved under a pointer that did not: it rests where the button was, not on a bar
+      // it came to use. Moving on one again says so (`bar.onPointerMove`).
+      setOverBar(false);
+    };
     const begin = () => setFullscreen(true);
     const end = () => setFullscreen(false);
     const enterPip = () => setPip(true);
@@ -535,6 +540,9 @@ function Player({ animeId, episode }: { animeId: number; episode: number }) {
   // A touch passes over a bar only on its way to a tap, which wakes the controls by itself.
   const bar = {
     onPointerEnter: (event: ReactPointerEvent) => {
+      if (event.pointerType !== "touch") setOverBar(true);
+    },
+    onPointerMove: (event: ReactPointerEvent) => {
       if (event.pointerType !== "touch") setOverBar(true);
     },
     onPointerLeave: () => setOverBar(false),
